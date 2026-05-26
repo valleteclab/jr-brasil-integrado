@@ -13,6 +13,16 @@ Descreva em uma frase o resultado esperado.
 - Entidades Prisma envolvidas:
 - Dependências externas:
 
+## Segurança e multiempresa
+
+- `tenantId` envolvido:
+- `companyId` envolvido:
+- Perfil/permissão necessária:
+- Dados sensíveis envolvidos:
+- Auditoria necessária:
+- Risco de vazamento entre empresas:
+- Estratégia de validação de acesso:
+
 ## Escopo incluído
 
 - [ ] Item 1
@@ -28,6 +38,9 @@ Descreva em uma frase o resultado esperado.
 - [ ] Critério verificável 1
 - [ ] Critério verificável 2
 - [ ] Critério verificável 3
+- [ ] Queries e APIs respeitam isolamento por tenant/company.
+- [ ] Permissões/RBAC foram consideradas.
+- [ ] Operações sensíveis geram auditoria quando aplicável.
 
 ## Validação
 

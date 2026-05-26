@@ -10,7 +10,8 @@ Antes de codar, o agente deve ler:
 2. `STATUS.md`
 3. `DESIGN_SYSTEM.md`
 4. `AGENTS.md`
-5. Arquivos diretamente relacionados à tarefa
+5. `SECURITY_MULTI_TENANCY.md`
+6. Arquivos diretamente relacionados à tarefa
 
 Se a tarefa envolver banco/modelos, ler também:
 
@@ -22,6 +23,7 @@ Se a tarefa envolver banco/modelos, ler também:
 - **Status do projeto:** `STATUS.md`
 - **Padrão visual:** `DESIGN_SYSTEM.md`
 - **Regras para agentes:** `AGENTS.md`
+- **Segurança e multiempresa:** `SECURITY_MULTI_TENANCY.md`
 - **Modelo de dados:** `prisma/schema.prisma`
 - **Comportamento esperado do app:** plano aprovado em `.windsurf/plans/plano-erp-ecommerce-jr-brasil-75bad0.md`
 
@@ -48,6 +50,9 @@ Todo agente deve seguir este ciclo:
 - Não instalar dependências aleatórias sem justificar no README/STATUS.
 - Não expor dados reais de clientes, fornecedores ou financeiro.
 - Não colocar chave fiscal, certificado A1, gateway ou token em código.
+- Nunca criar query operacional sem isolamento por `tenantId` e, quando aplicável, `companyId`.
+- Nunca confiar apenas em ID enviado pelo cliente para autorizar acesso a um recurso.
+- Toda operação sensível deve considerar auditoria, permissão e risco de vazamento entre empresas.
 
 ## 5. Regras de engenharia
 
@@ -59,6 +64,8 @@ Todo agente deve seguir este ciclo:
 - Usar Prisma como camada principal de acesso ao banco.
 - Não inventar campos fora do schema sem revisar impacto no domínio.
 - Manter compatibilidade com Next.js App Router.
+- Todo modelo operacional novo deve considerar multiempresa desde o início.
+- Toda API privada deve validar sessão, tenant, empresa e permissão antes da operação.
 
 ## 6. Padrão de commits
 
@@ -114,6 +121,8 @@ Evitar registrar hashes inexistentes.
 - Não vazar detalhes internos sensíveis.
 - Usar Prisma Client centralizado.
 - Considerar permissões/RBAC quando a funcionalidade for protegida.
+- Filtrar toda leitura/escrita por `tenantId` e `companyId` quando aplicável.
+- Registrar auditoria para ações sensíveis.
 - Registrar impacto no `STATUS.md`.
 
 ## 11. Checklist para banco de dados
@@ -123,6 +132,9 @@ Evitar registrar hashes inexistentes.
 - Preservar relação com domínio brasileiro quando necessário: CNPJ, NF-e, NCM, CEST, CFOP.
 - Evitar campos genéricos excessivos quando o domínio exigir rastreabilidade.
 - Planejar migrations antes de produção.
+- Modelos operacionais devem ter `tenantId` e/ou `companyId`.
+- Unicidades devem ser revisadas para contexto multiempresa.
+- Índices devem considerar filtros por tenant/company.
 
 ## 12. Handoff entre agentes
 
