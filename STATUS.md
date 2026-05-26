@@ -110,7 +110,8 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 | 2026-05-26 | `28201b0` | Enviado | Atualização do README e STATUS com referências de segurança multiempresa. |
 | 2026-05-26 | `7601655` | Enviado | Versionamento do MVP ERP standalone como referência do projeto integrado. |
 | 2026-05-26 | `ad9eff3` | Enviado | Atualização do histórico após versionamento do MVP ERP standalone. |
-| 2026-05-26 | A gerar | Em andamento | Refatoração do schema Prisma e seed para multiempresa com campos em PT-BR. |
+| 2026-05-26 | `425b645` | Enviado | Refatoração do schema Prisma e seed para multiempresa com campos em PT-BR. |
+| 2026-05-26 | A gerar | Em andamento | Atualização do histórico após refatoração multiempresa do schema Prisma. |
 
 ## Próximos passos imediatos
 
