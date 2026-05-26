@@ -101,7 +101,8 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 | 2026-05-26 | `d844cac` | Enviado | Adição deste documento de status do desenvolvimento. |
 | 2026-05-26 | `da59141` | Enviado | Atualização do histórico com hash real do commit de status. |
 | 2026-05-26 | `ef9a4a5` | Enviado | Criação do design system e padronização inicial de tokens CSS. |
-| 2026-05-26 | A gerar | Em andamento | Extração dos primeiros componentes base compartilhados. |
+| 2026-05-26 | `042a00b` | Enviado | Extração dos primeiros componentes base compartilhados e refatoração inicial da home. |
+| 2026-05-26 | A gerar | Em andamento | Continuação da Fase 1 com base de dados/API e integração inicial. |
 
 ## Próximos passos imediatos
 
