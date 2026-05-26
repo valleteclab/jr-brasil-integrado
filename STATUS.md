@@ -96,7 +96,8 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
 | 2026-05-26 | `36ca124` | Enviado | Base inicial integrada: Next.js, Prisma, páginas iniciais, README e seed. |
-| 2026-05-26 | A gerar | Em andamento | Adição deste documento de status do desenvolvimento. |
+| 2026-05-26 | `d844cac` | Enviado | Adição deste documento de status do desenvolvimento. |
+| 2026-05-26 | A gerar | Em andamento | Atualização do histórico com hash real do commit de status. |
 
 ## Próximos passos imediatos
 
