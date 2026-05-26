@@ -27,6 +27,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 | Criar telas iniciais `/`, `/loja`, `/erp` | Concluído | Shell inicial para validar direção visual e rotas. |
 | Criar guia de design system para devs | Concluído | `DESIGN_SYSTEM.md` criado com tokens, padrões ERP/loja e regras de implementação. |
 | Padronizar tokens CSS globais | Concluído | `globals.css` atualizado com tokens `--jr-*` e aliases `--erp-*`. |
+| Versionar MVP ERP standalone como referência | Concluído | Arquivo copiado para `mvp/JR Brasil ERP - Standalone.html`. |
 | Criar `.env.example`, `.gitignore` e README | Concluído | Documentação inicial incluída. |
 | Inicializar Git local e subir GitHub | Concluído | Repositório privado criado em `valleteclab/jr-brasil-integrado`. |
 | Instalar dependências e validar build local | Pendente | Requer `npm install`. |
@@ -104,7 +105,10 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 | 2026-05-26 | `042a00b` | Enviado | Extração dos primeiros componentes base compartilhados e refatoração inicial da home. |
 | 2026-05-26 | `9dfca61` | Enviado | Atualização do status após commit de componentes compartilhados. |
 | 2026-05-26 | `621c519` | Enviado | Criação do manual operacional para agentes de IA, templates e atualização do README. |
-| 2026-05-26 | A gerar | Em andamento | Atualização do histórico após documentação de engenharia para IA. |
+| 2026-05-26 | `b9d8134` | Enviado | Atualização do histórico após documentação de engenharia para IA. |
+| 2026-05-26 | `3326612` | Enviado | Criação das regras de segurança, multiempresa e isolamento de dados. |
+| 2026-05-26 | `28201b0` | Enviado | Atualização do README e STATUS com referências de segurança multiempresa. |
+| 2026-05-26 | A gerar | Em andamento | Versionamento do MVP ERP standalone como referência do projeto integrado. |
 
 ## Próximos passos imediatos
 
