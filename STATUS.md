@@ -22,8 +22,8 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 | Criar projeto Next.js + TypeScript | Concluído | Base criada manualmente com App Router. |
 | Configurar scripts e dependências iniciais | Concluído | `next`, `react`, `typescript`, `prisma`, `tsx`. |
 | Criar configuração Prisma/PostgreSQL | Concluído | `prisma/schema.prisma` criado com datasource PostgreSQL. |
-| Modelar entidades centrais ERP + ecommerce | Concluído | Usuários, clientes, produtos, estoque, pedidos, orçamentos, OS, compras, financeiro e fiscal. |
-| Criar seed inicial | Concluído | Admin, categoria, marca, produto, depósito, estoque e cliente B2B. |
+| Modelar entidades centrais ERP + ecommerce | Concluído | Schema refatorado para multiempresa com `Tenant`, `Empresa`, vínculos, RBAC, auditoria e entidades em PT-BR. |
+| Criar seed inicial | Concluído | Tenant, empresa, admin, perfil, permissões, categoria, marca, produto, depósito, estoque e cliente B2B. |
 | Criar telas iniciais `/`, `/loja`, `/erp` | Concluído | Shell inicial para validar direção visual e rotas. |
 | Criar guia de design system para devs | Concluído | `DESIGN_SYSTEM.md` criado com tokens, padrões ERP/loja e regras de implementação. |
 | Padronizar tokens CSS globais | Concluído | `globals.css` atualizado com tokens `--jr-*` e aliases `--erp-*`. |
@@ -37,19 +37,19 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 | Tarefa | Status | Observações |
 | --- | --- | --- |
-| Criar camada Prisma client/API base | Pendente | Próximo passo técnico recomendado. |
+| Criar camada Prisma client/API base | Pendente | Próximo passo técnico recomendado usando escopo obrigatório por `tenantId` e `empresaId`. |
 | Criar seed completo a partir dos mocks do protótipo | Pendente | Migrar dados de `data.js` e `erp-data.js`. |
 | Implementar listagem real de produtos na loja | Pendente | Consumir banco/API. |
 | Implementar cadastro/listagem de clientes no ERP | Pendente | Incluir aprovação B2B. |
 | Implementar estoque real com saldos e reservas | Pendente | Base já modelada no schema. |
-| Implementar pedido ecommerce entrando no ERP | Pendente | Conectar checkout a `SalesOrder`. |
+| Implementar pedido ecommerce entrando no ERP | Pendente | Conectar checkout a `PedidoVenda`. |
 | Implementar status de pedido e baixa/reserva de estoque | Pendente | Definir regra final de venda sem saldo. |
 
 ## Fase 2 — Orçamentos e atendimento
 
 | Tarefa | Status | Observações |
 | --- | --- | --- |
-| Migrar fluxo de orçamento do protótipo | Pendente | Base: `Quote` e `QuoteItem`. |
+| Migrar fluxo de orçamento do protótipo | Pendente | Base: `Orcamento` e `OrcamentoItem`. |
 | Criar aprovação de orçamento no portal B2B | Pendente | Converter orçamento aprovado em pedido. |
 | Criar atendimento unificado ERP | Pendente | Venda balcão, pedido, OS e orçamento. |
 | Histórico de interações e notificações | Pendente | Depende de módulo de auditoria/notificação. |
@@ -60,7 +60,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 | --- | --- | --- |
 | Movimentações completas de estoque | Pendente | Entrada, saída, ajuste, transferência e reserva. |
 | Inventário físico | Pendente | Modelagem complementar pode ser necessária. |
-| Pedido de compra completo | Pendente | Base: `PurchaseOrder` e `PurchaseOrderItem`. |
+| Pedido de compra completo | Pendente | Base: `PedidoCompra` e `PedidoCompraItem`. |
 | Recebimento e atualização de custo médio | Pendente | Depende de regra fiscal/entrada. |
 | Sugestão de compra por estoque mínimo/giro | Pendente | Depende de histórico de vendas. |
 
@@ -70,7 +70,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 | --- | --- | --- |
 | OS com serviços e peças aplicadas | Pendente | Base modelada. |
 | Agenda de técnicos | Pendente | Requer tabela específica de agenda/apontamentos. |
-| Apontamento de horas | Pendente | Expandir `ServiceOrderLabor`. |
+| Apontamento de horas | Pendente | Expandir `OrdemServicoMaoObra`. |
 | OS aguardando peça vinculada a compras | Pendente | Criar vínculo entre OS e compras. |
 | Faturamento de OS | Pendente | Integrar contas a receber e fiscal. |
 
@@ -109,7 +109,8 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 | 2026-05-26 | `3326612` | Enviado | Criação das regras de segurança, multiempresa e isolamento de dados. |
 | 2026-05-26 | `28201b0` | Enviado | Atualização do README e STATUS com referências de segurança multiempresa. |
 | 2026-05-26 | `7601655` | Enviado | Versionamento do MVP ERP standalone como referência do projeto integrado. |
-| 2026-05-26 | A gerar | Em andamento | Atualização do histórico após versionamento do MVP ERP standalone. |
+| 2026-05-26 | `ad9eff3` | Enviado | Atualização do histórico após versionamento do MVP ERP standalone. |
+| 2026-05-26 | A gerar | Em andamento | Refatoração do schema Prisma e seed para multiempresa com campos em PT-BR. |
 
 ## Próximos passos imediatos
 
