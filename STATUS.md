@@ -25,6 +25,8 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 | Modelar entidades centrais ERP + ecommerce | Concluído | Usuários, clientes, produtos, estoque, pedidos, orçamentos, OS, compras, financeiro e fiscal. |
 | Criar seed inicial | Concluído | Admin, categoria, marca, produto, depósito, estoque e cliente B2B. |
 | Criar telas iniciais `/`, `/loja`, `/erp` | Concluído | Shell inicial para validar direção visual e rotas. |
+| Criar guia de design system para devs | Concluído | `DESIGN_SYSTEM.md` criado com tokens, padrões ERP/loja e regras de implementação. |
+| Padronizar tokens CSS globais | Concluído | `globals.css` atualizado com tokens `--jr-*` e aliases `--erp-*`. |
 | Criar `.env.example`, `.gitignore` e README | Concluído | Documentação inicial incluída. |
 | Inicializar Git local e subir GitHub | Concluído | Repositório privado criado em `valleteclab/jr-brasil-integrado`. |
 | Instalar dependências e validar build local | Pendente | Requer `npm install`. |
@@ -97,7 +99,8 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 | --- | --- | --- | --- |
 | 2026-05-26 | `36ca124` | Enviado | Base inicial integrada: Next.js, Prisma, páginas iniciais, README e seed. |
 | 2026-05-26 | `d844cac` | Enviado | Adição deste documento de status do desenvolvimento. |
-| 2026-05-26 | A gerar | Em andamento | Atualização do histórico com hash real do commit de status. |
+| 2026-05-26 | `da59141` | Enviado | Atualização do histórico com hash real do commit de status. |
+| 2026-05-26 | A gerar | Em andamento | Criação do design system e padronização inicial de tokens CSS. |
 
 ## Próximos passos imediatos
 
@@ -106,6 +109,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 3. Rodar `npm run prisma:generate`.
 4. Criar migration inicial com `npm run prisma:migrate`.
 5. Implementar Prisma client e primeiras APIs de produtos/clientes.
+6. Extrair componentes base seguindo `DESIGN_SYSTEM.md`.
 
 ## Regras de manutenção deste arquivo
 
