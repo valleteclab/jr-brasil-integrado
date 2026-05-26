@@ -100,7 +100,8 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 | 2026-05-26 | `36ca124` | Enviado | Base inicial integrada: Next.js, Prisma, páginas iniciais, README e seed. |
 | 2026-05-26 | `d844cac` | Enviado | Adição deste documento de status do desenvolvimento. |
 | 2026-05-26 | `da59141` | Enviado | Atualização do histórico com hash real do commit de status. |
-| 2026-05-26 | A gerar | Em andamento | Criação do design system e padronização inicial de tokens CSS. |
+| 2026-05-26 | `ef9a4a5` | Enviado | Criação do design system e padronização inicial de tokens CSS. |
+| 2026-05-26 | A gerar | Em andamento | Extração dos primeiros componentes base compartilhados. |
 
 ## Próximos passos imediatos
 

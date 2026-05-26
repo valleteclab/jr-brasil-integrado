@@ -1,4 +1,5 @@
-import Link from "next/link";
+import { Button } from "@/components/shared/Button";
+import { Card } from "@/components/shared/Card";
 
 const pillars = [
   "Banco único para ERP e ecommerce",
@@ -18,8 +19,8 @@ export default function HomePage() {
             Base inicial da Fase 0 para transformar os protótipos standalone em um sistema real com módulos compartilhados, banco único e evolução por fases.
           </p>
           <div className="actions">
-            <Link className="button primary" href="/loja">Abrir ecommerce B2B</Link>
-            <Link className="button dark" href="/erp">Abrir ERP</Link>
+            <Button href="/loja">Abrir ecommerce B2B</Button>
+            <Button href="/erp" variant="dark">Abrir ERP</Button>
           </div>
         </div>
         <div className="hero-card">
@@ -31,7 +32,7 @@ export default function HomePage() {
       </section>
       <section className="grid four">
         {pillars.map((pillar) => (
-          <article className="card" key={pillar}>{pillar}</article>
+          <Card key={pillar}>{pillar}</Card>
         ))}
       </section>
     </main>
