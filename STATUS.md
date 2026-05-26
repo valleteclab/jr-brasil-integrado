@@ -102,7 +102,9 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 | 2026-05-26 | `da59141` | Enviado | Atualização do histórico com hash real do commit de status. |
 | 2026-05-26 | `ef9a4a5` | Enviado | Criação do design system e padronização inicial de tokens CSS. |
 | 2026-05-26 | `042a00b` | Enviado | Extração dos primeiros componentes base compartilhados e refatoração inicial da home. |
-| 2026-05-26 | A gerar | Em andamento | Continuação da Fase 1 com base de dados/API e integração inicial. |
+| 2026-05-26 | `9dfca61` | Enviado | Atualização do status após commit de componentes compartilhados. |
+| 2026-05-26 | `621c519` | Enviado | Criação do manual operacional para agentes de IA, templates e atualização do README. |
+| 2026-05-26 | A gerar | Em andamento | Atualização do histórico após documentação de engenharia para IA. |
 
 ## Próximos passos imediatos
 
