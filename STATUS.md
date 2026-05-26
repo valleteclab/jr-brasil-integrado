@@ -108,7 +108,8 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 | 2026-05-26 | `b9d8134` | Enviado | Atualização do histórico após documentação de engenharia para IA. |
 | 2026-05-26 | `3326612` | Enviado | Criação das regras de segurança, multiempresa e isolamento de dados. |
 | 2026-05-26 | `28201b0` | Enviado | Atualização do README e STATUS com referências de segurança multiempresa. |
-| 2026-05-26 | A gerar | Em andamento | Versionamento do MVP ERP standalone como referência do projeto integrado. |
+| 2026-05-26 | `7601655` | Enviado | Versionamento do MVP ERP standalone como referência do projeto integrado. |
+| 2026-05-26 | A gerar | Em andamento | Atualização do histórico após versionamento do MVP ERP standalone. |
 
 ## Próximos passos imediatos
 
