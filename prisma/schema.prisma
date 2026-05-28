@@ -1175,26 +1175,133 @@ model ContaReceber {
 }
 
 model NotaFiscal {
-  id             String           @id @default(cuid())
-  tenantId       String
-  empresaId      String
-  empresa        Empresa          @relation(fields: [empresaId], references: [id])
-  numero         String?
-  serie          String?
-  chaveAcesso    String?
-  status         StatusNotaFiscal @default(RASCUNHO)
-  clienteId      String?
-  pedidoVendaId  String?
-  ordemServicoId String?
-  pedidoVenda    PedidoVenda?     @relation(fields: [pedidoVendaId], references: [id])
-  ordemServico   OrdemServico?    @relation(fields: [ordemServicoId], references: [id])
-  total          Decimal          @default(0) @db.Decimal(14, 2)
-  xmlUrl         String?
-  danfeUrl       String?
-  emitidaEm      DateTime?
-  criadoEm       DateTime         @default(now())
-  atualizadoEm   DateTime         @updatedAt
+  id               String                @id @default(cuid())
+  tenantId         String
+  empresaId        String
+  empresa          Empresa               @relation(fields: [empresaId], references: [id])
+  numero           String?
+  serie            String?
+  chaveAcesso      String?
+  status           StatusNotaFiscal      @default(RASCUNHO)
+  // Destinatário
+  clienteId        String?
+  // Cabeçalho da NF-e
+  naturezaOperacao String?
+  tipoNF           Int                   @default(1) // 0=entrada 1=saída
+  finalidade       Int                   @default(1) // 1=normal 2=complementar 3=ajuste 4=devolução
+  consumidorFinal  Int                   @default(0) // 0=normal 1=consumidor final
+  presencaComprador Int                  @default(1) // 0=nao se aplica 1=presencial 2=internet 9=outros
+  dataEmissao      DateTime?
+  dataSaida        DateTime?
+  // Transporte
+  modalidadeFrete  Int                   @default(9) // 0=emitente 1=destinatário 2=terceiros 9=sem frete
+  // Totais da NF-e (ICMSTot)
+  valorProdutos    Decimal?              @db.Decimal(14, 2)
+  valorDesconto    Decimal?              @db.Decimal(14, 2)
+  valorFrete       Decimal?              @db.Decimal(14, 2)
+  valorSeguro      Decimal?              @db.Decimal(14, 2)
+  valorOutras      Decimal?              @db.Decimal(14, 2)
+  valorBCICMS      Decimal?              @db.Decimal(14, 2)
+  valorICMS        Decimal?              @db.Decimal(14, 2)
+  valorBCICMSST    Decimal?              @db.Decimal(14, 2)
+  valorICMSST      Decimal?              @db.Decimal(14, 2)
+  valorFCP         Decimal?              @db.Decimal(14, 2)
+  valorIPI         Decimal?              @db.Decimal(14, 2)
+  valorPIS         Decimal?              @db.Decimal(14, 2)
+  valorCOFINS      Decimal?              @db.Decimal(14, 2)
+  valorTributos    Decimal?              @db.Decimal(14, 2)
+  total            Decimal               @default(0) @db.Decimal(14, 2)
+  // Informações complementares
+  infAdic          String?
+  infCpl           String?
+  // Links para documentos
+  xmlUrl           String?
+  danfeUrl         String?
+  motivoRejeicao   String?
+  // Referências externas
+  pedidoVendaId    String?
+  ordemServicoId   String?
+  pedidoVenda      PedidoVenda?          @relation(fields: [pedidoVendaId], references: [id])
+  ordemServico     OrdemServico?         @relation(fields: [ordemServicoId], references: [id])
+  // Relações
+  itens            NotaFiscalItem[]
+  pagamentos       NotaFiscalPagamento[]
+  emitidaEm        DateTime?
+  criadoEm         DateTime              @default(now())
+  atualizadoEm     DateTime              @updatedAt
 
   @@unique([tenantId, empresaId, chaveAcesso])
   @@index([tenantId, empresaId, status])
+  @@index([tenantId, empresaId, dataEmissao])
+}
+
+model NotaFiscalItem {
+  id           String     @id @default(cuid())
+  tenantId     String
+  notaFiscalId String
+  notaFiscal   NotaFiscal @relation(fields: [notaFiscalId], references: [id], onDelete: Cascade)
+  produtoId    String?
+  seq          Int
+  // Identificação do produto/serviço
+  descricao    String
+  ncm          String?
+  cest         String?
+  cfop         String
+  unidade      String
+  gtin         String?
+  origem       String?    // 0-8 per NF-e schema
+  // Quantidades e valores
+  quantidade   Decimal    @db.Decimal(12, 4)
+  valorUnitario Decimal   @db.Decimal(14, 4)
+  valorBruto   Decimal    @db.Decimal(14, 2)
+  valorDesconto Decimal   @default(0) @db.Decimal(14, 2)
+  valorFrete   Decimal    @default(0) @db.Decimal(14, 2)
+  // ICMS
+  icmsCST      String?
+  icmsCSOSN    String?
+  icmsBC       Decimal?   @db.Decimal(14, 2)
+  icmsAliquota Decimal?   @db.Decimal(7, 4)
+  icmsValor    Decimal?   @db.Decimal(14, 2)
+  // ICMS-ST
+  icmsSTBC     Decimal?   @db.Decimal(14, 2)
+  icmsSTMVA    Decimal?   @db.Decimal(7, 4)
+  icmsSTAliquota Decimal? @db.Decimal(7, 4)
+  icmsSTValor  Decimal?   @db.Decimal(14, 2)
+  // FCP
+  fcpAliquota  Decimal?   @db.Decimal(7, 4)
+  fcpValor     Decimal?   @db.Decimal(14, 2)
+  // IPI
+  ipiCST       String?
+  ipiCodEnq    String?
+  ipiAliquota  Decimal?   @db.Decimal(7, 4)
+  ipiValor     Decimal?   @db.Decimal(14, 2)
+  // PIS
+  pisCST       String?
+  pisBC        Decimal?   @db.Decimal(14, 2)
+  pisAliquota  Decimal?   @db.Decimal(7, 4)
+  pisValor     Decimal?   @db.Decimal(14, 2)
+  // COFINS
+  cofinsCST    String?
+  cofinsBC     Decimal?   @db.Decimal(14, 2)
+  cofinsAliquota Decimal? @db.Decimal(7, 4)
+  cofinsValor  Decimal?   @db.Decimal(14, 2)
+  // Total tributos do item (vTotTrib)
+  totalTributos Decimal?  @db.Decimal(14, 2)
+  criadoEm     DateTime   @default(now())
+
+  @@index([notaFiscalId])
+  @@index([tenantId])
+}
+
+model NotaFiscalPagamento {
+  id           String     @id @default(cuid())
+  notaFiscalId String
+  notaFiscal   NotaFiscal @relation(fields: [notaFiscalId], references: [id], onDelete: Cascade)
+  forma        String     // 01=dinheiro 02=cheque 03=cartao credito 04=cartao debito 05=credito loja 10=vale alimentacao 11=vale refeicao 12=vale presente 13=vale combustivel 15=boleto 90=sem pagamento 99=outros
+  valor        Decimal    @db.Decimal(14, 2)
+  bandeira     String?    // 01=visa 02=mastercard 03=american express 04=sorocred 99=outros
+  cnpjCred     String?
+  tpIntegr     String?    // 1=tef presencial 2=pagamento nao presencial
+
+  @@index([notaFiscalId])
 }

@@ -1809,3 +1809,266 @@ p {
     width: 100%;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   NF-e Emission Form
+═══════════════════════════════════════════════════════════════════ */
+
+.nfe-form {
+  background: var(--erp-card);
+  border: 1px solid var(--erp-line);
+  border-radius: var(--erp-radius);
+  overflow: hidden;
+}
+
+/* Tab bar */
+.nfe-tabs {
+  display: flex;
+  background: var(--erp-bg);
+  border-bottom: 1px solid var(--erp-line);
+  overflow-x: auto;
+}
+
+.nfe-tab {
+  flex: none;
+  padding: .6rem 1.25rem;
+  background: none;
+  border: none;
+  border-bottom: 3px solid transparent;
+  font-size: .85rem;
+  font-weight: 500;
+  color: var(--erp-slate);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color .15s, border-color .15s;
+}
+
+.nfe-tab:hover { color: var(--erp-ink); }
+
+.nfe-tab.active {
+  color: var(--erp-ink);
+  border-bottom-color: var(--erp-yellow);
+  background: var(--erp-card);
+}
+
+/* Section */
+.nfe-section {
+  padding: 1.5rem;
+}
+
+.nfe-section h3 {
+  font-size: .8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--erp-slate);
+  margin: 1.5rem 0 .75rem;
+}
+
+.nfe-section h3:first-child { margin-top: 0; }
+
+/* Item cards */
+.nfe-item-card {
+  border: 1px solid var(--erp-line);
+  border-radius: var(--erp-radius-sm);
+  margin-bottom: .75rem;
+  overflow: hidden;
+}
+
+.nfe-item-card.open { border-color: var(--erp-yellow); }
+
+.nfe-item-header {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  padding: .6rem .75rem;
+  background: var(--erp-bg);
+  cursor: pointer;
+  font-size: .85rem;
+}
+
+.nfe-item-seq {
+  min-width: 1.5rem;
+  font-weight: 700;
+  color: var(--erp-slate);
+}
+
+.nfe-item-desc { flex: 1; font-weight: 500; }
+.nfe-item-qtd  { color: var(--erp-slate); font-size: .8rem; }
+.nfe-item-total { font-weight: 700; min-width: 6rem; text-align: right; }
+.nfe-item-tax   { color: var(--erp-slate); font-size: .78rem; min-width: 9rem; text-align: right; }
+
+.nfe-item-toggle,
+.nfe-item-remove {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: .85rem;
+  color: var(--erp-slate);
+  padding: .2rem .4rem;
+  border-radius: 4px;
+}
+
+.nfe-item-toggle:hover { background: var(--erp-line); }
+.nfe-item-remove:hover { background: #fee2e2; color: var(--erp-danger); }
+
+.nfe-item-body {
+  padding: 1rem;
+  border-top: 1px solid var(--erp-line);
+  background: var(--erp-card);
+}
+
+/* Subtotal inside item */
+.nfe-subtotal {
+  display: flex;
+  flex-direction: column;
+  gap: .15rem;
+  padding-top: 1.2rem;
+}
+.nfe-subtotal span { font-size: .75rem; color: var(--erp-slate); }
+.nfe-subtotal strong { font-size: 1rem; }
+.nfe-subtotal small { font-size: .75rem; color: var(--erp-mute); }
+
+/* Tax summary inside item */
+.nfe-tax-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem 1.25rem;
+  padding: .75rem 1rem;
+  background: var(--erp-bg);
+  border-radius: var(--erp-radius-sm);
+  margin-top: 1rem;
+  font-size: .82rem;
+}
+.nfe-tax-summary strong { margin-left: auto; font-size: .9rem; }
+
+/* Items totals bar */
+.nfe-totals-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem 1.5rem;
+  padding: .85rem 1rem;
+  background: var(--erp-bg);
+  border: 1px solid var(--erp-line);
+  border-radius: var(--erp-radius-sm);
+  font-size: .85rem;
+  margin-top: 1rem;
+}
+.nfe-totals-bar strong { margin-left: auto; font-weight: 700; }
+
+/* Payment rows */
+.nfe-pag-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 1rem;
+  margin-bottom: .75rem;
+  padding-bottom: .75rem;
+  border-bottom: 1px solid var(--erp-line);
+}
+.nfe-pag-row .field { flex: 1; margin-bottom: 0; }
+.btn-remove-pag {
+  background: none;
+  border: 1px solid var(--erp-line);
+  border-radius: 50%;
+  width: 2rem;
+  height: 2rem;
+  cursor: pointer;
+  color: var(--erp-slate);
+  font-size: .85rem;
+  flex: none;
+  align-self: flex-end;
+}
+.btn-remove-pag:hover { background: #fee2e2; border-color: var(--erp-danger); color: var(--erp-danger); }
+
+.nfe-pag-totals {
+  display: flex;
+  gap: 1.5rem;
+  font-size: .9rem;
+  padding: .75rem 0;
+}
+.nfe-pag-totals .warn { color: var(--erp-warn); }
+
+/* Review grid */
+.nfe-review-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+.nfe-review-block {
+  display: flex;
+  flex-direction: column;
+  gap: .2rem;
+  padding: .75rem 1rem;
+  background: var(--erp-bg);
+  border-radius: var(--erp-radius-sm);
+  font-size: .85rem;
+}
+.nfe-review-block strong { font-size: .75rem; text-transform: uppercase; color: var(--erp-slate); }
+
+/* Final totals */
+.nfe-totals-final {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: .35rem;
+  margin-top: 1.25rem;
+  font-size: .88rem;
+}
+.nfe-totals-final div {
+  display: flex;
+  gap: 1.5rem;
+  align-items: baseline;
+}
+.nfe-totals-final span { color: var(--erp-slate); min-width: 14rem; text-align: right; }
+.nfe-totals-final strong { min-width: 7rem; text-align: right; font-weight: 600; }
+.nfe-total-nf { border-top: 2px solid var(--erp-ink); padding-top: .5rem; margin-top: .25rem; }
+.nfe-total-nf span { font-weight: 700; color: var(--erp-ink); }
+.nfe-total-nf strong { font-size: 1.1rem; font-weight: 800; }
+
+/* Step footer */
+.nfe-step-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: .75rem;
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--erp-line);
+}
+
+/* System warning */
+.system-warning {
+  background: #fef3c7;
+  border: 1px solid #fbbf24;
+  border-radius: var(--erp-radius-sm);
+  padding: .5rem .75rem;
+  font-size: .82rem;
+  color: #92400e;
+  margin-top: .5rem;
+}
+
+/* Row actions */
+.row-actions {
+  display: flex;
+  gap: .5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* KPI card in listing */
+.kpi-card {
+  background: var(--erp-card);
+  border: 1px solid var(--erp-line);
+  border-radius: var(--erp-radius);
+  padding: 1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: .35rem;
+}
+.kpi-card .kpi-label { font-size: .78rem; text-transform: uppercase; color: var(--erp-slate); letter-spacing: .05em; }
+.kpi-card .kpi-value { font-size: 1.6rem; font-weight: 800; color: var(--erp-ink); }
+.kpi-card .kpi-value.success { color: var(--erp-success); }
+.kpi-card .kpi-value.danger { color: var(--erp-danger); }
+
+/* text-xs helper */
+.text-xs { font-size: .72rem; }
