@@ -1307,6 +1307,35 @@ p {
   margin-top: 6px;
 }
 
+.form-section-divider {
+  background: var(--erp-bg);
+  border-radius: 4px;
+  color: var(--erp-slate);
+  font-size: 11px;
+  font-weight: 700;
+  grid-column: 1 / -1;
+  letter-spacing: .06em;
+  margin-top: 4px;
+  padding: 5px 8px;
+  text-transform: uppercase;
+}
+
+.form-section-title {
+  color: var(--erp-ink);
+  font-size: 12px;
+  font-weight: 700;
+  grid-column: 1 / -1;
+  margin-top: 8px;
+}
+
+.form-section-hint {
+  color: var(--erp-slate);
+  font-size: 11px;
+  grid-column: 1 / -1;
+  line-height: 1.5;
+  margin-bottom: 2px;
+}
+
 .erp-form textarea {
   border: 1px solid var(--erp-line);
   border-radius: 5px;

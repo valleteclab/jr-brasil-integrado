@@ -34,6 +34,21 @@ function numeric(payload: TaxRulePayload, key: string) {
   return Number(value.replace(/[^\d,.-]/g, "").replace(/\./g, "").replace(",", ".")) || null;
 }
 
+function intOrNull(payload: TaxRulePayload, key: string): number | null {
+  const value = payload[key];
+
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.round(value);
+  }
+
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = parseInt(value.trim(), 10);
+    return Number.isNaN(parsed) ? null : parsed;
+  }
+
+  return null;
+}
+
 function onlyDigits(value: string) {
   return value.replace(/\D/g, "");
 }
@@ -103,6 +118,14 @@ function validatePayload(payload: TaxRulePayload) {
     reducaoBase: numeric(payload, "baseReduction"),
     diferimento: numeric(payload, "deferral"),
     creditoPresumido: numeric(payload, "presumedCredit"),
+    // ICMS-ST e FCP
+    modBC: intOrNull(payload, "modBC"),
+    mva: numeric(payload, "mva"),
+    reducaoBaseST: numeric(payload, "baseReductionST"),
+    aliquotaST: numeric(payload, "rateST"),
+    aliquotaFCP: numeric(payload, "rateFCP"),
+    aliquotaFCPST: numeric(payload, "rateFCPST"),
+    observacoes: text(payload, "observacoes") || null,
     vigenciaInicio: validFrom,
     vigenciaFim: validUntil,
     ativo: bool(payload, "active", true)
@@ -212,18 +235,30 @@ export async function suggestTaxRuleWithAi(scope: TenantScope, payload: TaxRuleP
     {
       role: "system",
       content: [
-        "Você é um assistente fiscal brasileiro para ERP.",
-        "Ajude a preencher uma regra tributária, mas não invente certeza legal.",
+        "Você é um assistente fiscal brasileiro especialista em tributação de mercadorias e serviços.",
+        "Ajude a preencher uma regra tributária para uso em ERP, mas não invente certeza legal.",
         "Responda somente JSON válido, sem markdown.",
-        "Campos esperados: name, tax, operation, originState, destinationState, companyRegime, ncm, cest, cfop, cst, csosn, taxClass, benefitCode, rate, baseReduction, deferral, presumedCredit, validFrom, validUntil, active, notes.",
-        "Use strings vazias quando não tiver segurança. active deve ser boolean."
+        "Campos esperados:",
+        "name (string), tax (ICMS|IPI|PIS|COFINS|ISS|CBS|IBS|IS), operation (COMPRA|VENDA|DEVOLUCAO_COMPRA|DEVOLUCAO_VENDA|TRANSFERENCIA|REMESSA|RETORNO),",
+        "originState (UF 2 letras), destinationState (UF 2 letras), companyRegime (Simples Nacional|Lucro Presumido|Lucro Real),",
+        "ncm (8 dígitos sem pontos), cest (7 dígitos sem pontos), cfop (4 dígitos),",
+        "cst (CST para regime normal, ex: 00, 10, 20, 40, 60), csosn (CSOSN para Simples, ex: 102, 400, 500),",
+        "taxClass (classificação tributária), benefitCode (código benefício fiscal),",
+        "rate (alíquota ICMS em %, número decimal), baseReduction (redução BC em %),",
+        "deferral (diferimento em %), presumedCredit (crédito presumido em %),",
+        "modBC (modalidade BC ICMS: 0=Margem 1=Pauta 2=Preço Tabelado 3=Preço Efetivo),",
+        "mva (MVA para ICMS-ST em %), baseReductionST (redução BC ST em %), rateST (alíquota ST em %),",
+        "rateFCP (alíquota FCP em %), rateFCPST (alíquota FCP-ST em %),",
+        "observacoes (notas importantes sobre a regra),",
+        "validFrom (YYYY-MM-DD), validUntil (YYYY-MM-DD ou vazio), active (boolean).",
+        "Use strings vazias para campos sem certeza. Para campos numéricos sem certeza use 0."
       ].join(" ")
     },
     {
       role: "user",
       content: JSON.stringify(payload)
     }
-  ], { maxTokens: 900, temperature: 0.1 });
+  ], { maxTokens: 1200, temperature: 0.1 });
 
   const suggestion = extractJson(content);
 
@@ -234,10 +269,23 @@ export async function suggestTaxRuleWithAi(scope: TenantScope, payload: TaxRuleP
 }
 
 export async function listTaxRulesForApi(scope: TenantScope) {
+  const now = new Date();
+
   const rules = await prisma.regraTributaria.findMany({
     where: {
       tenantId: scope.tenantId,
-      empresaId: scope.empresaId
+      OR: [
+        { empresaId: scope.empresaId },
+        { empresaId: null }
+      ],
+      AND: [
+        {
+          OR: [
+            { vigenciaFim: null },
+            { vigenciaFim: { gte: now } }
+          ]
+        }
+      ]
     },
     orderBy: [{ ativo: "desc" }, { nome: "asc" }]
   });

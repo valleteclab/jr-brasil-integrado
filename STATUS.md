@@ -195,3 +195,37 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Assistente fiscal com OpenRouter sugere campos estruturados da regra tributaria para revisao humana.
 - Menu do ERP atualizado com o item `Regras tributarias` em Financeiro & Fiscal.
 - Validacao executada: `npm run lint`, `npx tsc --noEmit`, `npm run build`; `/erp/regras-tributarias` e `/erp/produtos` responderam HTTP 200.
+
+## Atualizacao operacional - 2026-05-28 - ficha fiscal completa para API de emissao
+
+Analise profunda realizada como analista tributarista senior. Problemas identificados e corrigidos:
+
+### Schema (migration 20260528000000_add_complete_fiscal_fields)
+- `ProdutoFiscal` ganhou 22 novos campos: CST ICMS, CSOSN, modalidade BC, aliquota ICMS, reducao BC, ICMS-ST (ModBC, MVA, reducao BC ST, aliquota ST), FCP, FCP-ST, CST/aliquota IPI + codigo enquadramento, CST/aliquota PIS, CST/aliquota COFINS, aliquota/item lista ISS, indicador escala relevante (NF-e 4.0).
+- `RegraTributaria` ganhou 7 novos campos: modalidade BC ICMS, MVA ST, reducao BC ST, aliquota ST, aliquota FCP, aliquota FCP-ST, observacoes.
+- `EntradaFiscal` ganhou 11 novos campos de totais fiscais: vBC ICMS, vICMS, vBC ST, vICMS ST, vIPI, vPIS, vCOFINS, vFCP, vFCP-ST, vTotTrib, modalidade frete.
+- `EntradaFiscalItemImposto` ganhou 8 campos: base ST, aliquota ST, valor ST, MVA, valor FCP, aliquota FCP, valor FCP-ST, aliquota FCP-ST.
+
+### Parser XML NF-e
+- Agora extrai ICMS-ST: vBCST, pMVAST, pICMSST, vICMSST a partir do mesmo no ICMS (para CST 10, 30, 70, 90).
+- Extrai FCP por item: pFCP, vFCP, pFCPST, vFCPST.
+- Extrai totais do ICMSTot: vBC, vICMS, vBCST, vICMSST, vIPI, vPIS, vCOFINS, vFCP, vFCPST, vTotTrib.
+- Extrai modalidade frete de transp.modFrete.
+
+### Regras tributarias
+- `validatePayload` e `createTaxRule/updateTaxRule` passam a persistir MVA, aliquota ST, FCP e modalidade BC.
+- `listTaxRulesForApi` e `listTaxRules` passam a filtrar regras com vigenciaFim expirada (bug critico corrigido).
+- Prompt do assistente de IA ampliado para incluir todos os novos campos.
+- Formulario da tela reorganizado: secao ICMS, secao ICMS-ST (condicional) e secao FCP. Campos ICMS-ST e FCP aparecem apenas quando tributo e ICMS.
+
+### Produto fiscal
+- `product-dto.ts`: payload do produto agora captura todos os campos fiscais por tributo.
+- `product-use-cases.ts (upsertProductFiscal)`: persiste todos os 22 novos campos de ProdutoFiscal.
+- `listErpProductSummaries`: retorna todos os campos fiscais do produto carregados do banco.
+- `ProductCrud.tsx`: aba Fiscal reorganizada com secoes por tributo (ICMS, ICMS-ST, FCP, IPI, PIS/COFINS).
+
+### Entrada fiscal
+- `importNfeXml` agora salva totais fiscais e modalidade frete em EntradaFiscal.
+- `importNfeXml` salva ICMS-ST e FCP por item em EntradaFiscalItemImposto.
+
+- Validacao executada: `npm run lint`, `npx tsc --noEmit`, `npm run build` — todos sem erros.

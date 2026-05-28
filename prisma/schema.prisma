@@ -522,6 +522,37 @@ model ProdutoFiscal {
   origem                String?
   exTipi                String?
   codigoBeneficioFiscal String?
+  // ICMS - Regime Normal (CST 00–90)
+  icmsCST               String?
+  // ICMS - Simples Nacional (CSOSN 101–900)
+  icmsCSOSN             String?
+  // Modalidade de determinação da BC do ICMS: 0-Margem, 1-Pauta, 2-Preço Tabelado, 3-Preço Efetivo
+  icmsModBC             Int?
+  icmsAliquota          Decimal? @db.Decimal(8, 4)
+  icmsReducaoBC         Decimal? @db.Decimal(8, 4)
+  // ICMS-ST (Substituição Tributária) — CST 10, 30, 70, 90 / CSOSN 201, 202, 203, 900
+  icmsSTModBC           Int?
+  icmsSTMVA             Decimal? @db.Decimal(8, 4)
+  icmsSTReducaoBC       Decimal? @db.Decimal(8, 4)
+  icmsSTAliquota        Decimal? @db.Decimal(8, 4)
+  // FCP — Fundo de Combate à Pobreza
+  fcpAliquota           Decimal? @db.Decimal(8, 4)
+  fcpSTAliquota         Decimal? @db.Decimal(8, 4)
+  // IPI
+  ipiCST                String?
+  ipiCodEnq             String?
+  ipiAliquota           Decimal? @db.Decimal(8, 4)
+  // PIS
+  pisCST                String?
+  pisAliquota           Decimal? @db.Decimal(8, 4)
+  // COFINS
+  cofinsCST             String?
+  cofinsAliquota        Decimal? @db.Decimal(8, 4)
+  // ISS — Imposto sobre Serviços
+  issAliquota           Decimal? @db.Decimal(8, 4)
+  issItemListServico    String?
+  // NF-e 4.0 — obrigatório para bebidas, cigarros, veículos e outros
+  indicadorEscalaRelevante String?
   observacoes           String?
   criadoEm              DateTime @default(now())
   atualizadoEm          DateTime @updatedAt
@@ -937,6 +968,19 @@ model EntradaFiscal {
   valorDesconto   Decimal             @default(0) @db.Decimal(14, 2)
   outrasDespesas  Decimal             @default(0) @db.Decimal(14, 2)
   observacoes     String?
+  // Totais fiscais da NF-e — essenciais para SPED EFD e conciliação contábil
+  valorBCICMS     Decimal?            @db.Decimal(14, 2)
+  valorICMS       Decimal?            @db.Decimal(14, 2)
+  valorBCICMSST   Decimal?            @db.Decimal(14, 2)
+  valorICMSST     Decimal?            @db.Decimal(14, 2)
+  valorIPI        Decimal?            @db.Decimal(14, 2)
+  valorPIS        Decimal?            @db.Decimal(14, 2)
+  valorCOFINS     Decimal?            @db.Decimal(14, 2)
+  valorFCP        Decimal?            @db.Decimal(14, 2)
+  valorFCPST      Decimal?            @db.Decimal(14, 2)
+  valorTributos   Decimal?            @db.Decimal(14, 2)
+  // Modal frete: 0-CIF, 1-FOB, 2-Terceiros, 3-Próprio Remetente, 4-Próprio Destinatário, 9-Sem frete
+  modalidadeFrete Int?
   itens           EntradaFiscalItem[]
   parcelas        EntradaFiscalParcela[]
   contasPagar     ContaPagar[]
@@ -1018,6 +1062,16 @@ model EntradaFiscalItemImposto {
   aliquota            Decimal?          @db.Decimal(8, 4)
   valor               Decimal?          @db.Decimal(14, 2)
   recuperavel         Boolean           @default(false)
+  // ICMS-ST — preenchido quando CST ICMS é 10, 30, 70 ou 90
+  baseST              Decimal?          @db.Decimal(14, 2)
+  aliquotaST          Decimal?          @db.Decimal(8, 4)
+  valorST             Decimal?          @db.Decimal(14, 2)
+  mva                 Decimal?          @db.Decimal(8, 4)
+  // FCP — Fundo de Combate à Pobreza
+  valorFCP            Decimal?          @db.Decimal(14, 2)
+  aliquotaFCP         Decimal?          @db.Decimal(8, 4)
+  valorFCPST          Decimal?          @db.Decimal(14, 2)
+  aliquotaFCPST       Decimal?          @db.Decimal(8, 4)
   dadosOriginais      Json?
 
   @@index([tenantId, empresaId, tributo])
@@ -1047,6 +1101,16 @@ model RegraTributaria {
   reducaoBase           Decimal?           @db.Decimal(8, 4)
   diferimento           Decimal?           @db.Decimal(8, 4)
   creditoPresumido      Decimal?           @db.Decimal(8, 4)
+  // Modalidade BC ICMS: 0-Margem, 1-Pauta, 2-Preço Tabelado, 3-Preço Efetivo
+  modBC                 Int?
+  // ICMS-ST (Substituição Tributária)
+  mva                   Decimal?           @db.Decimal(8, 4)
+  reducaoBaseST         Decimal?           @db.Decimal(8, 4)
+  aliquotaST            Decimal?           @db.Decimal(8, 4)
+  // FCP — Fundo de Combate à Pobreza
+  aliquotaFCP           Decimal?           @db.Decimal(8, 4)
+  aliquotaFCPST         Decimal?           @db.Decimal(8, 4)
+  observacoes           String?
   formula               Json?
   vigenciaInicio        DateTime
   vigenciaFim           DateTime?

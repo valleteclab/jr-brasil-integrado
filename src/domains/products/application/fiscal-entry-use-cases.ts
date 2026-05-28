@@ -446,7 +446,19 @@ export async function importNfeXml(scope: TenantScope, xmlText: string) {
         valorFrete: parsed.freightValue,
         valorSeguro: parsed.insuranceValue,
         valorDesconto: parsed.discountValue,
-        outrasDespesas: parsed.otherExpenses
+        outrasDespesas: parsed.otherExpenses,
+        modalidadeFrete: parsed.freightModal ?? null,
+        // Totais fiscais da NF-e — essenciais para SPED e conciliação
+        valorBCICMS: parsed.taxTotals.bcICMS || null,
+        valorICMS: parsed.taxTotals.icms || null,
+        valorBCICMSST: parsed.taxTotals.bcICMSST || null,
+        valorICMSST: parsed.taxTotals.icmsST || null,
+        valorIPI: parsed.taxTotals.ipi || null,
+        valorPIS: parsed.taxTotals.pis || null,
+        valorCOFINS: parsed.taxTotals.cofins || null,
+        valorFCP: parsed.taxTotals.fcp || null,
+        valorFCPST: parsed.taxTotals.fcpST || null,
+        valorTributos: parsed.taxTotals.tributos || null
       }
     });
 
@@ -490,6 +502,16 @@ export async function importNfeXml(scope: TenantScope, xmlText: string) {
             baseCalculo: tax.base,
             aliquota: tax.rate,
             valor: tax.value,
+            // ICMS-ST — extraído do mesmo nó ICMS quando CST é 10, 30, 70 ou 90
+            baseST: tax.baseST ?? null,
+            aliquotaST: tax.aliquotaST ?? null,
+            valorST: tax.valorST ?? null,
+            mva: tax.mva ?? null,
+            // FCP — Fundo de Combate à Pobreza
+            aliquotaFCP: tax.aliquotaFCP ?? null,
+            valorFCP: tax.valorFCP ?? null,
+            aliquotaFCPST: tax.aliquotaFCPST ?? null,
+            valorFCPST: tax.valorFCPST ?? null,
             dadosOriginais: tax.raw as Prisma.InputJsonValue
           }))
         });

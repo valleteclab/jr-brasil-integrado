@@ -135,22 +135,50 @@ async function upsertProductFiscal(tx: Prisma.TransactionClient, scope: TenantSc
     }
   }
 
+  const fiscalFields = {
+    ncm: input.ncm,
+    cest: input.cest || null,
+    origem: input.origin || null,
+    regraTributariaId: input.taxRuleId || null,
+    // ICMS
+    icmsCST: input.icmsCST || null,
+    icmsCSOSN: input.icmsCSOSN || null,
+    icmsModBC: input.icmsModBC ?? null,
+    icmsAliquota: input.icmsAliquota ?? null,
+    icmsReducaoBC: input.icmsReducaoBC ?? null,
+    // ICMS-ST
+    icmsSTModBC: input.icmsSTModBC ?? null,
+    icmsSTMVA: input.icmsSTMVA ?? null,
+    icmsSTReducaoBC: input.icmsSTReducaoBC ?? null,
+    icmsSTAliquota: input.icmsSTAliquota ?? null,
+    // FCP
+    fcpAliquota: input.fcpAliquota ?? null,
+    fcpSTAliquota: input.fcpSTAliquota ?? null,
+    // IPI
+    ipiCST: input.ipiCST || null,
+    ipiCodEnq: input.ipiCodEnq || null,
+    ipiAliquota: input.ipiAliquota ?? null,
+    // PIS
+    pisCST: input.pisCST || null,
+    pisAliquota: input.pisAliquota ?? null,
+    // COFINS
+    cofinsCST: input.cofinsCST || null,
+    cofinsAliquota: input.cofinsAliquota ?? null,
+    // ISS
+    issAliquota: input.issAliquota ?? null,
+    issItemListServico: input.issItemListServico || null,
+    // NF-e 4.0
+    indicadorEscalaRelevante: input.indicadorEscalaRelevante || null
+  };
+
   await tx.produtoFiscal.upsert({
     where: { produtoId: productId },
-    update: {
-      ncm: input.ncm,
-      cest: input.cest || null,
-      origem: input.origin || null,
-      regraTributariaId: input.taxRuleId || null
-    },
+    update: fiscalFields,
     create: {
       tenantId: scope.tenantId,
       empresaId: scope.empresaId,
       produtoId: productId,
-      ncm: input.ncm,
-      cest: input.cest || null,
-      origem: input.origin || null,
-      regraTributariaId: input.taxRuleId || null
+      ...fiscalFields
     }
   });
 }

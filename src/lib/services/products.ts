@@ -31,6 +31,7 @@ export type ErpProductSummary = {
   type?: string;
   shortDescription?: string;
   technicalDescription?: string;
+  // Fiscal básico
   ncm?: string;
   cest?: string;
   origin?: string;
@@ -38,6 +39,28 @@ export type ErpProductSummary = {
   cfopOutState?: string;
   taxRuleId?: string;
   taxRuleName?: string;
+  // ICMS
+  icmsCst?: string;
+  icmsCsosn?: string;
+  icmsRate?: string;
+  icmsReducaoBC?: string;
+  // ICMS-ST
+  icmsSTMVA?: string;
+  icmsSTAliquota?: string;
+  // FCP
+  fcpAliquota?: string;
+  fcpSTAliquota?: string;
+  // IPI
+  ipiCst?: string;
+  ipiCodEnq?: string;
+  ipiRate?: string;
+  // PIS
+  pisCst?: string;
+  pisRate?: string;
+  // COFINS
+  cofinsCst?: string;
+  cofinsRate?: string;
+  // Preços e estoque
   costValue?: string;
   lastCost?: string;
   averageCost?: string;
@@ -197,6 +220,13 @@ export async function listErpProductSummaries(): Promise<ErpProductSummary[]> {
       const mainBalance = product.saldosEstoque[0];
       const supplierLink = product.fornecedores[0];
 
+      const fiscal = product.fiscal;
+
+      function decRate(value: unknown) {
+        const n = Number(value);
+        return n ? String(n).replace(".", ",") : "";
+      }
+
       return {
         id: product.id,
         sku: product.sku,
@@ -214,13 +244,34 @@ export async function listErpProductSummaries(): Promise<ErpProductSummary[]> {
         type: product.tipo,
         shortDescription: product.descricaoComercial ?? product.nome,
         technicalDescription: product.descricao ?? "",
-        ncm: product.ncm ?? "",
-        cest: product.cest ?? "",
-        origin: product.origem ?? "",
+        ncm: product.ncm ?? fiscal?.ncm ?? "",
+        cest: product.cest ?? fiscal?.cest ?? "",
+        origin: product.origem ?? fiscal?.origem ?? "",
         cfopInState: product.cfop ?? "",
         cfopOutState: "",
-        taxRuleId: product.fiscal?.regraTributariaId ?? "",
-        taxRuleName: product.fiscal?.regraTributaria?.nome ?? "",
+        taxRuleId: fiscal?.regraTributariaId ?? "",
+        taxRuleName: fiscal?.regraTributaria?.nome ?? "",
+        // ICMS
+        icmsCst: fiscal?.icmsCST ?? "",
+        icmsCsosn: fiscal?.icmsCSOSN ?? "",
+        icmsRate: decRate(fiscal?.icmsAliquota),
+        icmsReducaoBC: decRate(fiscal?.icmsReducaoBC),
+        // ICMS-ST
+        icmsSTMVA: decRate(fiscal?.icmsSTMVA),
+        icmsSTAliquota: decRate(fiscal?.icmsSTAliquota),
+        // FCP
+        fcpAliquota: decRate(fiscal?.fcpAliquota),
+        fcpSTAliquota: decRate(fiscal?.fcpSTAliquota),
+        // IPI
+        ipiCst: fiscal?.ipiCST ?? "",
+        ipiCodEnq: fiscal?.ipiCodEnq ?? "",
+        ipiRate: decRate(fiscal?.ipiAliquota),
+        // PIS
+        pisCst: fiscal?.pisCST ?? "",
+        pisRate: decRate(fiscal?.pisAliquota),
+        // COFINS
+        cofinsCst: fiscal?.cofinsCST ?? "",
+        cofinsRate: decRate(fiscal?.cofinsAliquota),
         costValue: formatBrl(Number(product.custoMedio)),
         averageCost: formatBrl(Number(product.custoMedio)),
         lastCost: formatBrl(Number(product.ultimoCusto)),

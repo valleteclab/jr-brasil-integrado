@@ -21,6 +21,14 @@ export type TaxRuleSummary = {
   baseReduction: string;
   deferral: string;
   presumedCredit: string;
+  // ICMS-ST e FCP
+  modBC: string;
+  mva: string;
+  baseReductionST: string;
+  rateST: string;
+  rateFCP: string;
+  rateFCPST: string;
+  observacoes: string;
   validFrom: string;
   validUntil: string;
   active: boolean;
@@ -58,6 +66,13 @@ export function mapTaxRule(rule: RegraTributaria): TaxRuleSummary {
     baseReduction: decimalToInput(rule.reducaoBase),
     deferral: decimalToInput(rule.diferimento),
     presumedCredit: decimalToInput(rule.creditoPresumido),
+    modBC: rule.modBC !== null && rule.modBC !== undefined ? String(rule.modBC) : "",
+    mva: decimalToInput(rule.mva),
+    baseReductionST: decimalToInput(rule.reducaoBaseST),
+    rateST: decimalToInput(rule.aliquotaST),
+    rateFCP: decimalToInput(rule.aliquotaFCP),
+    rateFCPST: decimalToInput(rule.aliquotaFCPST),
+    observacoes: rule.observacoes ?? "",
     validFrom: dateToInput(rule.vigenciaInicio),
     validUntil: dateToInput(rule.vigenciaFim),
     active: rule.ativo
@@ -70,12 +85,23 @@ export async function listTaxRules(): Promise<TaxRuleSummary[]> {
   }
 
   const scope = await getDevelopmentTenantScope();
+  const now = new Date();
+
   const rules = await prisma.regraTributaria.findMany({
     where: {
       tenantId: scope.tenantId,
       OR: [
         { empresaId: scope.empresaId },
         { empresaId: null }
+      ],
+      // Não retorna regras com vigência encerrada
+      AND: [
+        {
+          OR: [
+            { vigenciaFim: null },
+            { vigenciaFim: { gte: now } }
+          ]
+        }
       ]
     },
     orderBy: [

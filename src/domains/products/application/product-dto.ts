@@ -15,12 +15,43 @@ export type ValidatedProductInput = {
   shortDescription?: string;
   technicalDescription?: string;
   storeDescription?: string;
+  // Fiscal básico
   ncm?: string;
   cest?: string;
   origin?: string;
   cfopInState?: string;
   cfopOutState?: string;
   taxRuleId?: string;
+  // ICMS
+  icmsCST?: string;
+  icmsCSOSN?: string;
+  icmsModBC?: number;
+  icmsAliquota?: number;
+  icmsReducaoBC?: number;
+  // ICMS-ST
+  icmsSTModBC?: number;
+  icmsSTMVA?: number;
+  icmsSTReducaoBC?: number;
+  icmsSTAliquota?: number;
+  // FCP
+  fcpAliquota?: number;
+  fcpSTAliquota?: number;
+  // IPI
+  ipiCST?: string;
+  ipiCodEnq?: string;
+  ipiAliquota?: number;
+  // PIS
+  pisCST?: string;
+  pisAliquota?: number;
+  // COFINS
+  cofinsCST?: string;
+  cofinsAliquota?: number;
+  // ISS
+  issAliquota?: number;
+  issItemListServico?: string;
+  // NF-e 4.0
+  indicadorEscalaRelevante?: string;
+  // Preços e estoque
   costValue: number;
   lastCost: number;
   salePrice: number;
@@ -61,6 +92,24 @@ export function numeric(value: unknown) {
   }
 
   return Number(value.replace(/[^\d,.-]/g, "").replace(/\./g, "").replace(",", ".")) || 0;
+}
+
+function numericOrUndefined(value: unknown): number | undefined {
+  const n = numeric(value);
+  return n !== 0 ? n : undefined;
+}
+
+function intOrUndefined(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.round(value);
+  }
+
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = parseInt(value.trim(), 10);
+    return Number.isNaN(parsed) ? undefined : parsed;
+  }
+
+  return undefined;
 }
 
 function productType(value: string): ValidatedProductInput["type"] {
@@ -143,6 +192,36 @@ export function validateProductPayload(payload: ProductPayload): ValidatedProduc
     cfopInState: text(payload, "cfopInState") || undefined,
     cfopOutState: text(payload, "cfopOutState") || undefined,
     taxRuleId: text(payload, "taxRuleId") || undefined,
+    // ICMS
+    icmsCST: text(payload, "icmsCst") || undefined,
+    icmsCSOSN: text(payload, "icmsCsosn") || undefined,
+    icmsModBC: intOrUndefined(payload.icmsModBC),
+    icmsAliquota: numericOrUndefined(payload.icmsRate),
+    icmsReducaoBC: numericOrUndefined(payload.icmsReducaoBC),
+    // ICMS-ST
+    icmsSTModBC: intOrUndefined(payload.icmsSTModBC),
+    icmsSTMVA: numericOrUndefined(payload.icmsSTMVA),
+    icmsSTReducaoBC: numericOrUndefined(payload.icmsSTReducaoBC),
+    icmsSTAliquota: numericOrUndefined(payload.icmsSTAliquota),
+    // FCP
+    fcpAliquota: numericOrUndefined(payload.fcpAliquota),
+    fcpSTAliquota: numericOrUndefined(payload.fcpSTAliquota),
+    // IPI
+    ipiCST: text(payload, "ipiCst") || undefined,
+    ipiCodEnq: text(payload, "ipiCodEnq") || undefined,
+    ipiAliquota: numericOrUndefined(payload.ipiRate),
+    // PIS
+    pisCST: text(payload, "pisCst") || undefined,
+    pisAliquota: numericOrUndefined(payload.pisRate),
+    // COFINS
+    cofinsCST: text(payload, "cofinsCst") || undefined,
+    cofinsAliquota: numericOrUndefined(payload.cofinsRate),
+    // ISS
+    issAliquota: numericOrUndefined(payload.issAliquota),
+    issItemListServico: text(payload, "issItemListServico") || undefined,
+    // NF-e 4.0
+    indicadorEscalaRelevante: text(payload, "indicadorEscalaRelevante") || undefined,
+    // Preços e estoque
     costValue,
     lastCost: numeric(payload.lastCost) || costValue,
     salePrice,

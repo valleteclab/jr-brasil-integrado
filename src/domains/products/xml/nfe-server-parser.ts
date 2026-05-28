@@ -29,7 +29,30 @@ export type ParsedNfeTax = {
   base?: number;
   rate?: number;
   value?: number;
+  // ICMS-ST — preenchido quando CST é 10, 30, 70 ou 90
+  baseST?: number;
+  mva?: number;
+  aliquotaST?: number;
+  valorST?: number;
+  // FCP — Fundo de Combate à Pobreza
+  aliquotaFCP?: number;
+  valorFCP?: number;
+  aliquotaFCPST?: number;
+  valorFCPST?: number;
   raw: unknown;
+};
+
+export type ParsedNfeTotals = {
+  bcICMS: number;
+  icms: number;
+  bcICMSST: number;
+  icmsST: number;
+  ipi: number;
+  pis: number;
+  cofins: number;
+  fcp: number;
+  fcpST: number;
+  tributos: number;
 };
 
 export type ParsedNfe = {
@@ -47,6 +70,9 @@ export type ParsedNfe = {
   insuranceValue: number;
   discountValue: number;
   otherExpenses: number;
+  // Modal frete: 0-CIF, 1-FOB, 2-Terceiros, 3-Próprio Rem., 4-Próprio Dest., 9-Sem frete
+  freightModal?: number;
+  taxTotals: ParsedNfeTotals;
   installments: ParsedNfeInstallment[];
   items: ParsedNfeItem[];
 };
@@ -74,7 +100,7 @@ function text(value: unknown) {
   return String(value).trim();
 }
 
-function numberValue(value: unknown) {
+function num(value: unknown) {
   return Number(text(value).replace(",", ".")) || 0;
 }
 
@@ -95,13 +121,42 @@ function readTax(group: unknown, tax: ParsedNfeTax["tax"]): ParsedNfeTax | undef
     return undefined;
   }
 
+  // CST/CSOSN
+  const cst = text(node.CST) || undefined;
+  const csosn = text(node.CSOSN) || undefined;
+
+  // Base/alíquota/valor — ICMS usa pICMS/vICMS, demais usam p{Tax}/v{Tax}
+  const base = num(node.vBC) || undefined;
+  const rate = num(node[`p${tax}`]) || num(node.pICMS) || undefined;
+  const value = num(node[`v${tax}`]) || num(node.vICMS) || undefined;
+
+  // ICMS-ST (campos presentes quando CST 10, 30, 70, 90)
+  const baseST = num(node.vBCST) || undefined;
+  const mva = num(node.pMVAST) || undefined;
+  const aliquotaST = num(node.pICMSST) || undefined;
+  const valorST = num(node.vICMSST) || undefined;
+
+  // FCP — Fundo de Combate à Pobreza (estados do Nordeste e Norte principalmente)
+  const aliquotaFCP = num(node.pFCP) || undefined;
+  const valorFCP = num(node.vFCP) || undefined;
+  const aliquotaFCPST = num(node.pFCPST) || undefined;
+  const valorFCPST = num(node.vFCPST) || undefined;
+
   return {
     tax,
-    cst: text(node.CST) || undefined,
-    csosn: text(node.CSOSN) || undefined,
-    base: numberValue(node.vBC) || undefined,
-    rate: numberValue(node[`p${tax}`]) || numberValue(node.pICMS) || undefined,
-    value: numberValue(node[`v${tax}`]) || numberValue(node.vICMS) || undefined,
+    cst,
+    csosn,
+    base,
+    rate,
+    value,
+    baseST,
+    mva,
+    aliquotaST,
+    valorST,
+    aliquotaFCP,
+    valorFCP,
+    aliquotaFCPST,
+    valorFCPST,
     raw: node
   };
 }
@@ -117,14 +172,18 @@ export function parseNfeXml(xmlText: string): ParsedNfe {
 
   const ide = infNfe.ide ?? {};
   const emit = infNfe.emit ?? {};
-  const total = infNfe.total?.ICMSTot ?? {};
+  const icmsTot = infNfe.total?.ICMSTot ?? {};
+  const transp = infNfe.transp ?? {};
   const items = arrayOf(infNfe.det);
   const billing = infNfe.cobr ?? {};
-  const installments = arrayOf(billing.dup).map((dup: Record<string, unknown>, index) => ({
-    number: text(dup.nDup) || String(index + 1).padStart(3, "0"),
-    dueDate: text(dup.dVenc) ? new Date(`${text(dup.dVenc)}T00:00:00`) : undefined,
-    value: numberValue(dup.vDup)
-  })).filter((dup) => dup.value > 0);
+
+  const installments = arrayOf(billing.dup)
+    .map((dup: Record<string, unknown>, index) => ({
+      number: text(dup.nDup) || String(index + 1).padStart(3, "0"),
+      dueDate: text(dup.dVenc) ? new Date(`${text(dup.dVenc)}T00:00:00`) : undefined,
+      value: num(dup.vDup)
+    }))
+    .filter((dup) => dup.value > 0);
 
   if (!items.length) {
     throw new Error("XML de NF-e sem itens de produto.");
@@ -149,13 +208,27 @@ export function parseNfeXml(xmlText: string): ParsedNfe {
       cest: text(prod.CEST) || undefined,
       cfop: text(prod.CFOP) || undefined,
       unit: text(prod.uCom) || "UN",
-      quantity: numberValue(prod.qCom),
-      unitValue: numberValue(prod.vUnCom),
-      totalValue: numberValue(prod.vProd),
-      discountValue: numberValue(prod.vDesc),
+      quantity: num(prod.qCom),
+      unitValue: num(prod.vUnCom),
+      totalValue: num(prod.vProd),
+      discountValue: num(prod.vDesc),
       taxes
     };
   });
+
+  // Totais fiscais da NF-e — gravados para SPED e conciliação
+  const taxTotals: ParsedNfeTotals = {
+    bcICMS: num(icmsTot.vBC),
+    icms: num(icmsTot.vICMS),
+    bcICMSST: num(icmsTot.vBCST),
+    icmsST: num(icmsTot.vICMSST),
+    ipi: num(icmsTot.vIPI),
+    pis: num(icmsTot.vPIS),
+    cofins: num(icmsTot.vCOFINS),
+    fcp: num(icmsTot.vFCP),
+    fcpST: num(icmsTot.vFCPST),
+    tributos: num(icmsTot.vTotTrib)
+  };
 
   return {
     accessKey: text(infNfe["@_Id"]).replace(/^NFe/, "") || text(parsed?.nfeProc?.protNFe?.infProt?.chNFe) || undefined,
@@ -166,12 +239,14 @@ export function parseNfeXml(xmlText: string): ParsedNfe {
     supplierDocument: text(emit.CNPJ) || text(emit.CPF) || undefined,
     supplierName: text(emit.xNome) || undefined,
     mainCfop: parsedItems[0]?.cfop,
-    totalProducts: numberValue(total.vProd),
-    totalInvoice: numberValue(total.vNF),
-    freightValue: numberValue(total.vFrete),
-    insuranceValue: numberValue(total.vSeg),
-    discountValue: numberValue(total.vDesc),
-    otherExpenses: numberValue(total.vOutro),
+    totalProducts: num(icmsTot.vProd),
+    totalInvoice: num(icmsTot.vNF),
+    freightValue: num(icmsTot.vFrete),
+    insuranceValue: num(icmsTot.vSeg),
+    discountValue: num(icmsTot.vDesc),
+    otherExpenses: num(icmsTot.vOutro),
+    freightModal: text(transp.modFrete) !== "" ? Number(text(transp.modFrete)) : undefined,
+    taxTotals,
     installments,
     items: parsedItems
   };

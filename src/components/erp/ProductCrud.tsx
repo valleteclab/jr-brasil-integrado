@@ -20,12 +20,25 @@ type ProductRecord = ErpProductSummary & {
   cfopOutState: string;
   taxRuleId: string;
   taxRuleName: string;
+  // ICMS
   icmsCst: string;
+  icmsCsosn: string;
   icmsRate: string;
+  icmsReducaoBC: string;
+  // ICMS-ST
+  icmsSTMVA: string;
+  icmsSTAliquota: string;
+  // FCP
+  fcpAliquota: string;
+  fcpSTAliquota: string;
+  // IPI
   ipiCst: string;
+  ipiCodEnq: string;
   ipiRate: string;
+  // PIS
   pisCst: string;
   pisRate: string;
+  // COFINS
   cofinsCst: string;
   cofinsRate: string;
   costValue: string;
@@ -113,14 +126,21 @@ const emptyForm: ProductFormState = {
   technicalDescription: "",
   ncm: "",
   cest: "",
-  origin: "0 - Nacional",
+  origin: "0",
   cfopInState: "",
   cfopOutState: "",
   taxRuleId: "",
   taxRuleName: "",
   icmsCst: "",
+  icmsCsosn: "",
   icmsRate: "",
+  icmsReducaoBC: "",
+  icmsSTMVA: "",
+  icmsSTAliquota: "",
+  fcpAliquota: "",
+  fcpSTAliquota: "",
   ipiCst: "",
+  ipiCodEnq: "",
   ipiRate: "",
   pisCst: "",
   pisRate: "",
@@ -207,14 +227,21 @@ function enrichProduct(product: ErpProductSummary): ProductRecord {
     cfopOutState: product.cfopOutState ?? "",
     taxRuleId: product.taxRuleId ?? "",
     taxRuleName: product.taxRuleName ?? "",
-    icmsCst: "",
-    icmsRate: "",
-    ipiCst: "",
-    ipiRate: "",
-    pisCst: "",
-    pisRate: "",
-    cofinsCst: "",
-    cofinsRate: "",
+    icmsCst: product.icmsCst ?? "",
+    icmsCsosn: product.icmsCsosn ?? "",
+    icmsRate: product.icmsRate ?? "",
+    icmsReducaoBC: product.icmsReducaoBC ?? "",
+    icmsSTMVA: product.icmsSTMVA ?? "",
+    icmsSTAliquota: product.icmsSTAliquota ?? "",
+    fcpAliquota: product.fcpAliquota ?? "",
+    fcpSTAliquota: product.fcpSTAliquota ?? "",
+    ipiCst: product.ipiCst ?? "",
+    ipiCodEnq: product.ipiCodEnq ?? "",
+    ipiRate: product.ipiRate ?? "",
+    pisCst: product.pisCst ?? "",
+    pisRate: product.pisRate ?? "",
+    cofinsCst: product.cofinsCst ?? "",
+    cofinsRate: product.cofinsRate ?? "",
     costValue: product.costValue ?? "",
     lastCost: product.lastCost ?? "",
     minimumPrice: product.minimumPrice ?? "",
@@ -626,25 +653,37 @@ export function ProductCrud({ initialProducts, taxRules }: ProductCrudProps) {
     if (activeTab === "fiscal") {
       return (
         <div className="erp-form">
+          {/* Classificação fiscal */}
           <label>
             NCM
-            <input value={form.ncm} onChange={(event) => updateField("ncm", event.target.value)} />
+            <input placeholder="8 dígitos" value={form.ncm} onChange={(event) => updateField("ncm", event.target.value)} />
           </label>
           <label>
             CEST
-            <input value={form.cest} onChange={(event) => updateField("cest", event.target.value)} />
+            <input placeholder="7 dígitos" value={form.cest} onChange={(event) => updateField("cest", event.target.value)} />
           </label>
           <label>
             Origem
-            <input value={form.origin} onChange={(event) => updateField("origin", event.target.value)} />
+            <select value={form.origin} onChange={(event) => updateField("origin", event.target.value)}>
+              <option value="">Selecione</option>
+              <option value="0">0 - Nacional</option>
+              <option value="1">1 - Estrangeiro (importação direta)</option>
+              <option value="2">2 - Estrangeiro (adquirido no mercado interno)</option>
+              <option value="3">3 - Nacional com conteúdo exterior &gt; 40%</option>
+              <option value="4">4 - Nacional prod. proc. básicos</option>
+              <option value="5">5 - Nacional com conteúdo exterior &lt; 40%</option>
+              <option value="6">6 - Estrangeiro importado s/ similar</option>
+              <option value="7">7 - Estrangeiro adquirido no mercado interno s/ similar</option>
+              <option value="8">8 - Nacional com conteúdo exterior &gt; 70%</option>
+            </select>
           </label>
           <label>
             CFOP dentro do estado
-            <input value={form.cfopInState} onChange={(event) => updateField("cfopInState", event.target.value)} />
+            <input placeholder="Ex.: 5102" value={form.cfopInState} onChange={(event) => updateField("cfopInState", event.target.value)} />
           </label>
           <label>
             CFOP fora do estado
-            <input value={form.cfopOutState} onChange={(event) => updateField("cfopOutState", event.target.value)} />
+            <input placeholder="Ex.: 6102" value={form.cfopOutState} onChange={(event) => updateField("cfopOutState", event.target.value)} />
           </label>
           <label className="full">
             Regra tributária para emissão
@@ -668,37 +707,77 @@ export function ProductCrud({ initialProducts, taxRules }: ProductCrudProps) {
             </select>
             {!taxRules.length && <small className="field-hint">Cadastre regras tributárias antes de emitir NF-e.</small>}
           </label>
+
+          {/* ICMS */}
+          <div className="form-section-divider">ICMS</div>
           <label>
-            CST/CSOSN ICMS
-            <input value={form.icmsCst} onChange={(event) => updateField("icmsCst", event.target.value)} />
+            CST ICMS (Regime Normal)
+            <input placeholder="00, 10, 20, 30, 40, 41, 60, 70, 90" value={form.icmsCst} onChange={(event) => updateField("icmsCst", event.target.value)} />
           </label>
           <label>
-            ICMS %
-            <input value={form.icmsRate} onChange={(event) => updateField("icmsRate", event.target.value)} />
+            CSOSN (Simples Nacional)
+            <input placeholder="102, 400, 500, 900..." value={form.icmsCsosn} onChange={(event) => updateField("icmsCsosn", event.target.value)} />
           </label>
+          <label>
+            Alíquota ICMS %
+            <input placeholder="Ex.: 12,00" value={form.icmsRate} onChange={(event) => updateField("icmsRate", event.target.value)} />
+          </label>
+          <label>
+            Redução BC ICMS %
+            <input placeholder="Ex.: 33,33" value={form.icmsReducaoBC} onChange={(event) => updateField("icmsReducaoBC", event.target.value)} />
+          </label>
+
+          {/* ICMS-ST */}
+          <div className="form-section-divider">ICMS-ST — Substituição Tributária</div>
+          <label>
+            MVA %
+            <input placeholder="Ex.: 30,00" value={form.icmsSTMVA} onChange={(event) => updateField("icmsSTMVA", event.target.value)} />
+          </label>
+          <label>
+            Alíquota ST %
+            <input placeholder="Ex.: 12,00" value={form.icmsSTAliquota} onChange={(event) => updateField("icmsSTAliquota", event.target.value)} />
+          </label>
+          <label>
+            Alíquota FCP %
+            <input placeholder="Ex.: 2,00" value={form.fcpAliquota} onChange={(event) => updateField("fcpAliquota", event.target.value)} />
+          </label>
+          <label>
+            Alíquota FCP-ST %
+            <input placeholder="Ex.: 2,00" value={form.fcpSTAliquota} onChange={(event) => updateField("fcpSTAliquota", event.target.value)} />
+          </label>
+
+          {/* IPI */}
+          <div className="form-section-divider">IPI</div>
           <label>
             CST IPI
-            <input value={form.ipiCst} onChange={(event) => updateField("ipiCst", event.target.value)} />
+            <input placeholder="00, 49, 50, 99" value={form.ipiCst} onChange={(event) => updateField("ipiCst", event.target.value)} />
           </label>
           <label>
-            IPI %
-            <input value={form.ipiRate} onChange={(event) => updateField("ipiRate", event.target.value)} />
+            Cód. Enquadramento IPI
+            <input placeholder="Ex.: 999" value={form.ipiCodEnq} onChange={(event) => updateField("ipiCodEnq", event.target.value)} />
           </label>
+          <label>
+            Alíquota IPI %
+            <input placeholder="Ex.: 5,00" value={form.ipiRate} onChange={(event) => updateField("ipiRate", event.target.value)} />
+          </label>
+
+          {/* PIS / COFINS */}
+          <div className="form-section-divider">PIS / COFINS</div>
           <label>
             CST PIS
-            <input value={form.pisCst} onChange={(event) => updateField("pisCst", event.target.value)} />
+            <input placeholder="01, 02, 07, 49, 99..." value={form.pisCst} onChange={(event) => updateField("pisCst", event.target.value)} />
           </label>
           <label>
-            PIS %
-            <input value={form.pisRate} onChange={(event) => updateField("pisRate", event.target.value)} />
+            Alíquota PIS %
+            <input placeholder="Ex.: 0,65" value={form.pisRate} onChange={(event) => updateField("pisRate", event.target.value)} />
           </label>
           <label>
             CST COFINS
-            <input value={form.cofinsCst} onChange={(event) => updateField("cofinsCst", event.target.value)} />
+            <input placeholder="01, 02, 07, 49, 99..." value={form.cofinsCst} onChange={(event) => updateField("cofinsCst", event.target.value)} />
           </label>
           <label>
-            COFINS %
-            <input value={form.cofinsRate} onChange={(event) => updateField("cofinsRate", event.target.value)} />
+            Alíquota COFINS %
+            <input placeholder="Ex.: 3,00" value={form.cofinsRate} onChange={(event) => updateField("cofinsRate", event.target.value)} />
           </label>
         </div>
       );
