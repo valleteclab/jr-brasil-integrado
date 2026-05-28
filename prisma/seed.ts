@@ -144,11 +144,12 @@ async function main() {
 
   await prisma.estoqueSaldo.upsert({
     where: {
-      tenantId_empresaId_produtoId_depositoId: {
+      tenantId_empresaId_produtoId_depositoId_controleKey: {
         tenantId: tenant.id,
         empresaId: empresa.id,
         produtoId: produto.id,
-        depositoId: deposito.id
+        depositoId: deposito.id,
+        controleKey: "SEM_CONTROLE"
       }
     },
     update: { quantidade: 12, minimo: 5 },
@@ -157,6 +158,7 @@ async function main() {
       empresaId: empresa.id,
       produtoId: produto.id,
       depositoId: deposito.id,
+      controleKey: "SEM_CONTROLE",
       quantidade: 12,
       minimo: 5
     }

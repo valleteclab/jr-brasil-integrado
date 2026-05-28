@@ -1,13 +1,22 @@
 import Link from "next/link";
+import { ProductCard } from "@/components/storefront/ProductCard";
+import { listStorefrontProducts } from "@/lib/services/products";
+import type { StorefrontProduct } from "@/lib/services/products";
+
+export const dynamic = "force-dynamic";
 
 const categories = ["Peças Agrícolas", "Peças Automotivas", "Peças Industriais", "Serviços de oficina"];
-const products = [
-  { sku: "AXE72011", name: "Eixo de Acionamento John Deere", price: "R$ 4.200,00", stock: "12 un." },
-  { sku: "SK-514", name: "Conjunto entre Diferenciais Scania", price: "R$ 4.800,00", stock: "3 un." },
-  { sku: "JR-CRZ-440", name: "Cruzeta Cardan 44x126mm", price: "R$ 680,00", stock: "36 un." }
-];
 
-export default function StorePage() {
+export default async function StorePage() {
+  let products: StorefrontProduct[] = [];
+  let loadError = "";
+
+  try {
+    products = await listStorefrontProducts();
+  } catch (error) {
+    loadError = error instanceof Error ? error.message : "Não foi possível carregar o catálogo.";
+  }
+
   return (
     <main className="store-shell">
       <header className="store-header">
@@ -15,25 +24,22 @@ export default function StorePage() {
         <nav>
           {categories.map((category) => <a key={category}>{category}</a>)}
         </nav>
-        <Link className="button dark" href="/erp">ERP</Link>
+        <button className="button dark" type="button">Minha conta</button>
       </header>
       <section className="store-hero">
         <span className="eyebrow">Ecommerce B2B integrado</span>
         <h1>Catálogo técnico para peças, serviços e orçamentos</h1>
-        <p>Esta tela inicial substitui a base standalone e será conectada ao mesmo banco do ERP.</p>
+        <p>Encontre peças por aplicação, consulte disponibilidade e solicite atendimento comercial especializado.</p>
       </section>
+      {loadError && (
+        <div className="system-error">
+          <strong>Banco de dados indisponível</strong>
+          <span>{loadError}</span>
+        </div>
+      )}
       <section className="grid three">
         {products.map((product) => (
-          <article className="card product-card" key={product.sku}>
-            <span className="sku">{product.sku}</span>
-            <h2>{product.name}</h2>
-            <strong>{product.price}</strong>
-            <p>Estoque ERP: {product.stock}</p>
-            <div className="actions compact">
-              <button className="button primary">Comprar</button>
-              <button className="button light">Orçar</button>
-            </div>
-          </article>
+          <ProductCard key={product.id} product={product} />
         ))}
       </section>
     </main>

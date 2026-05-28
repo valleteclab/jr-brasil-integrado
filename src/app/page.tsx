@@ -2,10 +2,10 @@ import { Button } from "@/components/shared/Button";
 import { Card } from "@/components/shared/Card";
 
 const pillars = [
-  "Banco único para ERP e ecommerce",
-  "Pedidos online entrando no backoffice",
-  "Estoque, compras, OS, financeiro e fiscal integrados",
-  "Portal B2B com pedidos, orçamentos, NF-e e boletos"
+  "Vendas, estoque e atendimento no mesmo lugar",
+  "Pedidos online acompanhados pela equipe comercial",
+  "Compras, oficina, financeiro e fiscal conectados",
+  "Portal B2B com pedidos, orçamentos e documentos"
 ];
 
 export default function HomePage() {
@@ -14,20 +14,20 @@ export default function HomePage() {
       <section className="hero">
         <div>
           <span className="eyebrow">JR Brasil Peças & Serviços</span>
-          <h1>Plataforma integrada ERP + ecommerce B2B</h1>
+          <h1>Gestão integrada para peças, serviços e vendas B2B</h1>
           <p>
-            Base inicial da Fase 0 para transformar os protótipos standalone em um sistema real com módulos compartilhados, banco único e evolução por fases.
+            Controle a operação comercial da JR Brasil com catálogo, clientes, pedidos, estoque, oficina e financeiro em uma experiência única.
           </p>
           <div className="actions">
-            <Button href="/loja">Abrir ecommerce B2B</Button>
-            <Button href="/erp" variant="dark">Abrir ERP</Button>
+            <Button href="/loja">Abrir loja B2B</Button>
+            <Button href="/erp" variant="dark">Acessar gestão</Button>
           </div>
         </div>
         <div className="hero-card">
-          <strong>Fase 0 em execução</strong>
-          <span>Next.js + TypeScript + Prisma</span>
-          <span>Schema inicial PostgreSQL</span>
-          <span>Shells iniciais de loja e ERP</span>
+          <strong>Operação comercial conectada</strong>
+          <span>Catálogo técnico para peças e serviços</span>
+          <span>Atendimento rápido para clientes B2B</span>
+          <span>Gestão de pedidos, estoque e orçamentos</span>
         </div>
       </section>
       <section className="grid four">

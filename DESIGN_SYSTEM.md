@@ -11,6 +11,7 @@ A plataforma mantém a identidade dos protótipos existentes:
 - **Cores base:** amarelo JR como destaque, preto/grafite como base institucional e fundos claros para leitura.
 - **ERP:** layout denso, sidebar escura, tabelas, KPIs e foco em produtividade.
 - **Ecommerce:** layout mais comercial, catálogo limpo, busca forte e CTAs de compra/orçamento.
+- **Referência ERP:** o arquivo `mvp/JR Brasil ERP - Standalone.html` é a referência visual principal para telas internas. Novas telas ERP devem preservar a densidade, topbar, sidebar, filtros, tabelas e ações operacionais desse protótipo, adaptando apenas o necessário para componentes Next.js.
 
 ## 2. Tokens obrigatórios
 
@@ -233,3 +234,12 @@ Antes de aprovar uma nova tela, validar:
 - Criar componentes base compartilhados.
 - Migrar classes atuais para nomes consistentes.
 - Adicionar exemplos reais de `Button`, `Card`, `DataTable` e `StatusBadge`.
+
+## 12. Texto de produto e linguagem de interface
+
+- Toda interface visível para cliente, vendedor, estoque, financeiro ou gestor deve usar PT-BR com acentuação correta.
+- Não exibir linguagem de bastidor em tela: `Fase 0`, `protótipo`, `standalone`, `schema`, `Prisma`, `localStorage`, `service`, `mock`, `banco pendente`, `migration` ou termos equivalentes.
+- Informações técnicas de desenvolvimento devem ficar apenas em `README.md`, `STATUS.md`, templates de handoff ou comentários internos quando indispensável.
+- Na loja, não usar termos internos como `ERP`, `backoffice` ou `base`. Preferir linguagem comercial: `Disponível`, `Minha conta`, `Solicitar orçamento`, `Atendimento comercial`.
+- No ERP, escrever para o usuário operacional: vendedor, gestor, estoque, financeiro ou oficina. Evitar frases explicando arquitetura; explicar tarefas, status e impacto operacional.
+- Antes de finalizar uma tela, revisar textos com a pergunta: "um cliente ou colaborador da JR Brasil entenderia isto sem saber que o sistema está em desenvolvimento?"
