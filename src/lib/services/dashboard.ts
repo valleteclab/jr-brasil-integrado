@@ -96,9 +96,9 @@ export async function getDashboardData(): Promise<DashboardData> {
         status: "AUTORIZADA",
         autorizadaEm: { gte: inicioMes, lte: fimMes }
       },
-      select: { valorTotal: true }
+      select: { total: true }
     });
-    const valorNum = notas.reduce((acc, n) => acc + Number(n.valorTotal), 0);
+    const valorNum = notas.reduce((acc, n) => acc + Number(n.total), 0);
     notasAutorizadasMes = { contagem: notas.length, valor: formatBrl(valorNum), valorNum };
   } catch (e) {
     erros.push(`NF-e: ${e instanceof Error ? e.message : "erro desconhecido"}`);

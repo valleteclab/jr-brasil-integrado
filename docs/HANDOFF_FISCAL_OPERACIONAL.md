@@ -66,11 +66,11 @@ com foco em deixar a plataforma **pronta para integrar API de emissão de NF-e, 
 - [ ] Atendimento: hub que abre venda balcão / orçamento / OS.
 
 ### T6 — Clientes + Colaboradores (`/erp/clientes`, `/erp/colaboradores`)
-- [ ] Clientes: CRUD completo (contatos, endereços, crédito, tabela de preço, aprovação).
-- [ ] Colaboradores: usuários/vínculos/perfis (RBAC) leitura+gestão básica.
+- [x] Clientes: CRUD completo (contatos, endereços, crédito, tabela de preço, aprovação).
+- [x] Colaboradores: usuários/vínculos/perfis (RBAC) leitura+gestão básica.
 
 ### T7 — Dashboard + Relatórios (`/erp`, `/erp/relatorios`)
-- [ ] Dashboard com KPIs reais. Relatórios: vendas, estoque, financeiro, fiscal, DRE simplificado.
+- [x] Dashboard com KPIs reais. Relatórios: vendas, estoque, financeiro, fiscal, DRE simplificado.
 
 ## Riscos / decisões
 
@@ -194,3 +194,27 @@ Arquivos criados/utilizados:
 - `src/app/erp/inventarios/[id]/page.tsx` — server page `force-dynamic`; carrega `getInventoryDetail`, exibe header com status/depósito/datas; renderiza `InventoryCount`.
 - `src/components/erp/StockManager.tsx` — client component; abas Saldos | Movimentações | Inventários; formulários inline de ajuste e transferência (fetch via API); lista de inventários com ação "Novo inventário" e navegação para detalhe.
 - `src/components/erp/InventoryCount.tsx` — client component; tabela de itens com campo de contagem editável por linha, salva item a item via POST, exibe diferença com StatusBadge, botão "Finalizar inventário" com confirmação.
+
+### T6 Clientes/Colaboradores — concluído
+
+**Arquivos criados/modificados:**
+
+**Clientes:**
+- `src/domains/customers/application/customer-use-cases.ts` — já existia completo (createCustomer, updateCustomer, approveCustomer, blockCustomer, archiveCustomer) com `prisma.$transaction` + `createAuditLog`; mantido sem alteração.
+- `src/lib/services/customers-admin.ts` — já existia com `listCustomersDetailed`, `getCustomerDetail`, `listTabelasPrecoOptions`; mantido.
+- `src/app/api/erp/clientes/route.ts` — POST create; já existia.
+- `src/app/api/erp/clientes/[id]/route.ts` — PUT update; já existia.
+- `src/app/api/erp/clientes/[id]/aprovar/route.ts` — POST aprovação de cliente.
+- `src/app/api/erp/clientes/[id]/bloquear/route.ts` — POST bloqueio de cliente.
+- `src/app/api/erp/clientes/[id]/arquivar/route.ts` — POST arquivamento de cliente.
+- `src/components/erp/CustomersCrud.tsx` — client component: KPIs (ativos/pendentes/limite/crédito), busca + filtro de status, tabela com ações (editar/aprovar/bloquear/arquivar via fetch), drawer com abas Dados | Contatos | Endereços | Comercial, suporta múltiplos contatos/endereços com add/remove.
+- `src/app/erp/clientes/page.tsx` — REESCRITO: server page `force-dynamic`; carrega `listCustomersDetailed` + `listTabelasPrecoOptions`; renderiza `CustomersCrud`.
+
+**Colaboradores:**
+- `src/domains/team/application/team-use-cases.ts` — `createPerfil` (Perfil + Permissoes tenant-level, dentro de `prisma.$transaction`); `inviteColaborador` (cria/acha Usuario por email, cria UsuarioVinculo, audita); `setVinculoAtivo` (ativa/desativa vínculo, audita).
+- `src/lib/services/team.ts` — `listColaboradores` (joins usuário+perfil via UsuarioVinculo); `listPerfis` (com permissões).
+- `src/app/api/erp/colaboradores/route.ts` — POST invite colaborador.
+- `src/app/api/erp/colaboradores/[id]/status/route.ts` — POST ativar/desativar vínculo.
+- `src/app/api/erp/perfis/route.ts` — POST criar perfil com permissões.
+- `src/components/erp/TeamManager.tsx` — client component: KPIs, abas Colaboradores | Perfis e permissões; drawer de convite (nome/email/perfil); drawer de criação de perfil com tabela de checkboxes módulo×ação (8 módulos × 2 ações); "gerenciar" implica "visualizar"; ativar/desativar vínculo via fetch.
+- `src/app/erp/colaboradores/page.tsx` — server page `force-dynamic`; carrega `listColaboradores` + `listPerfis`; renderiza `TeamManager`.
