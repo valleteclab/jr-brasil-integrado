@@ -268,3 +268,15 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - `/erp/atendimento` carrega clientes/produtos reais (`listSaleFormData`) e aceita `?tipo=`. As rotas `/erp/vendas/nova`, `/erp/orcamentos/novo` e `/erp/os/nova` passam a redirecionar para o atendimento unificado com o tipo pre-selecionado.
 - CSS dedicado adicionado (`atend-*`) seguindo os tokens do design.
 - Validacao: `tsc` (0), `lint` (limpo), `build` (ok) e runtime HTTP 200 em `/erp/atendimento` (e 307 nos redirects), com a tela renderizando os blocos do design.
+
+## Atualizacao operacional - 2026-05-29 - paridade visual com o fonte do Claude Design
+
+- Recebido o projeto-fonte do design (JSX + erp-styles.css). Base visual adotada no app:
+  - Fontes do design carregadas (Barlow Condensed, Inter, JetBrains Mono) via layout raiz.
+  - Sistema de botoes `btn-erp` (primary/dark/ghost/danger + sm/xs/lg/block/icon-only), `pill` (status), `prog/fill`, `sublabel`, `avatar-sm`, `erp-card-body` e `empty-st` com icone/titulo, alinhados ao `erp-styles.css`.
+- Tela "Novo atendimento" reconstruida fiel ao fonte `erp-atendimento.jsx`:
+  - Cards de tipo (venda balcao, pedido faturado, OS, orcamento), layout 2 colunas com trilho fixo.
+  - Picker de cliente e picker de produto em drawer com busca; tabela de itens com qtd/preco/%desc/subtotal; OS com veiculo, servicos (mao de obra) e pecas.
+  - Trilho: Totais (Barlow), desconto global %, frete, Pagamento (radios), Atribuicao/Validade & condicoes; acoes (finalizar/Imprimir/Salvar rascunho); modal de sucesso.
+  - Ligado as APIs reais: vendas, orcamentos e OS (serviços/peças postados apos abrir a OS).
+- Validacao: `tsc` (0), `lint` (apenas aviso de fonte), `build` (ok) e runtime HTTP 200 em `/erp/atendimento` com o sistema visual do design.
