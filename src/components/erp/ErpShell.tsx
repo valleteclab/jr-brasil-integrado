@@ -3,12 +3,13 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
+import type { ErpShellBadges, ErpShellContext } from "@/lib/services/erp-shell";
 
 type ErpNavItem = {
   label: string;
   href: string;
   accent?: boolean;
-  badge?: string;
+  badgeKey?: keyof ErpShellBadges;
   danger?: boolean;
 };
 
@@ -23,16 +24,16 @@ const modules: ErpNavGroup[] = [
     items: [
       { label: "Dashboard", href: "/erp" },
       { label: "Novo atendimento", href: "/erp/atendimento", accent: true },
-      { label: "Vendas", href: "/erp/vendas", badge: "2" },
-      { label: "Orçamentos", href: "/erp/orcamentos", badge: "4" },
-      { label: "Ordens de Serviço", href: "/erp/os", badge: "2" }
+      { label: "Vendas", href: "/erp/vendas", badgeKey: "vendas" },
+      { label: "Orçamentos", href: "/erp/orcamentos", badgeKey: "orcamentos" },
+      { label: "Ordens de Serviço", href: "/erp/os", badgeKey: "os" }
     ]
   },
   {
     group: "Suprimentos",
     items: [
-      { label: "Compras", href: "/erp/compras", badge: "3" },
-      { label: "Estoque", href: "/erp/estoque", badge: "6", danger: true },
+      { label: "Compras", href: "/erp/compras", badgeKey: "compras" },
+      { label: "Estoque", href: "/erp/estoque", badgeKey: "estoque", danger: true },
       { label: "Fornecedores", href: "/erp/fornecedores" },
       { label: "Notas de entrada", href: "/erp/entradas-fiscais" }
     ]
@@ -48,7 +49,7 @@ const modules: ErpNavGroup[] = [
   {
     group: "Financeiro & Fiscal",
     items: [
-      { label: "Contas a pagar/receber", href: "/erp/financeiro", badge: "1", danger: true },
+      { label: "Contas a pagar/receber", href: "/erp/financeiro", badgeKey: "financeiro", danger: true },
       { label: "Fluxo de caixa", href: "/erp/fluxo-caixa" },
       { label: "NF-e emitidas", href: "/erp/fiscal" },
       { label: "Regras tributárias", href: "/erp/regras-tributarias" }
@@ -69,6 +70,7 @@ const modules: ErpNavGroup[] = [
 
 type ErpShellProps = {
   children: ReactNode;
+  context: ErpShellContext;
 };
 
 function isActive(pathname: string, href: string) {
@@ -79,8 +81,9 @@ function isActive(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-export function ErpShell({ children }: ErpShellProps) {
+export function ErpShell({ children, context }: ErpShellProps) {
   const pathname = usePathname();
+  const ambienteProducao = context.ambiente === "PRODUCAO";
 
   return (
     <main className="erp-shell">
@@ -88,34 +91,37 @@ export function ErpShell({ children }: ErpShellProps) {
         <Link href="/erp" className="erp-brand">
           <span className="brand-mark">JR</span>
           <span>
-            <strong>JR Brasil - ERP</strong>
+            <strong>{context.empresaNome}</strong>
             <small>Peças & Serviços</small>
           </span>
         </Link>
         {modules.map((module) => (
           <nav key={module.group}>
             <span>{module.group}</span>
-            {module.items.map((item) => (
-              <Link
-                className={[
-                  item.accent ? "accent" : "",
-                  isActive(pathname, item.href) ? "active" : ""
-                ].filter(Boolean).join(" ")}
-                key={item.href}
-                href={item.href}
-              >
-                <span className="nav-dot" aria-hidden="true">·</span>
-                {item.label}
-                {item.badge && <b className={item.danger ? "danger" : ""}>{item.badge}</b>}
-              </Link>
-            ))}
+            {module.items.map((item) => {
+              const badge = item.badgeKey ? context.badges[item.badgeKey] : 0;
+              return (
+                <Link
+                  className={[
+                    item.accent ? "accent" : "",
+                    isActive(pathname, item.href) ? "active" : ""
+                  ].filter(Boolean).join(" ")}
+                  key={item.href}
+                  href={item.href}
+                >
+                  <span className="nav-dot" aria-hidden="true">·</span>
+                  {item.label}
+                  {badge > 0 && <b className={item.danger ? "danger" : ""}>{badge}</b>}
+                </Link>
+              );
+            })}
           </nav>
         ))}
         <div className="erp-user">
-          <span>MC</span>
+          <span>{context.usuarioIniciais}</span>
           <div>
-            <strong>Mariana Castro</strong>
-            <small>Atendente sênior</small>
+            <strong>{context.usuarioNome}</strong>
+            <small>{context.usuarioPerfil}</small>
           </div>
         </div>
       </aside>
@@ -127,10 +133,12 @@ export function ErpShell({ children }: ErpShellProps) {
             <kbd>⌘ K</kbd>
           </div>
           <div className="erp-top-actions">
-            <span className="env-pill"><i /> Produção</span>
+            <span className={`env-pill${ambienteProducao ? "" : " homolog"}`}>
+              <i /> {ambienteProducao ? "Produção" : "Homologação"}
+            </span>
             <Link href="/loja">Ver loja</Link>
             <button type="button" aria-label="Notificações">●</button>
-            <Link href="/erp/configuracoes/ia" aria-label="Configurações">⚙</Link>
+            <Link href="/erp/configuracoes/fiscal" aria-label="Configurações">⚙</Link>
           </div>
         </header>
         <section className="erp-content">{children}</section>

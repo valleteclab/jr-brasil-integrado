@@ -219,3 +219,16 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
   - Dashboard (`/erp`) com KPIs reais e Relatorios (`/erp/relatorios`) de vendas, estoque, financeiro, fiscal e DRE simplificado.
 - Coordenacao executada por subagentes em paralelo, registrada em `docs/HANDOFF_FISCAL_OPERACIONAL.md`.
 - Validacao central: `npx tsc --noEmit` (0 erros), `npm run lint` (limpo), `npm run build` (todas as rotas), e smoke test de integracao contra PostgreSQL cobrindo Venda->NF-e, OS->NFS-e, Compra->estoque/conta a pagar, baixa financeira e orcamento->pedido.
+
+## Atualizacao operacional - 2026-05-29 - dados do banco + automacao tributaria
+
+- Remocao de dados mockados/hardcoded da interface, tudo passa a vir do banco:
+  - `ErpShell` agora recebe contexto real (`src/lib/services/erp-shell.ts`): nome da empresa, usuario/perfil do vinculo, ambiente fiscal (Producao/Homologacao) e badges de navegacao calculados (vendas/orcamentos/OS/compras abertos, estoque critico, contas vencidas).
+  - Loja: categorias do menu agora vem de `ProdutoCategoria` (`listStorefrontCategories`), sem lista fixa.
+  - Cadastro de produto: deposito padrao vem de `listDepositos` (datalist), sem "Galpao LEM-1" fixo.
+- Automacao tributaria — base nacional embutida + wizard de onboarding fiscal:
+  - `src/domains/fiscal/national-tax-baseline.ts`: matriz ICMS interestadual (4/7/12), aliquota interna por UF, PIS/COFINS por regime; `applyNationalTaxBaseline` gera regras de venda idempotentes por regime/UF (prefixo "Base nacional ·").
+  - `completeFiscalOnboarding`/`getFiscalOnboardingData` (use-cases) + API `POST /api/erp/configuracoes/fiscal/onboarding`.
+  - Wizard `/erp/configuracoes/fiscal/onboarding` (4 etapas: empresa, endereco fiscal, emissao, revisao) que grava identidade fiscal, configuracao de emissao e gera a base nacional — empresa pronta para emitir sem cadastro manual de aliquota.
+  - Motor tributario endurecido: Simples Nacional nunca destaca ICMS proprio (CSOSN 102, ICMS zero), ignorando regra de regime normal concorrente; regime normal destaca ICMS por CST/aliquota da regra.
+- Validacao: `npx tsc --noEmit` (0), `npm run lint` (limpo), `npm run build` (rotas de onboarding incluidas) e smoke contra PostgreSQL: matriz interestadual (SP->BA 7%, BA->SP 12%, interna 18%), geracao idempotente (Lucro Presumido 29 regras, Simples 3) e regressao de emissao NF-e AUTORIZADA com tributacao coerente ao regime.

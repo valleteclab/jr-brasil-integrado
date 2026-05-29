@@ -723,6 +723,11 @@ p {
   text-transform: uppercase;
 }
 
+.env-pill.homolog {
+  background: rgba(217, 119, 6, .14);
+  color: var(--erp-warning, #b45309);
+}
+
 .env-pill i {
   background: currentColor;
   border-radius: 50%;
@@ -1877,3 +1882,92 @@ p {
 .op-detail-list { display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
 .op-detail-list div { display: flex; justify-content: space-between; gap: 12px; }
 .op-detail-list span { color: var(--jr-mute, #94a3b8); }
+
+/* Wizard de onboarding fiscal */
+.form-grid.two {
+  grid-template-columns: 1fr 1fr;
+}
+
+.form-grid.two .full,
+.form-grid .full {
+  grid-column: 1 / -1;
+}
+
+.form-grid select {
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: var(--erp-radius-sm);
+  color: var(--ink);
+  font: inherit;
+  min-height: 38px;
+  padding: 8px 10px;
+  text-transform: none;
+}
+
+.form-grid select:focus {
+  border-color: var(--yellow-dark);
+  box-shadow: 0 0 0 3px rgba(255, 193, 7, .18);
+  outline: none;
+}
+
+.form-grid .op-label {
+  color: var(--slate);
+  display: block;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  margin-bottom: 2px;
+  text-transform: uppercase;
+}
+
+label.checkbox {
+  align-items: center;
+  display: inline-flex;
+  font-size: 12.5px;
+  font-weight: 700;
+  gap: 8px;
+  text-transform: none;
+}
+
+label.checkbox input {
+  min-height: 0;
+  width: auto;
+}
+
+.wizard-steps {
+  counter-reset: step;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  list-style: none;
+  margin: 0 0 20px;
+  padding: 0;
+}
+
+.wizard-steps li {
+  align-items: center;
+  color: var(--erp-muted, #64748b);
+  display: flex;
+  font-size: 12.5px;
+  font-weight: 800;
+  gap: 8px;
+}
+
+.wizard-steps li span {
+  align-items: center;
+  background: var(--line, #e2e8f0);
+  border-radius: 50%;
+  color: var(--white);
+  display: inline-flex;
+  height: 22px;
+  justify-content: center;
+  width: 22px;
+}
+
+.wizard-steps li.active { color: var(--ink); }
+.wizard-steps li.active span { background: var(--yellow-dark, #b45309); }
+.wizard-steps li.done span { background: var(--erp-success, #16a34a); }
+
+@media (max-width: 720px) {
+  .form-grid.two { grid-template-columns: 1fr; }
+}
