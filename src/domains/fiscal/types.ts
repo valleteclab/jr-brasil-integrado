@@ -8,6 +8,13 @@ export type ItemTaxResult = {
   baseIcms: number;
   aliquotaIcms: number;
   valorIcms: number;
+  percentualFcp: number;
+  valorFcp: number;
+  modalidadeBcSt: string | null;
+  percentualMva: number;
+  baseIcmsSt: number;
+  aliquotaIcmsSt: number;
+  valorIcmsSt: number;
   cstIpi: string | null;
   aliquotaIpi: number;
   valorIpi: number;
@@ -20,6 +27,8 @@ export type ItemTaxResult = {
   itemListaServico: string | null;
   aliquotaIss: number;
   valorIss: number;
+  /** Valor aproximado dos tributos do item (Lei 12.741 / transparência). */
+  valorTributos: number;
   cClassTrib: string | null;
 };
 

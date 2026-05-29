@@ -29,6 +29,9 @@ const emptyForm: TaxRuleForm = {
   baseReduction: "",
   deferral: "",
   presumedCredit: "",
+  mva: "",
+  stRate: "",
+  fcp: "",
   validFrom: new Date().toISOString().slice(0, 10),
   validUntil: "",
   active: true,
@@ -267,6 +270,9 @@ export function TaxRulesCrud({ initialRules }: TaxRulesCrudProps) {
                 <label>Redução base %<input value={form.baseReduction} onChange={(event) => updateField("baseReduction", event.target.value)} /></label>
                 <label>Diferimento %<input value={form.deferral} onChange={(event) => updateField("deferral", event.target.value)} /></label>
                 <label>Crédito presumido %<input value={form.presumedCredit} onChange={(event) => updateField("presumedCredit", event.target.value)} /></label>
+                <label>MVA % (ICMS-ST)<input value={form.mva} onChange={(event) => updateField("mva", event.target.value)} /></label>
+                <label>Alíquota ICMS-ST %<input value={form.stRate} onChange={(event) => updateField("stRate", event.target.value)} /></label>
+                <label>FCP %<input value={form.fcp} onChange={(event) => updateField("fcp", event.target.value)} /></label>
                 <label>Vigência início<input type="date" value={form.validFrom} onChange={(event) => updateField("validFrom", event.target.value)} /></label>
                 <label>Vigência fim<input type="date" value={form.validUntil} onChange={(event) => updateField("validUntil", event.target.value)} /></label>
                 <label className="check-row"><input checked={form.active} type="checkbox" onChange={(event) => updateField("active", event.target.checked)} /> Regra ativa</label>

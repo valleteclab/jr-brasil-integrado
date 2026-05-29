@@ -103,6 +103,9 @@ function validatePayload(payload: TaxRulePayload) {
     reducaoBase: numeric(payload, "baseReduction"),
     diferimento: numeric(payload, "deferral"),
     creditoPresumido: numeric(payload, "presumedCredit"),
+    mva: numeric(payload, "mva"),
+    aliquotaIcmsSt: numeric(payload, "stRate"),
+    fcp: numeric(payload, "fcp"),
     vigenciaInicio: validFrom,
     vigenciaFim: validUntil,
     ativo: bool(payload, "active", true)

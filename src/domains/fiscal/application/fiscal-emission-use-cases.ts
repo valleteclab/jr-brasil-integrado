@@ -79,8 +79,16 @@ export async function emitFiscalDocument(
       document.valorDesconto +
       document.valorFrete +
       document.valorSeguro +
-      document.outrasDespesas
+      document.outrasDespesas +
+      totals.valorIcmsSt +
+      totals.valorIpi
   );
+
+  // IBPT / Lei 12.741: informa o valor aproximado dos tributos no documento.
+  const ibptText = `Valor aproximado dos tributos: ${new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(totals.valorTotalTributos)} (Lei 12.741/2012).`;
+  const informacoesComplementares = [document.informacoesComplementares, ibptText]
+    .filter((part) => part && part.trim())
+    .join(" ");
 
   // 1) Persiste a nota em PROCESSANDO com itens e tributos calculados (numeração atômica).
   const created = await prisma.$transaction(async (tx) => {
@@ -111,6 +119,8 @@ export async function emitFiscalDocument(
         valorSeguro: document.valorSeguro,
         outrasDespesas: document.outrasDespesas,
         valorIcms: totals.valorIcms,
+        valorIcmsSt: totals.valorIcmsSt,
+        valorFcp: totals.valorFcp,
         valorIpi: totals.valorIpi,
         valorPis: totals.valorPis,
         valorCofins: totals.valorCofins,
@@ -119,7 +129,7 @@ export async function emitFiscalDocument(
         total,
         formaPagamento: document.formaPagamento,
         condicaoPagamento: document.condicaoPagamento,
-        informacoesComplementares: document.informacoesComplementares,
+        informacoesComplementares,
         emitidaEm: new Date(),
         itens: {
           create: computedItems.map(({ item, taxes, cfop, numeroItem }) => ({
@@ -143,6 +153,14 @@ export async function emitFiscalDocument(
             baseIcms: taxes.baseIcms,
             aliquotaIcms: taxes.aliquotaIcms,
             valorIcms: taxes.valorIcms,
+            percentualFcp: taxes.percentualFcp,
+            valorFcp: taxes.valorFcp,
+            modalidadeBcSt: taxes.modalidadeBcSt,
+            percentualMva: taxes.percentualMva,
+            baseIcmsSt: taxes.baseIcmsSt,
+            aliquotaIcmsSt: taxes.aliquotaIcmsSt,
+            valorIcmsSt: taxes.valorIcmsSt,
+            valorTributos: taxes.valorTributos,
             cstIpi: taxes.cstIpi,
             aliquotaIpi: taxes.aliquotaIpi,
             valorIpi: taxes.valorIpi,

@@ -1177,6 +1177,9 @@ model RegraTributaria {
   reducaoBase           Decimal?           @db.Decimal(8, 4)
   diferimento           Decimal?           @db.Decimal(8, 4)
   creditoPresumido      Decimal?           @db.Decimal(8, 4)
+  mva                   Decimal?           @db.Decimal(8, 4)
+  aliquotaIcmsSt        Decimal?           @db.Decimal(8, 4)
+  fcp                   Decimal?           @db.Decimal(8, 4)
   formula               Json?
   vigenciaInicio        DateTime
   vigenciaFim           DateTime?
@@ -1297,6 +1300,7 @@ model NotaFiscal {
   outrasDespesas Decimal          @default(0) @db.Decimal(14, 2)
   valorIcms      Decimal          @default(0) @db.Decimal(14, 2)
   valorIcmsSt    Decimal          @default(0) @db.Decimal(14, 2)
+  valorFcp       Decimal          @default(0) @db.Decimal(14, 2)
   valorIpi       Decimal          @default(0) @db.Decimal(14, 2)
   valorPis       Decimal          @default(0) @db.Decimal(14, 2)
   valorCofins    Decimal          @default(0) @db.Decimal(14, 2)
@@ -1351,6 +1355,14 @@ model NotaFiscalItem {
   baseIcms       Decimal?     @db.Decimal(14, 2)
   aliquotaIcms   Decimal?     @db.Decimal(8, 4)
   valorIcms      Decimal?     @db.Decimal(14, 2)
+  percentualFcp  Decimal?     @db.Decimal(8, 4)
+  valorFcp       Decimal?     @db.Decimal(14, 2)
+  modalidadeBcSt String?
+  percentualMva  Decimal?     @db.Decimal(8, 4)
+  baseIcmsSt     Decimal?     @db.Decimal(14, 2)
+  aliquotaIcmsSt Decimal?     @db.Decimal(8, 4)
+  valorIcmsSt    Decimal?     @db.Decimal(14, 2)
+  valorTributos  Decimal?     @db.Decimal(14, 2)
   cstIpi         String?
   aliquotaIpi    Decimal?     @db.Decimal(8, 4)
   valorIpi       Decimal?     @db.Decimal(14, 2)
