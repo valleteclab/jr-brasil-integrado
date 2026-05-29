@@ -146,11 +146,11 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO" }: { d
 
   return (
     <div style={{ paddingBottom: 40 }}>
-      <div className="topbar-panel">
+      <div className="erp-page-head">
         <div>
-          <div className="atend-crumbs">Operação / <b>Novo atendimento</b></div>
-          <h1>Novo atendimento</h1>
-          <p>Crie venda balcão, pedido faturado, ordem de serviço ou orçamento.</p>
+          <div className="erp-crumbs">Operação <span className="sep">/</span> Novo atendimento</div>
+          <h1 className="erp-page-title">Novo atendimento</h1>
+          <p className="erp-page-sub">Crie venda balcão, pedido faturado, ordem de serviço ou orçamento.</p>
         </div>
         <button type="button" className="btn-erp ghost sm" onClick={reset}>Limpar tudo</button>
       </div>
