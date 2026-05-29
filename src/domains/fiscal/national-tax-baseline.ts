@@ -23,12 +23,41 @@ export const UFS = [
 
 export type Uf = (typeof UFS)[number];
 
-/** Alíquota interna modal de ICMS por UF (%). Referência — revisar por produto/benefício. */
+/** Mês de referência das alíquotas internas embutidas. Revisar periodicamente. */
+export const ICMS_INTERNO_ATUALIZADO_EM = "2025-01";
+
+/**
+ * Alíquota interna modal de ICMS por UF (%) — referência vigente 2025/2026.
+ * São as alíquotas-padrão (modal) de cada estado; produtos específicos podem ter alíquota
+ * diferente (cesta básica, supérfluos, energia, comunicação). O contador deve validar e
+ * cadastrar exceções por NCM em Regras tributárias, que prevalecem sobre esta base.
+ *
+ * Alterações relevantes 2024/2025 já refletidas: AL 20, BA 20,5, CE 20, DF 20, GO 19,
+ * MA 23, PA 19, PB 20, PR 19,5, PE 20,5, PI 22,5, RJ 20 (+FCP 2% à parte), RO 19,5,
+ * SE 19, TO 20.
+ */
 const ICMS_INTERNO: Record<Uf, number> = {
-  AC: 19, AL: 19, AP: 18, AM: 20, BA: 20.5, CE: 20, DF: 20, ES: 17, GO: 19, MA: 22,
-  MT: 17, MS: 17, MG: 18, PA: 19, PB: 20, PR: 19.5, PE: 20.5, PI: 21, RJ: 22, RN: 18,
+  AC: 19, AL: 20, AP: 18, AM: 20, BA: 20.5, CE: 20, DF: 20, ES: 17, GO: 19, MA: 23,
+  MT: 17, MS: 17, MG: 18, PA: 19, PB: 20, PR: 19.5, PE: 20.5, PI: 22.5, RJ: 20, RN: 18,
   RS: 17, RO: 19.5, RR: 20, SC: 17, SP: 18, SE: 19, TO: 20
 };
+
+/**
+ * Adicional de Fundo de Combate à Pobreza (FCP) por UF (%) sobre operações internas, quando
+ * aplicável ao produto. Mantido separado da alíquota de ICMS (não somar automaticamente): o
+ * destaque do FCP depende do produto/NCM e será aplicado junto com ICMS-ST em incremento
+ * futuro. Valores modais de referência (0 quando o estado não institui FCP geral).
+ */
+export const FCP_INTERNO: Record<Uf, number> = {
+  AC: 0, AL: 1, AP: 0, AM: 0, BA: 2, CE: 2, DF: 2, ES: 2, GO: 0, MA: 2,
+  MT: 0, MS: 2, MG: 2, PA: 0, PB: 2, PR: 2, PE: 2, PI: 2, RJ: 2, RN: 2,
+  RS: 2, RO: 2, RR: 0, SC: 0, SP: 0, SE: 1, TO: 2
+};
+
+/** Alíquota interna de ICMS (modal) para a UF. */
+export function aliquotaInternaIcms(uf: Uf): number {
+  return ICMS_INTERNO[uf];
+}
 
 /** UFs do Sul/Sudeste (exceto ES) cuja saída para N/NE/CO/ES usa 7%. */
 const ORIGEM_7 = new Set<Uf>(["SP", "RJ", "MG", "PR", "SC", "RS"]);

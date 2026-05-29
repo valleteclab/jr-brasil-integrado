@@ -232,3 +232,11 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
   - Wizard `/erp/configuracoes/fiscal/onboarding` (4 etapas: empresa, endereco fiscal, emissao, revisao) que grava identidade fiscal, configuracao de emissao e gera a base nacional — empresa pronta para emitir sem cadastro manual de aliquota.
   - Motor tributario endurecido: Simples Nacional nunca destaca ICMS proprio (CSOSN 102, ICMS zero), ignorando regra de regime normal concorrente; regime normal destaca ICMS por CST/aliquota da regra.
 - Validacao: `npx tsc --noEmit` (0), `npm run lint` (limpo), `npm run build` (rotas de onboarding incluidas) e smoke contra PostgreSQL: matriz interestadual (SP->BA 7%, BA->SP 12%, interna 18%), geracao idempotente (Lucro Presumido 29 regras, Simples 3) e regressao de emissao NF-e AUTORIZADA com tributacao coerente ao regime.
+
+## Atualizacao operacional - 2026-05-29 - ICMS atualizado + CFOP automatico
+
+- Aliquotas internas de ICMS por UF atualizadas para a referencia 2025/2026 em `national-tax-baseline.ts` (constante `ICMS_INTERNO_ATUALIZADO_EM`); mudancas refletidas: AL 20, BA 20,5, CE 20, DF 20, GO 19, MA 23, PA 19, PB 20, PR 19,5, PE 20,5, PI 22,5, RJ 20, RO 19,5, SE 19, TO 20. Adicionada tabela `FCP_INTERNO` por UF (mantida separada do ICMS; destaque do FCP virara com ICMS-ST).
+- CFOP automatico (`src/domains/fiscal/cfop.ts`): `resolveCfopVenda` deriva 5102/6102 (revenda interna/interestadual), 5101/6101 (producao propria) e 5405/6404/5401/6401 (ST). CFOP definido manualmente no produto continua prevalecendo.
+- Emissao passou a derivar o CFOP por item apos o calculo de tributos (consistente com ST) tanto no documento persistido quanto no enviado ao provedor; builder nao forca mais 5102.
+- Auto-resolucao no produto: produto com NCM ja tem ICMS/PIS/COFINS resolvidos pelo motor e CFOP derivado na emissao, sem necessidade de vincular regra (aba fiscal e opcional).
+- Validacao: `tsc` (0), `lint` (limpo), `build` (ok) e smoke contra PostgreSQL: BA->BA=5102, BA->SP=6102, ST inter=6404, emissoes AUTORIZADAS.
