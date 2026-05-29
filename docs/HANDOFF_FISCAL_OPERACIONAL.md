@@ -54,8 +54,8 @@ com foco em deixar a plataforma **pronta para integrar API de emissão de NF-e, 
 - [ ] Inventário: abrir, contar, finalizar (gera ajustes).
 
 ### T3 — Financeiro (`/erp/financeiro`, `/erp/fluxo-caixa`)
-- [ ] Contas a pagar/receber: lista, baixa (parcial/total, juros/multa/desconto), movimento financeiro + conta bancária.
-- [ ] Fluxo de caixa: projeção e realizado.
+- [x] Contas a pagar/receber: lista, baixa (parcial/total, juros/multa/desconto), movimento financeiro + conta bancária.
+- [x] Fluxo de caixa: projeção e realizado.
 
 ### T4 — Compras + Fornecedores (`/erp/compras`, `/erp/fornecedores`)
 - [ ] Fornecedores CRUD. Pedido de compra: criar, enviar, receber (gera entrada fiscal / atualiza recebido).
@@ -78,4 +78,49 @@ com foco em deixar a plataforma **pronta para integrar API de emissão de NF-e, 
   Entregamos provider `MANUAL/INTERNO` totalmente funcional (gera chave/protocolo simulados em homologação) + adapter HTTP
   genérico pronto para receber credenciais reais. Trocar provider é configuração, não código.
 - Não há dados reais de cliente neste ambiente; seed usa dados fictícios.
-</content>
+
+---
+
+## Referência técnica para subagentes (NÃO altere arquivos compartilhados)
+
+Proibido alterar: `prisma/schema.prisma`, `src/app/globals.css`, `src/components/erp/ErpShell.tsx`,
+`package.json`, `prisma/seed.ts`. Proibido rodar `prisma migrate/generate`, `npm run build`, `npm run dev`.
+O orquestrador valida tudo centralmente. Cada módulo cria apenas seus próprios arquivos.
+
+### Assinaturas compartilhadas
+
+Estoque — `@/domains/stock/application/stock-service` (todas recebem `(tx, scope, ...)` dentro de `prisma.$transaction`):
+- `getDefaultDeposito(tx, scope) => Deposito`
+- `applyStockMovement(tx, scope, { produtoId, depositoId, tipo, quantidade /*>0*/, custoUnitario?, documentoTipo?, documentoId?, idempotencyKey?, origem?, origemId?, usuarioId?, observacoes? })` — `tipo`: `ENTRADA|SAIDA|TRANSFERENCIA|AJUSTE|ESTORNO`.
+- `reserveStock(tx, scope, { produtoId, depositoId, quantidade, origemTipo, origemId, expiraEm? })`
+- `releaseReservations(tx, scope, origemTipo, origemId)`
+- `commitReservationsAsExit(tx, scope, origemTipo, origemId, { documentoTipo, documentoId, observacoes?, usuarioId? })`
+- `exitStock(tx, scope, items: {produtoId, depositoId, quantidade, custoUnitario?}[], { documentoTipo, documentoId, observacoes?, usuarioId? })`
+
+Fiscal — emissão:
+- `import { emitFiscalDocument } from "@/domains/fiscal/application/fiscal-emission-use-cases"`
+- `import { buildDocumentFromPedido, buildNfseFromOrdemServico } from "@/domains/fiscal/document-builder"`
+- `emitFiscalDocument(scope, document, { clienteId?, pedidoVendaId?, ordemServicoId?, usuarioId? })` → retorna `NotaFiscal` (cheque `nota.status === "AUTORIZADA"`; senão use `nota.motivo`).
+- `buildDocumentFromPedido({ cliente, formaPagamento?, condicaoPagamento?, observacoes?, frete?, desconto?, modelo?: "NFE"|"NFCE", itens: { produto: {id, sku, nome, ncm, cest, cfop, origem, unidade, fiscal?}, quantidade, precoUnitario, desconto? }[] })`. `cliente`: `{ razaoSocial, documento, inscricaoEstadual, enderecos: {uf, padrao}[], contatos: {email, principal}[] }`.
+- `buildNfseFromOrdemServico({ cliente, observacoes?, formaPagamento?, condicaoPagamento?, servicos: {descricao, valor, itemListaServico?}[] })`.
+
+Numeração — `@/lib/numbering`:
+- `nextDocumentNumber(prisma.pedidoVenda /*delegate*/, scope, "PV")` → `"PV-000001"`. Use o delegate do próprio modelo. Pode usar `tx.<modelo>` dentro de transação.
+
+Auditoria — `createAuditLog(tx, { scope, entidade, entidadeId, acao, payload? })`.
+
+### Campos de schema relevantes (nomes exatos)
+
+- `PedidoVenda`: numero, clienteId, depositoId?, canal, status(`StatusPedido`: RASCUNHO|AGUARDANDO_PAGAMENTO|AGUARDANDO_NOTA|SEPARACAO|ENVIADO|ENTREGUE|CANCELADO), naturezaOperacao?, vendedor?, subtotal, desconto, frete, total, condicaoPagamento?, formaPagamento?, observacoes?, observacoesInternas?, confirmadoEm?, faturadoEm?, canceladoEm?, origemOrcamentoId?. Item: pedidoVendaId, produtoId, quantidade(Int), precoUnitario, custoUnitario, desconto, total.
+- `ContaReceber`: clienteId, pedidoVendaId?, ordemServicoId?, notaFiscalId?, descricao, numeroDocumento?, origem?, formaPagamento?, vencimento, valor, valorPago, juros, multa, descontoBaixa, observacoes?, contaBancariaId?, status(`StatusFinanceiro`: ABERTO|PARCIAL|VENCIDO|PAGO|CANCELADO), pagoEm?.
+- `ContaPagar`: fornecedorId?, pedidoCompraId?, entradaFiscalId?, descricao, numeroDocumento?, formaPagamento?, origem?, vencimento, valor, valorPago, juros, multa, descontoBaixa, observacoes?, contaBancariaId?, status, pagoEm?.
+- `ContaBancaria`: nome, banco?, agencia?, conta?, tipo, saldoInicial, saldoAtual, ativo. `MovimentoFinanceiro`: contaBancariaId?, contaPagarId?, contaReceberId?, tipo(`TipoMovimentoFinanceiro`: CREDITO|DEBITO), origem, descricao, valor, formaPagamento?, saldoAnterior?, saldoPosterior?, dataMovimento, usuarioId?.
+- `Fornecedor`: razaoSocial, nomeFantasia?, documento, email?, telefone?, cidade?, uf?, condicaoPagamento?, ativo. Unique: [tenantId, empresaId, documento].
+- `PedidoCompra`: numero, fornecedorId, depositoId?, status(`StatusPedidoCompra`: RASCUNHO|ENVIADO|PARCIAL|RECEBIDO|CANCELADO), condicaoPagamento?, observacoes?, previsaoEm?, subtotal, frete, total. Item: produtoId, quantidade(Int), quantidadeRecebida(Decimal), custoUnitario, total.
+- `Orcamento`: numero, clienteId, canal, status(`StatusOrcamento`: RASCUNHO|EM_ANALISE|AGUARDANDO_CLIENTE|APROVADO|EXPIRADO|REJEITADO|CONVERTIDO), validoAte?, observacaoVendedor?, vendedor?, condicaoPagamento?, formaPagamento?, desconto, subtotal, total, pedidoGeradoId?, aprovadoEm?. Item: produtoId, quantidade(Int), precoUnitario, total.
+- `OrdemServico`: numero, clienteId, status(`StatusOrdemServico`: ABERTA|EM_ANDAMENTO|AGUARDANDO_PECAS|FINALIZADA_NAO_FATURADA|FATURADA|CANCELADA), equipamento, placaOuSerial?, diagnostico?, problemaRelatado?, depositoId?, previsaoEm?, totalServicos, totalPecas, desconto, total, condicaoPagamento?, formaPagamento?, observacoes?, faturadoEm?. MaoObra: descricao, horas, valorHora, total. Peca: produtoId, quantidade(Int), precoUnitario, total.
+- `Inventario`: depositoId, numero, descricao?, status(`StatusInventario`: ABERTO|EM_CONTAGEM|FINALIZADO|CANCELADO), iniciadoEm?, finalizadoEm?, observacoes?. Item: produtoId, saldoSistema, saldoContado?, custoUnitario, contado, ajustado. Unique item: [tenantId, empresaId, inventarioId, produtoId].
+- `EstoqueSaldo` unique: [tenantId, empresaId, produtoId, depositoId, controleKey] (controleKey="SEM_CONTROLE"); campos quantidade, reservado, minimo, maximo.
+- `Cliente`: razaoSocial, nomeFantasia?, documento, inscricaoEstadual?, status(`StatusCliente`: PENDENTE_APROVACAO|ATIVO|BLOQUEADO|INATIVO), segmento?, limiteCredito, creditoUsado, condicaoPagamento?, tabelaPrecoId?. Relations: contatos(ClienteContato: nome,email?,telefone?,whatsapp?,cargo?,principal), enderecos(ClienteEndereco: apelido,cep,logradouro,numero?,complemento?,bairro?,cidade,uf,padrao). Unique: [tenantId, documento].
+
+### Notas de completude de cada subagente (preencher ao terminar)
