@@ -246,7 +246,7 @@ export function SuppliersCrud({ initialSuppliers }: Props) {
               {!filtered.length && (
                 <tr>
                   <td colSpan={7}>
-                    <div className="empty-st">Nenhum fornecedor cadastrado. Clique em "+ Novo fornecedor" para começar.</div>
+                    <div className="empty-st">Nenhum fornecedor cadastrado. Clique em &quot;+ Novo fornecedor&quot; para começar.</div>
                   </td>
                 </tr>
               )}

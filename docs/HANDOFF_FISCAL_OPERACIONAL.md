@@ -61,9 +61,9 @@ com foco em deixar a plataforma **pronta para integrar API de emissão de NF-e, 
 - [x] Fornecedores CRUD. Pedido de compra: criar, enviar, receber (gera entrada fiscal / atualiza recebido).
 
 ### T5 — Orçamentos + OS + Atendimento (`/erp/orcamentos`, `/erp/os`, `/erp/atendimento`)
-- [ ] Orçamento: criar, precificar, aprovar, converter em pedido.
-- [ ] OS: abrir, lançar serviços/peças, faturar (NFS-e serviços + baixa peças + contas a receber).
-- [ ] Atendimento: hub que abre venda balcão / orçamento / OS.
+- [x] Orçamento: criar, precificar, aprovar, converter em pedido.
+- [x] OS: abrir, lançar serviços/peças, faturar (NFS-e serviços + baixa peças + contas a receber).
+- [x] Atendimento: hub que abre venda balcão / orçamento / OS.
 
 ### T6 — Clientes + Colaboradores (`/erp/clientes`, `/erp/colaboradores`)
 - [x] Clientes: CRUD completo (contatos, endereços, crédito, tabela de preço, aprovação).
@@ -229,3 +229,41 @@ Arquivos criados/utilizados:
 - `src/components/erp/ReportsView.tsx` — criado; client component; 5 abas (Vendas | Estoque | Financeiro | Fiscal | DRE); KpiCards + tabelas `erp-table`; estados vazios `empty-st`; DRE dois regimes lado a lado com premissas em `alert warn`.
 
 **Observações:** nenhum arquivo proibido alterado; nenhum migrate/build executado; todos Decimals via `Number()`; queries filtradas por `tenantId+empresaId`; `npx tsc --noEmit` limpo.
+
+### T5 Orçamentos/OS/Atendimento — concluído
+
+**Arquivos criados:**
+
+**Use-cases:**
+- `src/domains/sales-quote/application/quote-use-cases.ts` — já existia; contém `createQuote` (numero via `nextDocumentNumber(tx.orcamento, scope, "ORC")`, status `EM_ANALISE`, subtotal/total/validoAte, audita), `approveQuote` (status `APROVADO`, `aprovadoEm`), `rejectQuote` (status `REJEITADO`), `convertQuoteToPedido` (cria `PedidoVenda` status `RASCUNHO` canal `ORCAMENTO` com itens custoUnitario=custoMedio, reserva estoque via `reserveStock` origemTipo `PEDIDO_VENDA`, marca orçamento `CONVERTIDO`, audita).
+- `src/domains/service-order/application/service-order-use-cases.ts` — criado; `createOrdemServico` (numero "OS-…", status `ABERTA`); `addServico` / `removeServico` (recalcula `totalServicos`/`total`); `addPeca` / `removePeca` (recalcula `totalPecas`/`total`); `updateStatus` (máquina de estados com whitelist de transições); `faturarOrdemServico` (em transação: `exitStock` das peças, cria `ContaReceber` origem "OS" vencimento +30 dias, marca OS `FATURADA`; fora da transação se `emitirNfse`: monta `buildNfseFromOrdemServico`, chama `emitFiscalDocument`, vincula `notaFiscalId` na conta se `AUTORIZADA`).
+
+**Services:**
+- `src/lib/services/sales-quote.ts` — `listQuotes()`, `getQuoteDetail(id)`, `listQuoteFormData()` ({clientes, produtos:{id,sku,nome,preco}}).
+- `src/lib/services/service-order.ts` — `listOrdensServico()`, `getOrdemServicoDetail(id)`, `listOsFormData()` ({clientes, produtos}).
+
+**APIs (finas, validação 400, erro 500):**
+- `src/app/api/erp/orcamentos/route.ts` — POST createQuote.
+- `src/app/api/erp/orcamentos/[id]/aprovar/route.ts` — POST approveQuote.
+- `src/app/api/erp/orcamentos/[id]/rejeitar/route.ts` — POST rejectQuote.
+- `src/app/api/erp/orcamentos/[id]/converter/route.ts` — POST convertQuoteToPedido.
+- `src/app/api/erp/os/route.ts` — POST createOrdemServico.
+- `src/app/api/erp/os/[id]/servico/route.ts` — POST addServico / DELETE removeServico.
+- `src/app/api/erp/os/[id]/peca/route.ts` — POST addPeca / DELETE removePeca.
+- `src/app/api/erp/os/[id]/status/route.ts` — POST updateStatus.
+- `src/app/api/erp/os/[id]/faturar/route.ts` — POST faturarOrdemServico.
+
+**UI:**
+- `src/app/erp/orcamentos/page.tsx` — server `force-dynamic`; KpiCards (total, aprovados, convertidos, em análise); renderiza `QuotesList`.
+- `src/app/erp/orcamentos/novo/page.tsx` — server `force-dynamic`; carrega `listQuoteFormData`; renderiza `QuoteForm`.
+- `src/components/erp/QuotesList.tsx` — client; tabela `erp-table` com `StatusBadge`; ações aprovar/rejeitar/converter (inline state, fetch, feedback).
+- `src/components/erp/QuoteForm.tsx` — client; seletor de cliente + linhas de produto dinâmicas + desconto + totais em tempo real; POST `/api/erp/orcamentos`.
+- `src/app/erp/os/page.tsx` — server `force-dynamic`; KpiCards; renderiza `OrdensServicoList`.
+- `src/app/erp/os/nova/page.tsx` — server `force-dynamic`; renderiza `OrdemServicoForm`.
+- `src/app/erp/os/[id]/page.tsx` — server `force-dynamic`; carrega `getOrdemServicoDetail` + `listOsFormData`; renderiza `OrdemServicoDetail`.
+- `src/components/erp/OrdensServicoList.tsx` — client; tabela com link para detalhes.
+- `src/components/erp/OrdemServicoForm.tsx` — client; formulário de abertura de OS.
+- `src/components/erp/OrdemServicoDetail.tsx` — client; cabeçalho da OS, botões de mudança de status, tabelas de serviços e peças com formulários inline para adicionar/remover, totais, painel de faturamento com opção NFS-e.
+- `src/app/erp/atendimento/page.tsx` — hub estático com 3 Cards (Nova Venda / Novo Orçamento / Nova OS) + acesso rápido às listas.
+
+**Observações:** `npx tsc --noEmit` e `eslint` limpos; nenhum arquivo proibido alterado; nenhum migrate/build executado.

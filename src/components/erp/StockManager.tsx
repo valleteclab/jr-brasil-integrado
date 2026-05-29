@@ -541,7 +541,7 @@ function InventoriesTab({
             {inventories.length === 0 && (
               <tr>
                 <td colSpan={9}>
-                  <div className="empty-st">Nenhum inventário criado ainda. Clique em "Novo inventário" para começar.</div>
+                  <div className="empty-st">Nenhum inventário criado ainda. Clique em &quot;Novo inventário&quot; para começar.</div>
                 </td>
               </tr>
             )}

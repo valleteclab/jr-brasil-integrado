@@ -417,7 +417,7 @@ export function TeamManager({ initialColaboradores, initialPerfis }: TeamManager
             <header className="drawer-head">
               <div>
                 <h2>Convidar colaborador</h2>
-                <p>O acesso será criado com senha temporária "change-me".</p>
+                <p>O acesso será criado com senha temporária &quot;change-me&quot;.</p>
               </div>
               <button type="button" onClick={closeInvite}>Fechar</button>
             </header>
