@@ -58,7 +58,7 @@ export function OrdemServicoForm({ formData }: Props) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="op-form">
+    <form onSubmit={handleSubmit}>
       {error && (
         <div className="alert danger">
           <strong>Erro</strong>
@@ -66,81 +66,85 @@ export function OrdemServicoForm({ formData }: Props) {
         </div>
       )}
 
-      <div className="op-form-grid">
-        <div className="op-form-field">
-          <label htmlFor="clienteId">Cliente *</label>
-          <select
-            id="clienteId"
-            value={clienteId}
-            onChange={(e) => setClienteId(e.target.value)}
-            required
-          >
-            <option value="">Selecione um cliente</option>
-            {formData.clientes.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.label}
-              </option>
-            ))}
-          </select>
-        </div>
+      <div className="erp-card">
+        <div className="erp-card-head"><h3>Dados da ordem de serviço</h3></div>
+        <div className="erp-form">
+          <label htmlFor="clienteId">
+            Cliente *
+            <select
+              id="clienteId"
+              value={clienteId}
+              onChange={(e) => setClienteId(e.target.value)}
+              required
+            >
+              <option value="">Selecione um cliente</option>
+              {formData.clientes.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+          </label>
 
-        <div className="op-form-field">
-          <label htmlFor="equipamento">Equipamento *</label>
-          <input
-            id="equipamento"
-            type="text"
-            placeholder="Ex: Notebook Dell Inspiron 15"
-            value={equipamento}
-            onChange={(e) => setEquipamento(e.target.value)}
-            required
-          />
-        </div>
+          <label htmlFor="equipamento">
+            Equipamento *
+            <input
+              id="equipamento"
+              type="text"
+              placeholder="Ex: Notebook Dell Inspiron 15"
+              value={equipamento}
+              onChange={(e) => setEquipamento(e.target.value)}
+              required
+            />
+          </label>
 
-        <div className="op-form-field">
-          <label htmlFor="placaOuSerial">Placa / Número de série</label>
-          <input
-            id="placaOuSerial"
-            type="text"
-            placeholder="Ex: ABC-1234 ou SN1234567"
-            value={placaOuSerial}
-            onChange={(e) => setPlacaOuSerial(e.target.value)}
-          />
-        </div>
+          <label htmlFor="placaOuSerial">
+            Placa / Número de série
+            <input
+              id="placaOuSerial"
+              type="text"
+              placeholder="Ex: ABC-1234 ou SN1234567"
+              value={placaOuSerial}
+              onChange={(e) => setPlacaOuSerial(e.target.value)}
+            />
+          </label>
 
-        <div className="op-form-field">
-          <label htmlFor="previsaoEm">Previsão de entrega</label>
-          <input
-            id="previsaoEm"
-            type="date"
-            value={previsaoEm}
-            onChange={(e) => setPrevisaoEm(e.target.value)}
-          />
+          <label htmlFor="previsaoEm">
+            Previsão de entrega
+            <input
+              id="previsaoEm"
+              type="date"
+              value={previsaoEm}
+              onChange={(e) => setPrevisaoEm(e.target.value)}
+            />
+          </label>
+
+          <label className="full" htmlFor="problemaRelatado">
+            Problema relatado pelo cliente
+            <textarea
+              id="problemaRelatado"
+              rows={3}
+              placeholder="Descreva o problema relatado pelo cliente..."
+              value={problemaRelatado}
+              onChange={(e) => setProblemaRelatado(e.target.value)}
+            />
+          </label>
+
+          <label className="full" htmlFor="observacoes">
+            Observações internas
+            <textarea
+              id="observacoes"
+              rows={2}
+              placeholder="Observações internas da oficina..."
+              value={observacoes}
+              onChange={(e) => setObservacoes(e.target.value)}
+            />
+          </label>
         </div>
       </div>
 
-      <div className="op-form-field">
-        <label htmlFor="problemaRelatado">Problema relatado pelo cliente</label>
-        <textarea
-          id="problemaRelatado"
-          rows={3}
-          placeholder="Descreva o problema relatado pelo cliente..."
-          value={problemaRelatado}
-          onChange={(e) => setProblemaRelatado(e.target.value)}
-        />
-      </div>
-
-      <div className="op-form-field">
-        <label htmlFor="observacoes">Observações internas</label>
-        <textarea
-          id="observacoes"
-          rows={2}
-          placeholder="Observações internas da oficina..."
-          value={observacoes}
-          onChange={(e) => setObservacoes(e.target.value)}
-        />
-      </div>
-
-      <div className="op-form-actions">
+      <div className="erp-toolbar">
+        <div className="toolbar-grow" />
         <Button type="button" variant="light" href="/erp/os">
           Cancelar
         </Button>

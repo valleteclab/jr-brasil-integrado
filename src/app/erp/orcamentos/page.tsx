@@ -1,6 +1,7 @@
 import { QuotesList } from "@/components/erp/QuotesList";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Button } from "@/components/shared/Button";
+import { KpiCard } from "@/components/shared/KpiCard";
 import { listQuotes } from "@/lib/services/sales-quote";
 import type { QuoteSummary } from "@/lib/services/sales-quote";
 
@@ -40,22 +41,14 @@ export default async function OrcamentosPage() {
       )}
 
       <div className="kpi-row">
-        <div className="metric">
-          <span>Total</span>
-          <strong>{total}</strong>
-        </div>
-        <div className="metric">
-          <span>Aprovados</span>
-          <strong>{aprovados}</strong>
-        </div>
-        <div className="metric">
-          <span>Convertidos</span>
-          <strong>{convertidos}</strong>
-        </div>
-        <div className="metric">
-          <span>Em análise</span>
-          <strong>{quotes.filter((q) => q.status === "EM_ANALISE").length}</strong>
-        </div>
+        <KpiCard label="Total" value={String(total)} />
+        <KpiCard label="Aprovados" value={String(aprovados)} tone="success" />
+        <KpiCard label="Convertidos" value={String(convertidos)} tone="info" />
+        <KpiCard
+          label="Em análise"
+          value={String(quotes.filter((q) => q.status === "EM_ANALISE").length)}
+          tone="warn"
+        />
       </div>
 
       <QuotesList quotes={quotes} />

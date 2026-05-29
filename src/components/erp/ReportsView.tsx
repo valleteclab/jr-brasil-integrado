@@ -34,11 +34,12 @@ function AbaVendas({ data }: { data: SalesReport }) {
         <KpiCard label="Ticket médio" value={data.ticketMedio} tone="default" />
       </div>
 
-      <section className="panel" style={{ marginTop: "1.5rem" }}>
-        <h3>Top 10 produtos mais vendidos ({data.periodoDias} dias)</h3>
+      <section className="erp-card" style={{ marginTop: "1.5rem" }}>
+        <div className="erp-card-head"><h3>Top 10 produtos mais vendidos ({data.periodoDias} dias)</h3></div>
         {data.topProdutos.length === 0 ? (
           <div className="empty-st"><span>Sem vendas no período.</span></div>
         ) : (
+          <div className="erp-table-wrap">
           <table className="erp-table">
             <thead>
               <tr>
@@ -61,14 +62,16 @@ function AbaVendas({ data }: { data: SalesReport }) {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </section>
 
-      <section className="panel" style={{ marginTop: "1.5rem" }}>
-        <h3>Vendas por dia ({data.periodoDias} dias)</h3>
+      <section className="erp-card" style={{ marginTop: "1.5rem" }}>
+        <div className="erp-card-head"><h3>Vendas por dia ({data.periodoDias} dias)</h3></div>
         {data.vendasPorDia.length === 0 ? (
           <div className="empty-st"><span>Sem dados de venda por dia.</span></div>
         ) : (
+          <div className="erp-table-wrap">
           <table className="erp-table">
             <thead>
               <tr>
@@ -87,6 +90,7 @@ function AbaVendas({ data }: { data: SalesReport }) {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </section>
     </div>
@@ -105,11 +109,12 @@ function AbaEstoque({ data }: { data: StockReport }) {
         <KpiCard label="Itens zerados" value={String(data.totalZerados)} tone={data.totalZerados > 0 ? "danger" : "success"} />
       </div>
 
-      <section className="panel" style={{ marginTop: "1.5rem" }}>
-        <h3>Valor de estoque por categoria</h3>
+      <section className="erp-card" style={{ marginTop: "1.5rem" }}>
+        <div className="erp-card-head"><h3>Valor de estoque por categoria</h3></div>
         {data.porCategoria.length === 0 ? (
           <div className="empty-st"><span>Nenhum saldo de estoque registrado.</span></div>
         ) : (
+          <div className="erp-table-wrap">
           <table className="erp-table">
             <thead>
               <tr>
@@ -128,12 +133,14 @@ function AbaEstoque({ data }: { data: StockReport }) {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </section>
 
       {data.itensCriticos.length > 0 && (
-        <section className="panel" style={{ marginTop: "1.5rem" }}>
-          <h3>Itens com estoque crítico</h3>
+        <section className="erp-card" style={{ marginTop: "1.5rem" }}>
+          <div className="erp-card-head"><h3>Itens com estoque crítico</h3></div>
+          <div className="erp-table-wrap">
           <table className="erp-table">
             <thead>
               <tr>
@@ -158,12 +165,14 @@ function AbaEstoque({ data }: { data: StockReport }) {
               ))}
             </tbody>
           </table>
+          </div>
         </section>
       )}
 
       {data.itensZerados.length > 0 && (
-        <section className="panel" style={{ marginTop: "1.5rem" }}>
-          <h3>Itens zerados</h3>
+        <section className="erp-card" style={{ marginTop: "1.5rem" }}>
+          <div className="erp-card-head"><h3>Itens zerados</h3></div>
+          <div className="erp-table-wrap">
           <table className="erp-table">
             <thead>
               <tr>
@@ -182,6 +191,7 @@ function AbaEstoque({ data }: { data: StockReport }) {
               ))}
             </tbody>
           </table>
+          </div>
         </section>
       )}
     </div>
@@ -224,11 +234,12 @@ function AbaFinanceiro({ data }: { data: FinanceReport }) {
             <KpiCard label="Total vencido" value={data.aReceber.totalVencido} tone={data.aReceber.totalVencidoNum > 0 ? "danger" : "success"} />
           </div>
 
-          <section className="panel" style={{ marginTop: "1rem" }}>
-            <h4>Por status</h4>
+          <section className="erp-card" style={{ marginTop: "1rem" }}>
+            <div className="erp-card-head"><h3>Por status</h3></div>
             {data.aReceber.porStatus.length === 0 ? (
               <div className="empty-st"><span>Sem contas a receber.</span></div>
             ) : (
+              <div className="erp-table-wrap">
               <table className="erp-table">
                 <thead>
                   <tr><th>Status</th><th>Qtd.</th><th>Total</th></tr>
@@ -243,14 +254,16 @@ function AbaFinanceiro({ data }: { data: FinanceReport }) {
                   ))}
                 </tbody>
               </table>
+              </div>
             )}
           </section>
 
-          <section className="panel" style={{ marginTop: "1rem" }}>
-            <h4>Aging (vencimentos)</h4>
+          <section className="erp-card" style={{ marginTop: "1rem" }}>
+            <div className="erp-card-head"><h3>Aging (vencimentos)</h3></div>
             {data.aReceber.aging.length === 0 ? (
               <div className="empty-st"><span>Sem pendências.</span></div>
             ) : (
+              <div className="erp-table-wrap">
               <table className="erp-table">
                 <thead>
                   <tr><th>Faixa</th><th>Qtd.</th><th>Total</th></tr>
@@ -265,6 +278,7 @@ function AbaFinanceiro({ data }: { data: FinanceReport }) {
                   ))}
                 </tbody>
               </table>
+              </div>
             )}
           </section>
         </div>
@@ -277,11 +291,12 @@ function AbaFinanceiro({ data }: { data: FinanceReport }) {
             <KpiCard label="Total vencido" value={data.aPagar.totalVencido} tone={data.aPagar.totalVencidoNum > 0 ? "danger" : "success"} />
           </div>
 
-          <section className="panel" style={{ marginTop: "1rem" }}>
-            <h4>Por status</h4>
+          <section className="erp-card" style={{ marginTop: "1rem" }}>
+            <div className="erp-card-head"><h3>Por status</h3></div>
             {data.aPagar.porStatus.length === 0 ? (
               <div className="empty-st"><span>Sem contas a pagar.</span></div>
             ) : (
+              <div className="erp-table-wrap">
               <table className="erp-table">
                 <thead>
                   <tr><th>Status</th><th>Qtd.</th><th>Total</th></tr>
@@ -296,14 +311,16 @@ function AbaFinanceiro({ data }: { data: FinanceReport }) {
                   ))}
                 </tbody>
               </table>
+              </div>
             )}
           </section>
 
-          <section className="panel" style={{ marginTop: "1rem" }}>
-            <h4>Aging (vencimentos)</h4>
+          <section className="erp-card" style={{ marginTop: "1rem" }}>
+            <div className="erp-card-head"><h3>Aging (vencimentos)</h3></div>
             {data.aPagar.aging.length === 0 ? (
               <div className="empty-st"><span>Sem pendências.</span></div>
             ) : (
+              <div className="erp-table-wrap">
               <table className="erp-table">
                 <thead>
                   <tr><th>Faixa</th><th>Qtd.</th><th>Total</th></tr>
@@ -318,6 +335,7 @@ function AbaFinanceiro({ data }: { data: FinanceReport }) {
                   ))}
                 </tbody>
               </table>
+              </div>
             )}
           </section>
         </div>
@@ -363,11 +381,12 @@ function AbaFiscal({ data }: { data: FiscalReport }) {
         <KpiCard label="Total tributos" value={data.totalTributos} tone="warn" />
       </div>
 
-      <section className="panel" style={{ marginTop: "1.5rem" }}>
-        <h3>Notas fiscais — {data.mes}</h3>
+      <section className="erp-card" style={{ marginTop: "1.5rem" }}>
+        <div className="erp-card-head"><h3>Notas fiscais — {data.mes}</h3></div>
         {data.linhas.length === 0 ? (
           <div className="empty-st"><span>Nenhuma nota fiscal emitida neste mês.</span></div>
         ) : (
+          <div className="erp-table-wrap">
           <table className="erp-table">
             <thead>
               <tr>
@@ -390,6 +409,7 @@ function AbaFiscal({ data }: { data: FiscalReport }) {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </section>
     </div>
@@ -496,28 +516,18 @@ export function ReportsView({ sales, stock, finance, fiscal, dre }: Props) {
   return (
     <div>
       {/* Tabs */}
-      <div className="op-tabs" style={{ display: "flex", gap: "0.25rem", marginBottom: "1.5rem", borderBottom: "1px solid var(--border)" }}>
+      <nav className="tabs" style={{ marginBottom: "1.5rem" }}>
         {TABS.map((tab) => (
           <button
             key={tab.id}
             type="button"
-            className={`op-tab${activeTab === tab.id ? " active" : ""}`}
+            className={activeTab === tab.id ? "active" : ""}
             onClick={() => setActiveTab(tab.id)}
-            style={{
-              padding: "0.6rem 1.1rem",
-              border: "none",
-              borderBottom: activeTab === tab.id ? "2px solid var(--accent)" : "2px solid transparent",
-              background: "none",
-              cursor: "pointer",
-              fontWeight: activeTab === tab.id ? "600" : "400",
-              color: activeTab === tab.id ? "var(--accent)" : "var(--text-2)",
-              fontSize: "0.95rem"
-            }}
           >
             {tab.label}
           </button>
         ))}
-      </div>
+      </nav>
 
       {/* Conteúdo */}
       {activeTab === "vendas" && <AbaVendas data={sales} />}

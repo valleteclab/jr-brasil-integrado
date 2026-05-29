@@ -77,11 +77,12 @@ export function NotasFiscaisList({ notas }: Props) {
   }
 
   return (
-    <section className="op-list">
-      <div className="op-toolbar">
-        <div className="op-search">
+    <>
+      <div className="erp-toolbar">
+        <div className="toolbar-search">
           <span aria-hidden="true">⌕</span>
           <input
+            className="search"
             placeholder="Buscar por número, destinatário, chave de acesso..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -124,9 +125,9 @@ export function NotasFiscaisList({ notas }: Props) {
                 <td className="num">{nota.total}</td>
                 <td className="actions">
                   {nota.canCorrect && (
-                    <button className="link-btn" type="button" disabled={busyId === nota.id} onClick={() => correct(nota)}>
+                    <Button variant="light" type="button" disabled={busyId === nota.id} onClick={() => correct(nota)}>
                       Carta de correção
-                    </button>
+                    </Button>
                   )}
                   {nota.canCancel && (
                     <button className="danger-link" type="button" disabled={busyId === nota.id} onClick={() => cancel(nota)}>
@@ -146,6 +147,6 @@ export function NotasFiscaisList({ notas }: Props) {
           </tbody>
         </table>
       </div>
-    </section>
+    </>
   );
 }

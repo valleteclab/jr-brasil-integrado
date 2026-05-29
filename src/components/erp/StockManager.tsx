@@ -62,10 +62,10 @@ function AdjustForm({
   }
 
   return (
-    <form className="op-form" onSubmit={submit}>
-      <h3 className="form-title">Ajuste de estoque</h3>
+    <form className="erp-card" onSubmit={submit}>
+      <div className="erp-card-head"><h3>Ajuste de estoque</h3></div>
       {error && <div className="alert danger"><strong>Erro</strong><span>{error}</span></div>}
-      <div className="form-row">
+      <div className="erp-form">
         <label>
           Produto
           <select value={produtoId} onChange={(e) => setProdutoId(e.target.value)} required>
@@ -83,8 +83,6 @@ function AdjustForm({
             ))}
           </select>
         </label>
-      </div>
-      <div className="form-row">
         <label>
           Nova quantidade
           <input type="number" min="0" step="0.001" value={novaQtd} onChange={(e) => setNovaQtd(e.target.value)} required placeholder="0" />
@@ -94,9 +92,10 @@ function AdjustForm({
           <input type="text" value={motivo} onChange={(e) => setMotivo(e.target.value)} required placeholder="Motivo do ajuste" />
         </label>
       </div>
-      <div className="form-actions">
-        <Button type="submit" variant="primary" disabled={loading}>{loading ? "Salvando..." : "Confirmar ajuste"}</Button>
+      <div className="erp-toolbar">
+        <div className="toolbar-grow" />
         <Button type="button" variant="light" onClick={onClose}>Cancelar</Button>
+        <Button type="submit" variant="primary" disabled={loading}>{loading ? "Salvando..." : "Confirmar ajuste"}</Button>
       </div>
     </form>
   );
@@ -154,10 +153,10 @@ function TransferForm({
   }
 
   return (
-    <form className="op-form" onSubmit={submit}>
-      <h3 className="form-title">Transferência entre depósitos</h3>
+    <form className="erp-card" onSubmit={submit}>
+      <div className="erp-card-head"><h3>Transferência entre depósitos</h3></div>
       {error && <div className="alert danger"><strong>Erro</strong><span>{error}</span></div>}
-      <div className="form-row">
+      <div className="erp-form">
         <label>
           Produto
           <select value={produtoId} onChange={(e) => setProdutoId(e.target.value)} required>
@@ -171,8 +170,6 @@ function TransferForm({
           Quantidade
           <input type="number" min="0.001" step="0.001" value={qtd} onChange={(e) => setQtd(e.target.value)} required placeholder="0" />
         </label>
-      </div>
-      <div className="form-row">
         <label>
           Depósito de origem
           <select value={origemId} onChange={(e) => setOrigemId(e.target.value)} required>
@@ -192,9 +189,10 @@ function TransferForm({
           </select>
         </label>
       </div>
-      <div className="form-actions">
-        <Button type="submit" variant="primary" disabled={loading}>{loading ? "Transferindo..." : "Confirmar transferência"}</Button>
+      <div className="erp-toolbar">
+        <div className="toolbar-grow" />
         <Button type="button" variant="light" onClick={onClose}>Cancelar</Button>
+        <Button type="submit" variant="primary" disabled={loading}>{loading ? "Transferindo..." : "Confirmar transferência"}</Button>
       </div>
     </form>
   );
@@ -240,10 +238,10 @@ function NewInventoryForm({
   }
 
   return (
-    <form className="op-form" onSubmit={submit}>
-      <h3 className="form-title">Novo inventário</h3>
+    <form className="erp-card" onSubmit={submit}>
+      <div className="erp-card-head"><h3>Novo inventário</h3></div>
       {error && <div className="alert danger"><strong>Erro</strong><span>{error}</span></div>}
-      <div className="form-row">
+      <div className="erp-form">
         <label>
           Depósito
           <select value={depositoId} onChange={(e) => setDepositoId(e.target.value)} required>
@@ -257,9 +255,10 @@ function NewInventoryForm({
           <input type="text" value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder="Ex: Inventário mensal" />
         </label>
       </div>
-      <div className="form-actions">
-        <Button type="submit" variant="primary" disabled={loading}>{loading ? "Criando..." : "Criar inventário"}</Button>
+      <div className="erp-toolbar">
+        <div className="toolbar-grow" />
         <Button type="button" variant="light" onClick={onClose}>Cancelar</Button>
+        <Button type="submit" variant="primary" disabled={loading}>{loading ? "Criando..." : "Criar inventário"}</Button>
       </div>
     </form>
   );
@@ -299,11 +298,12 @@ function BalancesTab({
   }
 
   return (
-    <section className="op-list">
-      <div className="op-toolbar">
-        <div className="op-search">
+    <section>
+      <div className="erp-toolbar">
+        <div className="toolbar-search">
           <span aria-hidden="true">⌕</span>
           <input
+            className="search"
             placeholder="Buscar por SKU, produto ou depósito..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -406,11 +406,12 @@ function MovementsTab({ movements }: { movements: StockMovement[] }) {
   }
 
   return (
-    <section className="op-list">
-      <div className="op-toolbar">
-        <div className="op-search">
+    <section>
+      <div className="erp-toolbar">
+        <div className="toolbar-search">
           <span aria-hidden="true">⌕</span>
           <input
+            className="search"
             placeholder="Buscar por SKU, produto ou tipo..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -484,8 +485,8 @@ function InventoriesTab({
   }
 
   return (
-    <section className="op-list">
-      <div className="op-toolbar">
+    <section>
+      <div className="erp-toolbar">
         <div className="toolbar-grow" />
         <Button variant="primary" onClick={() => setShowForm(true)}>Novo inventário</Button>
       </div>
@@ -532,9 +533,9 @@ function InventoriesTab({
                 <td><small>{inv.iniciadoEm ?? "—"}</small></td>
                 <td><small>{inv.finalizadoEm ?? "—"}</small></td>
                 <td className="actions">
-                  <a className="link-btn" href={`/erp/inventarios/${inv.id}`}>
+                  <Button variant="light" href={`/erp/inventarios/${inv.id}`}>
                     {inv.status === "FINALIZADO" ? "Ver" : "Contar"}
-                  </a>
+                  </Button>
                 </td>
               </tr>
             ))}
@@ -560,10 +561,10 @@ export function StockManager({ balances, movements, inventories, depositos, prod
   const [tab, setTab] = useState<Tab>("saldos");
 
   return (
-    <div className="op-container">
-      <nav className="op-tabs" role="tablist" aria-label="Módulos de estoque">
+    <div>
+      <nav className="tabs" role="tablist" aria-label="Módulos de estoque">
         <button
-          className={`op-tab${tab === "saldos" ? " active" : ""}`}
+          className={tab === "saldos" ? "active" : ""}
           role="tab"
           aria-selected={tab === "saldos"}
           onClick={() => setTab("saldos")}
@@ -572,7 +573,7 @@ export function StockManager({ balances, movements, inventories, depositos, prod
           Saldos
         </button>
         <button
-          className={`op-tab${tab === "movimentos" ? " active" : ""}`}
+          className={tab === "movimentos" ? "active" : ""}
           role="tab"
           aria-selected={tab === "movimentos"}
           onClick={() => setTab("movimentos")}
@@ -581,7 +582,7 @@ export function StockManager({ balances, movements, inventories, depositos, prod
           Movimentações
         </button>
         <button
-          className={`op-tab${tab === "inventarios" ? " active" : ""}`}
+          className={tab === "inventarios" ? "active" : ""}
           role="tab"
           aria-selected={tab === "inventarios"}
           onClick={() => setTab("inventarios")}

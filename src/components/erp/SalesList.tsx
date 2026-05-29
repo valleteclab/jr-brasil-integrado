@@ -108,11 +108,12 @@ export function SalesList({ sales }: Props) {
   }
 
   return (
-    <section className="op-list">
-      <div className="op-toolbar">
-        <div className="op-search">
+    <section>
+      <div className="erp-toolbar">
+        <div className="toolbar-search">
           <span aria-hidden="true">⌕</span>
           <input
+            className="search"
             placeholder="Buscar por número, cliente, status..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -170,24 +171,24 @@ export function SalesList({ sales }: Props) {
                 </td>
                 <td className="actions">
                   {row.canConfirm && (
-                    <button
-                      className="link-btn"
+                    <Button
+                      variant="light"
                       type="button"
                       disabled={busyId === row.id}
                       onClick={() => confirmar(row)}
                     >
                       {busyId === row.id ? "Processando..." : "Confirmar"}
-                    </button>
+                    </Button>
                   )}
                   {row.canInvoice && (
-                    <button
-                      className="link-btn"
+                    <Button
+                      variant="light"
                       type="button"
                       disabled={busyId === row.id}
                       onClick={() => faturar(row)}
                     >
                       {busyId === row.id ? "Processando..." : "Emitir NF-e"}
-                    </button>
+                    </Button>
                   )}
                   {row.canCancel && (
                     <button

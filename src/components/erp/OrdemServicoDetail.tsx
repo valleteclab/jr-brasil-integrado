@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Button } from "@/components/shared/Button";
 import { StatusBadge } from "@/components/shared/StatusBadge";
+import { KpiCard } from "@/components/shared/KpiCard";
 import type { OrdemServicoDetail as OsDetail } from "@/lib/services/service-order";
 import type { OsFormData } from "@/lib/services/service-order";
 
@@ -199,7 +200,7 @@ export function OrdemServicoDetail({ os: initialOs, formData }: Props) {
   const editavel = !["FATURADA", "CANCELADA"].includes(os.status);
 
   return (
-    <div className="op-detail">
+    <div>
       {error && (
         <div className="alert danger">
           <strong>Erro</strong>
@@ -208,36 +209,17 @@ export function OrdemServicoDetail({ os: initialOs, formData }: Props) {
       )}
 
       {/* Cabeçalho da OS */}
-      <div className="card">
+      <div className="erp-card">
+        <div className="erp-card-head">
+          <h3>OS {os.numero}</h3>
+          <StatusBadge tone={os.statusTone}>{os.statusLabel}</StatusBadge>
+        </div>
         <div className="kpi-row">
-          <div className="metric">
-            <span>Número</span>
-            <strong className="mono">{os.numero}</strong>
-          </div>
-          <div className="metric">
-            <span>Situação</span>
-            <StatusBadge tone={os.statusTone}>{os.statusLabel}</StatusBadge>
-          </div>
-          <div className="metric">
-            <span>Cliente</span>
-            <strong>{os.cliente}</strong>
-          </div>
-          <div className="metric">
-            <span>Equipamento</span>
-            <strong>{os.equipamento}</strong>
-          </div>
-          {os.placaOuSerial && (
-            <div className="metric">
-              <span>Placa / Série</span>
-              <strong>{os.placaOuSerial}</strong>
-            </div>
-          )}
-          {os.previsaoEm && (
-            <div className="metric">
-              <span>Previsão</span>
-              <strong>{os.previsaoEm}</strong>
-            </div>
-          )}
+          <KpiCard label="Número" value={os.numero} />
+          <KpiCard label="Cliente" value={os.cliente} />
+          <KpiCard label="Equipamento" value={os.equipamento} />
+          {os.placaOuSerial && <KpiCard label="Placa / Série" value={os.placaOuSerial} />}
+          {os.previsaoEm && <KpiCard label="Previsão" value={os.previsaoEm} />}
         </div>
         {os.problemaRelatado && (
           <p>
@@ -253,27 +235,27 @@ export function OrdemServicoDetail({ os: initialOs, formData }: Props) {
 
       {/* Mudança de status */}
       {editavel && (
-        <div className="card">
-          <h3>Alterar situação</h3>
-          <div className="op-toolbar" style={{ gap: "8px", flexWrap: "wrap" }}>
+        <div className="erp-card">
+          <div className="erp-card-head"><h3>Alterar situação</h3></div>
+          <div className="erp-toolbar">
             {STATUS_OPTIONS.filter((s) => s.value !== os.status).map((s) => (
-              <button
+              <Button
                 key={s.value}
-                className="button light"
+                variant="light"
                 type="button"
                 disabled={busy}
                 onClick={() => handleChangeStatus(s.value)}
               >
                 → {s.label}
-              </button>
+              </Button>
             ))}
           </div>
         </div>
       )}
 
       {/* Serviços */}
-      <div className="card">
-        <h3>Serviços (mão de obra)</h3>
+      <div className="erp-card">
+        <div className="erp-card-head"><h3>Serviços (mão de obra)</h3></div>
         <div className="erp-table-wrap">
           <table className="erp-table">
             <thead>
@@ -320,11 +302,11 @@ export function OrdemServicoDetail({ os: initialOs, formData }: Props) {
         </div>
 
         {editavel && (
-          <form onSubmit={handleAddServico} className="op-inline-form">
-            <h4>Adicionar serviço</h4>
-            <div className="op-form-grid">
-              <div className="op-form-field">
-                <label>Descrição</label>
+          <form onSubmit={handleAddServico}>
+            <div className="erp-card-head"><h3>Adicionar serviço</h3></div>
+            <div className="erp-form">
+              <label className="full">
+                Descrição
                 <input
                   type="text"
                   placeholder="Ex: Diagnóstico e reparo"
@@ -332,9 +314,9 @@ export function OrdemServicoDetail({ os: initialOs, formData }: Props) {
                   onChange={(e) => setDescricaoServ(e.target.value)}
                   required
                 />
-              </div>
-              <div className="op-form-field">
-                <label>Horas</label>
+              </label>
+              <label>
+                Horas
                 <input
                   type="number"
                   min={0.5}
@@ -342,11 +324,10 @@ export function OrdemServicoDetail({ os: initialOs, formData }: Props) {
                   value={horas}
                   onChange={(e) => setHoras(Number(e.target.value))}
                   required
-                  style={{ width: "100px" }}
                 />
-              </div>
-              <div className="op-form-field">
-                <label>Valor/hora (R$)</label>
+              </label>
+              <label>
+                Valor/hora (R$)
                 <input
                   type="number"
                   min={0.01}
@@ -354,14 +335,12 @@ export function OrdemServicoDetail({ os: initialOs, formData }: Props) {
                   value={valorHora}
                   onChange={(e) => setValorHora(Number(e.target.value))}
                   required
-                  style={{ width: "120px" }}
                 />
-              </div>
+              </label>
             </div>
-            <div>
-              <span style={{ marginRight: "8px" }}>
-                Total: {formatBrl(horas * valorHora)}
-              </span>
+            <div className="erp-toolbar">
+              <span>Total: {formatBrl(horas * valorHora)}</span>
+              <div className="toolbar-grow" />
               <Button type="submit" variant="light" disabled={busy}>
                 Adicionar
               </Button>
@@ -371,8 +350,8 @@ export function OrdemServicoDetail({ os: initialOs, formData }: Props) {
       </div>
 
       {/* Peças */}
-      <div className="card">
-        <h3>Peças utilizadas</h3>
+      <div className="erp-card">
+        <div className="erp-card-head"><h3>Peças utilizadas</h3></div>
         <div className="erp-table-wrap">
           <table className="erp-table">
             <thead>
@@ -422,11 +401,11 @@ export function OrdemServicoDetail({ os: initialOs, formData }: Props) {
         </div>
 
         {editavel && (
-          <form onSubmit={handleAddPeca} className="op-inline-form">
-            <h4>Adicionar peça</h4>
-            <div className="op-form-grid">
-              <div className="op-form-field">
-                <label>Produto</label>
+          <form onSubmit={handleAddPeca}>
+            <div className="erp-card-head"><h3>Adicionar peça</h3></div>
+            <div className="erp-form">
+              <label className="full">
+                Produto
                 <select
                   value={produtoId}
                   onChange={(e) => {
@@ -443,20 +422,19 @@ export function OrdemServicoDetail({ os: initialOs, formData }: Props) {
                     </option>
                   ))}
                 </select>
-              </div>
-              <div className="op-form-field">
-                <label>Quantidade</label>
+              </label>
+              <label>
+                Quantidade
                 <input
                   type="number"
                   min={1}
                   value={quantidadePeca}
                   onChange={(e) => setQuantidadePeca(Number(e.target.value))}
                   required
-                  style={{ width: "100px" }}
                 />
-              </div>
-              <div className="op-form-field">
-                <label>Preço unitário (R$)</label>
+              </label>
+              <label>
+                Preço unitário (R$)
                 <input
                   type="number"
                   min={0.01}
@@ -464,14 +442,12 @@ export function OrdemServicoDetail({ os: initialOs, formData }: Props) {
                   value={precoPeca}
                   onChange={(e) => setPrecoPeca(Number(e.target.value))}
                   required
-                  style={{ width: "120px" }}
                 />
-              </div>
+              </label>
             </div>
-            <div>
-              <span style={{ marginRight: "8px" }}>
-                Total: {formatBrl(quantidadePeca * precoPeca)}
-              </span>
+            <div className="erp-toolbar">
+              <span>Total: {formatBrl(quantidadePeca * precoPeca)}</span>
+              <div className="toolbar-grow" />
               <Button type="submit" variant="light" disabled={busy}>
                 Adicionar
               </Button>
@@ -481,61 +457,53 @@ export function OrdemServicoDetail({ os: initialOs, formData }: Props) {
       </div>
 
       {/* Totais */}
-      <div className="card">
-        <div className="kpi-row">
-          <div className="metric">
-            <span>Serviços</span>
-            <strong>{os.totalServicos}</strong>
-          </div>
-          <div className="metric">
-            <span>Peças</span>
-            <strong>{os.totalPecas}</strong>
-          </div>
-          <div className="metric">
-            <span>Total</span>
-            <strong>{os.total}</strong>
-          </div>
-        </div>
+      <div className="kpi-row">
+        <KpiCard label="Serviços" value={os.totalServicos} />
+        <KpiCard label="Peças" value={os.totalPecas} />
+        <KpiCard label="Total" value={os.total} tone="success" />
       </div>
 
       {/* Faturamento */}
       {os.canFaturar && (
-        <div className="card">
-          <h3>Faturar OS</h3>
-          <form onSubmit={handleFaturar} className="op-inline-form">
-            <div className="op-form-grid">
-              <div className="op-form-field">
-                <label>Forma de pagamento</label>
+        <div className="erp-card">
+          <div className="erp-card-head"><h3>Faturar OS</h3></div>
+          <form onSubmit={handleFaturar}>
+            <div className="erp-form">
+              <label>
+                Forma de pagamento
                 <input
                   type="text"
                   placeholder="Ex: Boleto, PIX, Cartão"
                   value={formaPagamento}
                   onChange={(e) => setFormaPagamento(e.target.value)}
                 />
-              </div>
-              <div className="op-form-field">
-                <label>Condição de pagamento</label>
+              </label>
+              <label>
+                Condição de pagamento
                 <input
                   type="text"
                   placeholder="Ex: À vista, 30 dias"
                   value={condicaoPagamento}
                   onChange={(e) => setCondicaoPagamento(e.target.value)}
                 />
-              </div>
-            </div>
-            {os.servicos.length > 0 && (
-              <label style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
-                <input
-                  type="checkbox"
-                  checked={emitirNfse}
-                  onChange={(e) => setEmitirNfse(e.target.checked)}
-                />
-                Emitir NFS-e para os serviços
               </label>
-            )}
-            <Button type="submit" variant="primary" disabled={busy}>
-              {busy ? "Faturando..." : "Confirmar faturamento"}
-            </Button>
+              {os.servicos.length > 0 && (
+                <label className="check-row">
+                  <input
+                    type="checkbox"
+                    checked={emitirNfse}
+                    onChange={(e) => setEmitirNfse(e.target.checked)}
+                  />
+                  Emitir NFS-e para os serviços
+                </label>
+              )}
+            </div>
+            <div className="erp-toolbar">
+              <div className="toolbar-grow" />
+              <Button type="submit" variant="primary" disabled={busy}>
+                {busy ? "Faturando..." : "Confirmar faturamento"}
+              </Button>
+            </div>
           </form>
         </div>
       )}

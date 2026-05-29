@@ -189,11 +189,12 @@ export function SuppliersCrud({ initialSuppliers }: Props) {
         <div className="alert danger"><strong>Atenção</strong><span>{error}</span></div>
       )}
 
-      <div className="op-list">
-        <div className="op-toolbar">
-          <div className="op-search">
+      <section className="erp-card">
+        <div className="erp-toolbar">
+          <div className="toolbar-search">
             <span aria-hidden="true">⌕</span>
             <input
+              className="search"
               placeholder="Buscar por nome, CNPJ, cidade..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
@@ -234,7 +235,7 @@ export function SuppliersCrud({ initialSuppliers }: Props) {
                     </StatusBadge>
                   </td>
                   <td className="actions">
-                    <button className="link-btn" type="button" onClick={() => openEdit(s)}>Editar</button>
+                    <Button variant="light" type="button" onClick={() => openEdit(s)}>Editar</Button>
                     {s.ativo && (
                       <button className="danger-link" type="button" disabled={busy} onClick={() => archive(s)}>
                         Arquivar
@@ -253,7 +254,7 @@ export function SuppliersCrud({ initialSuppliers }: Props) {
             </tbody>
           </table>
         </div>
-      </div>
+      </section>
 
       {drawerOpen && (
         <>

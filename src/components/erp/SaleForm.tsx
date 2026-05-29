@@ -3,7 +3,7 @@
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/shared/Button";
-import { Card } from "@/components/shared/Card";
+import { KpiCard } from "@/components/shared/KpiCard";
 import type { SaleFormData } from "@/lib/services/sales";
 
 type LineItem = {
@@ -112,7 +112,7 @@ export function SaleForm({ formData }: Props) {
   }
 
   return (
-    <form className="op-form-stack" onSubmit={handleSubmit}>
+    <form onSubmit={handleSubmit}>
       {error && (
         <div className="alert danger">
           <strong>Atenção</strong>
@@ -120,9 +120,9 @@ export function SaleForm({ formData }: Props) {
         </div>
       )}
 
-      <Card className="op-form-card">
-        <h2>Dados do pedido</h2>
-        <div className="op-form-grid">
+      <div className="erp-card">
+        <div className="erp-card-head"><h3>Dados do pedido</h3></div>
+        <div className="erp-form">
           <label>
             <span>Cliente <span aria-hidden="true">*</span></span>
             <select value={clienteId} onChange={(e) => setClienteId(e.target.value)} required>
@@ -169,10 +169,10 @@ export function SaleForm({ formData }: Props) {
             />
           </label>
         </div>
-      </Card>
+      </div>
 
-      <Card className="op-form-card">
-        <h2>Itens do pedido</h2>
+      <div className="erp-card">
+        <div className="erp-card-head"><h3>Itens do pedido</h3></div>
 
         <div className="erp-table-wrap">
           <table className="erp-table">
@@ -259,15 +259,15 @@ export function SaleForm({ formData }: Props) {
         </div>
 
         <div style={{ marginTop: 8 }}>
-          <button type="button" className="link-btn" onClick={addLinha}>
+          <Button type="button" variant="light" onClick={addLinha}>
             + Adicionar linha
-          </button>
+          </Button>
         </div>
-      </Card>
+      </div>
 
-      <Card className="op-form-card">
-        <h2>Totais</h2>
-        <div className="op-form-grid">
+      <div className="erp-card">
+        <div className="erp-card-head"><h3>Totais</h3></div>
+        <div className="erp-form">
           <label>
             <span>Desconto global (R$)</span>
             <input
@@ -290,31 +290,16 @@ export function SaleForm({ formData }: Props) {
           </label>
         </div>
 
-        <div className="op-detail-list" style={{ marginTop: 12 }}>
-          <div>
-            <span>Subtotal</span>
-            <span>{formatBrl(subtotalLinhas)}</span>
-          </div>
-          {desconto > 0 && (
-            <div>
-              <span>Desconto</span>
-              <span>- {formatBrl(desconto)}</span>
-            </div>
-          )}
-          {frete > 0 && (
-            <div>
-              <span>Frete</span>
-              <span>+ {formatBrl(frete)}</span>
-            </div>
-          )}
-          <div>
-            <strong>Total</strong>
-            <strong>{formatBrl(totalGeral)}</strong>
-          </div>
+        <div className="kpi-row" style={{ marginTop: 12 }}>
+          <KpiCard label="Subtotal" value={formatBrl(subtotalLinhas)} />
+          {desconto > 0 && <KpiCard label="Desconto" value={`- ${formatBrl(desconto)}`} tone="warn" />}
+          {frete > 0 && <KpiCard label="Frete" value={`+ ${formatBrl(frete)}`} tone="info" />}
+          <KpiCard label="Total" value={formatBrl(totalGeral)} tone="success" />
         </div>
-      </Card>
+      </div>
 
-      <div className="op-form-actions">
+      <div className="erp-toolbar">
+        <div className="toolbar-grow" />
         <Button type="button" variant="light" href="/erp/vendas">
           Cancelar
         </Button>

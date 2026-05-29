@@ -89,11 +89,12 @@ export function QuotesList({ quotes }: Props) {
   }
 
   return (
-    <section className="op-list">
-      <div className="op-toolbar">
-        <div className="op-search">
+    <section>
+      <div className="erp-toolbar">
+        <div className="toolbar-search">
           <span aria-hidden="true">⌕</span>
           <input
+            className="search"
             placeholder="Buscar por número, cliente, vendedor..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -149,29 +150,29 @@ export function QuotesList({ quotes }: Props) {
                 </td>
                 <td className="actions">
                   {orc.canAprovar && (
-                    <button
-                      className="link-btn"
+                    <Button
+                      variant="light"
                       type="button"
                       disabled={busyId === orc.id}
                       onClick={() => callAction(orc.id, "aprovar")}
                     >
                       Aprovar
-                    </button>
+                    </Button>
                   )}
                   {orc.canConverter && (
-                    <button
-                      className="link-btn"
+                    <Button
+                      variant="light"
                       type="button"
                       disabled={busyId === orc.id}
                       onClick={() => callAction(orc.id, "converter")}
                     >
                       {busyId === orc.id ? "Convertendo..." : "Gerar pedido"}
-                    </button>
+                    </Button>
                   )}
                   {orc.pedidoGeradoId && !orc.canConverter && (
-                    <a className="link-btn" href={`/erp/vendas`}>
+                    <Button variant="light" href="/erp/vendas">
                       Ver pedido
-                    </a>
+                    </Button>
                   )}
                   {orc.canRejeitar && (
                     <button

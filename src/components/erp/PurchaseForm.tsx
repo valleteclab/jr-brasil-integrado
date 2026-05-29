@@ -125,13 +125,13 @@ export function PurchaseForm({ formData }: Props) {
   }
 
   return (
-    <div className="op-form-page">
+    <div>
       {error && (
         <div className="alert danger"><strong>Atenção</strong><span>{error}</span></div>
       )}
 
-      <section className="card" style={{ marginBottom: "1.5rem" }}>
-        <h2 className="section-kicker">Dados do pedido</h2>
+      <section className="erp-card">
+        <div className="erp-card-head"><h3>Dados do pedido</h3></div>
         <div className="erp-form">
           <label className="full">
             Fornecedor
@@ -179,10 +179,10 @@ export function PurchaseForm({ formData }: Props) {
         </div>
       </section>
 
-      <section className="card" style={{ marginBottom: "1.5rem" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
-          <h2 className="section-kicker">Itens do pedido</h2>
-          <button className="link-btn" type="button" onClick={addLine}>+ Adicionar item</button>
+      <section className="erp-card">
+        <div className="erp-card-head">
+          <h3>Itens do pedido</h3>
+          <Button variant="light" type="button" onClick={addLine}>+ Adicionar item</Button>
         </div>
 
         <div className="erp-table-wrap">

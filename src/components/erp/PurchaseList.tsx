@@ -241,11 +241,12 @@ export function PurchaseList({ initialOrders }: Props) {
         <div className="alert danger"><strong>Atenção</strong><span>{error}</span></div>
       )}
 
-      <section className="op-list">
-        <div className="op-toolbar">
-          <div className="op-search">
+      <section className="erp-card">
+        <div className="erp-toolbar">
+          <div className="toolbar-search">
             <span aria-hidden="true">⌕</span>
             <input
+              className="search"
               placeholder="Buscar por número, fornecedor, status..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
@@ -314,24 +315,24 @@ export function PurchaseList({ initialOrders }: Props) {
                   <td>{o.previsaoEm ?? <span className="muted">—</span>}</td>
                   <td className="actions">
                     {o.canEnviar && (
-                      <button
-                        className="link-btn"
+                      <Button
+                        variant="light"
                         type="button"
                         disabled={busyId === o.id}
                         onClick={() => enviar(o)}
                       >
                         Enviar
-                      </button>
+                      </Button>
                     )}
                     {o.canReceber && (
-                      <button
-                        className="link-btn"
+                      <Button
+                        variant="light"
                         type="button"
                         disabled={busyId === o.id}
                         onClick={() => openReceive(o)}
                       >
                         Receber
-                      </button>
+                      </Button>
                     )}
                     {o.canCancelar && (
                       <button

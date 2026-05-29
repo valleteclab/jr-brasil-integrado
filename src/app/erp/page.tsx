@@ -103,13 +103,14 @@ export default async function ErpDashboardPage() {
       </div>
 
       {/* Itens críticos de estoque */}
-      <section className="panel" style={{ marginTop: "1.5rem" }}>
-        <h2>Itens críticos de estoque</h2>
+      <section className="erp-card" style={{ marginTop: "1.5rem" }}>
+        <div className="erp-card-head"><h3>Itens críticos de estoque</h3></div>
         {!itensCriticos || itensCriticos.top5.length === 0 ? (
           <div className="empty-st">
             <span>Nenhum item com estoque crítico no momento.</span>
           </div>
         ) : (
+          <div className="erp-table-wrap">
           <table className="erp-table">
             <thead>
               <tr>
@@ -136,23 +137,25 @@ export default async function ErpDashboardPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
         {itensCriticos && itensCriticos.contagem > 5 && (
           <p style={{ fontSize: "0.85em", marginTop: "0.5rem", color: "var(--text-2)" }}>
             {itensCriticos.contagem - 5} outros itens críticos não exibidos.{" "}
-            <a href="/erp/estoque" className="link-btn">Ver estoque completo</a>
+            <a href="/erp/estoque" className="toolbar-link">Ver estoque completo</a>
           </p>
         )}
       </section>
 
       {/* Pedidos recentes */}
-      <section className="panel" style={{ marginTop: "1.5rem" }}>
-        <h2>Pedidos recentes</h2>
+      <section className="erp-card" style={{ marginTop: "1.5rem" }}>
+        <div className="erp-card-head"><h3>Pedidos recentes</h3></div>
         {!pedidosRecentes || pedidosRecentes.length === 0 ? (
           <div className="empty-st">
             <span>Nenhum pedido registrado ainda.</span>
           </div>
         ) : (
+          <div className="erp-table-wrap">
           <table className="erp-table">
             <thead>
               <tr>
@@ -177,19 +180,20 @@ export default async function ErpDashboardPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
         <p style={{ fontSize: "0.85em", marginTop: "0.5rem" }}>
-          <a href="/erp/vendas" className="link-btn">Ver todas as vendas</a>
+          <a href="/erp/vendas" className="toolbar-link">Ver todas as vendas</a>
         </p>
       </section>
 
       {/* OS abertas */}
       {osAbertas && osAbertas.contagem > 0 && (
-        <section className="panel" style={{ marginTop: "1.5rem" }}>
-          <h2>Ordens de serviço em aberto</h2>
+        <section className="erp-card" style={{ marginTop: "1.5rem" }}>
+          <div className="erp-card-head"><h3>Ordens de serviço em aberto</h3></div>
           <p>
             Há <strong>{osAbertas.contagem}</strong> ordem{osAbertas.contagem !== 1 ? "s" : ""} de serviço não faturada{osAbertas.contagem !== 1 ? "s" : ""}.{" "}
-            <a href="/erp/os" className="link-btn">Gerenciar OS</a>
+            <a href="/erp/os" className="toolbar-link">Gerenciar OS</a>
           </p>
         </section>
       )}
