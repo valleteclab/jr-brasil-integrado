@@ -218,3 +218,14 @@ Arquivos criados/utilizados:
 - `src/app/api/erp/perfis/route.ts` — POST criar perfil com permissões.
 - `src/components/erp/TeamManager.tsx` — client component: KPIs, abas Colaboradores | Perfis e permissões; drawer de convite (nome/email/perfil); drawer de criação de perfil com tabela de checkboxes módulo×ação (8 módulos × 2 ações); "gerenciar" implica "visualizar"; ativar/desativar vínculo via fetch.
 - `src/app/erp/colaboradores/page.tsx` — server page `force-dynamic`; carrega `listColaboradores` + `listPerfis`; renderiza `TeamManager`.
+
+### T7 Dashboard/Relatórios — concluído
+
+**Arquivos criados/alterados:**
+- `src/lib/services/dashboard.ts` — já existia; corrigido bug `valorTotal` → `total` no select de `notaFiscal` (campo correto no schema). Service `getDashboardData()` retorna: `vendasMes` (total+contagem de pedidos confirmados/faturados no mês), `aReceberAberto`/`aPagarAberto` (somatórios ABERTO+PARCIAL), `notasAutorizadasMes` (contagem+valor NF AUTORIZADA no mês), `itensCriticos` (contagem+top5 produtos saldo≤mínimo), `pedidosRecentes` (5 últimos), `osAbertas` (count não FATURADA/CANCELADA). Try/catch por bloco — falha isolada não derruba o dashboard.
+- `src/app/erp/page.tsx` — reescrito; server page `force-dynamic`; carrega `getDashboardData()`; exibe: linha de KpiCards (vendas no mês, a receber, a pagar, NF-e autorizadas, estoque crítico, OS abertas), tabela de itens críticos de estoque (top 5 com StatusBadge), tabela de pedidos recentes (StatusBadge por status), bloco de OS abertas com link. Trata `loadError` com `system-error`. Exibe avisos de erros parciais em `alert warn`.
+- `src/lib/services/reports.ts` — criado; funções: `salesReport(periodoDias=30)` (vendas por dia, top 10 produtos, total, ticket médio), `stockReport()` (valor a custo por categoria, críticos/zerados), `financeReport()` (a receber e a pagar por status + aging: vencido >90d/61-90/31-60/1-30, vence em ≤7d/8-30d/>30d), `fiscalReport()` (notas por modelo+status no mês, valor e tributos), `dreSimplificado(periodoDias=30)` (receita caixa + competência, CMV, despesas, lucro bruto, resultado, margem; premissas em comentário).
+- `src/app/erp/relatorios/page.tsx` — criado; server page `force-dynamic`; `Promise.allSettled` para os 5 relatórios (falha isolada usa empty defaults); passa via props; erros em `system-error`.
+- `src/components/erp/ReportsView.tsx` — criado; client component; 5 abas (Vendas | Estoque | Financeiro | Fiscal | DRE); KpiCards + tabelas `erp-table`; estados vazios `empty-st`; DRE dois regimes lado a lado com premissas em `alert warn`.
+
+**Observações:** nenhum arquivo proibido alterado; nenhum migrate/build executado; todos Decimals via `Number()`; queries filtradas por `tenantId+empresaId`; `npx tsc --noEmit` limpo.
