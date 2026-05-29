@@ -50,8 +50,8 @@ com foco em deixar a plataforma **pronta para integrar API de emissão de NF-e, 
 - [x] APIs + UI lista/criação/detalhe. Botão "Emitir NF-e" chama núcleo fiscal.
 
 ### T2 — Estoque (`/erp/estoque`)
-- [ ] Service de leitura (saldos, movimentos, alertas mínimo). UI: saldos, kardex, ajuste, transferência (consome stock-service).
-- [ ] Inventário: abrir, contar, finalizar (gera ajustes).
+- [x] Service de leitura (saldos, movimentos, alertas mínimo). UI: saldos, kardex, ajuste, transferência (consome stock-service).
+- [x] Inventário: abrir, contar, finalizar (gera ajustes).
 
 ### T3 — Financeiro (`/erp/financeiro`, `/erp/fluxo-caixa`)
 - [x] Contas a pagar/receber: lista, baixa (parcial/total, juros/multa/desconto), movimento financeiro + conta bancária.
@@ -125,6 +125,26 @@ Auditoria — `createAuditLog(tx, { scope, entidade, entidadeId, acao, payload? 
 
 ### Notas de completude de cada subagente (preencher ao terminar)
 
+### T4 Compras/Fornecedores — concluído
+
+**Arquivos criados:**
+- `src/domains/purchasing/application/supplier-use-cases.ts` — `createSupplier`, `updateSupplier`, `archiveSupplier` (ativo=false); valida documento único por empresa; todos auditados em `prisma.$transaction`.
+- `src/domains/purchasing/application/purchase-use-cases.ts` — `createPurchaseOrder` (numero via `nextDocumentNumber`, status RASCUNHO, subtotal/total), `sendPurchaseOrder` (RASCUNHO→ENVIADO), `receivePurchaseOrder` (aplica `applyStockMovement` ENTRADA, status PARCIAL/RECEBIDO, cria `ContaPagar` opcional), `cancelPurchaseOrder` (bloqueia se RECEBIDO/PARCIAL).
+- `src/lib/services/purchasing.ts` — `listSuppliers()`, `listPurchaseOrders()` (com statusLabel/tone, percentRecebido, flags canEnviar/canReceber/canCancelar), `getPurchaseOrderDetail(id)` com itens, `listPurchaseFormData()` (fornecedores+produtos com ultimoCusto).
+- `src/app/api/erp/fornecedores/route.ts` — POST createSupplier.
+- `src/app/api/erp/fornecedores/[id]/route.ts` — PUT updateSupplier, DELETE archiveSupplier.
+- `src/app/api/erp/compras/route.ts` — POST createPurchaseOrder.
+- `src/app/api/erp/compras/[id]/enviar/route.ts` — POST sendPurchaseOrder.
+- `src/app/api/erp/compras/[id]/receber/route.ts` — POST receivePurchaseOrder.
+- `src/app/api/erp/compras/[id]/cancelar/route.ts` — POST cancelPurchaseOrder.
+- `src/app/api/erp/compras/[id]/detail/route.ts` — GET getPurchaseOrderDetail (usado pelo drawer de recebimento).
+- `src/app/erp/fornecedores/page.tsx` — server page `force-dynamic`; conta ativos; renderiza `SuppliersCrud`.
+- `src/app/erp/compras/page.tsx` — server page `force-dynamic`; KpiCards (pedidos abertos, a receber, valor em aberto); renderiza `PurchaseList`.
+- `src/app/erp/compras/nova/page.tsx` — server page `force-dynamic`; carrega `listPurchaseFormData` e renderiza `PurchaseForm`.
+- `src/components/erp/SuppliersCrud.tsx` — client component; lista com busca, drawer criar/editar, arquivar.
+- `src/components/erp/PurchaseList.tsx` — client component; lista com filtro status, ações enviar/receber/cancelar; drawer de recebimento com quantidades e opção de gerar ContaPagar.
+- `src/components/erp/PurchaseForm.tsx` — client component; seleção de fornecedor, linhas de produto (auto-fill ultimoCusto), frete, totais dinâmicos, POST e redirect para /erp/compras.
+
 ### T1 Vendas — concluído
 
 **Arquivos criados:**
@@ -158,3 +178,19 @@ Arquivos criados/utilizados:
 - `src/components/erp/CashFlowView.tsx` — client component: KPIs de saldo/entradas/saídas projetadas, tabela dia-a-dia com saldo acumulado, filtro 30/60/90 dias, resumo realizado.
 - `src/app/erp/financeiro/page.tsx` — server page `force-dynamic`: KPIs + `FinanceManager`.
 - `src/app/erp/fluxo-caixa/page.tsx` — server page `force-dynamic`: `CashFlowView`.
+
+### T2 Estoque — concluído
+
+**Arquivos criados:**
+- `src/lib/services/stock.ts` — já existia com `listStockBalances`, `listStockMovements`, `listDepositos`, `listInventories`, `getInventoryDetail`, `listProdutosOptions`; mantido sem alteração.
+- `src/domains/stock/application/stock-adjust-use-cases.ts` — `adjustStock` (calcula delta vs saldo atual, aplica ENTRADA ou SAIDA via `applyStockMovement`, documenta como AJUSTE_ESTOQUE, audita); `transferStock` (SAIDA no depósito de origem + ENTRADA no destino com mesmo custoUnitario, dentro de uma transação, mesmo documentoId, audita).
+- `src/domains/stock/application/inventory-use-cases.ts` — `createInventory` (numero INV via `nextDocumentNumber`, cria `InventarioItem` para cada produto ativo com saldo do depósito, audita); `countInventoryItem` (grava saldoContado, contado=true, avança status para EM_CONTAGEM); `finalizeInventory` (FINALIZADO; para cada item contado com diferença, aplica `applyStockMovement` ENTRADA/SAIDA com documentoTipo INVENTARIO, marca ajustado=true, bloqueia se já FINALIZADO/CANCELADO, audita).
+- `src/app/api/erp/estoque/ajuste/route.ts` — POST; valida produtoId, novaQuantidade, motivo; chama `adjustStock`.
+- `src/app/api/erp/estoque/transferencia/route.ts` — POST; valida produtoId, depositoOrigemId, depositoDestinoId, quantidade; chama `transferStock`.
+- `src/app/api/erp/inventarios/route.ts` — POST; valida depositoId; chama `createInventory`; devolve id + numero.
+- `src/app/api/erp/inventarios/[id]/contagem/route.ts` — POST; valida itemId, saldoContado; chama `countInventoryItem`.
+- `src/app/api/erp/inventarios/[id]/finalizar/route.ts` — POST; chama `finalizeInventory`; devolve status + ajustesRealizados.
+- `src/app/erp/estoque/page.tsx` — server page `force-dynamic`; KpiCards (SKUs com saldo, valor total a custo, itens críticos, itens zerados); renderiza `StockManager`.
+- `src/app/erp/inventarios/[id]/page.tsx` — server page `force-dynamic`; carrega `getInventoryDetail`, exibe header com status/depósito/datas; renderiza `InventoryCount`.
+- `src/components/erp/StockManager.tsx` — client component; abas Saldos | Movimentações | Inventários; formulários inline de ajuste e transferência (fetch via API); lista de inventários com ação "Novo inventário" e navegação para detalhe.
+- `src/components/erp/InventoryCount.tsx` — client component; tabela de itens com campo de contagem editável por linha, salva item a item via POST, exibe diferença com StatusBadge, botão "Finalizar inventário" com confirmação.
