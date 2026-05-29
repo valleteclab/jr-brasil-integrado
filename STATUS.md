@@ -257,3 +257,14 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - IBPT / Lei 12.741: emissao anexa "Valor aproximado dos tributos" em informacoes complementares (a partir do total de tributos calculado).
 - Regras tributarias: tela e API passam a aceitar MVA %, Aliquota ICMS-ST % e FCP %.
 - Validacao: `tsc` (0), `lint` (limpo), `build` (ok) e smoke contra PostgreSQL: Lucro Presumido BA->BA destacou ICMS 18% + FCP 2%; regra com MVA 40% gerou baseST 1400 e ICMS-ST 72; texto IBPT presente na nota.
+
+## Atualizacao operacional - 2026-05-29 - tela Novo atendimento fiel ao design
+
+- Reconstruida a tela de atendimento conforme o Claude Design (capturas de referencia; o standalone empacota o app em chunks ofuscados, sem markup extraivel):
+  - Componente `AtendimentoWorkspace` com cards de tipo de operacao (Venda balcao, Pedido faturado, Ordem de Servico, Orcamento), layout em 2 colunas e trilho direito.
+  - Trilho: card Totais (itens, subtotal, desconto global %, total), card Validade & condicoes (validade, vendedor, condicao de pagamento, prazo de entrega, frete) e acao principal contextual.
+  - Coluna principal: selecao de cliente, itens com adicionar/empty-state, observacoes; OS troca itens por equipamento/diagnostico.
+  - Ligado as APIs existentes: Orcamento -> /api/erp/orcamentos; Venda balcao/Pedido faturado -> /api/erp/vendas; OS -> /api/erp/os; desconto global % convertido em R$ no envio.
+- `/erp/atendimento` carrega clientes/produtos reais (`listSaleFormData`) e aceita `?tipo=`. As rotas `/erp/vendas/nova`, `/erp/orcamentos/novo` e `/erp/os/nova` passam a redirecionar para o atendimento unificado com o tipo pre-selecionado.
+- CSS dedicado adicionado (`atend-*`) seguindo os tokens do design.
+- Validacao: `tsc` (0), `lint` (limpo), `build` (ok) e runtime HTTP 200 em `/erp/atendimento` (e 307 nos redirects), com a tela renderizando os blocos do design.
