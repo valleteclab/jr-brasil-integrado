@@ -79,10 +79,10 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 | Tarefa | Status | Observações |
 | --- | --- | --- |
-| Contas a pagar/receber reais | Pendente | Base modelada. |
-| Baixas financeiras | Pendente | Criar APIs e telas. |
+| Contas a pagar/receber reais | Em andamento | Base modelada; baixa parcial e conta bancária no schema. Módulo financeiro em construção. |
+| Baixas financeiras | Em andamento | Schema com `valorPago/juros/multa/desconto` e `MovimentoFinanceiro`. |
 | Conciliação bancária/OFX | Pendente | Integração futura. |
-| NF-e fiscal | Pendente | Depende de provedor/certificado. |
+| NF-e / NFC-e / NFS-e fiscal | Em andamento | Núcleo de emissão concluído: motor tributário, numeração por série, provedor abstrato (interno funcional + adapter HTTP Focus/NFe.io/PlugNotas/Webmania), emissão/cancelamento/carta de correção, config por empresa e telas. Pronto para plugar credenciais reais. |
 | Boletos, Pix e cartão | Pendente | Depende de gateway. |
 
 ## Fase 6 — BI, automações e escala
@@ -195,3 +195,13 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Assistente fiscal com OpenRouter sugere campos estruturados da regra tributaria para revisao humana.
 - Menu do ERP atualizado com o item `Regras tributarias` em Financeiro & Fiscal.
 - Validacao executada: `npm run lint`, `npx tsc --noEmit`, `npm run build`; `/erp/regras-tributarias` e `/erp/produtos` responderam HTTP 200.
+
+## Atualizacao operacional - 2026-05-29 - nucleo de emissao fiscal + fundacao operacional
+
+- Schema Prisma expandido com modelos de emissao fiscal (`NotaFiscal` completa, `NotaFiscalItem`, `NotaFiscalEvento`, `ConfiguracaoFiscal`, `SequenciaFiscal`), financeiro (`ContaBancaria`, `MovimentoFinanceiro`, baixa parcial em contas), estoque/inventario (`Inventario`, `InventarioItem`, `Deposito.padrao`), compras (status enum, recebimento) e vendas/OS (deposito, totais, faturamento). Migration `20260529123723_fiscal_emission_and_operational_modules` aplicada.
+- Servico de estoque transacional (`src/domains/stock`) com movimento idempotente, reserva, baixa, custo medio ponderado e deposito padrao.
+- Nucleo fiscal (`src/domains/fiscal`): motor tributario por regra/regime, builders de documento (NF-e/NFC-e a partir de pedido, NFS-e a partir de OS), provedor abstrato com implementacao interna funcional (gera chave de 44 digitos valida + protocolo em homologacao) e adapter HTTP generico pronto para Focus NFe / NFe.io / PlugNotas / WebmaniaBR, alem de emissao, cancelamento e carta de correcao com auditoria.
+- Telas: `/erp/fiscal` (lista, cancelar, carta de correcao) e `/erp/configuracoes/fiscal` (provedor, ambiente, regime, series, credenciais criptografadas). Menu do ERP atualizado.
+- Seed ampliado: endereco/regime fiscal da empresa, configuracao fiscal ativa, conta bancaria, regras tributarias (ICMS/PIS/COFINS/ISS), fornecedor e catalogo de produtos com saldo.
+- Validacao: `npx tsc --noEmit`, `npm run lint`, `npm run build` verdes; smoke test de emissao+cancelamento executado contra PostgreSQL.
+- Registro de coordenacao entre agentes em `docs/HANDOFF_FISCAL_OPERACIONAL.md`.
