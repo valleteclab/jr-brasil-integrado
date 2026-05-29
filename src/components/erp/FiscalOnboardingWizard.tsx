@@ -161,7 +161,7 @@ export function FiscalOnboardingWizard({ initialData }: { initialData: FiscalOnb
           fiscal, substituição tributária, IPI por NCM) devem ser revisados em Regras tributárias — elas
           sempre prevalecem sobre a base por especificidade.
         </p>
-        <div className="op-actions" style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           <Button href="/erp/fiscal">Ir para NF-e emitidas</Button>
           <Button href="/erp/regras-tributarias" variant="light">Revisar regras tributárias</Button>
           <Button href="/erp/configuracoes/fiscal" variant="light">Ajustar configuração</Button>
@@ -335,12 +335,12 @@ export function FiscalOnboardingWizard({ initialData }: { initialData: FiscalOnb
       {step === 3 && (
         <div>
           <div className="form-grid two">
-            <div><span className="op-label">Empresa</span><strong>{form.razaoSocial || "—"}</strong><small>{form.cnpj}</small></div>
-            <div><span className="op-label">Regime</span><strong>{regimeLabel(form.regime)}</strong></div>
-            <div><span className="op-label">UF de origem</span><strong>{form.enderecoUf || "—"}</strong><small>{form.enderecoCidade}</small></div>
-            <div><span className="op-label">Provedor / ambiente</span><strong>{PROVIDERS.find((p) => p.value === form.provider)?.label}</strong><small>{form.environment === "PRODUCAO" ? "Produção" : "Homologação"}</small></div>
-            <div><span className="op-label">Documentos</span><strong>{[form.emitNfe && "NF-e", form.emitNfce && "NFC-e", form.emitNfse && "NFS-e"].filter(Boolean).join(" · ") || "Nenhum"}</strong></div>
-            <div><span className="op-label">Emissão ativa</span><strong>{form.active ? "Sim" : "Não"}</strong></div>
+            <div><span className="field-label">Empresa</span><strong>{form.razaoSocial || "—"}</strong><small>{form.cnpj}</small></div>
+            <div><span className="field-label">Regime</span><strong>{regimeLabel(form.regime)}</strong></div>
+            <div><span className="field-label">UF de origem</span><strong>{form.enderecoUf || "—"}</strong><small>{form.enderecoCidade}</small></div>
+            <div><span className="field-label">Provedor / ambiente</span><strong>{PROVIDERS.find((p) => p.value === form.provider)?.label}</strong><small>{form.environment === "PRODUCAO" ? "Produção" : "Homologação"}</small></div>
+            <div><span className="field-label">Documentos</span><strong>{[form.emitNfe && "NF-e", form.emitNfce && "NFC-e", form.emitNfse && "NFS-e"].filter(Boolean).join(" · ") || "Nenhum"}</strong></div>
+            <div><span className="field-label">Emissão ativa</span><strong>{form.active ? "Sim" : "Não"}</strong></div>
           </div>
 
           <label className="checkbox full" style={{ marginTop: 18, display: "flex", gap: 10, alignItems: "flex-start" }}>
@@ -363,7 +363,7 @@ export function FiscalOnboardingWizard({ initialData }: { initialData: FiscalOnb
         </div>
       )}
 
-      <div className="op-actions" style={{ display: "flex", justifyContent: "space-between", marginTop: 22 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 22 }}>
         <Button variant="light" onClick={back} disabled={step === 0 || saving}>Voltar</Button>
         {step < STEPS.length - 1 ? (
           <Button onClick={next} disabled={saving}>Avançar</Button>

@@ -580,7 +580,7 @@ export function CustomersCrud({ initialCustomers, tabelasPreco }: CustomersCrudP
       </div>
 
       {/* Table */}
-      <section className="panel">
+      <section className="erp-card">
         <div className="erp-table-wrap">
           <table className="erp-table">
             <thead>

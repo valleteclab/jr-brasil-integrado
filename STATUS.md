@@ -240,3 +240,11 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Emissao passou a derivar o CFOP por item apos o calculo de tributos (consistente com ST) tanto no documento persistido quanto no enviado ao provedor; builder nao forca mais 5102.
 - Auto-resolucao no produto: produto com NCM ja tem ICMS/PIS/COFINS resolvidos pelo motor e CFOP derivado na emissao, sem necessidade de vincular regra (aba fiscal e opcional).
 - Validacao: `tsc` (0), `lint` (limpo), `build` (ok) e smoke contra PostgreSQL: BA->BA=5102, BA->SP=6102, ST inter=6404, emissoes AUTORIZADAS.
+
+## Atualizacao operacional - 2026-05-29 - conformidade visual das telas ao design oficial
+
+- Telas operacionais alinhadas ao design de referencia (`mvp/JR Brasil ERP - Standalone.html`) usando o vocabulario canonico: `erp-toolbar`/`toolbar-search`, `erp-table`/`erp-table-wrap`, `drawer`/`drawer-head/body/foot`, `erp-card`/`erp-card-head`, `kpi-row`+`KpiCard`, `tabs`, `StatusBadge` e `Button`.
+- Removido o vocabulario paralelo `op-*` (op-card/op-toolbar/op-table/op-modal/op-tabs/op-form/op-list/op-section-title/op-container/op-detail), alem de `panel`, `form-row/form-title/form-actions`, `link-btn` e cartoes `metric` avulsos (-> `KpiCard`). Grep central confirma zero ocorrencias em `src`.
+- Coordenacao por 5 subagentes em paralelo por dominio (Vendas/Orcamentos, OS/Atendimento, Estoque/Compras, Financeiro/Fiscal, Dashboard/Relatorios/Clientes/Colaboradores), seguindo `docs/UI_CONFORMANCE_SPEC.md`.
+- Corrigido tambem JSX desbalanceado em ReportsView (div faltante) e padronizado FiscalSettingsForm e wizard fiscal.
+- Validacao: `tsc` (0), `lint` (limpo), `build` (ok) e checagem de runtime HTTP 200 em todas as rotas do ERP e da loja.

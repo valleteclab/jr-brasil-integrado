@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { Card } from "@/components/shared/Card";
 import { KpiCard } from "@/components/shared/KpiCard";
 import type { CashFlowData, CashFlowDay } from "@/lib/services/finance";
 
@@ -38,7 +37,7 @@ export function CashFlowView({ data }: Props) {
   });
 
   return (
-    <section className="op-list">
+    <>
       {/* KPIs de período */}
       <div className="kpi-row">
         <KpiCard
@@ -64,8 +63,8 @@ export function CashFlowView({ data }: Props) {
       </div>
 
       {/* Realizado */}
-      <Card className="op-card-section">
-        <h3 className="op-section-title">Realizado — últimos 30 dias</h3>
+      <div className="erp-card">
+        <div className="erp-card-head"><h3>Realizado — últimos 30 dias</h3></div>
         <div className="kpi-row">
           <KpiCard
             label="Créditos Realizados"
@@ -83,17 +82,17 @@ export function CashFlowView({ data }: Props) {
             tone={data.realizado30.saldo >= 0 ? "info" : "danger"}
           />
         </div>
-      </Card>
+      </div>
 
       {/* Filtro de período */}
-      <div className="op-toolbar">
-        <span className="op-toolbar-label">Projeção por período:</span>
-        <div className="op-tabs">
+      <div className="erp-toolbar">
+        <span>Projeção por período:</span>
+        <div className="stat-pills">
           {([30, 60, 90] as const).map((p) => (
             <button
               key={p}
               type="button"
-              className={`op-tab${periodo === p ? " active" : ""}`}
+              className={periodo === p ? "active" : ""}
               onClick={() => setPeriodo(p)}
             >
               {p} dias
@@ -101,7 +100,7 @@ export function CashFlowView({ data }: Props) {
           ))}
         </div>
         <div className="toolbar-grow" />
-        <span className="op-toolbar-label muted">
+        <span className="muted">
           {diasFiltrados.length} dias com movimentação projetada
         </span>
       </div>
@@ -143,8 +142,8 @@ export function CashFlowView({ data }: Props) {
       </div>
 
       {/* Resumo dos períodos */}
-      <Card className="op-card-section">
-        <h3 className="op-section-title">Resumo por Horizonte</h3>
+      <div className="erp-card">
+        <div className="erp-card-head"><h3>Resumo por Horizonte</h3></div>
         <div className="erp-table-wrap">
           <table className="erp-table">
             <thead>
@@ -167,7 +166,7 @@ export function CashFlowView({ data }: Props) {
             </tbody>
           </table>
         </div>
-      </Card>
-    </section>
+      </div>
+    </>
   );
 }

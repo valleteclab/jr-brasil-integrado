@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/shared/Button";
+import { KpiCard } from "@/components/shared/KpiCard";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import type { InventoryDetail, InventoryItemDetail } from "@/lib/services/stock";
 
@@ -98,27 +99,18 @@ export function InventoryCount({ inventory: initial }: Props) {
   ).length;
 
   return (
-    <div className="op-container">
-      <div className="kpi-row" style={{ marginBottom: "1rem" }}>
-        <div className="card metric">
-          <span>Total de itens</span>
-          <strong>{inventory.itens.length}</strong>
-        </div>
-        <div className="card metric">
-          <span>Contados</span>
-          <strong>{contados}</strong>
-        </div>
-        <div className="card metric tone-warn">
-          <span>Divergências</span>
-          <strong>{divergencias}</strong>
-        </div>
+    <div>
+      <div className="kpi-row">
+        <KpiCard label="Total de itens" value={String(inventory.itens.length)} />
+        <KpiCard label="Contados" value={String(contados)} tone="info" />
+        <KpiCard label="Divergências" value={String(divergencias)} tone={divergencias > 0 ? "warn" : "default"} />
       </div>
 
       {error && <div className="alert danger"><strong>Erro</strong><span>{error}</span></div>}
       {flash && <div className="alert success"><strong>OK</strong><span>{flash}</span></div>}
 
       {!isReadOnly && (
-        <div className="op-toolbar" style={{ marginBottom: "1rem" }}>
+        <div className="erp-toolbar">
           <div className="toolbar-grow" />
           <Button
             variant="primary"
@@ -193,14 +185,14 @@ export function InventoryCount({ inventory: initial }: Props) {
                   </td>
                   {!isReadOnly && (
                     <td className="actions">
-                      <button
-                        className="link-btn"
+                      <Button
+                        variant="light"
                         type="button"
                         disabled={saving === item.id || !currVal}
                         onClick={() => saveCount(item)}
                       >
                         {saving === item.id ? "Salvando..." : "Salvar"}
-                      </button>
+                      </Button>
                     </td>
                   )}
                 </tr>

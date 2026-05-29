@@ -308,7 +308,7 @@ export function TeamManager({ initialColaboradores, initialPerfis }: TeamManager
 
       {/* Colaboradores */}
       {tab === "colaboradores" && (
-        <section className="panel">
+        <section className="erp-card">
           <div className="erp-table-wrap">
             <table className="erp-table">
               <thead>
@@ -368,7 +368,7 @@ export function TeamManager({ initialColaboradores, initialPerfis }: TeamManager
 
       {/* Perfis */}
       {tab === "perfis" && (
-        <section className="panel">
+        <section className="erp-card">
           <div className="erp-table-wrap">
             <table className="erp-table">
               <thead>

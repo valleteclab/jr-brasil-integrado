@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { Button } from "@/components/shared/Button";
-import { Card } from "@/components/shared/Card";
 import type { FiscalConfigSummary } from "@/domains/fiscal/application/fiscal-config-use-cases";
 
 const PROVIDERS = [
@@ -77,110 +76,116 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
   }
 
   return (
-    <div className="op-form-stack">
+    <>
       {message && <div className="alert success"><strong>Pronto</strong><span>{message}</span></div>}
       {error && <div className="alert danger"><strong>Atenção</strong><span>{error}</span></div>}
 
-      <Card className="op-form-card">
-        <h2>Provedor e ambiente</h2>
-        <div className="op-form-grid">
+      <div className="erp-card">
+        <div className="erp-card-head"><h3>Provedor e ambiente</h3></div>
+        <div className="erp-form">
           <label>
-            <span>Provedor de emissão</span>
+            Provedor de emissão
             <select value={config.provider} onChange={(e) => update("provider", e.target.value as FiscalConfigSummary["provider"])}>
               {PROVIDERS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
             </select>
           </label>
           <label>
-            <span>Ambiente</span>
+            Ambiente
             <select value={config.environment} onChange={(e) => update("environment", e.target.value as FiscalConfigSummary["environment"])}>
               <option value="HOMOLOGACAO">Homologação</option>
               <option value="PRODUCAO">Produção</option>
             </select>
           </label>
           <label>
-            <span>Regime tributário</span>
+            Regime tributário
             <select value={config.regime} onChange={(e) => update("regime", e.target.value as FiscalConfigSummary["regime"])}>
               {REGIMES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
             </select>
           </label>
-          <label className="op-check">
+          <label className="check-row">
             <input type="checkbox" checked={config.active} onChange={(e) => update("active", e.target.checked)} />
-            <span>Emissão ativa</span>
+            Emissão ativa
           </label>
         </div>
-      </Card>
+      </div>
 
       {externalProvider && (
-        <Card className="op-form-card">
-          <h2>Credenciais do provedor</h2>
-          <p className="op-hint">As credenciais são criptografadas. Exibimos apenas os últimos dígitos.</p>
-          <div className="op-form-grid">
+        <div className="erp-card">
+          <div className="erp-card-head"><h3>Credenciais do provedor</h3></div>
+          <p className="muted">As credenciais são criptografadas. Exibimos apenas os últimos dígitos.</p>
+          <div className="erp-form">
             <label>
-              <span>URL base da API</span>
+              URL base da API
               <input value={config.baseUrl} onChange={(e) => update("baseUrl", e.target.value)} placeholder="https://api.focusnfe.com.br" />
             </label>
             <label>
-              <span>Token de integração {config.tokenLast4 ? `(atual ••••${config.tokenLast4})` : ""}</span>
+              Token de integração {config.tokenLast4 ? `(atual ••••${config.tokenLast4})` : ""}
               <input value={token} onChange={(e) => setToken(e.target.value)} placeholder={config.hasToken ? "Manter token atual" : "Informe o token"} />
             </label>
             <label>
-              <span>CSC ID (NFC-e)</span>
+              CSC ID (NFC-e)
               <input value={config.cscId} onChange={(e) => update("cscId", e.target.value)} />
             </label>
             <label>
-              <span>CSC Token (NFC-e)</span>
+              CSC Token (NFC-e)
               <input value={cscToken} onChange={(e) => setCscToken(e.target.value)} placeholder={config.hasCscToken ? "Manter token atual" : "Informe o CSC"} />
             </label>
           </div>
-        </Card>
+        </div>
       )}
 
-      <Card className="op-form-card">
-        <h2>Documentos e numeração</h2>
-        <div className="op-form-grid">
-          <label className="op-check">
+      <div className="erp-card">
+        <div className="erp-card-head"><h3>Documentos e numeração</h3></div>
+        <div className="erp-form">
+          <label className="check-row">
             <input type="checkbox" checked={config.emitNfe} onChange={(e) => update("emitNfe", e.target.checked)} />
-            <span>Emitir NF-e (modelo 55)</span>
+            Emitir NF-e (modelo 55)
           </label>
           <label>
-            <span>Série NF-e</span>
+            Série NF-e
             <input value={config.serieNfe} onChange={(e) => update("serieNfe", e.target.value)} />
           </label>
-          <label className="op-check">
+          <label className="check-row">
             <input type="checkbox" checked={config.emitNfce} onChange={(e) => update("emitNfce", e.target.checked)} />
-            <span>Emitir NFC-e (modelo 65)</span>
+            Emitir NFC-e (modelo 65)
           </label>
           <label>
-            <span>Série NFC-e</span>
+            Série NFC-e
             <input value={config.serieNfce} onChange={(e) => update("serieNfce", e.target.value)} />
           </label>
-          <label className="op-check">
+          <label className="check-row">
             <input type="checkbox" checked={config.emitNfse} onChange={(e) => update("emitNfse", e.target.checked)} />
-            <span>Emitir NFS-e (serviços)</span>
+            Emitir NFS-e (serviços)
           </label>
           <label>
-            <span>Série NFS-e</span>
+            Série NFS-e
             <input value={config.serieNfse} onChange={(e) => update("serieNfse", e.target.value)} />
           </label>
           <label>
-            <span>Código IBGE do município</span>
+            Código IBGE do município
             <input value={config.codigoMunicipioIbge} onChange={(e) => update("codigoMunicipioIbge", e.target.value)} placeholder="Ex.: 2919207" />
           </label>
           <label>
-            <span>Certificado digital (referência)</span>
+            Certificado digital (referência)
             <input value={config.certificadoInfo} onChange={(e) => update("certificadoInfo", e.target.value)} placeholder="Apelido/validade do A1 (sem o arquivo)" />
           </label>
         </div>
-      </Card>
+      </div>
 
-      <Card className="op-form-card">
-        <h2>Observações</h2>
-        <textarea rows={3} value={config.notes} onChange={(e) => update("notes", e.target.value)} placeholder="Notas internas sobre a configuração fiscal" />
-      </Card>
+      <div className="erp-card">
+        <div className="erp-card-head"><h3>Observações</h3></div>
+        <div className="erp-form">
+          <label className="full">
+            Notas internas
+            <textarea rows={3} value={config.notes} onChange={(e) => update("notes", e.target.value)} placeholder="Notas internas sobre a configuração fiscal" />
+          </label>
+        </div>
+      </div>
 
-      <div className="op-form-actions">
+      <div className="erp-toolbar">
+        <div className="toolbar-grow" />
         <Button type="button" onClick={save} disabled={saving}>{saving ? "Salvando..." : "Salvar configuração"}</Button>
       </div>
-    </div>
+    </>
   );
 }

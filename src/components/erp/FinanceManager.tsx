@@ -70,117 +70,118 @@ function SettleForm({ tipo, id, descricao, saldoNumber, bankAccounts, onSuccess,
   }
 
   return (
-    <div className="op-modal-overlay">
-      <div className="op-modal">
-        <h2 className="op-modal-title">
-          {tipo === "pagar" ? "Baixar Conta a Pagar" : "Baixar Conta a Receber"}
-        </h2>
-        <p className="op-modal-subtitle">{descricao}</p>
+    <>
+      <div className="drawer-bd" onClick={onClose} />
+      <aside className="drawer">
+        <header className="drawer-head">
+          <div>
+            <span className="section-kicker">Financeiro</span>
+            <h2>{tipo === "pagar" ? "Baixar Conta a Pagar" : "Baixar Conta a Receber"}</h2>
+            <p>{descricao}</p>
+          </div>
+          <button type="button" onClick={onClose}>Fechar</button>
+        </header>
 
         {erro && (
-          <div className="alert danger">
+          <div className="alert danger drawer-error">
             <strong>Erro</strong>
             <span>{erro}</span>
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="op-form">
-          <div className="op-form-row">
-            <label>
-              Valor Pago (R$) <span className="required">*</span>
-              <input
-                type="number"
-                step="0.01"
-                min="0.01"
-                value={valor}
-                onChange={(e) => setValor(e.target.value)}
-                required
-              />
-            </label>
-            <label>
-              Data Pagamento <span className="required">*</span>
-              <input
-                type="date"
-                value={dataPagamento}
-                onChange={(e) => setDataPagamento(e.target.value)}
-                required
-              />
-            </label>
-          </div>
-
-          <div className="op-form-row">
-            <label>
-              Juros (R$)
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={juros}
-                onChange={(e) => setJuros(e.target.value)}
-              />
-            </label>
-            <label>
-              Multa (R$)
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={multa}
-                onChange={(e) => setMulta(e.target.value)}
-              />
-            </label>
-            <label>
-              Desconto (R$)
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={desconto}
-                onChange={(e) => setDesconto(e.target.value)}
-              />
-            </label>
-          </div>
-
-          <div className="op-form-row">
-            <label>
-              Forma de Pagamento
-              <select value={formaPagamento} onChange={(e) => setFormaPagamento(e.target.value)}>
-                <option value="">Selecione...</option>
-                <option value="DINHEIRO">Dinheiro</option>
-                <option value="PIX">Pix</option>
-                <option value="BOLETO">Boleto</option>
-                <option value="CARTAO_CREDITO">Cartão de Crédito</option>
-                <option value="CARTAO_DEBITO">Cartão de Débito</option>
-                <option value="TRANSFERENCIA">Transferência</option>
-                <option value="CHEQUE">Cheque</option>
-              </select>
-            </label>
-            {bankAccounts.length > 0 && (
+        <form onSubmit={handleSubmit}>
+          <div className="drawer-body">
+            <div className="erp-form">
               <label>
-                Conta Bancária
-                <select value={contaBancariaId} onChange={(e) => setContaBancariaId(e.target.value)}>
-                  <option value="">Nenhuma</option>
-                  {bankAccounts.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.nome} ({b.saldoAtual})
-                    </option>
-                  ))}
+                Valor Pago (R$) <span className="required">*</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  value={valor}
+                  onChange={(e) => setValor(e.target.value)}
+                  required
+                />
+              </label>
+              <label>
+                Data Pagamento <span className="required">*</span>
+                <input
+                  type="date"
+                  value={dataPagamento}
+                  onChange={(e) => setDataPagamento(e.target.value)}
+                  required
+                />
+              </label>
+              <label>
+                Juros (R$)
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={juros}
+                  onChange={(e) => setJuros(e.target.value)}
+                />
+              </label>
+              <label>
+                Multa (R$)
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={multa}
+                  onChange={(e) => setMulta(e.target.value)}
+                />
+              </label>
+              <label>
+                Desconto (R$)
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={desconto}
+                  onChange={(e) => setDesconto(e.target.value)}
+                />
+              </label>
+              <label>
+                Forma de Pagamento
+                <select value={formaPagamento} onChange={(e) => setFormaPagamento(e.target.value)}>
+                  <option value="">Selecione...</option>
+                  <option value="DINHEIRO">Dinheiro</option>
+                  <option value="PIX">Pix</option>
+                  <option value="BOLETO">Boleto</option>
+                  <option value="CARTAO_CREDITO">Cartão de Crédito</option>
+                  <option value="CARTAO_DEBITO">Cartão de Débito</option>
+                  <option value="TRANSFERENCIA">Transferência</option>
+                  <option value="CHEQUE">Cheque</option>
                 </select>
               </label>
-            )}
+              {bankAccounts.length > 0 && (
+                <label>
+                  Conta Bancária
+                  <select value={contaBancariaId} onChange={(e) => setContaBancariaId(e.target.value)}>
+                    <option value="">Nenhuma</option>
+                    {bankAccounts.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.nome} ({b.saldoAtual})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+            </div>
           </div>
 
-          <div className="op-form-actions">
+          <footer className="drawer-foot">
             <Button type="button" variant="light" onClick={onClose} disabled={loading}>
               Cancelar
             </Button>
             <Button type="submit" variant="primary" disabled={loading}>
               {loading ? "Registrando..." : "Confirmar Baixa"}
             </Button>
-          </div>
+          </footer>
         </form>
-      </div>
-    </div>
+      </aside>
+    </>
   );
 }
 
@@ -255,100 +256,103 @@ function NewAccountForm({ tipo, onSuccess, onClose }: NewAccountFormProps) {
   }
 
   return (
-    <div className="op-modal-overlay">
-      <div className="op-modal">
-        <h2 className="op-modal-title">
-          {tipo === "pagar" ? "Nova Conta a Pagar" : "Nova Conta a Receber"}
-        </h2>
+    <>
+      <div className="drawer-bd" onClick={onClose} />
+      <aside className="drawer">
+        <header className="drawer-head">
+          <div>
+            <span className="section-kicker">Financeiro</span>
+            <h2>{tipo === "pagar" ? "Nova Conta a Pagar" : "Nova Conta a Receber"}</h2>
+            <p>Cadastre uma conta {tipo === "pagar" ? "a pagar" : "a receber"}.</p>
+          </div>
+          <button type="button" onClick={onClose}>Fechar</button>
+        </header>
 
         {erro && (
-          <div className="alert danger">
+          <div className="alert danger drawer-error">
             <strong>Erro</strong>
             <span>{erro}</span>
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="op-form">
-          <label>
-            Descrição <span className="required">*</span>
-            <input
-              type="text"
-              value={descricao}
-              onChange={(e) => setDescricao(e.target.value)}
-              placeholder="Ex: Aluguel maio/2026"
-              required
-            />
-          </label>
-
-          <div className="op-form-row">
-            <label>
-              Valor (R$) <span className="required">*</span>
-              <input
-                type="number"
-                step="0.01"
-                min="0.01"
-                value={valor}
-                onChange={(e) => setValor(e.target.value)}
-                required
-              />
-            </label>
-            <label>
-              Vencimento <span className="required">*</span>
-              <input
-                type="date"
-                value={vencimento}
-                onChange={(e) => setVencimento(e.target.value)}
-                required
-              />
-            </label>
+        <form onSubmit={handleSubmit}>
+          <div className="drawer-body">
+            <div className="erp-form">
+              <label className="full">
+                Descrição <span className="required">*</span>
+                <input
+                  type="text"
+                  value={descricao}
+                  onChange={(e) => setDescricao(e.target.value)}
+                  placeholder="Ex: Aluguel maio/2026"
+                  required
+                />
+              </label>
+              <label>
+                Valor (R$) <span className="required">*</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  value={valor}
+                  onChange={(e) => setValor(e.target.value)}
+                  required
+                />
+              </label>
+              <label>
+                Vencimento <span className="required">*</span>
+                <input
+                  type="date"
+                  value={vencimento}
+                  onChange={(e) => setVencimento(e.target.value)}
+                  required
+                />
+              </label>
+              <label>
+                Nº Documento
+                <input
+                  type="text"
+                  value={numeroDocumento}
+                  onChange={(e) => setNumeroDocumento(e.target.value)}
+                  placeholder="Opcional"
+                />
+              </label>
+              <label>
+                Forma de Pagamento
+                <select value={formaPagamento} onChange={(e) => setFormaPagamento(e.target.value)}>
+                  <option value="">Selecione...</option>
+                  <option value="DINHEIRO">Dinheiro</option>
+                  <option value="PIX">Pix</option>
+                  <option value="BOLETO">Boleto</option>
+                  <option value="CARTAO_CREDITO">Cartão de Crédito</option>
+                  <option value="CARTAO_DEBITO">Cartão de Débito</option>
+                  <option value="TRANSFERENCIA">Transferência</option>
+                  <option value="CHEQUE">Cheque</option>
+                </select>
+              </label>
+              <label className="full">
+                Observações
+                <textarea
+                  value={observacoes}
+                  onChange={(e) => setObservacoes(e.target.value)}
+                  rows={2}
+                  placeholder="Opcional"
+                />
+              </label>
+            </div>
           </div>
 
-          <div className="op-form-row">
-            <label>
-              Nº Documento
-              <input
-                type="text"
-                value={numeroDocumento}
-                onChange={(e) => setNumeroDocumento(e.target.value)}
-                placeholder="Opcional"
-              />
-            </label>
-            <label>
-              Forma de Pagamento
-              <select value={formaPagamento} onChange={(e) => setFormaPagamento(e.target.value)}>
-                <option value="">Selecione...</option>
-                <option value="DINHEIRO">Dinheiro</option>
-                <option value="PIX">Pix</option>
-                <option value="BOLETO">Boleto</option>
-                <option value="CARTAO_CREDITO">Cartão de Crédito</option>
-                <option value="CARTAO_DEBITO">Cartão de Débito</option>
-                <option value="TRANSFERENCIA">Transferência</option>
-                <option value="CHEQUE">Cheque</option>
-              </select>
-            </label>
-          </div>
-
-          <label>
-            Observações
-            <textarea
-              value={observacoes}
-              onChange={(e) => setObservacoes(e.target.value)}
-              rows={2}
-              placeholder="Opcional"
-            />
-          </label>
-
-          <div className="op-form-actions">
+          <footer className="drawer-foot">
             <Button type="button" variant="light" onClick={onClose} disabled={loading}>
               Cancelar
             </Button>
             <Button type="submit" variant="primary" disabled={loading}>
               {loading ? "Salvando..." : "Salvar"}
             </Button>
-          </div>
+          </footer>
         </form>
-      </div>
-    </div>
+      </aside>
+    </>
   );
 }
 
@@ -405,30 +409,31 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
   }
 
   return (
-    <section className="op-list">
+    <>
       {/* Abas */}
-      <div className="op-tabs">
+      <nav className="tabs">
         <button
-          className={`op-tab${aba === "pagar" ? " active" : ""}`}
+          className={aba === "pagar" ? "active" : ""}
           type="button"
           onClick={() => { setAba("pagar"); setQuery(""); }}
         >
           A Pagar
         </button>
         <button
-          className={`op-tab${aba === "receber" ? " active" : ""}`}
+          className={aba === "receber" ? "active" : ""}
           type="button"
           onClick={() => { setAba("receber"); setQuery(""); }}
         >
           A Receber
         </button>
-      </div>
+      </nav>
 
       {/* Toolbar */}
-      <div className="op-toolbar">
-        <div className="op-search">
+      <div className="erp-toolbar">
+        <div className="toolbar-search">
           <span aria-hidden="true">⌕</span>
           <input
+            className="search"
             placeholder="Buscar por descrição, parte, nº documento..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -489,13 +494,13 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
                 </td>
                 <td className="actions">
                   {r.canSettle && (
-                    <button
-                      className="link-btn"
+                    <Button
+                      variant="light"
                       type="button"
                       onClick={() => { setGlobalError(""); setSettlingId(r.id); }}
                     >
                       Baixar
-                    </button>
+                    </Button>
                   )}
                 </td>
               </tr>
@@ -538,6 +543,6 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
           onClose={() => setShowNewForm(false)}
         />
       )}
-    </section>
+    </>
   );
 }

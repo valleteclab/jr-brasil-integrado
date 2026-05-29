@@ -24,11 +24,12 @@ export function OrdensServicoList({ oss }: Props) {
   }, [query, rows]);
 
   return (
-    <section className="op-list">
-      <div className="op-toolbar">
-        <div className="op-search">
+    <section>
+      <div className="erp-toolbar">
+        <div className="toolbar-search">
           <span aria-hidden="true">⌕</span>
           <input
+            className="search"
             placeholder="Buscar por número, cliente, equipamento..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -80,9 +81,9 @@ export function OrdensServicoList({ oss }: Props) {
                   )}
                 </td>
                 <td className="actions">
-                  <a className="link-btn" href={`/erp/os/${os.id}`}>
+                  <Button variant="light" href={`/erp/os/${os.id}`}>
                     Detalhes
-                  </a>
+                  </Button>
                 </td>
               </tr>
             ))}

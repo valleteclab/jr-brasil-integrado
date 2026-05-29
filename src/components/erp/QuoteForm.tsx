@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/shared/Button";
+import { KpiCard } from "@/components/shared/KpiCard";
 import type { QuoteFormData } from "@/lib/services/sales-quote";
 
 type LineItem = {
@@ -100,7 +101,7 @@ export function QuoteForm({ formData }: Props) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="op-form">
+    <form onSubmit={handleSubmit}>
       {error && (
         <div className="alert danger">
           <strong>Erro</strong>
@@ -108,163 +109,171 @@ export function QuoteForm({ formData }: Props) {
         </div>
       )}
 
-      <div className="op-form-grid">
-        <div className="op-form-field">
-          <label htmlFor="clienteId">Cliente *</label>
-          <select
-            id="clienteId"
-            value={clienteId}
-            onChange={(e) => setClienteId(e.target.value)}
-            required
-          >
-            <option value="">Selecione um cliente</option>
-            {formData.clientes.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.label}
-              </option>
-            ))}
-          </select>
-        </div>
+      <div className="erp-card">
+        <div className="erp-card-head"><h3>Dados do orçamento</h3></div>
+        <div className="erp-form">
+          <label htmlFor="clienteId">
+            <span>Cliente <span aria-hidden="true">*</span></span>
+            <select
+              id="clienteId"
+              value={clienteId}
+              onChange={(e) => setClienteId(e.target.value)}
+              required
+            >
+              <option value="">Selecione um cliente</option>
+              {formData.clientes.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+          </label>
 
-        <div className="op-form-field">
-          <label htmlFor="vendedor">Vendedor</label>
-          <input
-            id="vendedor"
-            type="text"
-            placeholder="Nome do vendedor"
-            value={vendedor}
-            onChange={(e) => setVendedor(e.target.value)}
-          />
-        </div>
+          <label htmlFor="vendedor">
+            <span>Vendedor</span>
+            <input
+              id="vendedor"
+              type="text"
+              placeholder="Nome do vendedor"
+              value={vendedor}
+              onChange={(e) => setVendedor(e.target.value)}
+            />
+          </label>
 
-        <div className="op-form-field">
-          <label htmlFor="condicaoPagamento">Condição de pagamento</label>
-          <input
-            id="condicaoPagamento"
-            type="text"
-            placeholder="Ex: 30/60/90"
-            value={condicaoPagamento}
-            onChange={(e) => setCondicaoPagamento(e.target.value)}
-          />
-        </div>
+          <label htmlFor="condicaoPagamento">
+            <span>Condição de pagamento</span>
+            <input
+              id="condicaoPagamento"
+              type="text"
+              placeholder="Ex: 30/60/90"
+              value={condicaoPagamento}
+              onChange={(e) => setCondicaoPagamento(e.target.value)}
+            />
+          </label>
 
-        <div className="op-form-field">
-          <label htmlFor="validadeDias">Validade (dias)</label>
-          <input
-            id="validadeDias"
-            type="number"
-            min={1}
-            max={365}
-            value={validadeDias}
-            onChange={(e) => setValidadeDias(Number(e.target.value))}
-          />
+          <label htmlFor="validadeDias">
+            <span>Validade (dias)</span>
+            <input
+              id="validadeDias"
+              type="number"
+              min={1}
+              max={365}
+              value={validadeDias}
+              onChange={(e) => setValidadeDias(Number(e.target.value))}
+            />
+          </label>
         </div>
       </div>
 
-      <h3>Itens</h3>
-      <div className="erp-table-wrap">
-        <table className="erp-table">
-          <thead>
-            <tr>
-              <th>Produto</th>
-              <th className="num">Qtd.</th>
-              <th className="num">Preço unit.</th>
-              <th className="num">Total</th>
-              <th className="actions" />
-            </tr>
-          </thead>
-          <tbody>
-            {itens.map((item, index) => (
-              <tr key={index}>
-                <td>
-                  <select
-                    value={item.produtoId}
-                    onChange={(e) => updateItem(index, "produtoId", e.target.value)}
-                    required
-                  >
-                    <option value="">Selecione</option>
-                    {formData.produtos.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.sku} — {p.nome}
-                      </option>
-                    ))}
-                  </select>
-                </td>
-                <td className="num">
-                  <input
-                    type="number"
-                    min={1}
-                    value={item.quantidade}
-                    onChange={(e) => updateItem(index, "quantidade", Number(e.target.value))}
-                    style={{ width: "80px" }}
-                  />
-                </td>
-                <td className="num">
-                  <input
-                    type="number"
-                    min={0}
-                    step={0.01}
-                    value={item.precoUnitario}
-                    onChange={(e) => updateItem(index, "precoUnitario", Number(e.target.value))}
-                    style={{ width: "120px" }}
-                  />
-                </td>
-                <td className="num">{formatBrl(item.quantidade * item.precoUnitario)}</td>
-                <td className="actions">
-                  {itens.length > 1 && (
-                    <button
-                      className="danger-link"
-                      type="button"
-                      onClick={() => removeItem(index)}
-                    >
-                      Remover
-                    </button>
-                  )}
-                </td>
+      <div className="erp-card">
+        <div className="erp-card-head"><h3>Itens</h3></div>
+        <div className="erp-table-wrap">
+          <table className="erp-table">
+            <thead>
+              <tr>
+                <th>Produto</th>
+                <th className="num">Qtd.</th>
+                <th className="num">Preço unit.</th>
+                <th className="num">Total</th>
+                <th className="actions" />
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <button className="link-btn" type="button" onClick={addItem}>
-        + Adicionar item
-      </button>
-
-      <div className="kpi-row">
-        <div className="metric">
-          <span>Subtotal</span>
-          <strong>{formatBrl(subtotal)}</strong>
+            </thead>
+            <tbody>
+              {itens.map((item, index) => (
+                <tr key={index}>
+                  <td>
+                    <select
+                      value={item.produtoId}
+                      onChange={(e) => updateItem(index, "produtoId", e.target.value)}
+                      required
+                    >
+                      <option value="">Selecione</option>
+                      {formData.produtos.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.sku} — {p.nome}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="num">
+                    <input
+                      type="number"
+                      min={1}
+                      value={item.quantidade}
+                      onChange={(e) => updateItem(index, "quantidade", Number(e.target.value))}
+                      style={{ width: "80px" }}
+                    />
+                  </td>
+                  <td className="num">
+                    <input
+                      type="number"
+                      min={0}
+                      step={0.01}
+                      value={item.precoUnitario}
+                      onChange={(e) => updateItem(index, "precoUnitario", Number(e.target.value))}
+                      style={{ width: "120px" }}
+                    />
+                  </td>
+                  <td className="num">{formatBrl(item.quantidade * item.precoUnitario)}</td>
+                  <td className="actions">
+                    {itens.length > 1 && (
+                      <button
+                        className="danger-link"
+                        type="button"
+                        onClick={() => removeItem(index)}
+                      >
+                        Remover
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-        <div className="metric">
-          <span>Desconto (R$)</span>
-          <input
-            type="number"
-            min={0}
-            step={0.01}
-            max={subtotal}
-            value={desconto}
-            onChange={(e) => setDesconto(Number(e.target.value))}
-            style={{ width: "120px" }}
-          />
-        </div>
-        <div className="metric">
-          <span>Total</span>
-          <strong>{formatBrl(total)}</strong>
+        <div style={{ marginTop: 8 }}>
+          <Button type="button" variant="light" onClick={addItem}>
+            + Adicionar item
+          </Button>
         </div>
       </div>
 
-      <div className="op-form-field">
-        <label htmlFor="observacaoVendedor">Observações</label>
-        <textarea
-          id="observacaoVendedor"
-          rows={3}
-          placeholder="Observações internas do vendedor..."
-          value={observacaoVendedor}
-          onChange={(e) => setObservacaoVendedor(e.target.value)}
-        />
+      <div className="erp-card">
+        <div className="erp-card-head"><h3>Totais</h3></div>
+        <div className="erp-form">
+          <label htmlFor="desconto">
+            <span>Desconto (R$)</span>
+            <input
+              id="desconto"
+              type="number"
+              min={0}
+              step={0.01}
+              max={subtotal}
+              value={desconto}
+              onChange={(e) => setDesconto(Number(e.target.value))}
+            />
+          </label>
+          <label htmlFor="observacaoVendedor" className="full">
+            <span>Observações</span>
+            <textarea
+              id="observacaoVendedor"
+              rows={3}
+              placeholder="Observações internas do vendedor..."
+              value={observacaoVendedor}
+              onChange={(e) => setObservacaoVendedor(e.target.value)}
+            />
+          </label>
+        </div>
+
+        <div className="kpi-row" style={{ marginTop: 12 }}>
+          <KpiCard label="Subtotal" value={formatBrl(subtotal)} />
+          {desconto > 0 && <KpiCard label="Desconto" value={`- ${formatBrl(desconto)}`} tone="warn" />}
+          <KpiCard label="Total" value={formatBrl(total)} tone="success" />
+        </div>
       </div>
 
-      <div className="op-form-actions">
+      <div className="erp-toolbar">
+        <div className="toolbar-grow" />
         <Button type="button" variant="light" href="/erp/orcamentos">
           Cancelar
         </Button>

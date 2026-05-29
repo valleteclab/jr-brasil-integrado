@@ -1,6 +1,7 @@
 import { OrdensServicoList } from "@/components/erp/OrdensServicoList";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Button } from "@/components/shared/Button";
+import { KpiCard } from "@/components/shared/KpiCard";
 import { listOrdensServico } from "@/lib/services/service-order";
 import type { OrdemServicoSummary } from "@/lib/services/service-order";
 
@@ -42,26 +43,11 @@ export default async function OrdensServicoPage() {
       )}
 
       <div className="kpi-row">
-        <div className="metric">
-          <span>Total</span>
-          <strong>{total}</strong>
-        </div>
-        <div className="metric">
-          <span>Abertas</span>
-          <strong>{abertas}</strong>
-        </div>
-        <div className="metric">
-          <span>Em andamento</span>
-          <strong>{emAndamento}</strong>
-        </div>
-        <div className="metric">
-          <span>Aguardando faturar</span>
-          <strong>{finalizadas}</strong>
-        </div>
-        <div className="metric">
-          <span>Faturadas</span>
-          <strong>{faturadas}</strong>
-        </div>
+        <KpiCard label="Total" value={String(total)} />
+        <KpiCard label="Abertas" value={String(abertas)} />
+        <KpiCard label="Em andamento" value={String(emAndamento)} />
+        <KpiCard label="Aguardando faturar" value={String(finalizadas)} />
+        <KpiCard label="Faturadas" value={String(faturadas)} />
       </div>
 
       <OrdensServicoList oss={oss} />
