@@ -79,6 +79,30 @@ function getStockStatus(availableStock: number, minimumStock: number): ErpProduc
   return "Em estoque";
 }
 
+export async function listStorefrontCategories(): Promise<string[]> {
+  if (!process.env.DATABASE_URL) {
+    return [];
+  }
+
+  try {
+    const scope = await getDevelopmentTenantScope();
+    const categorias = await prisma.produtoCategoria.findMany({
+      where: {
+        ...scopedByTenantCompany(scope),
+        produtos: {
+          some: { ativo: true, visivelEcommerce: true }
+        }
+      },
+      orderBy: { nome: "asc" },
+      select: { nome: true }
+    });
+
+    return categorias.map((categoria) => categoria.nome);
+  } catch {
+    return [];
+  }
+}
+
 export async function listStorefrontProducts(): Promise<StorefrontProduct[]> {
   if (!process.env.DATABASE_URL) {
     throw new Error("DATABASE_URL não configurada. Configure o banco de dados para listar produtos.");

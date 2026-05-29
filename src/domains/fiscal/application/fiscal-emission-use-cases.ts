@@ -9,6 +9,7 @@ import {
   emptyTotals,
   loadSalesTaxRules
 } from "../tax-engine";
+import { isSubstituicaoTributaria, resolveCfopVenda } from "../cfop";
 import type { NormalizedFiscalDocument } from "../types";
 import { resolveFiscalProvider } from "../providers";
 import type { ProviderContext } from "../providers/types";
@@ -58,8 +59,18 @@ export async function emitFiscalDocument(
       ufDestino: document.destinatario.uf,
       servico: item.servico
     });
+    // CFOP automático para mercadorias: respeita CFOP explícito do item; senão deriva de
+    // origem/destino e da existência de substituição tributária nos tributos calculados.
+    const cfop = item.servico
+      ? null
+      : item.cfop ??
+        resolveCfopVenda({
+          ufOrigem: config.emitter.uf,
+          ufDestino: document.destinatario.uf,
+          substituicaoTributaria: isSubstituicaoTributaria(taxes)
+        });
     accumulateTotals(totals, item, taxes);
-    return { item, taxes, numeroItem: index + 1 };
+    return { item, taxes, cfop, numeroItem: index + 1 };
   });
 
   const baseValor = round2(totals.valorProdutos + totals.valorServicos);
@@ -111,7 +122,7 @@ export async function emitFiscalDocument(
         informacoesComplementares: document.informacoesComplementares,
         emitidaEm: new Date(),
         itens: {
-          create: computedItems.map(({ item, taxes, numeroItem }) => ({
+          create: computedItems.map(({ item, taxes, cfop, numeroItem }) => ({
             tenantId: scope.tenantId,
             empresaId: scope.empresaId,
             produtoId: item.produtoId,
@@ -120,7 +131,7 @@ export async function emitFiscalDocument(
             descricao: item.descricao,
             ncm: item.ncm,
             cest: item.cest,
-            cfop: item.cfop,
+            cfop,
             unidade: item.unidade,
             quantidade: item.quantidade,
             valorUnitario: item.valorUnitario,
@@ -176,7 +187,11 @@ export async function emitFiscalDocument(
   try {
     emitResult = await provider.emit(
       {
-        document: { ...document, serie },
+        document: {
+          ...document,
+          serie,
+          itens: computedItems.map(({ item, cfop }) => ({ ...item, cfop: cfop ?? item.cfop }))
+        },
         emitter: config.emitter,
         numero: Number(created.numero),
         totals,

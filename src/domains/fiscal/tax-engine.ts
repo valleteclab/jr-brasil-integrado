@@ -116,35 +116,64 @@ export function computeItemTaxes(
     };
   }
 
-  const icmsRule = pickRule(rules, "ICMS", item.ncm, ctx.ufDestino);
   const ipiRule = pickRule(rules, "IPI", item.ncm, ctx.ufDestino);
   const pisRule = pickRule(rules, "PIS", item.ncm, ctx.ufDestino);
   const cofinsRule = pickRule(rules, "COFINS", item.ncm, ctx.ufDestino);
-
-  const fallbackIcms = defaultIcms(ctx.regime);
-  const aliquotaIcms = num(icmsRule?.aliquota);
-  const reducao = num(icmsRule?.reducaoBase) / 100;
-  const baseIcms = round2(base * (1 - reducao));
   const isSimples = ctx.regime === "SIMPLES_NACIONAL" || ctx.regime === "MEI" || ctx.regime === "SIMPLES_EXCESSO_SUBLIMITE";
 
   const aliquotaIpi = num(ipiRule?.aliquota);
   const aliquotaPis = num(pisRule?.aliquota);
   const aliquotaCofins = num(cofinsRule?.aliquota);
 
+  // No Simples Nacional não há destaque de ICMS próprio na nota (recolhido no DAS): usa-se
+  // CSOSN e valores zerados, ignorando regras de regime normal (CST) eventualmente cadastradas.
+  if (isSimples) {
+    const icmsRuleSimples = pickRule(rules, "ICMS", item.ncm, ctx.ufDestino);
+    const csosn = icmsRuleSimples?.csosn ?? defaultIcms(ctx.regime).csosn;
+    return {
+      origem,
+      cstIcms: null,
+      csosn,
+      baseIcms: 0,
+      aliquotaIcms: 0,
+      valorIcms: 0,
+      cstIpi: ipiRule?.cst ?? (ipiRule ? null : "53"),
+      aliquotaIpi,
+      valorIpi: round2(base * (aliquotaIpi / 100)),
+      cstPis: pisRule?.cst ?? "49",
+      aliquotaPis,
+      valorPis: round2(base * (aliquotaPis / 100)),
+      cstCofins: cofinsRule?.cst ?? "49",
+      aliquotaCofins,
+      valorCofins: round2(base * (aliquotaCofins / 100)),
+      itemListaServico: null,
+      aliquotaIss: 0,
+      valorIss: 0,
+      cClassTrib: icmsRuleSimples?.cClassTrib ?? null
+    };
+  }
+
+  // Regime normal (Lucro Presumido/Real): ICMS destacado por CST com a alíquota da regra.
+  const icmsRule = pickRule(rules, "ICMS", item.ncm, ctx.ufDestino);
+  const fallbackIcms = defaultIcms(ctx.regime);
+  const aliquotaIcms = num(icmsRule?.aliquota);
+  const reducao = num(icmsRule?.reducaoBase) / 100;
+  const baseIcms = round2(base * (1 - reducao));
+
   return {
     origem,
-    cstIcms: icmsRule?.cst ?? (isSimples ? null : fallbackIcms.cst),
-    csosn: icmsRule?.csosn ?? (isSimples ? fallbackIcms.csosn : null),
-    baseIcms: isSimples && !icmsRule ? 0 : baseIcms,
+    cstIcms: icmsRule?.cst ?? fallbackIcms.cst,
+    csosn: null,
+    baseIcms,
     aliquotaIcms,
-    valorIcms: isSimples && !icmsRule ? 0 : round2(baseIcms * (aliquotaIcms / 100)),
+    valorIcms: round2(baseIcms * (aliquotaIcms / 100)),
     cstIpi: ipiRule?.cst ?? (ipiRule ? null : "53"),
     aliquotaIpi,
     valorIpi: round2(base * (aliquotaIpi / 100)),
-    cstPis: pisRule?.cst ?? (isSimples ? "49" : "01"),
+    cstPis: pisRule?.cst ?? "01",
     aliquotaPis,
     valorPis: round2(base * (aliquotaPis / 100)),
-    cstCofins: cofinsRule?.cst ?? (isSimples ? "49" : "01"),
+    cstCofins: cofinsRule?.cst ?? "01",
     aliquotaCofins,
     valorCofins: round2(base * (aliquotaCofins / 100)),
     itemListaServico: null,

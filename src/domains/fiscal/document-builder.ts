@@ -36,8 +36,7 @@ function itemFromProduto(
   produto: ProdutoFiscalLike,
   quantidade: number,
   valorUnitario: number,
-  desconto: number,
-  cfopPadrao: string
+  desconto: number
 ): NormalizedFiscalItem {
   const valorTotal = Math.round((quantidade * valorUnitario + Number.EPSILON) * 100) / 100;
   return {
@@ -46,7 +45,8 @@ function itemFromProduto(
     descricao: produto.nome,
     ncm: produto.fiscal?.ncm ?? produto.ncm,
     cest: produto.fiscal?.cest ?? produto.cest,
-    cfop: produto.cfop ?? cfopPadrao,
+    // CFOP explícito do produto prevalece; caso contrário é derivado na emissão (origem/destino).
+    cfop: produto.cfop ?? null,
     unidade: produto.unidade,
     quantidade,
     valorUnitario,
@@ -79,7 +79,6 @@ export type PedidoFiscalInput = {
 /** Constrói um documento NF-e/NFC-e a partir de um pedido de venda já carregado. */
 export function buildDocumentFromPedido(input: PedidoFiscalInput): NormalizedFiscalDocument {
   const modelo = input.modelo ?? "NFE";
-  const cfopPadrao = "5102";
   return {
     modelo,
     finalidade: "NORMAL",
@@ -96,7 +95,7 @@ export function buildDocumentFromPedido(input: PedidoFiscalInput): NormalizedFis
     valorDesconto: input.desconto ?? 0,
     outrasDespesas: 0,
     itens: input.itens.map((linha) => ({
-      ...itemFromProduto(linha.produto, linha.quantidade, linha.precoUnitario, linha.desconto ?? 0, cfopPadrao),
+      ...itemFromProduto(linha.produto, linha.quantidade, linha.precoUnitario, linha.desconto ?? 0),
       produtoId: linha.produto.id
     }))
   };

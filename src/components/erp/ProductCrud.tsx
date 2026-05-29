@@ -64,6 +64,7 @@ type ProductFormState = {
 type ProductCrudProps = {
   initialProducts: ErpProductSummary[];
   taxRules: ProductTaxRuleOption[];
+  warehouses: string[];
 };
 
 type BadgeTone = "success" | "warn" | "danger" | "info" | "violet" | "mute";
@@ -130,7 +131,7 @@ const emptyForm: ProductFormState = {
   lastCost: "",
   minimumPrice: "",
   maxDiscount: "",
-  warehouse: "Galpão LEM-1",
+  warehouse: "",
   location: "",
   reservedStock: "0",
   maxStock: "0",
@@ -275,7 +276,8 @@ function toProduct(form: ProductFormState): ProductRecord {
   };
 }
 
-export function ProductCrud({ initialProducts, taxRules }: ProductCrudProps) {
+export function ProductCrud({ initialProducts, taxRules, warehouses }: ProductCrudProps) {
+  const defaultWarehouse = warehouses[0] ?? "";
   const initialRecords = useMemo(() => initialProducts.map(enrichProduct), [initialProducts]);
   const xmlInputRef = useRef<HTMLInputElement>(null);
   const [products, setProducts] = useState<ProductRecord[]>(initialRecords);
@@ -377,7 +379,7 @@ export function ProductCrud({ initialProducts, taxRules }: ProductCrudProps) {
   }
 
   function openNewProduct() {
-    setForm(emptyForm);
+    setForm({ ...emptyForm, warehouse: defaultWarehouse });
     setError("");
     setActiveTab("geral");
     setDrawerOpen(true);
@@ -736,7 +738,12 @@ export function ProductCrud({ initialProducts, taxRules }: ProductCrudProps) {
         <div className="erp-form">
           <label>
             Depósito padrão
-            <input value={form.warehouse} onChange={(event) => updateField("warehouse", event.target.value)} />
+            <input list="produto-depositos" value={form.warehouse} onChange={(event) => updateField("warehouse", event.target.value)} />
+            <datalist id="produto-depositos">
+              {warehouses.map((nome) => (
+                <option key={nome} value={nome} />
+              ))}
+            </datalist>
           </label>
           <label>
             Endereço físico

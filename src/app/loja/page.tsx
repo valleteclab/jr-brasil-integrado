@@ -1,18 +1,20 @@
 import Link from "next/link";
 import { ProductCard } from "@/components/storefront/ProductCard";
-import { listStorefrontProducts } from "@/lib/services/products";
+import { listStorefrontProducts, listStorefrontCategories } from "@/lib/services/products";
 import type { StorefrontProduct } from "@/lib/services/products";
 
 export const dynamic = "force-dynamic";
 
-const categories = ["Peças Agrícolas", "Peças Automotivas", "Peças Industriais", "Serviços de oficina"];
-
 export default async function StorePage() {
   let products: StorefrontProduct[] = [];
+  let categories: string[] = [];
   let loadError = "";
 
   try {
-    products = await listStorefrontProducts();
+    [products, categories] = await Promise.all([
+      listStorefrontProducts(),
+      listStorefrontCategories()
+    ]);
   } catch (error) {
     loadError = error instanceof Error ? error.message : "Não foi possível carregar o catálogo.";
   }
