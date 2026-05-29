@@ -38,59 +38,60 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 | Tarefa | Status | Observações |
 | --- | --- | --- |
 | Criar camada Prisma client/API base | Concluído | Criado Prisma Client centralizado, escopo temporário de desenvolvimento por `tenantId`/`empresaId` e services iniciais de produtos/clientes. |
-| Criar seed operacional completo | Pendente | Popular dados reais de referência, sem fallback em runtime. |
-| Implementar listagem real de produtos na loja | Em andamento | `/loja` consome service de produtos com Prisma; se o banco falhar, exibe erro e não usa dados falsos. |
-| Implementar cadastro/listagem de clientes no ERP | Em andamento | Criada rota `/erp/clientes` com listagem via service escopado; se o banco falhar, exibe erro e não usa dados falsos. |
-| Implementar CRUD de produtos no ERP | Em andamento | `/erp/produtos` cria, edita, inativa e processa XML via APIs reais com Prisma/PostgreSQL. |
-| Implementar estoque real com saldos e reservas | Pendente | Base já modelada no schema. |
-| Implementar pedido ecommerce entrando no ERP | Pendente | Conectar checkout a `PedidoVenda`. |
-| Implementar status de pedido e baixa/reserva de estoque | Pendente | Definir regra final de venda sem saldo. |
+| Criar seed operacional completo | Concluído | Empresa fiscal, config fiscal, conta bancária, regras tributárias, fornecedor e catálogo com saldo. |
+| Implementar listagem real de produtos na loja | Concluído | `/loja` consome service de produtos com Prisma; sem dados falsos. |
+| Implementar cadastro/listagem de clientes no ERP | Concluído | `/erp/clientes` com CRUD completo (contatos, endereços, crédito, aprovação). |
+| Implementar CRUD de produtos no ERP | Concluído | `/erp/produtos` cria, edita, inativa e processa XML via APIs reais. |
+| Implementar estoque real com saldos e reservas | Concluído | Serviço de estoque transacional (saldo/reserva/baixa/custo médio) + `/erp/estoque`. |
+| Implementar pedido de venda entrando no ERP | Concluído | `/erp/vendas`: criar pedido, reservar, confirmar, faturar (NF-e), cancelar. Checkout da loja é evolução futura. |
+| Implementar status de pedido e baixa/reserva de estoque | Concluído | Reserva na criação, baixa na confirmação, estorno no cancelamento. |
 
 ## Fase 2 — Orçamentos e atendimento
 
 | Tarefa | Status | Observações |
 | --- | --- | --- |
-| Migrar fluxo de orçamento do protótipo | Pendente | Base: `Orcamento` e `OrcamentoItem`. |
-| Criar aprovação de orçamento no portal B2B | Pendente | Converter orçamento aprovado em pedido. |
-| Criar atendimento unificado ERP | Pendente | Venda balcão, pedido, OS e orçamento. |
-| Histórico de interações e notificações | Pendente | Depende de módulo de auditoria/notificação. |
+| Migrar fluxo de orçamento do protótipo | Concluído | `/erp/orcamentos`: criar, precificar, aprovar, rejeitar. |
+| Converter orçamento aprovado em pedido | Concluído | `convertQuoteToPedido` gera `PedidoVenda` e reserva estoque. Portal B2B de aprovação é evolução futura. |
+| Criar atendimento unificado ERP | Concluído | `/erp/atendimento`: hub para venda, orçamento e OS. |
+| Histórico de interações e notificações | Em andamento | Auditoria registrada em todas as operações; notificações dependem de provedor. |
 
 ## Fase 3 — Estoque e compras avançados
 
 | Tarefa | Status | Observações |
 | --- | --- | --- |
-| Movimentações completas de estoque | Pendente | Entrada, saída, ajuste, transferência e reserva. |
-| Inventário físico | Pendente | Modelagem complementar pode ser necessária. |
-| Pedido de compra completo | Pendente | Base: `PedidoCompra` e `PedidoCompraItem`. |
-| Recebimento e atualização de custo médio | Pendente | Depende de regra fiscal/entrada. |
+| Movimentações completas de estoque | Concluído | Entrada, saída, ajuste, transferência, reserva e estorno com idempotência. |
+| Inventário físico | Concluído | `/erp/inventarios`: abrir, contar e finalizar gerando ajustes. |
+| Pedido de compra completo | Concluído | `/erp/compras`: criar, enviar, receber, cancelar. |
+| Recebimento e atualização de custo médio | Concluído | Recebimento aplica entrada de estoque com custo médio e gera conta a pagar. |
 | Sugestão de compra por estoque mínimo/giro | Pendente | Depende de histórico de vendas. |
 
 ## Fase 4 — Oficina / OS
 
 | Tarefa | Status | Observações |
 | --- | --- | --- |
-| OS com serviços e peças aplicadas | Pendente | Base modelada. |
+| OS com serviços e peças aplicadas | Concluído | `/erp/os`: lançar serviços (mão de obra) e peças com recálculo de totais. |
 | Agenda de técnicos | Pendente | Requer tabela específica de agenda/apontamentos. |
-| Apontamento de horas | Pendente | Expandir `OrdemServicoMaoObra`. |
-| OS aguardando peça vinculada a compras | Pendente | Criar vínculo entre OS e compras. |
-| Faturamento de OS | Pendente | Integrar contas a receber e fiscal. |
+| Apontamento de horas | Em andamento | Horas e valor/hora em `OrdemServicoMaoObra`. |
+| OS aguardando peça vinculada a compras | Em andamento | Status `AGUARDANDO_PECAS` disponível; vínculo automático com compras é evolução. |
+| Faturamento de OS | Concluído | Baixa de peças no estoque, contas a receber e emissão de NFS-e dos serviços. |
 
 ## Fase 5 — Financeiro e fiscal
 
 | Tarefa | Status | Observações |
 | --- | --- | --- |
-| Contas a pagar/receber reais | Pendente | Base modelada. |
-| Baixas financeiras | Pendente | Criar APIs e telas. |
+| Contas a pagar/receber reais | Concluído | `/erp/financeiro`: lista, criação avulsa e baixa de contas a pagar/receber. |
+| Baixas financeiras | Concluído | Baixa parcial/total com juros/multa/desconto, movimento financeiro e atualização de saldo bancário. |
 | Conciliação bancária/OFX | Pendente | Integração futura. |
-| NF-e fiscal | Pendente | Depende de provedor/certificado. |
+| NF-e / NFC-e / NFS-e fiscal | Concluído | Emissão funcional (motor tributário, numeração por série, provedor abstrato interno + adapter HTTP Focus/NFe.io/PlugNotas/Webmania), cancelamento e carta de correção. Pronto para plugar credenciais reais. |
+| Fluxo de caixa | Concluído | `/erp/fluxo-caixa`: projeção 30/60/90 dias e realizado. |
 | Boletos, Pix e cartão | Pendente | Depende de gateway. |
 
 ## Fase 6 — BI, automações e escala
 
 | Tarefa | Status | Observações |
 | --- | --- | --- |
-| Dashboards reais por perfil | Pendente | Depende dos módulos transacionais. |
-| Relatórios operacionais e DRE | Pendente | Depende de dados financeiros. |
+| Dashboards reais por perfil | Concluído | `/erp` com KPIs reais (vendas, financeiro, fiscal, estoque crítico, OS abertas). |
+| Relatórios operacionais e DRE | Concluído | `/erp/relatorios`: vendas, estoque, financeiro, fiscal e DRE simplificado. |
 | Notificações WhatsApp/email | Pendente | Depende de provedor definido. |
 | Integrações contábeis/transportadoras | Pendente | Futuro. |
 | Performance, cache e busca avançada | Pendente | Futuro. |
@@ -195,3 +196,26 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Assistente fiscal com OpenRouter sugere campos estruturados da regra tributaria para revisao humana.
 - Menu do ERP atualizado com o item `Regras tributarias` em Financeiro & Fiscal.
 - Validacao executada: `npm run lint`, `npx tsc --noEmit`, `npm run build`; `/erp/regras-tributarias` e `/erp/produtos` responderam HTTP 200.
+
+## Atualizacao operacional - 2026-05-29 - nucleo de emissao fiscal + fundacao operacional
+
+- Schema Prisma expandido com modelos de emissao fiscal (`NotaFiscal` completa, `NotaFiscalItem`, `NotaFiscalEvento`, `ConfiguracaoFiscal`, `SequenciaFiscal`), financeiro (`ContaBancaria`, `MovimentoFinanceiro`, baixa parcial em contas), estoque/inventario (`Inventario`, `InventarioItem`, `Deposito.padrao`), compras (status enum, recebimento) e vendas/OS (deposito, totais, faturamento). Migration `20260529123723_fiscal_emission_and_operational_modules` aplicada.
+- Servico de estoque transacional (`src/domains/stock`) com movimento idempotente, reserva, baixa, custo medio ponderado e deposito padrao.
+- Nucleo fiscal (`src/domains/fiscal`): motor tributario por regra/regime, builders de documento (NF-e/NFC-e a partir de pedido, NFS-e a partir de OS), provedor abstrato com implementacao interna funcional (gera chave de 44 digitos valida + protocolo em homologacao) e adapter HTTP generico pronto para Focus NFe / NFe.io / PlugNotas / WebmaniaBR, alem de emissao, cancelamento e carta de correcao com auditoria.
+- Telas: `/erp/fiscal` (lista, cancelar, carta de correcao) e `/erp/configuracoes/fiscal` (provedor, ambiente, regime, series, credenciais criptografadas). Menu do ERP atualizado.
+- Seed ampliado: endereco/regime fiscal da empresa, configuracao fiscal ativa, conta bancaria, regras tributarias (ICMS/PIS/COFINS/ISS), fornecedor e catalogo de produtos com saldo.
+- Validacao: `npx tsc --noEmit`, `npm run lint`, `npm run build` verdes; smoke test de emissao+cancelamento executado contra PostgreSQL.
+- Registro de coordenacao entre agentes em `docs/HANDOFF_FISCAL_OPERACIONAL.md`.
+
+## Atualizacao operacional - 2026-05-29 - modulos operacionais completos (validado)
+
+- Entregues e validados os modulos operacionais que tornam a plataforma um produto utilizavel ponta a ponta, integrados ao nucleo fiscal:
+  - Vendas (`/erp/vendas`): pedido com reserva de estoque, confirmacao com baixa e contas a receber, faturamento emitindo NF-e e cancelamento com estorno.
+  - Estoque (`/erp/estoque`, `/erp/inventarios`): saldos, kardex, ajuste, transferencia e inventario com ajuste automatico.
+  - Financeiro (`/erp/financeiro`, `/erp/fluxo-caixa`): baixa parcial/total de contas a pagar/receber com juros/multa/desconto, movimento financeiro, saldo bancario e fluxo de caixa.
+  - Compras e fornecedores (`/erp/compras`, `/erp/fornecedores`): CRUD de fornecedor, pedido de compra, envio, recebimento (entrada de estoque + custo medio + conta a pagar).
+  - Orcamentos e OS (`/erp/orcamentos`, `/erp/os`, `/erp/atendimento`): orcamento com conversao em pedido; OS com servicos/pecas e faturamento emitindo NFS-e.
+  - Clientes (`/erp/clientes`) CRUD completo e Colaboradores (`/erp/colaboradores`) com perfis/permissoes (RBAC).
+  - Dashboard (`/erp`) com KPIs reais e Relatorios (`/erp/relatorios`) de vendas, estoque, financeiro, fiscal e DRE simplificado.
+- Coordenacao executada por subagentes em paralelo, registrada em `docs/HANDOFF_FISCAL_OPERACIONAL.md`.
+- Validacao central: `npx tsc --noEmit` (0 erros), `npm run lint` (limpo), `npm run build` (todas as rotas), e smoke test de integracao contra PostgreSQL cobrindo Venda->NF-e, OS->NFS-e, Compra->estoque/conta a pagar, baixa financeira e orcamento->pedido.

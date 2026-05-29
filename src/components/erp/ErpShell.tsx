@@ -60,7 +60,10 @@ const modules: ErpNavGroup[] = [
   },
   {
     group: "Configurações",
-    items: [{ label: "IA do ERP", href: "/erp/configuracoes/ia" }]
+    items: [
+      { label: "Emissão fiscal", href: "/erp/configuracoes/fiscal" },
+      { label: "IA do ERP", href: "/erp/configuracoes/ia" }
+    ]
   }
 ];
 

@@ -1,0 +1,363 @@
+import type { ModeloFiscal, Prisma } from "@prisma/client";
+import { prisma } from "@/lib/db/prisma";
+import type { TenantScope } from "@/lib/auth/dev-session";
+import { createAuditLog } from "@/lib/audit/audit-service";
+import { nextFiscalNumber } from "@/lib/numbering";
+import {
+  accumulateTotals,
+  computeItemTaxes,
+  emptyTotals,
+  loadSalesTaxRules
+} from "../tax-engine";
+import type { NormalizedFiscalDocument } from "../types";
+import { resolveFiscalProvider } from "../providers";
+import type { ProviderContext } from "../providers/types";
+import { getFiscalRuntimeConfig } from "./fiscal-config-use-cases";
+
+const TX_OPTIONS = { maxWait: 10000, timeout: 30000 };
+
+function round2(value: number) {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+export type FiscalDocumentLinks = {
+  clienteId?: string | null;
+  pedidoVendaId?: string | null;
+  ordemServicoId?: string | null;
+  usuarioId?: string | null;
+};
+
+/**
+ * Emite um documento fiscal de saída (NF-e/NFC-e/NFS-e) a partir de um documento
+ * normalizado. Orquestra: configuração/emitente, cálculo de tributos por item, numeração
+ * atômica por série, persistência (PROCESSANDO → AUTORIZADA/REJEITADA), chamada ao provedor
+ * e registro de eventos/auditoria. A baixa de estoque e o contas a receber são de
+ * responsabilidade do fluxo de origem (venda/OS), que chama esta função e reage ao retorno.
+ */
+export async function emitFiscalDocument(
+  scope: TenantScope,
+  document: NormalizedFiscalDocument,
+  links: FiscalDocumentLinks = {}
+) {
+  if (!document.itens.length) {
+    throw new Error("Documento fiscal sem itens.");
+  }
+
+  const config = await getFiscalRuntimeConfig(scope);
+  const modelo: ModeloFiscal = document.modelo;
+  const serie =
+    document.serie ||
+    (modelo === "NFE" ? config.serieNfe : modelo === "NFCE" ? config.serieNfce : config.serieNfse);
+
+  const rules = await loadSalesTaxRules(prisma, scope);
+  const totals = emptyTotals();
+  const computedItems = document.itens.map((item, index) => {
+    const taxes = computeItemTaxes(item, rules, {
+      regime: config.regime,
+      ufOrigem: config.emitter.uf,
+      ufDestino: document.destinatario.uf,
+      servico: item.servico
+    });
+    accumulateTotals(totals, item, taxes);
+    return { item, taxes, numeroItem: index + 1 };
+  });
+
+  const baseValor = round2(totals.valorProdutos + totals.valorServicos);
+  const total = round2(
+    baseValor -
+      document.valorDesconto +
+      document.valorFrete +
+      document.valorSeguro +
+      document.outrasDespesas
+  );
+
+  // 1) Persiste a nota em PROCESSANDO com itens e tributos calculados (numeração atômica).
+  const created = await prisma.$transaction(async (tx) => {
+    const numero = await nextFiscalNumber(tx, scope, modelo, serie);
+    const nota = await tx.notaFiscal.create({
+      data: {
+        tenantId: scope.tenantId,
+        empresaId: scope.empresaId,
+        modelo,
+        finalidade: document.finalidade,
+        ambiente: config.ambiente,
+        provedor: config.provider,
+        numero: String(numero),
+        serie,
+        status: "PROCESSANDO",
+        naturezaOperacao: document.naturezaOperacao,
+        clienteId: links.clienteId ?? null,
+        pedidoVendaId: links.pedidoVendaId ?? null,
+        ordemServicoId: links.ordemServicoId ?? null,
+        destinatarioNome: document.destinatario.nome,
+        destinatarioDocumento: document.destinatario.documento,
+        destinatarioIe: document.destinatario.inscricaoEstadual,
+        destinatarioEmail: document.destinatario.email,
+        valorProdutos: totals.valorProdutos,
+        valorServicos: totals.valorServicos,
+        valorDesconto: document.valorDesconto || totals.valorDesconto,
+        valorFrete: document.valorFrete,
+        valorSeguro: document.valorSeguro,
+        outrasDespesas: document.outrasDespesas,
+        valorIcms: totals.valorIcms,
+        valorIpi: totals.valorIpi,
+        valorPis: totals.valorPis,
+        valorCofins: totals.valorCofins,
+        valorIss: totals.valorIss,
+        valorTotalTributos: totals.valorTotalTributos,
+        total,
+        formaPagamento: document.formaPagamento,
+        condicaoPagamento: document.condicaoPagamento,
+        informacoesComplementares: document.informacoesComplementares,
+        emitidaEm: new Date(),
+        itens: {
+          create: computedItems.map(({ item, taxes, numeroItem }) => ({
+            tenantId: scope.tenantId,
+            empresaId: scope.empresaId,
+            produtoId: item.produtoId,
+            numeroItem,
+            codigo: item.codigo,
+            descricao: item.descricao,
+            ncm: item.ncm,
+            cest: item.cest,
+            cfop: item.cfop,
+            unidade: item.unidade,
+            quantidade: item.quantidade,
+            valorUnitario: item.valorUnitario,
+            valorTotal: item.valorTotal,
+            desconto: item.desconto,
+            origem: taxes.origem,
+            cstIcms: taxes.cstIcms,
+            csosn: taxes.csosn,
+            baseIcms: taxes.baseIcms,
+            aliquotaIcms: taxes.aliquotaIcms,
+            valorIcms: taxes.valorIcms,
+            cstIpi: taxes.cstIpi,
+            aliquotaIpi: taxes.aliquotaIpi,
+            valorIpi: taxes.valorIpi,
+            cstPis: taxes.cstPis,
+            aliquotaPis: taxes.aliquotaPis,
+            valorPis: taxes.valorPis,
+            cstCofins: taxes.cstCofins,
+            aliquotaCofins: taxes.aliquotaCofins,
+            valorCofins: taxes.valorCofins,
+            itemListaServico: taxes.itemListaServico,
+            aliquotaIss: taxes.aliquotaIss,
+            valorIss: taxes.valorIss,
+            cClassTrib: taxes.cClassTrib
+          }))
+        }
+      }
+    });
+
+    await createAuditLog(tx, {
+      scope,
+      entidade: "NotaFiscal",
+      entidadeId: nota.id,
+      acao: "EMIT_REQUEST",
+      payload: { modelo, serie, numero, total, itens: computedItems.length }
+    });
+
+    return nota;
+  }, TX_OPTIONS);
+
+  // 2) Chama o provedor (fora da transação, pois pode ser I/O externo).
+  const provider = resolveFiscalProvider(config.provider);
+  const ctx: ProviderContext = {
+    ambiente: config.ambiente,
+    provedor: config.provider,
+    baseUrl: config.baseUrl,
+    token: config.token,
+    cscId: config.cscId,
+    cscToken: config.cscToken
+  };
+
+  let emitResult;
+  try {
+    emitResult = await provider.emit(
+      {
+        document: { ...document, serie },
+        emitter: config.emitter,
+        numero: Number(created.numero),
+        totals,
+        total
+      },
+      ctx
+    );
+  } catch (error) {
+    const motivo = error instanceof Error ? error.message : "Falha de comunicação com o provedor fiscal.";
+    await prisma.$transaction(async (tx) => {
+      await tx.notaFiscal.update({ where: { id: created.id }, data: { status: "ERRO", motivo } });
+      await createAuditLog(tx, { scope, entidade: "NotaFiscal", entidadeId: created.id, acao: "EMIT_ERROR", payload: { motivo } });
+    });
+    throw new Error(motivo);
+  }
+
+  // 3) Atualiza com o resultado do provedor.
+  const updated = await prisma.$transaction(async (tx) => {
+    const authorized = emitResult.status === "AUTORIZADA";
+    const nota = await tx.notaFiscal.update({
+      where: { id: created.id },
+      data: {
+        status: emitResult.status,
+        chaveAcesso: emitResult.chaveAcesso ?? null,
+        protocolo: emitResult.protocolo ?? null,
+        reciboLote: emitResult.reciboLote ?? null,
+        providerRef: emitResult.providerRef ?? null,
+        xml: emitResult.xml ?? null,
+        xmlUrl: emitResult.xmlUrl ?? null,
+        danfeUrl: emitResult.danfeUrl ?? null,
+        motivo: emitResult.motivo ?? null,
+        autorizadaEm: authorized ? new Date() : null
+      },
+      include: { itens: { orderBy: { numeroItem: "asc" } } }
+    });
+
+    await createAuditLog(tx, {
+      scope,
+      entidade: "NotaFiscal",
+      entidadeId: nota.id,
+      acao: authorized ? "EMIT_AUTHORIZED" : "EMIT_RESULT",
+      payload: { status: emitResult.status, chave: emitResult.chaveAcesso ?? null, motivo: emitResult.motivo ?? null }
+    });
+
+    return nota;
+  }, TX_OPTIONS);
+
+  return updated;
+}
+
+export async function cancelNotaFiscal(scope: TenantScope, notaId: string, justificativa: string) {
+  const nota = await prisma.notaFiscal.findFirst({
+    where: { id: notaId, tenantId: scope.tenantId, empresaId: scope.empresaId }
+  });
+
+  if (!nota) {
+    throw new Error("Nota fiscal não encontrada.");
+  }
+  if (nota.status !== "AUTORIZADA") {
+    throw new Error("Apenas notas autorizadas podem ser canceladas.");
+  }
+  if (justificativa.trim().length < 15) {
+    throw new Error("A justificativa de cancelamento deve ter ao menos 15 caracteres.");
+  }
+
+  const config = await getFiscalRuntimeConfig(scope);
+  const provider = resolveFiscalProvider(nota.provedor);
+  const result = await provider.cancel(
+    {
+      modelo: nota.modelo,
+      chaveAcesso: nota.chaveAcesso,
+      providerRef: nota.providerRef,
+      justificativa: justificativa.trim()
+    },
+    {
+      ambiente: config.ambiente,
+      provedor: nota.provedor,
+      baseUrl: config.baseUrl,
+      token: config.token,
+      cscId: config.cscId,
+      cscToken: config.cscToken
+    }
+  );
+
+  return prisma.$transaction(async (tx) => {
+    const authorized = result.status === "AUTORIZADO";
+    const evento = await tx.notaFiscalEvento.create({
+      data: {
+        tenantId: scope.tenantId,
+        empresaId: scope.empresaId,
+        notaFiscalId: nota.id,
+        tipo: "CANCELAMENTO",
+        status: authorized ? "AUTORIZADO" : result.status === "REJEITADO" ? "REJEITADO" : "ERRO",
+        justificativa: justificativa.trim(),
+        protocolo: result.protocolo ?? null,
+        mensagem: result.motivo ?? null
+      }
+    });
+
+    if (authorized) {
+      await tx.notaFiscal.update({
+        where: { id: nota.id },
+        data: { status: "CANCELADA", canceladaEm: new Date(), motivo: justificativa.trim() }
+      });
+    }
+
+    await createAuditLog(tx, {
+      scope,
+      entidade: "NotaFiscal",
+      entidadeId: nota.id,
+      acao: "CANCEL",
+      payload: { status: result.status, eventoId: evento.id }
+    });
+
+    if (!authorized) {
+      throw new Error(result.motivo || "Provedor rejeitou o cancelamento da nota fiscal.");
+    }
+
+    return { id: nota.id, status: "CANCELADA" as const, eventoId: evento.id };
+  }, TX_OPTIONS);
+}
+
+export async function createCartaCorrecao(scope: TenantScope, notaId: string, correcao: string) {
+  const nota = await prisma.notaFiscal.findFirst({
+    where: { id: notaId, tenantId: scope.tenantId, empresaId: scope.empresaId },
+    include: { eventos: { where: { tipo: "CARTA_CORRECAO" } } }
+  });
+
+  if (!nota) {
+    throw new Error("Nota fiscal não encontrada.");
+  }
+  if (nota.status !== "AUTORIZADA") {
+    throw new Error("Apenas notas autorizadas aceitam carta de correção.");
+  }
+  if (correcao.trim().length < 15) {
+    throw new Error("O texto da carta de correção deve ter ao menos 15 caracteres.");
+  }
+
+  const config = await getFiscalRuntimeConfig(scope);
+  const provider = resolveFiscalProvider(nota.provedor);
+  const sequencia = nota.eventos.length + 1;
+  const result = await provider.correct(
+    { chaveAcesso: nota.chaveAcesso, providerRef: nota.providerRef, sequencia, correcao: correcao.trim() },
+    {
+      ambiente: config.ambiente,
+      provedor: nota.provedor,
+      baseUrl: config.baseUrl,
+      token: config.token,
+      cscId: config.cscId,
+      cscToken: config.cscToken
+    }
+  );
+
+  return prisma.$transaction(async (tx) => {
+    const authorized = result.status === "AUTORIZADO";
+    const evento = await tx.notaFiscalEvento.create({
+      data: {
+        tenantId: scope.tenantId,
+        empresaId: scope.empresaId,
+        notaFiscalId: nota.id,
+        tipo: "CARTA_CORRECAO",
+        status: authorized ? "AUTORIZADO" : result.status === "REJEITADO" ? "REJEITADO" : "ERRO",
+        sequencia,
+        correcao: correcao.trim(),
+        protocolo: result.protocolo ?? null,
+        mensagem: result.motivo ?? null
+      }
+    });
+
+    await createAuditLog(tx, {
+      scope,
+      entidade: "NotaFiscal",
+      entidadeId: nota.id,
+      acao: "CORRECTION",
+      payload: { status: result.status, sequencia, eventoId: evento.id }
+    });
+
+    if (!authorized) {
+      throw new Error(result.motivo || "Provedor rejeitou a carta de correção.");
+    }
+
+    return { id: nota.id, eventoId: evento.id, sequencia };
+  }, TX_OPTIONS);
+}
