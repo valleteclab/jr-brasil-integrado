@@ -46,8 +46,8 @@ com foco em deixar a plataforma **pronta para integrar API de emissão de NF-e, 
 ## Módulos (subagentes — dependem da infra acima estável)
 
 ### T1 — Vendas (`/erp/vendas`)
-- [ ] Service + use-cases: criar pedido, itens, reservar estoque, confirmar (baixa + contas a receber), faturar (emitir NF-e), cancelar.
-- [ ] APIs + UI lista/criação/detalhe. Botão "Emitir NF-e" chama núcleo fiscal.
+- [x] Service + use-cases: criar pedido, itens, reservar estoque, confirmar (baixa + contas a receber), faturar (emitir NF-e), cancelar.
+- [x] APIs + UI lista/criação/detalhe. Botão "Emitir NF-e" chama núcleo fiscal.
 
 ### T2 — Estoque (`/erp/estoque`)
 - [ ] Service de leitura (saldos, movimentos, alertas mínimo). UI: saldos, kardex, ajuste, transferência (consome stock-service).
@@ -58,7 +58,7 @@ com foco em deixar a plataforma **pronta para integrar API de emissão de NF-e, 
 - [x] Fluxo de caixa: projeção e realizado.
 
 ### T4 — Compras + Fornecedores (`/erp/compras`, `/erp/fornecedores`)
-- [ ] Fornecedores CRUD. Pedido de compra: criar, enviar, receber (gera entrada fiscal / atualiza recebido).
+- [x] Fornecedores CRUD. Pedido de compra: criar, enviar, receber (gera entrada fiscal / atualiza recebido).
 
 ### T5 — Orçamentos + OS + Atendimento (`/erp/orcamentos`, `/erp/os`, `/erp/atendimento`)
 - [ ] Orçamento: criar, precificar, aprovar, converter em pedido.
@@ -124,3 +124,37 @@ Auditoria — `createAuditLog(tx, { scope, entidade, entidadeId, acao, payload? 
 - `Cliente`: razaoSocial, nomeFantasia?, documento, inscricaoEstadual?, status(`StatusCliente`: PENDENTE_APROVACAO|ATIVO|BLOQUEADO|INATIVO), segmento?, limiteCredito, creditoUsado, condicaoPagamento?, tabelaPrecoId?. Relations: contatos(ClienteContato: nome,email?,telefone?,whatsapp?,cargo?,principal), enderecos(ClienteEndereco: apelido,cep,logradouro,numero?,complemento?,bairro?,cidade,uf,padrao). Unique: [tenantId, documento].
 
 ### Notas de completude de cada subagente (preencher ao terminar)
+
+### T1 Vendas — concluído
+
+**Arquivos criados:**
+- `src/domains/sales/application/sale-use-cases.ts` — já existia com `createSale`, `confirmSale`, `invoiceSale`, `cancelSale` completos; nenhuma alteração necessária.
+- `src/lib/services/sales.ts` — `listSales()`, `getSaleDetail()`, `listSaleFormData()` com tratamento de ausência de DATABASE_URL.
+- `src/app/api/erp/vendas/route.ts` — POST createSale (400 validação / 500 inesperado).
+- `src/app/api/erp/vendas/[id]/confirmar/route.ts` — POST confirmSale.
+- `src/app/api/erp/vendas/[id]/faturar/route.ts` — POST invoiceSale (aceita `modelo` no body).
+- `src/app/api/erp/vendas/[id]/cancelar/route.ts` — POST cancelSale.
+- `src/app/erp/vendas/page.tsx` — server page `force-dynamic`; KpiCards (pedidos abertos, faturados, valor em aberto); `SalesList`.
+- `src/app/erp/vendas/nova/page.tsx` — server page `force-dynamic`; carrega `listSaleFormData` e renderiza `SaleForm`.
+- `src/components/erp/SalesList.tsx` — client component; busca, tabela com ações confirmar/emitir NF-e/cancelar via fetch; atualiza linha no estado local.
+- `src/components/erp/SaleForm.tsx` — client component; seleção de cliente, linhas de produto com qtd/preço/desconto (auto-fill preço ao selecionar produto), totais dinâmicos, POST para /api/erp/vendas e redirect para /erp/vendas.
+
+**Observações:**
+- `canceladoEm` adicionado ao tipo `SaleSummary` em services/sales.ts (campo existia no schema, apenas faltava na tipagem do service).
+- `invoiceSale` NÃO roda dentro de transação que envolva `emitFiscalDocument` — atualizações do pedido ocorrem em transação separada após retorno da emissão, conforme instrução.
+- Cancelamento bloqueia se `temNotaAutorizada`, orientando o usuário a cancelar a nota antes.
+
+### T3 Financeiro — concluído
+
+Arquivos criados/utilizados:
+
+- `src/domains/finance/application/finance-use-cases.ts` — use-cases já existia; contém `settlePayable`, `settleReceivable`, `createPayable`, `createReceivable` (todos em `prisma.$transaction` com `createAuditLog`, validação de saldo devedor, atualização de `ContaBancaria` e criação de `MovimentoFinanceiro`).
+- `src/lib/services/finance.ts` — `listPayables`, `listReceivables`, `listBankAccounts`, `getFinanceSummary`, `getCashFlow`; status "Vencido" calculado em runtime (sem alterar enum).
+- `src/app/api/erp/financeiro/contas-pagar/route.ts` — POST `createPayable`.
+- `src/app/api/erp/financeiro/contas-pagar/[id]/baixar/route.ts` — POST `settlePayable`.
+- `src/app/api/erp/financeiro/contas-receber/route.ts` — POST `createReceivable`.
+- `src/app/api/erp/financeiro/contas-receber/[id]/baixar/route.ts` — POST `settleReceivable`.
+- `src/components/erp/FinanceManager.tsx` — client component: abas A Pagar/A Receber, busca, tabela com StatusBadge, modal de baixa (juros/multa/desconto/conta bancária), modal "Nova conta".
+- `src/components/erp/CashFlowView.tsx` — client component: KPIs de saldo/entradas/saídas projetadas, tabela dia-a-dia com saldo acumulado, filtro 30/60/90 dias, resumo realizado.
+- `src/app/erp/financeiro/page.tsx` — server page `force-dynamic`: KPIs + `FinanceManager`.
+- `src/app/erp/fluxo-caixa/page.tsx` — server page `force-dynamic`: `CashFlowView`.
