@@ -6,6 +6,7 @@ import { nextDocumentNumber } from "@/lib/numbering";
 import { exitStock, getDefaultDeposito } from "@/domains/stock/application/stock-service";
 import { buildNfseFromOrdemServico } from "@/domains/fiscal/document-builder";
 import { emitFiscalDocument } from "@/domains/fiscal/application/fiscal-emission-use-cases";
+import { isValidLc116 } from "@/domains/fiscal/lc116";
 import type { StatusOrdemServico } from "@prisma/client";
 
 const TX_OPTIONS = { maxWait: 10000, timeout: 30000 };
@@ -62,12 +63,18 @@ export type AddServicoInput = {
   descricao: string;
   horas: number;
   valorHora: number;
+  codigoServicoLc116?: string | null;
 };
 
 export async function addServico(scope: TenantScope, osId: string, input: AddServicoInput) {
   if (!input.descricao) throw new Error("Descrição do serviço é obrigatória.");
   if (input.horas <= 0) throw new Error("Horas deve ser maior que zero.");
   if (input.valorHora <= 0) throw new Error("Valor por hora deve ser maior que zero.");
+
+  const codigoServicoLc116 = input.codigoServicoLc116?.trim() || null;
+  if (codigoServicoLc116 && !isValidLc116(codigoServicoLc116)) {
+    throw new Error("Código de serviço LC 116 inválido.");
+  }
 
   return prisma.$transaction(async (tx) => {
     const os = await tx.ordemServico.findFirst({
@@ -87,6 +94,7 @@ export async function addServico(scope: TenantScope, osId: string, input: AddSer
         horas: input.horas,
         valorHora: input.valorHora,
         total,
+        codigoServicoLc116,
       },
     });
 
@@ -382,6 +390,13 @@ export async function faturarOrdemServico(scope: TenantScope, id: string, input:
   // Emissão de NFS-e fora da transação (I/O externo)
   if (input.emitirNfse && os.servicos.length > 0) {
     try {
+      // Código LC 116 por serviço; quando ausente, usa o padrão da empresa (config fiscal).
+      const configFiscal = await prisma.configuracaoFiscal.findUnique({
+        where: { empresaId: scope.empresaId },
+        select: { codigoServicoLc116Padrao: true },
+      });
+      const lc116Padrao = configFiscal?.codigoServicoLc116Padrao ?? null;
+
       const docNfse = buildNfseFromOrdemServico({
         cliente: os.cliente,
         condicaoPagamento: condicaoPagamento ?? null,
@@ -389,6 +404,7 @@ export async function faturarOrdemServico(scope: TenantScope, id: string, input:
         servicos: os.servicos.map((s) => ({
           descricao: s.descricao,
           valor: Number(s.total),
+          itemListaServico: s.codigoServicoLc116 ?? lc116Padrao,
         })),
       });
 

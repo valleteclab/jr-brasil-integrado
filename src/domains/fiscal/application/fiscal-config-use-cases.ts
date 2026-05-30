@@ -21,6 +21,7 @@ export type FiscalConfigSummary = {
   emitNfce: boolean;
   emitNfse: boolean;
   codigoMunicipioIbge: string;
+  codigoServicoLc116Padrao: string;
   certificadoInfo: string;
   active: boolean;
   testedAt: string | null;
@@ -43,6 +44,7 @@ export type SaveFiscalConfigInput = {
   emitNfce?: boolean;
   emitNfse?: boolean;
   codigoMunicipioIbge?: string;
+  codigoServicoLc116Padrao?: string;
   certificadoInfo?: string;
   active?: boolean;
   notes?: string;
@@ -63,6 +65,7 @@ function toSummary(config: {
   emitirNfce: boolean;
   emitirNfse: boolean;
   codigoMunicipioIbge: string | null;
+  codigoServicoLc116Padrao: string | null;
   certificadoInfo: string | null;
   ativo: boolean;
   testadoEm: Date | null;
@@ -86,6 +89,7 @@ function toSummary(config: {
     emitNfce: config?.emitirNfce ?? false,
     emitNfse: config?.emitirNfse ?? false,
     codigoMunicipioIbge: config?.codigoMunicipioIbge ?? "",
+    codigoServicoLc116Padrao: config?.codigoServicoLc116Padrao ?? "",
     certificadoInfo: config?.certificadoInfo ?? "",
     active: config?.ativo ?? false,
     testedAt: config?.testadoEm?.toISOString() ?? null,
@@ -138,6 +142,7 @@ export async function saveFiscalConfig(scope: TenantScope, input: SaveFiscalConf
       emitirNfce: input.emitNfce ?? false,
       emitirNfse: input.emitNfse ?? false,
       codigoMunicipioIbge: input.codigoMunicipioIbge?.trim() || null,
+      codigoServicoLc116Padrao: input.codigoServicoLc116Padrao?.trim() || null,
       certificadoInfo: input.certificadoInfo?.trim() || null,
       ativo: input.active ?? false,
       observacoes: input.notes?.trim() || null,
@@ -160,6 +165,7 @@ export async function saveFiscalConfig(scope: TenantScope, input: SaveFiscalConf
       emitirNfce: input.emitNfce ?? false,
       emitirNfse: input.emitNfse ?? false,
       codigoMunicipioIbge: input.codigoMunicipioIbge?.trim() || null,
+      codigoServicoLc116Padrao: input.codigoServicoLc116Padrao?.trim() || null,
       certificadoInfo: input.certificadoInfo?.trim() || null,
       ativo: input.active ?? false,
       observacoes: input.notes?.trim() || null,

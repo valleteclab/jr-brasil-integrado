@@ -299,3 +299,12 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Recepcao e operacao: webhook `POST /api/webhooks/spedy` (localiza nota por providerRef, atualiza status/chave/numero/protocolo/datas, idempotente, sempre 200), sincronizacao manual `POST /api/erp/fiscal/[id]/sincronizar` (fallback de polling via queryStatus), e UI: SPEDY nas listas de provedor (config fiscal + onboarding) com orientacao de X-Api-Key/base automatica/webhook; `saveFiscalConfig` isenta SPEDY da exigencia de baseUrl (exige so o token).
 - Documentacao de referencia em `docs/integrations/spedy-api.md`.
 - Validacao: `tsc` (0), `lint` (0), `build` (rotas /api/webhooks/spedy e sincronizar incluidas) e smoke do provider com fetch stubado cobrindo NF-e (Lucro Presumido) AUTORIZADA, rejeitada, NFC-e Simples (CSOSN), NFS-e (issRate) e cancelamento — payloads e unidades de aliquota conferidos.
+
+## Atualizacao operacional - 2026-05-30 - codigo de servico LC 116 na NFS-e
+
+- Embutida a lista completa da LC 116/2003 (`src/domains/fiscal/lc116.ts`, ~199 itens, codigo+descricao) com validadores `isValidLc116`/`lc116Description`.
+- Schema: `OrdemServicoMaoObra.codigoServicoLc116` (por servico) e `ConfiguracaoFiscal.codigoServicoLc116Padrao` (padrao da empresa). Migration `add_lc116_service_code`.
+- Fluxo (a)+(b): cada servico da OS pode ter seu codigo LC 116; no faturamento da OS, a NFS-e usa `codigo do servico ?? padrao da empresa` como `federalServiceCode` (enviado ao provedor, ex.: Spedy).
+- `addServico` aceita/valida/salva o codigo; `saveFiscalConfig`/`FiscalConfigSummary` ganharam `codigoServicoLc116Padrao`.
+- UI: select de codigo LC 116 no lancamento de servico da OS (com opcao "usar padrao da empresa") e select de codigo padrao na configuracao fiscal.
+- Validacao: `tsc` (0), `lint` (0), `build` (ok) e smoke OS->NFS-e: servico com `14.02` saiu como 14.02 e servico sem codigo herdou o padrao `14.01`; NFS-e AUTORIZADA.

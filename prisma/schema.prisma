@@ -921,15 +921,16 @@ model OrdemServico {
 }
 
 model OrdemServicoMaoObra {
-  id             String       @id @default(cuid())
-  tenantId       String
-  empresaId      String
-  ordemServicoId String
-  ordemServico   OrdemServico @relation(fields: [ordemServicoId], references: [id])
-  descricao      String
-  horas          Decimal      @db.Decimal(8, 2)
-  valorHora      Decimal      @db.Decimal(14, 2)
-  total          Decimal      @db.Decimal(14, 2)
+  id                 String       @id @default(cuid())
+  tenantId           String
+  empresaId          String
+  ordemServicoId     String
+  ordemServico       OrdemServico @relation(fields: [ordemServicoId], references: [id])
+  descricao          String
+  horas              Decimal      @db.Decimal(8, 2)
+  valorHora          Decimal      @db.Decimal(14, 2)
+  total              Decimal      @db.Decimal(14, 2)
+  codigoServicoLc116 String?
 
   @@index([tenantId, empresaId])
 }
@@ -1424,6 +1425,7 @@ model ConfiguracaoFiscal {
   emitirNfce         Boolean         @default(false)
   emitirNfse         Boolean         @default(false)
   codigoMunicipioIbge String?
+  codigoServicoLc116Padrao String?
   regimeEspecialTributacao String?
   incentivadorCultural Boolean       @default(false)
   certificadoInfo    String?

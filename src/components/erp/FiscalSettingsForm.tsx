@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Button } from "@/components/shared/Button";
 import type { FiscalConfigSummary } from "@/domains/fiscal/application/fiscal-config-use-cases";
+import { LC116_LIST } from "@/domains/fiscal/lc116";
 
 const PROVIDERS = [
   { value: "MANUAL", label: "Interno / Homologação (funcional sem certificado)" },
@@ -59,6 +60,7 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
           emitNfce: config.emitNfce,
           emitNfse: config.emitNfse,
           codigoMunicipioIbge: config.codigoMunicipioIbge,
+          codigoServicoLc116Padrao: config.codigoServicoLc116Padrao,
           certificadoInfo: config.certificadoInfo,
           active: config.active,
           notes: config.notes
@@ -177,6 +179,15 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
           <label>
             Código IBGE do município
             <input value={config.codigoMunicipioIbge} onChange={(e) => update("codigoMunicipioIbge", e.target.value)} placeholder="Ex.: 2919207" />
+          </label>
+          <label className="full">
+            Código de serviço padrão (LC 116) — usado na NFS-e quando o serviço da OS não tem código próprio
+            <select value={config.codigoServicoLc116Padrao} onChange={(e) => update("codigoServicoLc116Padrao", e.target.value)}>
+              <option value="">Sem padrão</option>
+              {LC116_LIST.map((item) => (
+                <option key={item.code} value={item.code}>{item.code} — {item.description}</option>
+              ))}
+            </select>
           </label>
           <label>
             Certificado digital (referência)
