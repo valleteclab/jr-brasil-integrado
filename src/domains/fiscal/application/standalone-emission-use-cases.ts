@@ -235,6 +235,25 @@ export async function emitProductInvoiceAvulsa(scope: TenantScope, input: Produc
     };
   });
 
+  // Validações de schema da SEFAZ feitas ANTES de enviar (espelham as rejeições da Spedy):
+  // NCM obrigatório (8 dígitos) por item e endereço do destinatário com tamanhos mínimos.
+  linhas.forEach((linha, index) => {
+    const ncm = (linha.produto.ncm ?? "").replace(/\D/g, "");
+    if (ncm.length !== 8) {
+      throw new StandaloneEmissionError(`Item ${index + 1} (${linha.produto.nome}): informe o NCM com 8 dígitos (obrigatório na NF-e/NFC-e).`);
+    }
+  });
+  const end = cliente.enderecos[0];
+  if (!end || (end.logradouro ?? "").trim().length < 2) {
+    throw new StandaloneEmissionError("Endereço do destinatário incompleto: o logradouro deve ter ao menos 2 caracteres (exigência da SEFAZ).");
+  }
+  if (!(end.bairro ?? "").trim() || (end.bairro ?? "").trim().length < 2) {
+    throw new StandaloneEmissionError("Endereço do destinatário incompleto: informe o bairro (mínimo 2 caracteres).");
+  }
+  if ((end.cep ?? "").replace(/\D/g, "").length !== 8) {
+    throw new StandaloneEmissionError("Endereço do destinatário incompleto: informe um CEP válido (8 dígitos).");
+  }
+
   const doc = buildDocumentFromPedido({
     cliente,
     modelo,

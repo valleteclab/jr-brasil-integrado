@@ -359,3 +359,11 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - O mesmo CNPJ/chave emite com sucesso (HTTP 200) via `POST /v1/orders` (modo simplificado), e a NFS-e foi assinada (E0717 resolvido). Logo, o problema do 500 e especifico do endpoint de NF-e completo, no lado da Spedy.
 - Ajuste de codigo mantido (defensavel pela doc, mas NAO resolveu o 500): `taxes.icms.rate` em fracao (0.18), conforme o exemplo do swagger `SefazInvoiceItemIcmsDto`.
 - Encaminhamento: abrir chamado na Spedy com o x-trace-id de um 500 (a API retorna esse header) para que eles verifiquem o erro interno; ou usar `/v1/orders` como caminho alternativo (porem a tributacao passa a ser controlada no backoffice da Spedy, nao no nosso motor).
+
+## Atualizacao operacional - 2026-05-30 - validacao previa de NF-e + mensagens SPD003
+
+- Mensagens de rejeicao agora aparecem no nosso sistema de forma clara: mapeado SPD003 (campo obrigatorio/ausente/fora de ordem) e heuristicas para "logradouro/endereco invalido" e "campo abaixo do tamanho minimo" em fiscal-messages.ts.
+- Validacao PREVIA na emissao de NF-e/NFC-e avulsa (antes de enviar a Spedy): NCM obrigatorio com 8 digitos por item; endereco do destinatario com logradouro (>=2), bairro (>=2) e CEP (8 digitos). Espelha as rejeicoes da SEFAZ/Spedy e evita ida desnecessaria ao provedor.
+- Verificado (contas de grep resistentes a duplicacao de display): payload valido passa e chega a Spedy; NCM curto/ausente bloqueia com mensagem de NCM; logradouro curto bloqueia com mensagem de endereco.
+- Validacao: tsc (0), lint (0), build (ok).
+- Observacao de ambiente: o terminal desta sessao esta duplicando/embaralhando a saida (linhas repetidas, null bytes); os resultados foram conferidos por contagem (grep -c) e arquivos, nao pela exibicao direta.

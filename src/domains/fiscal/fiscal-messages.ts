@@ -25,6 +25,11 @@ const POR_CODIGO: Record<string, FriendlyEntry> = {
   E125: {
     titulo: "Código do município do prestador não encontrado.",
     orientacao: "Revise o código IBGE do município da empresa em Configurações › Emissão fiscal."
+  },
+  // Validação de schema da SEFAZ (campo inválido/ausente/fora de ordem) reportada pela Spedy
+  SPD003: {
+    titulo: "Dado obrigatório ausente ou inválido na nota.",
+    orientacao: "Revise os campos do item e do destinatário (NCM do produto, endereço completo) conforme a mensagem técnica."
   }
 };
 
@@ -42,8 +47,14 @@ function porTexto(message: string): FriendlyEntry | null {
   if (m.includes("cnpj") || m.includes("cpf")) {
     return { titulo: "Documento do destinatário inválido.", orientacao: "Confira o CNPJ/CPF informado (apenas números, com dígitos válidos)." };
   }
-  if (m.includes("ncm")) return { titulo: "NCM inválido.", orientacao: "Revise o NCM do produto (8 dígitos)." };
+  if (m.includes("ncm")) return { titulo: "NCM obrigatório no produto.", orientacao: "Informe o NCM (8 dígitos) no cadastro do produto ou no item da nota." };
   if (m.includes("cfop")) return { titulo: "CFOP inválido.", orientacao: "Revise o CFOP do item conforme a operação (interna/interestadual)." };
+  if (m.includes("logradouro") || (m.includes("endere") && m.includes("inv"))) {
+    return { titulo: "Endereço do destinatário incompleto.", orientacao: "Informe logradouro, número, bairro e CEP válidos do destinatário (campos com tamanho mínimo exigido pela SEFAZ)." };
+  }
+  if (m.includes("abaixo do tamanho") || m.includes("tamanho mínimo") || m.includes("tamanho minimo")) {
+    return { titulo: "Campo abaixo do tamanho mínimo.", orientacao: "Algum campo de texto (ex.: logradouro, descrição) está curto demais para a SEFAZ. Complete a informação." };
+  }
   return null;
 }
 
