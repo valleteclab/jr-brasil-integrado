@@ -16,42 +16,6 @@ function round2(value: number) {
 }
 
 /**
- * Calcula as retenções a partir do valor dos serviços e das alíquotas informadas.
- * A base das retenções federais pode ser sobreposta por `input.baseRetencao`.
- */
-function computeRetencoes(valorServicos: number, input?: RetencoesInput | null): RetencoesFiscais | null {
-  if (!input) return null;
-  const baseCalc = input.baseRetencao != null && input.baseRetencao > 0 ? round2(input.baseRetencao) : valorServicos;
-  const calc = (r?: { aliquota?: number | null } | null): RetencaoTributo | null => {
-    const aliquota = Number(r?.aliquota ?? 0);
-    if (!aliquota || aliquota <= 0) return null;
-    return { aliquota, valor: round2(baseCalc * (aliquota / 100)) };
-  };
-  const ir = calc(input.ir);
-  const pis = calc(input.pis);
-  const cofins = calc(input.cofins);
-  const csll = calc(input.csll);
-  const inss = calc(input.inss);
-  const issRetido = Boolean(input.issRetido);
-
-  if (!ir && !pis && !cofins && !csll && !inss && !issRetido) return null;
-
-  const totalFederal = round2(
-    (ir?.valor ?? 0) + (pis?.valor ?? 0) + (cofins?.valor ?? 0) + (csll?.valor ?? 0) + (inss?.valor ?? 0)
-  );
-  return {
-    issRetido,
-    ir,
-    pis,
-    cofins,
-    csll,
-    inss,
-    totalRetido: totalFederal,
-    valorLiquido: round2(valorServicos - totalFederal)
-  };
-}
-
-/**
  * Emissão fiscal AVULSA — NF-e, NFC-e e NFS-e emitidas diretamente, sem exigir um pedido de
  * venda ou ordem de serviço. Atende empresas que usam o sistema apenas para emitir notas.
  * Reaproveita o motor de emissão (`emitFiscalDocument`): tributos são calculados pelas regras
