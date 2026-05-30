@@ -50,6 +50,10 @@ export type NormalizedFiscalItem = {
   /** Serviço (NFS-e) versus produto (NF-e/NFC-e). */
   servico: boolean;
   itemListaServico: string | null;
+  /** NFS-e: alíquota de ISS informada (%) que sobrepõe a regra tributária, quando definida. */
+  aliquotaIssInformada?: number | null;
+  /** NFS-e: base de cálculo do ISS informada (após deduções), quando diferente do valor do serviço. */
+  baseIssInformada?: number | null;
 };
 
 /** Documento fiscal normalizado independente de provedor. */

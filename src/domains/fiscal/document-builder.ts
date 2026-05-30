@@ -134,7 +134,7 @@ export type OrdemServicoFiscalInput = {
   formaPagamento?: string | null;
   condicaoPagamento?: string | null;
   codigoMunicipioIbge?: string | null;
-  servicos: Array<{ descricao: string; valor: number; itemListaServico?: string | null }>;
+  servicos: Array<{ descricao: string; valor: number; itemListaServico?: string | null; aliquotaIss?: number | null; baseIss?: number | null }>;
   retencoes?: RetencoesFiscais | null;
 };
 
@@ -170,7 +170,9 @@ export function buildNfseFromOrdemServico(input: OrdemServicoFiscalInput): Norma
       origem: null,
       regraTributariaId: null,
       servico: true,
-      itemListaServico: servico.itemListaServico ?? null
+      itemListaServico: servico.itemListaServico ?? null,
+      aliquotaIssInformada: servico.aliquotaIss ?? null,
+      baseIssInformada: servico.baseIss ?? null
     })),
     retencoes: input.retencoes ?? null
   };

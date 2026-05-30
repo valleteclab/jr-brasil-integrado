@@ -41,7 +41,7 @@ function computeRetencoes(base: number, input?: RetencoesInput | null): Retencoe
     csll,
     inss,
     totalRetido: totalFederal,
-    valorLiquido: round2(base - totalFederal)
+    valorLiquido: round2(valorServicos - totalFederal)
   };
 }
 
@@ -120,6 +120,8 @@ export type RetencoesInput = {
   cofins?: RetencaoFederalInput | null;
   csll?: RetencaoFederalInput | null;
   inss?: RetencaoFederalInput | null;
+  /** Base de cálculo das retenções federais (quando diferente do valor dos serviços). */
+  baseRetencao?: number | null;
 };
 
 export type ServiceInvoiceAvulsaInput = {
@@ -129,6 +131,12 @@ export type ServiceInvoiceAvulsaInput = {
   formaPagamento?: string | null;
   /** Código LC 116 padrão do documento (usado quando o serviço não traz o próprio). */
   codigoServicoLc116?: string | null;
+  /** Alíquota de ISS informada (%) — sobrepõe a regra tributária. */
+  aliquotaIss?: number | null;
+  /** Deduções da base de cálculo do ISS (R$). */
+  deducoes?: number | null;
+  /** Base de cálculo do ISS informada (R$); quando ausente, usa valor dos serviços − deduções. */
+  baseCalculoIss?: number | null;
   servicos: Array<{ descricao: string; valor: number; codigoServicoLc116?: string | null }>;
   retencoes?: RetencoesInput | null;
 };
@@ -337,6 +345,18 @@ export async function emitServiceInvoiceAvulsa(scope: TenantScope, input: Servic
   });
   const fallback = docDefault ?? config?.codigoServicoLc116Padrao ?? null;
 
+  const valorServicos = round2(input.servicos.reduce((sum, s) => sum + (Number(s.valor) || 0), 0));
+
+  // Base de cálculo do ISS: informada, ou valor dos serviços − deduções.
+  const aliquotaIss = input.aliquotaIss != null && input.aliquotaIss > 0 ? input.aliquotaIss : null;
+  const deducoes = input.deducoes != null && input.deducoes > 0 ? round2(input.deducoes) : 0;
+  const baseIssTotal =
+    input.baseCalculoIss != null && input.baseCalculoIss > 0
+      ? round2(input.baseCalculoIss)
+      : round2(Math.max(valorServicos - deducoes, 0));
+  // Base de ISS é distribuída entre os serviços proporcionalmente ao valor de cada um.
+  const distribuirBaseIss = aliquotaIss != null && (deducoes > 0 || input.baseCalculoIss != null) && valorServicos > 0;
+
   const servicos = input.servicos.map((s, index) => {
     if (!s.descricao?.trim()) throw new StandaloneEmissionError(`Informe a descrição do serviço ${index + 1}.`);
     if (s.valor <= 0) throw new StandaloneEmissionError(`Valor inválido no serviço ${index + 1}.`);
@@ -344,11 +364,16 @@ export async function emitServiceInvoiceAvulsa(scope: TenantScope, input: Servic
     if (codigo && !isValidLc116(codigo)) {
       throw new StandaloneEmissionError(`Código LC 116 inválido no serviço ${index + 1}.`);
     }
-    return { descricao: s.descricao.trim(), valor: s.valor, itemListaServico: codigo };
+    return {
+      descricao: s.descricao.trim(),
+      valor: s.valor,
+      itemListaServico: codigo,
+      aliquotaIss,
+      baseIss: distribuirBaseIss ? round2(baseIssTotal * (s.valor / valorServicos)) : null
+    };
   });
 
-  const base = round2(servicos.reduce((sum, s) => sum + s.valor, 0));
-  const retencoes = computeRetencoes(base, input.retencoes);
+  const retencoes = computeRetencoes(valorServicos, input.retencoes);
 
   const doc = buildNfseFromOrdemServico({
     cliente,

@@ -325,3 +325,11 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Schema `NotaFiscal` += `issRetido`, `valorIrRetido`, `valorPisRetido`, `valorCofinsRetido`, `valorCsllRetido`, `valorInssRetido`, `valorRetidoTotal`, `valorLiquido` (migration `add_nfse_retentions`); emissao persiste esses valores.
 - Emissao avulsa de NFS-e (`emitServiceInvoiceAvulsa`) calcula as retencoes a partir da base e das aliquotas; UI `/erp/fiscal/emitir` ganhou card "Retencoes na fonte" (ISS retido + IRRF/INSS/PIS/COFINS/CSLL %) com total retido e liquido a receber.
 - Validacao: `tsc` (0), `lint` (0), `build` (ok) e smoke: NFS-e R$10.000 com ISS retido + IRRF 1,5% + PIS 0,65% + COFINS 3% + CSLL 1% -> retido R$615, liquido R$9.385, AUTORIZADA.
+
+## Atualizacao operacional - 2026-05-30 - NFS-e: ISS informado, deducoes, base e descricao maior
+
+- Emissao de NFS-e melhorada: discriminacao do servico agora e textarea grande (ate 2000 caracteres, multilinha) com contador.
+- ISS informavel na emissao: campo de aliquota de ISS (%) que sobrepoe a regra tributaria, deducoes (R$) e base de calculo do ISS (valor dos servicos - deducoes), com base e valor do ISS exibidos em tempo real. Motor (`computeItemTaxes`) passou a respeitar `aliquotaIssInformada`/`baseIssInformada` no item.
+- Retencoes: base de calculo das retencoes federais informavel (sobrepoe o valor dos servicos); item carrega base/aliquota de ISS distribuidas proporcionalmente entre os servicos.
+- Pesquisa de referencia (subagentes com busca web) sobre como NFE.io/Focus/eNotas/PlugNotas/Ambiente Nacional estruturam emissao de NFS-e/NF-e, para guiar a UX.
+- Validacao: `tsc` (0), `lint` (0), `build` (ok) e smoke: NFS-e R$10.000 com deducoes R$2.000 e ISS 5% -> base 8.000, ISS 400; IRRF 1,5% sobre base de retencao 8.000 -> 120; AUTORIZADA.
