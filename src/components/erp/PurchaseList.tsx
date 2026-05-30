@@ -1,8 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Button } from "@/components/shared/Button";
-import { StatusBadge } from "@/components/shared/StatusBadge";
+import Link from "next/link";
 import type { PurchaseOrderSummary } from "@/lib/services/purchasing";
 
 type ReceiveItem = {
@@ -234,17 +233,17 @@ export function PurchaseList({ initialOrders }: Props) {
   return (
     <>
       <div className="erp-page-actions">
-        <Button href="/erp/compras/nova">+ Novo pedido de compra</Button>
+        <Link className="btn-erp primary sm" href="/erp/compras/nova">+ Novo pedido de compra</Link>
       </div>
 
       {error && (
         <div className="alert danger"><strong>Atenção</strong><span>{error}</span></div>
       )}
 
-      <section className="erp-card">
+      <section>
         <div className="erp-toolbar">
           <div className="toolbar-search">
-            <span aria-hidden="true">⌕</span>
+            <span className="ic-sr" aria-hidden="true">⌕</span>
             <input
               className="search"
               placeholder="Buscar por número, fornecedor, status..."
@@ -254,27 +253,28 @@ export function PurchaseList({ initialOrders }: Props) {
           </div>
           <div className="stat-pills">
             <button
-              className={statusFilter === "todos" ? "active" : ""}
+              className={"stat-pill" + (statusFilter === "todos" ? " active" : "")}
               type="button"
               onClick={() => setStatusFilter("todos")}
             >
-              Todos <span>{statusCounts.todos}</span>
+              Todos <span className="num">{statusCounts.todos}</span>
             </button>
             <button
-              className={statusFilter === "abertos" ? "active" : ""}
+              className={"stat-pill" + (statusFilter === "abertos" ? " active" : "")}
               type="button"
               onClick={() => setStatusFilter("abertos")}
             >
-              Em aberto <span>{statusCounts.abertos}</span>
+              Em aberto <span className="num">{statusCounts.abertos}</span>
             </button>
             <button
-              className={statusFilter === "aReceber" ? "active" : ""}
+              className={"stat-pill" + (statusFilter === "aReceber" ? " active" : "")}
               type="button"
               onClick={() => setStatusFilter("aReceber")}
             >
-              A receber <span>{statusCounts.aReceber}</span>
+              A receber <span className="num">{statusCounts.aReceber}</span>
             </button>
           </div>
+          <div className="grow" />
         </div>
 
         <div className="erp-table-wrap">
@@ -294,7 +294,7 @@ export function PurchaseList({ initialOrders }: Props) {
               {filtered.map((o) => (
                 <tr key={o.id}>
                   <td>
-                    <span className="mono bold">{o.numero}</span>
+                    <span className="mono bold" style={{ color: "var(--erp-info)" }}>{o.numero}</span>
                     <small className="block-muted">{o.criadoEm}</small>
                   </td>
                   <td>
@@ -304,39 +304,51 @@ export function PurchaseList({ initialOrders }: Props) {
                     )}
                   </td>
                   <td>
-                    <StatusBadge tone={o.statusTone}>{o.statusLabel}</StatusBadge>
+                    <span className={`pill ${o.statusTone}`}>
+                      <span className="dot" />
+                      {o.statusLabel}
+                    </span>
                   </td>
                   <td className="num">
-                    <span className={o.percentRecebido === 100 ? "text-success" : o.percentRecebido > 0 ? "text-warn" : ""}>
+                    <span
+                      style={{
+                        color:
+                          o.percentRecebido === 100
+                            ? "var(--erp-success)"
+                            : o.percentRecebido > 0
+                              ? "var(--erp-warn)"
+                              : undefined
+                      }}
+                    >
                       {o.percentRecebido}%
                     </span>
                   </td>
-                  <td className="num">{o.total}</td>
-                  <td>{o.previsaoEm ?? <span className="muted">—</span>}</td>
+                  <td className="num bold">{o.total}</td>
+                  <td>{o.previsaoEm ?? <span style={{ color: "var(--erp-mute)" }}>—</span>}</td>
                   <td className="actions">
                     {o.canEnviar && (
-                      <Button
-                        variant="light"
+                      <button
+                        className="btn-erp ghost xs"
                         type="button"
                         disabled={busyId === o.id}
                         onClick={() => enviar(o)}
                       >
                         Enviar
-                      </Button>
+                      </button>
                     )}
                     {o.canReceber && (
-                      <Button
-                        variant="light"
+                      <button
+                        className="btn-erp ghost xs"
                         type="button"
                         disabled={busyId === o.id}
                         onClick={() => openReceive(o)}
                       >
                         Receber
-                      </Button>
+                      </button>
                     )}
                     {o.canCancelar && (
                       <button
-                        className="danger-link"
+                        className="btn-erp danger xs"
                         type="button"
                         disabled={busyId === o.id}
                         onClick={() => cancelar(o)}
@@ -351,13 +363,17 @@ export function PurchaseList({ initialOrders }: Props) {
                 <tr>
                   <td colSpan={7}>
                     <div className="empty-st">
-                      Nenhum pedido de compra encontrado. Clique em &quot;+ Novo pedido de compra&quot; para criar.
+                      <h4>Nenhum pedido de compra encontrado</h4>
+                      <p>Clique em &quot;+ Novo pedido de compra&quot; para criar.</p>
                     </div>
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
+          <div className="erp-table-foot">
+            <span>{filtered.length} de {orders.length} pedido(s)</span>
+          </div>
         </div>
       </section>
 
@@ -370,7 +386,7 @@ export function PurchaseList({ initialOrders }: Props) {
                 <h2>Recebimento — {receiveForm.numero}</h2>
                 <p>Informe as quantidades recebidas nesta entrega</p>
               </div>
-              <button type="button" onClick={() => setReceiveForm(null)}>Fechar</button>
+              <button className="btn-erp ghost sm" type="button" onClick={() => setReceiveForm(null)}>Fechar</button>
             </header>
             <div className="drawer-body">
               {receiveForm.itens.length === 0 ? (
@@ -446,14 +462,15 @@ export function PurchaseList({ initialOrders }: Props) {
               {error && <p className="form-error drawer-error">{error}</p>}
             </div>
             <footer className="drawer-foot">
-              <Button variant="light" type="button" onClick={() => setReceiveForm(null)}>Cancelar</Button>
-              <Button
+              <button className="btn-erp ghost sm" type="button" onClick={() => setReceiveForm(null)}>Cancelar</button>
+              <button
+                className="btn-erp primary sm"
                 type="button"
                 disabled={busyId === receiveForm.pedidoId}
                 onClick={submitReceive}
               >
                 {busyId === receiveForm.pedidoId ? "Registrando..." : "Confirmar recebimento"}
-              </Button>
+              </button>
             </footer>
           </aside>
         </>

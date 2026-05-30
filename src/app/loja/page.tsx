@@ -32,6 +32,10 @@ export default async function StorePage() {
         <span className="eyebrow">Ecommerce B2B integrado</span>
         <h1>Catálogo técnico para peças, serviços e orçamentos</h1>
         <p>Encontre peças por aplicação, consulte disponibilidade e solicite atendimento comercial especializado.</p>
+        <div className="actions">
+          <button className="button primary" type="button">Ver catálogo</button>
+          <button className="button light" type="button">Solicitar orçamento</button>
+        </div>
       </section>
       {loadError && (
         <div className="system-error">
@@ -39,11 +43,18 @@ export default async function StorePage() {
           <span>{loadError}</span>
         </div>
       )}
-      <section className="grid three">
-        {products.map((product) => (
-          <ProductCard key={product.id} product={product} />
-        ))}
-      </section>
+      {!loadError && products.length === 0 ? (
+        <div className="empty-st">
+          <h4>Nenhum produto disponível</h4>
+          <p>Ajuste os filtros ou solicite um orçamento personalizado ao nosso time comercial.</p>
+        </div>
+      ) : (
+        <section className="grid three">
+          {products.map((product) => (
+            <ProductCard key={product.id} product={product} />
+          ))}
+        </section>
+      )}
     </main>
   );
 }

@@ -1,8 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Button } from "@/components/shared/Button";
-import { StatusBadge } from "@/components/shared/StatusBadge";
+import Link from "next/link";
 import type { SaleSummary } from "@/lib/services/sales";
 
 type Props = {
@@ -111,7 +110,7 @@ export function SalesList({ sales }: Props) {
     <section>
       <div className="erp-toolbar">
         <div className="toolbar-search">
-          <span aria-hidden="true">⌕</span>
+          <span className="ic-sr" aria-hidden="true">⌕</span>
           <input
             className="search"
             placeholder="Buscar por número, cliente, status..."
@@ -119,8 +118,8 @@ export function SalesList({ sales }: Props) {
             onChange={(e) => setQuery(e.target.value)}
           />
         </div>
-        <div className="toolbar-grow" />
-        <Button href="/erp/vendas/nova" variant="primary">+ Nova venda</Button>
+        <div className="grow" />
+        <Link className="btn-erp primary sm" href="/erp/vendas/nova">+ Nova venda</Link>
       </div>
 
       {error && (
@@ -156,7 +155,10 @@ export function SalesList({ sales }: Props) {
                   <strong>{row.clienteNome}</strong>
                 </td>
                 <td>
-                  <StatusBadge tone={row.statusTone}>{row.statusLabel}</StatusBadge>
+                  <span className={`pill ${row.statusTone}`}>
+                    <span className="dot" />
+                    {row.statusLabel}
+                  </span>
                   {row.temNotaAutorizada && (
                     <small className="block-muted">NF-e emitida</small>
                   )}
@@ -171,28 +173,28 @@ export function SalesList({ sales }: Props) {
                 </td>
                 <td className="actions">
                   {row.canConfirm && (
-                    <Button
-                      variant="light"
+                    <button
+                      className="btn-erp ghost xs"
                       type="button"
                       disabled={busyId === row.id}
                       onClick={() => confirmar(row)}
                     >
                       {busyId === row.id ? "Processando..." : "Confirmar"}
-                    </Button>
+                    </button>
                   )}
                   {row.canInvoice && (
-                    <Button
-                      variant="light"
+                    <button
+                      className="btn-erp ghost xs"
                       type="button"
                       disabled={busyId === row.id}
                       onClick={() => faturar(row)}
                     >
                       {busyId === row.id ? "Processando..." : "Emitir NF-e"}
-                    </Button>
+                    </button>
                   )}
                   {row.canCancel && (
                     <button
-                      className="danger-link"
+                      className="btn-erp danger xs"
                       type="button"
                       disabled={busyId === row.id}
                       onClick={() => cancelar(row)}
@@ -207,13 +209,17 @@ export function SalesList({ sales }: Props) {
               <tr>
                 <td colSpan={7}>
                   <div className="empty-st">
-                    Nenhuma venda encontrada. Clique em &quot;+ Nova venda&quot; para começar.
+                    <h4>Nenhuma venda encontrada</h4>
+                    <p>Clique em &quot;+ Nova venda&quot; para começar.</p>
                   </div>
                 </td>
               </tr>
             )}
           </tbody>
         </table>
+        <div className="erp-table-foot">
+          <span>{filtered.length} de {rows.length} pedido(s)</span>
+        </div>
       </div>
     </section>
   );

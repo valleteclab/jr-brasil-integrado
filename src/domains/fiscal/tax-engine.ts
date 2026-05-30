@@ -1,6 +1,47 @@
 import type { Prisma, RegimeTributario, RegraTributaria, TipoTributo } from "@prisma/client";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import type { ItemTaxResult, NormalizedFiscalItem } from "./types";
+import { aliquotaInternaIcmsSafe, fcpInterno } from "./national-tax-baseline";
+
+/** Zera os campos de FCP/ICMS-ST de um resultado (operações sem ST/FCP). */
+const SEM_ST_FCP = {
+  percentualFcp: 0,
+  valorFcp: 0,
+  modalidadeBcSt: null as string | null,
+  percentualMva: 0,
+  baseIcmsSt: 0,
+  aliquotaIcmsSt: 0,
+  valorIcmsSt: 0
+};
+
+function somaTributos(parts: number[]): number {
+  return round2(parts.reduce((total, value) => total + value, 0));
+}
+
+/**
+ * Calcula ICMS-ST por MVA quando a regra define `mva`. Não recalcula para mercadoria já
+ * substituída (CSOSN 500 / CST 60). Base ST = (base própria + IPI) × (1 + MVA); ST = base ST ×
+ * alíquota interna do destino − ICMS próprio.
+ */
+function computeIcmsSt(
+  rule: RegraTributaria | null,
+  csosn: string | null,
+  cstIcms: string | null,
+  baseProprio: number,
+  valorIpi: number,
+  valorIcmsProprio: number,
+  ufDestino: string | null
+) {
+  const mva = rule?.mva != null ? Number(rule.mva) : 0;
+  const substituido = csosn === "500" || cstIcms === "60";
+  if (!mva || substituido) {
+    return { modalidadeBcSt: null as string | null, percentualMva: 0, baseIcmsSt: 0, aliquotaIcmsSt: 0, valorIcmsSt: 0 };
+  }
+  const baseSt = round2((baseProprio + valorIpi) * (1 + mva / 100));
+  const aliqSt = rule?.aliquotaIcmsSt != null ? Number(rule.aliquotaIcmsSt) : aliquotaInternaIcmsSafe(ufDestino);
+  const valorSt = Math.max(round2(baseSt * (aliqSt / 100) - valorIcmsProprio), 0);
+  return { modalidadeBcSt: "MVA", percentualMva: mva, baseIcmsSt: baseSt, aliquotaIcmsSt: aliqSt, valorIcmsSt: valorSt };
+}
 
 function round2(value: number) {
   return Math.round((value + Number.EPSILON) * 100) / 100;
@@ -93,6 +134,7 @@ export function computeItemTaxes(
   if (ctx.servico) {
     const issRule = pickRule(rules, "ISS", item.ncm, ctx.ufDestino);
     const aliquotaIss = num(issRule?.aliquota);
+    const valorIss = round2(base * (aliquotaIss / 100));
     return {
       origem,
       cstIcms: null,
@@ -100,6 +142,7 @@ export function computeItemTaxes(
       baseIcms: 0,
       aliquotaIcms: 0,
       valorIcms: 0,
+      ...SEM_ST_FCP,
       cstIpi: null,
       aliquotaIpi: 0,
       valorIpi: 0,
@@ -111,7 +154,8 @@ export function computeItemTaxes(
       valorCofins: 0,
       itemListaServico: item.itemListaServico,
       aliquotaIss,
-      valorIss: round2(base * (aliquotaIss / 100)),
+      valorIss,
+      valorTributos: valorIss,
       cClassTrib: issRule?.cClassTrib ?? null
     };
   }
@@ -130,6 +174,11 @@ export function computeItemTaxes(
   if (isSimples) {
     const icmsRuleSimples = pickRule(rules, "ICMS", item.ncm, ctx.ufDestino);
     const csosn = icmsRuleSimples?.csosn ?? defaultIcms(ctx.regime).csosn;
+    const valorIpi = round2(base * (aliquotaIpi / 100));
+    const valorPis = round2(base * (aliquotaPis / 100));
+    const valorCofins = round2(base * (aliquotaCofins / 100));
+    // No Simples o substituto tributário (CSOSN 201/202) ainda destaca ICMS-ST quando há MVA.
+    const st = computeIcmsSt(icmsRuleSimples, csosn, null, base, valorIpi, 0, ctx.ufDestino);
     return {
       origem,
       cstIcms: null,
@@ -137,18 +186,22 @@ export function computeItemTaxes(
       baseIcms: 0,
       aliquotaIcms: 0,
       valorIcms: 0,
+      percentualFcp: 0,
+      valorFcp: 0,
+      ...st,
       cstIpi: ipiRule?.cst ?? (ipiRule ? null : "53"),
       aliquotaIpi,
-      valorIpi: round2(base * (aliquotaIpi / 100)),
+      valorIpi,
       cstPis: pisRule?.cst ?? "49",
       aliquotaPis,
-      valorPis: round2(base * (aliquotaPis / 100)),
+      valorPis,
       cstCofins: cofinsRule?.cst ?? "49",
       aliquotaCofins,
-      valorCofins: round2(base * (aliquotaCofins / 100)),
+      valorCofins,
       itemListaServico: null,
       aliquotaIss: 0,
       valorIss: 0,
+      valorTributos: somaTributos([valorIpi, valorPis, valorCofins, st.valorIcmsSt]),
       cClassTrib: icmsRuleSimples?.cClassTrib ?? null
     };
   }
@@ -156,29 +209,43 @@ export function computeItemTaxes(
   // Regime normal (Lucro Presumido/Real): ICMS destacado por CST com a alíquota da regra.
   const icmsRule = pickRule(rules, "ICMS", item.ncm, ctx.ufDestino);
   const fallbackIcms = defaultIcms(ctx.regime);
+  const cstIcms = icmsRule?.cst ?? fallbackIcms.cst;
   const aliquotaIcms = num(icmsRule?.aliquota);
   const reducao = num(icmsRule?.reducaoBase) / 100;
   const baseIcms = round2(base * (1 - reducao));
+  const valorIcms = round2(baseIcms * (aliquotaIcms / 100));
+  const valorIpi = round2(base * (aliquotaIpi / 100));
+  const valorPis = round2(base * (aliquotaPis / 100));
+  const valorCofins = round2(base * (aliquotaCofins / 100));
+  // FCP destacado em operação interna (mesma UF) para regime normal, da regra ou da tabela por UF.
+  const interna = Boolean(ctx.ufOrigem && ctx.ufDestino && ctx.ufOrigem === ctx.ufDestino);
+  const percentualFcp = icmsRule?.fcp != null ? num(icmsRule.fcp) : interna ? fcpInterno(ctx.ufDestino) : 0;
+  const valorFcp = round2(baseIcms * (percentualFcp / 100));
+  const st = computeIcmsSt(icmsRule, null, cstIcms, base, valorIpi, valorIcms, ctx.ufDestino);
 
   return {
     origem,
-    cstIcms: icmsRule?.cst ?? fallbackIcms.cst,
+    cstIcms,
     csosn: null,
     baseIcms,
     aliquotaIcms,
-    valorIcms: round2(baseIcms * (aliquotaIcms / 100)),
+    valorIcms,
+    percentualFcp,
+    valorFcp,
+    ...st,
     cstIpi: ipiRule?.cst ?? (ipiRule ? null : "53"),
     aliquotaIpi,
-    valorIpi: round2(base * (aliquotaIpi / 100)),
+    valorIpi,
     cstPis: pisRule?.cst ?? "01",
     aliquotaPis,
-    valorPis: round2(base * (aliquotaPis / 100)),
+    valorPis,
     cstCofins: cofinsRule?.cst ?? "01",
     aliquotaCofins,
-    valorCofins: round2(base * (aliquotaCofins / 100)),
+    valorCofins,
     itemListaServico: null,
     aliquotaIss: 0,
     valorIss: 0,
+    valorTributos: somaTributos([valorIcms, valorFcp, st.valorIcmsSt, valorIpi, valorPis, valorCofins]),
     cClassTrib: icmsRule?.cClassTrib ?? null
   };
 }
@@ -188,6 +255,8 @@ export type DocumentTaxTotals = {
   valorServicos: number;
   valorDesconto: number;
   valorIcms: number;
+  valorIcmsSt: number;
+  valorFcp: number;
   valorIpi: number;
   valorPis: number;
   valorCofins: number;
@@ -201,6 +270,8 @@ export function emptyTotals(): DocumentTaxTotals {
     valorServicos: 0,
     valorDesconto: 0,
     valorIcms: 0,
+    valorIcmsSt: 0,
+    valorFcp: 0,
     valorIpi: 0,
     valorPis: 0,
     valorCofins: 0,
@@ -217,12 +288,14 @@ export function accumulateTotals(totals: DocumentTaxTotals, item: NormalizedFisc
   }
   totals.valorDesconto = round2(totals.valorDesconto + item.desconto);
   totals.valorIcms = round2(totals.valorIcms + taxes.valorIcms);
+  totals.valorIcmsSt = round2(totals.valorIcmsSt + taxes.valorIcmsSt);
+  totals.valorFcp = round2(totals.valorFcp + taxes.valorFcp);
   totals.valorIpi = round2(totals.valorIpi + taxes.valorIpi);
   totals.valorPis = round2(totals.valorPis + taxes.valorPis);
   totals.valorCofins = round2(totals.valorCofins + taxes.valorCofins);
   totals.valorIss = round2(totals.valorIss + taxes.valorIss);
   totals.valorTotalTributos = round2(
-    totals.valorIcms + totals.valorIpi + totals.valorPis + totals.valorCofins + totals.valorIss
+    totals.valorIcms + totals.valorIcmsSt + totals.valorFcp + totals.valorIpi + totals.valorPis + totals.valorCofins + totals.valorIss
   );
   return totals;
 }

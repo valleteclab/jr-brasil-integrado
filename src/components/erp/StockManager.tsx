@@ -1,9 +1,21 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Button } from "@/components/shared/Button";
-import { StatusBadge } from "@/components/shared/StatusBadge";
 import type { StockBalance, StockMovement, InventorySummary, DepositoOption, ProdutoOption } from "@/lib/services/stock";
+
+type PillTone = "success" | "warn" | "danger" | "info" | "violet" | "mute";
+
+function Pill({ tone, children }: { tone: PillTone; children: React.ReactNode }) {
+  return (
+    <span className={`pill ${tone}`}>
+      <span className="dot" />
+      {children}
+    </span>
+  );
+}
+
+const brl = (value: number) =>
+  new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
 
 type Tab = "saldos" | "movimentos" | "inventarios";
 
@@ -92,10 +104,9 @@ function AdjustForm({
           <input type="text" value={motivo} onChange={(e) => setMotivo(e.target.value)} required placeholder="Motivo do ajuste" />
         </label>
       </div>
-      <div className="erp-toolbar">
-        <div className="toolbar-grow" />
-        <Button type="button" variant="light" onClick={onClose}>Cancelar</Button>
-        <Button type="submit" variant="primary" disabled={loading}>{loading ? "Salvando..." : "Confirmar ajuste"}</Button>
+      <div className="inline-foot">
+        <button type="button" className="btn-erp ghost sm" onClick={onClose}>Cancelar</button>
+        <button type="submit" className="btn-erp primary sm" disabled={loading}>{loading ? "Salvando..." : "Confirmar ajuste"}</button>
       </div>
     </form>
   );
@@ -189,10 +200,9 @@ function TransferForm({
           </select>
         </label>
       </div>
-      <div className="erp-toolbar">
-        <div className="toolbar-grow" />
-        <Button type="button" variant="light" onClick={onClose}>Cancelar</Button>
-        <Button type="submit" variant="primary" disabled={loading}>{loading ? "Transferindo..." : "Confirmar transferência"}</Button>
+      <div className="inline-foot">
+        <button type="button" className="btn-erp ghost sm" onClick={onClose}>Cancelar</button>
+        <button type="submit" className="btn-erp primary sm" disabled={loading}>{loading ? "Transferindo..." : "Confirmar transferência"}</button>
       </div>
     </form>
   );
@@ -255,10 +265,9 @@ function NewInventoryForm({
           <input type="text" value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder="Ex: Inventário mensal" />
         </label>
       </div>
-      <div className="erp-toolbar">
-        <div className="toolbar-grow" />
-        <Button type="button" variant="light" onClick={onClose}>Cancelar</Button>
-        <Button type="submit" variant="primary" disabled={loading}>{loading ? "Criando..." : "Criar inventário"}</Button>
+      <div className="inline-foot">
+        <button type="button" className="btn-erp ghost sm" onClick={onClose}>Cancelar</button>
+        <button type="submit" className="btn-erp primary sm" disabled={loading}>{loading ? "Criando..." : "Criar inventário"}</button>
       </div>
     </form>
   );
@@ -299,9 +308,9 @@ function BalancesTab({
 
   return (
     <section>
-      <div className="erp-toolbar">
+      <div className="erp-toolbar product-toolbar">
         <div className="toolbar-search">
-          <span aria-hidden="true">⌕</span>
+          <span className="ic-sr" aria-hidden="true">⌕</span>
           <input
             className="search"
             placeholder="Buscar por SKU, produto ou depósito..."
@@ -310,8 +319,8 @@ function BalancesTab({
           />
         </div>
         <div className="toolbar-grow" />
-        <Button variant="light" onClick={() => setModal("ajuste")}>Ajustar estoque</Button>
-        <Button variant="light" onClick={() => setModal("transferencia")}>Transferir</Button>
+        <button type="button" className="btn-erp ghost sm" onClick={() => setModal("ajuste")}>Ajustar estoque</button>
+        <button type="button" className="btn-erp ghost sm" onClick={() => setModal("transferencia")}>Transferir</button>
       </div>
 
       {flash && <div className="alert success"><strong>Sucesso</strong><span>{flash}</span></div>}
@@ -358,17 +367,20 @@ function BalancesTab({
                 <td className="num">{b.quantidade.toFixed(2)}</td>
                 <td className="num">{b.reservado.toFixed(2)}</td>
                 <td className="num">{b.disponivel.toFixed(2)}</td>
-                <td className="num">{new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(b.custoMedio)}</td>
+                <td className="num">{brl(b.custoMedio)}</td>
                 <td className="num">{b.valorTotalCusto}</td>
                 <td>
-                  <StatusBadge tone={b.statusTone}>{b.status}</StatusBadge>
+                  <Pill tone={b.statusTone}>{b.status}</Pill>
                 </td>
               </tr>
             ))}
             {filtered.length === 0 && (
               <tr>
                 <td colSpan={8}>
-                  <div className="empty-st">Nenhum saldo de estoque encontrado.</div>
+                  <div className="empty-st">
+                    <h4>Nenhum saldo encontrado</h4>
+                    <p>Ajuste a busca para localizar saldos de estoque.</p>
+                  </div>
                 </td>
               </tr>
             )}
@@ -407,9 +419,9 @@ function MovementsTab({ movements }: { movements: StockMovement[] }) {
 
   return (
     <section>
-      <div className="erp-toolbar">
+      <div className="erp-toolbar product-toolbar">
         <div className="toolbar-search">
-          <span aria-hidden="true">⌕</span>
+          <span className="ic-sr" aria-hidden="true">⌕</span>
           <input
             className="search"
             placeholder="Buscar por SKU, produto ou tipo..."
@@ -417,6 +429,7 @@ function MovementsTab({ movements }: { movements: StockMovement[] }) {
             onChange={(e) => setQuery(e.target.value)}
           />
         </div>
+        <div className="toolbar-grow" />
       </div>
       <div className="erp-table-wrap">
         <table className="erp-table">
@@ -440,7 +453,7 @@ function MovementsTab({ movements }: { movements: StockMovement[] }) {
                   <small className="block-muted">{m.produtoNome}</small>
                 </td>
                 <td>{m.depositoNome}</td>
-                <td><StatusBadge tone={tipoTone(m.tipo)}>{m.tipoLabel}</StatusBadge></td>
+                <td><Pill tone={tipoTone(m.tipo)}>{m.tipoLabel}</Pill></td>
                 <td className="num">{m.quantidade > 0 ? `+${m.quantidade.toFixed(3)}` : m.quantidade.toFixed(3)}</td>
                 <td className="num">{m.saldoDepois.toFixed(3)}</td>
                 <td><span className="mono">{m.documentoTipo ?? "—"}</span></td>
@@ -451,7 +464,10 @@ function MovementsTab({ movements }: { movements: StockMovement[] }) {
             {filtered.length === 0 && (
               <tr>
                 <td colSpan={8}>
-                  <div className="empty-st">Nenhuma movimentação registrada.</div>
+                  <div className="empty-st">
+                    <h4>Nenhuma movimentação</h4>
+                    <p>Nenhuma movimentação de estoque foi registrada.</p>
+                  </div>
                 </td>
               </tr>
             )}
@@ -486,9 +502,9 @@ function InventoriesTab({
 
   return (
     <section>
-      <div className="erp-toolbar">
+      <div className="erp-toolbar product-toolbar">
         <div className="toolbar-grow" />
-        <Button variant="primary" onClick={() => setShowForm(true)}>Novo inventário</Button>
+        <button type="button" className="btn-erp primary sm" onClick={() => setShowForm(true)}>Novo inventário</button>
       </div>
 
       {flash && <div className="alert success"><strong>Sucesso</strong><span>{flash}</span></div>}
@@ -525,24 +541,27 @@ function InventoriesTab({
                 <td className="num">{inv.totalItens}</td>
                 <td className="num">
                   {inv.divergencias > 0
-                    ? <span className="badge-warn">{inv.divergencias}</span>
+                    ? <Pill tone="warn">{inv.divergencias}</Pill>
                     : "0"
                   }
                 </td>
-                <td><StatusBadge tone={inv.statusTone}>{inv.statusLabel}</StatusBadge></td>
+                <td><Pill tone={inv.statusTone}>{inv.statusLabel}</Pill></td>
                 <td><small>{inv.iniciadoEm ?? "—"}</small></td>
                 <td><small>{inv.finalizadoEm ?? "—"}</small></td>
                 <td className="actions">
-                  <Button variant="light" href={`/erp/inventarios/${inv.id}`}>
+                  <a className="btn-erp ghost xs" href={`/erp/inventarios/${inv.id}`}>
                     {inv.status === "FINALIZADO" ? "Ver" : "Contar"}
-                  </Button>
+                  </a>
                 </td>
               </tr>
             ))}
             {inventories.length === 0 && (
               <tr>
                 <td colSpan={9}>
-                  <div className="empty-st">Nenhum inventário criado ainda. Clique em &quot;Novo inventário&quot; para começar.</div>
+                  <div className="empty-st">
+                    <h4>Nenhum inventário criado</h4>
+                    <p>Clique em &quot;Novo inventário&quot; para iniciar uma contagem.</p>
+                  </div>
                 </td>
               </tr>
             )}

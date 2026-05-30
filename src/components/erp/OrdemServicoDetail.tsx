@@ -1,9 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { Button } from "@/components/shared/Button";
-import { StatusBadge } from "@/components/shared/StatusBadge";
-import { KpiCard } from "@/components/shared/KpiCard";
 import type { OrdemServicoDetail as OsDetail } from "@/lib/services/service-order";
 import type { OsFormData } from "@/lib/services/service-order";
 
@@ -212,24 +209,31 @@ export function OrdemServicoDetail({ os: initialOs, formData }: Props) {
       <div className="erp-card">
         <div className="erp-card-head">
           <h3>OS {os.numero}</h3>
-          <StatusBadge tone={os.statusTone}>{os.statusLabel}</StatusBadge>
+          <span className={`pill ${os.statusTone}`}>
+            <span className="dot" />
+            {os.statusLabel}
+          </span>
         </div>
-        <div className="kpi-row">
-          <KpiCard label="Número" value={os.numero} />
-          <KpiCard label="Cliente" value={os.cliente} />
-          <KpiCard label="Equipamento" value={os.equipamento} />
-          {os.placaOuSerial && <KpiCard label="Placa / Série" value={os.placaOuSerial} />}
-          {os.previsaoEm && <KpiCard label="Previsão" value={os.previsaoEm} />}
+        <div className="kpi-row" style={{ marginBottom: 0, padding: 16 }}>
+          <div className="kpi"><div className="l">Número</div><div className="v">{os.numero}</div></div>
+          <div className="kpi"><div className="l">Cliente</div><div className="v">{os.cliente}</div></div>
+          <div className="kpi"><div className="l">Equipamento</div><div className="v">{os.equipamento}</div></div>
+          {os.placaOuSerial && <div className="kpi"><div className="l">Placa / Série</div><div className="v">{os.placaOuSerial}</div></div>}
+          {os.previsaoEm && <div className="kpi"><div className="l">Previsão</div><div className="v">{os.previsaoEm}</div></div>}
         </div>
-        {os.problemaRelatado && (
-          <p>
-            <strong>Problema relatado:</strong> {os.problemaRelatado}
-          </p>
-        )}
-        {os.observacoes && (
-          <p>
-            <strong>Observações:</strong> {os.observacoes}
-          </p>
+        {(os.problemaRelatado || os.observacoes) && (
+          <div className="erp-card-body" style={{ borderTop: "1px solid var(--erp-line)" }}>
+            {os.problemaRelatado && (
+              <p style={{ margin: 0 }}>
+                <strong>Problema relatado:</strong> {os.problemaRelatado}
+              </p>
+            )}
+            {os.observacoes && (
+              <p style={{ margin: os.problemaRelatado ? "8px 0 0" : 0 }}>
+                <strong>Observações:</strong> {os.observacoes}
+              </p>
+            )}
+          </div>
         )}
       </div>
 
@@ -239,15 +243,15 @@ export function OrdemServicoDetail({ os: initialOs, formData }: Props) {
           <div className="erp-card-head"><h3>Alterar situação</h3></div>
           <div className="erp-toolbar">
             {STATUS_OPTIONS.filter((s) => s.value !== os.status).map((s) => (
-              <Button
+              <button
                 key={s.value}
-                variant="light"
                 type="button"
+                className="btn-erp ghost sm"
                 disabled={busy}
                 onClick={() => handleChangeStatus(s.value)}
               >
                 → {s.label}
-              </Button>
+              </button>
             ))}
           </div>
         </div>
@@ -279,7 +283,7 @@ export function OrdemServicoDetail({ os: initialOs, formData }: Props) {
                   {editavel && (
                     <td className="actions">
                       <button
-                        className="danger-link"
+                        className="btn-erp danger xs"
                         type="button"
                         disabled={busy}
                         onClick={() => handleRemoveServico(s.id)}
@@ -293,7 +297,10 @@ export function OrdemServicoDetail({ os: initialOs, formData }: Props) {
               {os.servicos.length === 0 && (
                 <tr>
                   <td colSpan={editavel ? 5 : 4}>
-                    <div className="empty-st">Nenhum serviço adicionado.</div>
+                    <div className="empty-st">
+                      <h4>Sem serviços</h4>
+                      <p>Nenhum serviço adicionado.</p>
+                    </div>
                   </td>
                 </tr>
               )}
@@ -340,10 +347,10 @@ export function OrdemServicoDetail({ os: initialOs, formData }: Props) {
             </div>
             <div className="erp-toolbar">
               <span>Total: {formatBrl(horas * valorHora)}</span>
-              <div className="toolbar-grow" />
-              <Button type="submit" variant="light" disabled={busy}>
+              <div className="grow" />
+              <button type="submit" className="btn-erp primary sm" disabled={busy}>
                 Adicionar
-              </Button>
+              </button>
             </div>
           </form>
         )}
@@ -368,7 +375,7 @@ export function OrdemServicoDetail({ os: initialOs, formData }: Props) {
                 <tr key={p.id}>
                   <td>
                     <strong>{p.produtoNome}</strong>
-                    <small className="block-muted">{p.produtoSku}</small>
+                    <span className="sublabel">{p.produtoSku}</span>
                   </td>
                   <td className="num">{p.quantidade}</td>
                   <td className="num">{p.precoUnitario}</td>
@@ -378,7 +385,7 @@ export function OrdemServicoDetail({ os: initialOs, formData }: Props) {
                   {editavel && (
                     <td className="actions">
                       <button
-                        className="danger-link"
+                        className="btn-erp danger xs"
                         type="button"
                         disabled={busy}
                         onClick={() => handleRemovePeca(p.id)}
@@ -392,7 +399,10 @@ export function OrdemServicoDetail({ os: initialOs, formData }: Props) {
               {os.pecas.length === 0 && (
                 <tr>
                   <td colSpan={editavel ? 5 : 4}>
-                    <div className="empty-st">Nenhuma peça adicionada.</div>
+                    <div className="empty-st">
+                      <h4>Sem peças</h4>
+                      <p>Nenhuma peça adicionada.</p>
+                    </div>
                   </td>
                 </tr>
               )}
@@ -447,10 +457,10 @@ export function OrdemServicoDetail({ os: initialOs, formData }: Props) {
             </div>
             <div className="erp-toolbar">
               <span>Total: {formatBrl(quantidadePeca * precoPeca)}</span>
-              <div className="toolbar-grow" />
-              <Button type="submit" variant="light" disabled={busy}>
+              <div className="grow" />
+              <button type="submit" className="btn-erp primary sm" disabled={busy}>
                 Adicionar
-              </Button>
+              </button>
             </div>
           </form>
         )}
@@ -458,9 +468,9 @@ export function OrdemServicoDetail({ os: initialOs, formData }: Props) {
 
       {/* Totais */}
       <div className="kpi-row">
-        <KpiCard label="Serviços" value={os.totalServicos} />
-        <KpiCard label="Peças" value={os.totalPecas} />
-        <KpiCard label="Total" value={os.total} tone="success" />
+        <div className="kpi"><div className="l">Serviços</div><div className="v">{os.totalServicos}</div></div>
+        <div className="kpi"><div className="l">Peças</div><div className="v">{os.totalPecas}</div></div>
+        <div className="kpi"><div className="l">Total</div><div className="v" style={{ color: "var(--erp-success)" }}>{os.total}</div></div>
       </div>
 
       {/* Faturamento */}
@@ -499,10 +509,10 @@ export function OrdemServicoDetail({ os: initialOs, formData }: Props) {
               )}
             </div>
             <div className="erp-toolbar">
-              <div className="toolbar-grow" />
-              <Button type="submit" variant="primary" disabled={busy}>
-                {busy ? "Faturando..." : "Confirmar faturamento"}
-              </Button>
+              <div className="grow" />
+              <button type="submit" className="btn-erp primary sm" disabled={busy}>
+                {busy ? "Faturando…" : "Confirmar faturamento"}
+              </button>
             </div>
           </form>
         </div>

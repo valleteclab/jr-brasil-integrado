@@ -1,14 +1,22 @@
 "use client";
 
 import { useState } from "react";
-import { Button } from "@/components/shared/Button";
-import { KpiCard } from "@/components/shared/KpiCard";
-import { StatusBadge } from "@/components/shared/StatusBadge";
 import type { InventoryDetail, InventoryItemDetail } from "@/lib/services/stock";
 
 type Props = {
   inventory: InventoryDetail;
 };
+
+type PillTone = "success" | "warn" | "danger" | "info" | "violet" | "mute";
+
+function Pill({ tone, children }: { tone: PillTone; children: React.ReactNode }) {
+  return (
+    <span className={`pill ${tone}`}>
+      <span className="dot" />
+      {children}
+    </span>
+  );
+}
 
 export function InventoryCount({ inventory: initial }: Props) {
   const [inventory, setInventory] = useState(initial);
@@ -101,24 +109,34 @@ export function InventoryCount({ inventory: initial }: Props) {
   return (
     <div>
       <div className="kpi-row">
-        <KpiCard label="Total de itens" value={String(inventory.itens.length)} />
-        <KpiCard label="Contados" value={String(contados)} tone="info" />
-        <KpiCard label="Divergências" value={String(divergencias)} tone={divergencias > 0 ? "warn" : "default"} />
+        <div className="kpi">
+          <div className="l">Total de itens</div>
+          <div className="v">{inventory.itens.length}</div>
+        </div>
+        <div className="kpi">
+          <div className="l">Contados</div>
+          <div className="v" style={{ color: "var(--erp-info)" }}>{contados}</div>
+        </div>
+        <div className="kpi">
+          <div className="l">Divergências</div>
+          <div className="v" style={divergencias > 0 ? { color: "var(--erp-warn)" } : undefined}>{divergencias}</div>
+        </div>
       </div>
 
       {error && <div className="alert danger"><strong>Erro</strong><span>{error}</span></div>}
       {flash && <div className="alert success"><strong>OK</strong><span>{flash}</span></div>}
 
       {!isReadOnly && (
-        <div className="erp-toolbar">
+        <div className="erp-toolbar product-toolbar">
           <div className="toolbar-grow" />
-          <Button
-            variant="primary"
+          <button
+            type="button"
+            className="btn-erp primary sm"
             onClick={finalize}
             disabled={finalizing || contados === 0}
           >
             {finalizing ? "Finalizando..." : "Finalizar inventário"}
-          </Button>
+          </button>
         </div>
       )}
 
@@ -166,9 +184,9 @@ export function InventoryCount({ inventory: initial }: Props) {
                   </td>
                   <td className="num">
                     {diff !== null ? (
-                      <StatusBadge tone={diffTone}>
+                      <Pill tone={diffTone}>
                         {diff > 0 ? `+${diff.toFixed(3)}` : diff.toFixed(3)}
-                      </StatusBadge>
+                      </Pill>
                     ) : "—"}
                   </td>
                   <td className="num">
@@ -176,23 +194,23 @@ export function InventoryCount({ inventory: initial }: Props) {
                   </td>
                   <td>
                     {item.ajustado ? (
-                      <StatusBadge tone="success">Ajustado</StatusBadge>
+                      <Pill tone="success">Ajustado</Pill>
                     ) : counted ? (
-                      <StatusBadge tone="info">Contado</StatusBadge>
+                      <Pill tone="info">Contado</Pill>
                     ) : (
-                      <StatusBadge tone="mute">Pendente</StatusBadge>
+                      <Pill tone="mute">Pendente</Pill>
                     )}
                   </td>
                   {!isReadOnly && (
                     <td className="actions">
-                      <Button
-                        variant="light"
+                      <button
                         type="button"
+                        className="btn-erp ghost xs"
                         disabled={saving === item.id || !currVal}
                         onClick={() => saveCount(item)}
                       >
                         {saving === item.id ? "Salvando..." : "Salvar"}
-                      </Button>
+                      </button>
                     </td>
                   )}
                 </tr>
@@ -201,7 +219,10 @@ export function InventoryCount({ inventory: initial }: Props) {
             {inventory.itens.length === 0 && (
               <tr>
                 <td colSpan={isReadOnly ? 6 : 7}>
-                  <div className="empty-st">Nenhum item neste inventário.</div>
+                  <div className="empty-st">
+                    <h4>Inventário vazio</h4>
+                    <p>Nenhum item foi adicionado a este inventário.</p>
+                  </div>
                 </td>
               </tr>
             )}

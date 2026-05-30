@@ -1,8 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Button } from "@/components/shared/Button";
-import { StatusBadge } from "@/components/shared/StatusBadge";
+import Link from "next/link";
 import type { OrdemServicoSummary } from "@/lib/services/service-order";
 
 type Props = {
@@ -27,16 +26,16 @@ export function OrdensServicoList({ oss }: Props) {
     <section>
       <div className="erp-toolbar">
         <div className="toolbar-search">
-          <span aria-hidden="true">⌕</span>
+          <span className="ic-sr" aria-hidden="true">⌕</span>
           <input
             className="search"
-            placeholder="Buscar por número, cliente, equipamento..."
+            placeholder="Buscar por número, cliente, equipamento…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
         </div>
-        <div className="toolbar-grow" />
-        <Button href="/erp/os/nova" variant="primary">+ Nova OS</Button>
+        <div className="grow" />
+        <Link className="btn-erp primary sm" href="/erp/os/nova">+ Nova OS</Link>
       </div>
 
       <div className="erp-table-wrap">
@@ -56,46 +55,56 @@ export function OrdensServicoList({ oss }: Props) {
             {filtered.map((os) => (
               <tr key={os.id}>
                 <td>
-                  <span className="mono bold">{os.numero}</span>
-                  <small className="block-muted">{os.criadoEm}</small>
+                  <span className="mono bold" style={{ color: "var(--erp-info)" }}>{os.numero}</span>
+                  <span className="sublabel">{os.criadoEm}</span>
                 </td>
-                <td>
-                  <strong>{os.cliente}</strong>
-                </td>
+                <td style={{ fontWeight: 600 }}>{os.cliente}</td>
                 <td>
                   {os.equipamento}
                   {os.placaOuSerial && (
-                    <small className="block-muted">{os.placaOuSerial}</small>
+                    <span className="sublabel">{os.placaOuSerial}</span>
                   )}
                 </td>
                 <td>
-                  <StatusBadge tone={os.statusTone}>{os.statusLabel}</StatusBadge>
+                  <span className={`pill ${os.statusTone}`}>
+                    <span className="dot" />
+                    {os.statusLabel}
+                  </span>
                 </td>
-                <td>{os.previsaoEm ?? <span className="block-muted">—</span>}</td>
-                <td className="num">
-                  <strong>{os.total}</strong>
+                <td>{os.previsaoEm ?? <span style={{ color: "var(--erp-mute)" }}>—</span>}</td>
+                <td className="num bold">
+                  {os.total}
                   {Number(os.totalServicos.replace(/[^\d,]/g, "").replace(",", ".")) > 0 && (
-                    <small className="block-muted">
-                      serv. {os.totalServicos}
-                    </small>
+                    <span className="sublabel">serv. {os.totalServicos}</span>
                   )}
                 </td>
                 <td className="actions">
-                  <Button variant="light" href={`/erp/os/${os.id}`}>
+                  <Link className="btn-erp ghost xs" href={`/erp/os/${os.id}`}>
                     Detalhes
-                  </Button>
+                  </Link>
                 </td>
               </tr>
             ))}
             {!filtered.length && (
               <tr>
                 <td colSpan={7}>
-                  <div className="empty-st">Nenhuma ordem de serviço encontrada.</div>
+                  <div className="empty-st">
+                    <h4>Nenhuma ordem de serviço</h4>
+                    <p>Nenhuma ordem de serviço encontrada para a busca atual.</p>
+                  </div>
                 </td>
               </tr>
             )}
           </tbody>
         </table>
+        {filtered.length > 0 && (
+          <div className="erp-table-foot">
+            <span>{filtered.length} ordem(ns) de serviço</span>
+            <div className="pagi">
+              <button type="button" className="active">1</button>
+            </div>
+          </div>
+        )}
       </div>
     </section>
   );

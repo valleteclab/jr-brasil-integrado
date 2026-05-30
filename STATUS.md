@@ -248,3 +248,44 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Coordenacao por 5 subagentes em paralelo por dominio (Vendas/Orcamentos, OS/Atendimento, Estoque/Compras, Financeiro/Fiscal, Dashboard/Relatorios/Clientes/Colaboradores), seguindo `docs/UI_CONFORMANCE_SPEC.md`.
 - Corrigido tambem JSX desbalanceado em ReportsView (div faltante) e padronizado FiscalSettingsForm e wizard fiscal.
 - Validacao: `tsc` (0), `lint` (limpo), `build` (ok) e checagem de runtime HTTP 200 em todas as rotas do ERP e da loja.
+
+## Atualizacao operacional - 2026-05-29 - ICMS-ST, FCP e IBPT (transparencia)
+
+- Limpeza: removido o CSS morto `op-*` de `globals.css` (telas ja usam vocabulario canonico).
+- Schema estendido (migration `add_icms_st_fcp_ibpt`): `RegraTributaria` += `mva`, `aliquotaIcmsSt`, `fcp`; `NotaFiscalItem` += `percentualFcp`, `valorFcp`, `modalidadeBcSt`, `percentualMva`, `baseIcmsSt`, `aliquotaIcmsSt`, `valorIcmsSt`, `valorTributos`; `NotaFiscal` += `valorFcp`.
+- Motor tributario: FCP destacado automaticamente em operacao interna (regime normal) a partir da tabela `FCP_INTERNO` por UF ou da regra; ICMS-ST por MVA quando a regra define `mva` (baseST = (base+IPI)*(1+MVA), ST = baseST*aliq interna - ICMS proprio), respeitando mercadoria ja substituida (CSOSN 500/CST 60). Totais agregam FCP e ICMS-ST; total da nota inclui ICMS-ST e IPI.
+- IBPT / Lei 12.741: emissao anexa "Valor aproximado dos tributos" em informacoes complementares (a partir do total de tributos calculado).
+- Regras tributarias: tela e API passam a aceitar MVA %, Aliquota ICMS-ST % e FCP %.
+- Validacao: `tsc` (0), `lint` (limpo), `build` (ok) e smoke contra PostgreSQL: Lucro Presumido BA->BA destacou ICMS 18% + FCP 2%; regra com MVA 40% gerou baseST 1400 e ICMS-ST 72; texto IBPT presente na nota.
+
+## Atualizacao operacional - 2026-05-29 - tela Novo atendimento fiel ao design
+
+- Reconstruida a tela de atendimento conforme o Claude Design (capturas de referencia; o standalone empacota o app em chunks ofuscados, sem markup extraivel):
+  - Componente `AtendimentoWorkspace` com cards de tipo de operacao (Venda balcao, Pedido faturado, Ordem de Servico, Orcamento), layout em 2 colunas e trilho direito.
+  - Trilho: card Totais (itens, subtotal, desconto global %, total), card Validade & condicoes (validade, vendedor, condicao de pagamento, prazo de entrega, frete) e acao principal contextual.
+  - Coluna principal: selecao de cliente, itens com adicionar/empty-state, observacoes; OS troca itens por equipamento/diagnostico.
+  - Ligado as APIs existentes: Orcamento -> /api/erp/orcamentos; Venda balcao/Pedido faturado -> /api/erp/vendas; OS -> /api/erp/os; desconto global % convertido em R$ no envio.
+- `/erp/atendimento` carrega clientes/produtos reais (`listSaleFormData`) e aceita `?tipo=`. As rotas `/erp/vendas/nova`, `/erp/orcamentos/novo` e `/erp/os/nova` passam a redirecionar para o atendimento unificado com o tipo pre-selecionado.
+- CSS dedicado adicionado (`atend-*`) seguindo os tokens do design.
+- Validacao: `tsc` (0), `lint` (limpo), `build` (ok) e runtime HTTP 200 em `/erp/atendimento` (e 307 nos redirects), com a tela renderizando os blocos do design.
+
+## Atualizacao operacional - 2026-05-29 - paridade visual com o fonte do Claude Design
+
+- Recebido o projeto-fonte do design (JSX + erp-styles.css). Base visual adotada no app:
+  - Fontes do design carregadas (Barlow Condensed, Inter, JetBrains Mono) via layout raiz.
+  - Sistema de botoes `btn-erp` (primary/dark/ghost/danger + sm/xs/lg/block/icon-only), `pill` (status), `prog/fill`, `sublabel`, `avatar-sm`, `erp-card-body` e `empty-st` com icone/titulo, alinhados ao `erp-styles.css`.
+- Tela "Novo atendimento" reconstruida fiel ao fonte `erp-atendimento.jsx`:
+  - Cards de tipo (venda balcao, pedido faturado, OS, orcamento), layout 2 colunas com trilho fixo.
+  - Picker de cliente e picker de produto em drawer com busca; tabela de itens com qtd/preco/%desc/subtotal; OS com veiculo, servicos (mao de obra) e pecas.
+  - Trilho: Totais (Barlow), desconto global %, frete, Pagamento (radios), Atribuicao/Validade & condicoes; acoes (finalizar/Imprimir/Salvar rascunho); modal de sucesso.
+  - Ligado as APIs reais: vendas, orcamentos e OS (serviços/peças postados apos abrir a OS).
+- Validacao: `tsc` (0), `lint` (apenas aviso de fonte), `build` (ok) e runtime HTTP 200 em `/erp/atendimento` com o sistema visual do design.
+
+## Atualizacao operacional - 2026-05-29 - telas dos modulos fieis ao design
+
+- Reconstrucao da apresentacao das telas dos modulos conforme os JSX de referencia do design (em .design-ref/, gitignored), coordenada por 5 subagentes em paralelo:
+  - Produtos/Estoque (ProductCrud, StockManager, InventoryCount), Compras/Vendas (SalesList, PurchaseList, SuppliersCrud), OS/Financeiro (OrdensServicoList, OrdemServicoDetail, FinanceManager, CashFlowView, NotasFiscaisList), Cadastros (CustomersCrud, TeamManager, TaxRulesCrud) e Loja (page + ProductCard).
+  - Todas usando o vocabulario do design: `erp-toolbar`/`toolbar-search`/`stat-pills`, `erp-table`/`erp-table-wrap`/`erp-table-foot`/`pagi`, `btn-erp` (+link), `pill`+`.dot`, `kpi`/`.l`/`.v`, `tabs`, `drawer`/`drawer-head`/`drawer-body`/`drawer-foot`, `erp-form`, `empty-st` h4/p, `prog`/`fill`.
+- Corrigidos de passagem erros de compilacao pre-existentes (uso de Button/StatusBadge sem import em StockManager, FinanceManager, SuppliersCrud) ao migrar para as classes do design.
+- Adicionados helpers de CSS faltantes (`.grow`, `.btn-erp.link`, `.stat-pill`).
+- Validacao: `tsc` (0), `lint` (0, salvo aviso de fonte), `build` (ok) e runtime HTTP 200 em todas as 16 rotas do ERP e loja, renderizando o sistema visual do design.

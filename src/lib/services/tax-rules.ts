@@ -21,6 +21,9 @@ export type TaxRuleSummary = {
   baseReduction: string;
   deferral: string;
   presumedCredit: string;
+  mva: string;
+  stRate: string;
+  fcp: string;
   validFrom: string;
   validUntil: string;
   active: boolean;
@@ -58,6 +61,9 @@ export function mapTaxRule(rule: RegraTributaria): TaxRuleSummary {
     baseReduction: decimalToInput(rule.reducaoBase),
     deferral: decimalToInput(rule.diferimento),
     presumedCredit: decimalToInput(rule.creditoPresumido),
+    mva: decimalToInput(rule.mva),
+    stRate: decimalToInput(rule.aliquotaIcmsSt),
+    fcp: decimalToInput(rule.fcp),
     validFrom: dateToInput(rule.vigenciaInicio),
     validUntil: dateToInput(rule.vigenciaFim),
     active: rule.ativo

@@ -1,8 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Button } from "@/components/shared/Button";
-import { StatusBadge } from "@/components/shared/StatusBadge";
 import type { SupplierSummary } from "@/lib/services/purchasing";
 
 type Props = {
@@ -182,17 +180,17 @@ export function SuppliersCrud({ initialSuppliers }: Props) {
   return (
     <>
       <div className="erp-page-actions">
-        <Button type="button" onClick={openNew}>+ Novo fornecedor</Button>
+        <button className="btn-erp primary sm" type="button" onClick={openNew}>+ Novo fornecedor</button>
       </div>
 
       {error && !drawerOpen && (
         <div className="alert danger"><strong>Atenção</strong><span>{error}</span></div>
       )}
 
-      <section className="erp-card">
+      <section>
         <div className="erp-toolbar">
           <div className="toolbar-search">
-            <span aria-hidden="true">⌕</span>
+            <span className="ic-sr" aria-hidden="true">⌕</span>
             <input
               className="search"
               placeholder="Buscar por nome, CNPJ, cidade..."
@@ -228,16 +226,17 @@ export function SuppliersCrud({ initialSuppliers }: Props) {
                     {s.telefone && <small className="block-muted">{s.telefone}</small>}
                   </td>
                   <td>{s.cidade}{s.cidade && s.uf ? " / " : ""}{s.uf}</td>
-                  <td>{s.condicaoPagamento || <span className="muted">—</span>}</td>
+                  <td>{s.condicaoPagamento || <span style={{ color: "var(--erp-mute)" }}>—</span>}</td>
                   <td>
-                    <StatusBadge tone={s.ativo ? "success" : "mute"}>
+                    <span className={`pill ${s.ativo ? "success" : "mute"}`}>
+                      <span className="dot" />
                       {s.ativo ? "Ativo" : "Inativo"}
-                    </StatusBadge>
+                    </span>
                   </td>
                   <td className="actions">
-                    <Button variant="light" type="button" onClick={() => openEdit(s)}>Editar</Button>
+                    <button className="btn-erp ghost xs" type="button" onClick={() => openEdit(s)}>Editar</button>
                     {s.ativo && (
-                      <button className="danger-link" type="button" disabled={busy} onClick={() => archive(s)}>
+                      <button className="btn-erp danger xs" type="button" disabled={busy} onClick={() => archive(s)}>
                         Arquivar
                       </button>
                     )}
@@ -247,12 +246,18 @@ export function SuppliersCrud({ initialSuppliers }: Props) {
               {!filtered.length && (
                 <tr>
                   <td colSpan={7}>
-                    <div className="empty-st">Nenhum fornecedor cadastrado. Clique em &quot;+ Novo fornecedor&quot; para começar.</div>
+                    <div className="empty-st">
+                      <h4>Nenhum fornecedor encontrado</h4>
+                      <p>Clique em &quot;+ Novo fornecedor&quot; para começar.</p>
+                    </div>
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
+          <div className="erp-table-foot">
+            <span>{filtered.length} de {suppliers.length} fornecedor(es)</span>
+          </div>
         </div>
       </section>
 
@@ -265,7 +270,7 @@ export function SuppliersCrud({ initialSuppliers }: Props) {
                 <h2>{editing ? "Editar fornecedor" : "Novo fornecedor"}</h2>
                 <p>{form.razaoSocial || "Preencha os dados do fornecedor"}</p>
               </div>
-              <button type="button" onClick={closeDrawer}>Fechar</button>
+              <button className="btn-erp ghost sm" type="button" onClick={closeDrawer}>Fechar</button>
             </header>
             <div className="drawer-body">
               <div className="erp-form">
@@ -335,10 +340,10 @@ export function SuppliersCrud({ initialSuppliers }: Props) {
               {error && <p className="form-error drawer-error">{error}</p>}
             </div>
             <footer className="drawer-foot">
-              <Button variant="light" type="button" onClick={closeDrawer}>Cancelar</Button>
-              <Button type="button" disabled={busy} onClick={save}>
+              <button className="btn-erp ghost sm" type="button" onClick={closeDrawer}>Cancelar</button>
+              <button className="btn-erp primary sm" type="button" disabled={busy} onClick={save}>
                 {busy ? "Salvando..." : editing ? "Salvar alterações" : "Cadastrar fornecedor"}
-              </Button>
+              </button>
             </footer>
           </aside>
         </>

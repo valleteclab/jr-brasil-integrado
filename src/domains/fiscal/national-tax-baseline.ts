@@ -59,6 +59,18 @@ export function aliquotaInternaIcms(uf: Uf): number {
   return ICMS_INTERNO[uf];
 }
 
+/** Alíquota interna de ICMS aceitando UF como string livre (0 se desconhecida). */
+export function aliquotaInternaIcmsSafe(uf: string | null | undefined): number {
+  const u = uf?.trim().toUpperCase();
+  return u && u in ICMS_INTERNO ? ICMS_INTERNO[u as Uf] : 0;
+}
+
+/** Percentual de FCP interno da UF (0 quando não instituído ou UF desconhecida). */
+export function fcpInterno(uf: string | null | undefined): number {
+  const u = uf?.trim().toUpperCase();
+  return u && u in FCP_INTERNO ? FCP_INTERNO[u as Uf] : 0;
+}
+
 /** UFs do Sul/Sudeste (exceto ES) cuja saída para N/NE/CO/ES usa 7%. */
 const ORIGEM_7 = new Set<Uf>(["SP", "RJ", "MG", "PR", "SC", "RS"]);
 /** UFs de destino do grupo 7% (Norte, Nordeste, Centro-Oeste e ES). */
