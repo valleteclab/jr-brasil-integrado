@@ -195,6 +195,92 @@ const SPEDY_BASE_URL: Record<ProviderContext["ambiente"], string> = {
   HOMOLOGACAO: "https://sandbox-api.spedy.com.br/v1"
 };
 
+/** Resolve a base URL da Spedy (override do contexto > ambiente). */
+export function resolveSpedyBaseUrl(ctx: ProviderContext): string {
+  return (ctx.baseUrl?.trim() || SPEDY_BASE_URL[ctx.ambiente]).replace(/\/$/, "");
+}
+
+type SpedyErrorBody = { errors?: Array<{ message?: string }> };
+
+function spedyErrorMessage(raw: string): string {
+  try {
+    const parsed = JSON.parse(raw) as SpedyErrorBody;
+    const msg = parsed.errors?.map((e) => e.message).filter(Boolean).join(" · ");
+    if (msg) return msg;
+  } catch {
+    /* corpo não-JSON */
+  }
+  return raw.slice(0, 300);
+}
+
+export type SpedyCertificateResult = {
+  ok: boolean;
+  alreadyRegistered: boolean;
+  message?: string;
+  expiresOn?: string | null;
+};
+
+/**
+ * Envia o certificado digital A1 (.pfx) da empresa para a Spedy
+ * (`POST /v1/companies/{id}/certificates`, multipart `CertificateFile`/`Password`).
+ * A chave de API é por empresa: descobrimos o `companyId` via `GET /v1/companies`.
+ * O arquivo e a senha nunca são persistidos/logados no nosso lado.
+ */
+export async function uploadSpedyCertificate(
+  ctx: ProviderContext,
+  file: { buffer: ArrayBuffer | Buffer; filename: string },
+  password: string
+): Promise<SpedyCertificateResult> {
+  const token = ctx.token?.trim();
+  if (!token) throw new Error("Configure a chave de API (X-Api-Key) da Spedy antes de enviar o certificado.");
+  const baseUrl = resolveSpedyBaseUrl(ctx);
+
+  // 1) Descobre o companyId associado à chave de API.
+  const companiesRes = await fetch(`${baseUrl}/companies?page=1&pageSize=1`, {
+    headers: { "X-Api-Key": token },
+    signal: AbortSignal.timeout(30000)
+  });
+  const companiesText = await companiesRes.text();
+  if (!companiesRes.ok) {
+    throw new Error(`Não foi possível identificar a empresa na Spedy (HTTP ${companiesRes.status}): ${spedyErrorMessage(companiesText)}`);
+  }
+  const companies = JSON.parse(companiesText) as { items?: Array<{ id: string }> };
+  const companyId = companies.items?.[0]?.id;
+  if (!companyId) throw new Error("Nenhuma empresa encontrada para esta chave de API da Spedy.");
+
+  // 2) Envia o certificado (multipart/form-data).
+  const form = new FormData();
+  const bytes = file.buffer instanceof Buffer ? new Uint8Array(file.buffer) : new Uint8Array(file.buffer);
+  form.append("CertificateFile", new Blob([bytes], { type: "application/x-pkcs12" }), file.filename || "certificado.pfx");
+  form.append("Password", password);
+
+  const res = await fetch(`${baseUrl}/companies/${companyId}/certificates`, {
+    method: "POST",
+    headers: { "X-Api-Key": token },
+    body: form,
+    signal: AbortSignal.timeout(60000)
+  });
+  const text = await res.text();
+
+  if (res.ok) {
+    let expiresOn: string | null = null;
+    try {
+      const body = JSON.parse(text) as { expiresOn?: string; expirationDate?: string };
+      expiresOn = body.expiresOn ?? body.expirationDate ?? null;
+    } catch {
+      /* resposta sem corpo JSON */
+    }
+    return { ok: true, alreadyRegistered: false, expiresOn };
+  }
+
+  const message = spedyErrorMessage(text);
+  // "Esse certificado já está cadastrado" é sucesso prático (idempotência).
+  if (/já está cadastrado/i.test(message)) {
+    return { ok: true, alreadyRegistered: true, message };
+  }
+  throw new Error(`A Spedy recusou o certificado (HTTP ${res.status}): ${message}`);
+}
+
 /** Quantidade de tentativas e intervalo (ms) do polling de status. */
 const POLL_ATTEMPTS = 5;
 const POLL_INTERVAL_MS = 3000;

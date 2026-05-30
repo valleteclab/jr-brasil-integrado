@@ -29,6 +29,34 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [certFile, setCertFile] = useState<File | null>(null);
+  const [certPassword, setCertPassword] = useState("");
+  const [certBusy, setCertBusy] = useState(false);
+  const [certMsg, setCertMsg] = useState("");
+  const [certErr, setCertErr] = useState("");
+
+  async function enviarCertificado() {
+    setCertErr("");
+    setCertMsg("");
+    if (!certFile) { setCertErr("Selecione o arquivo .pfx do certificado A1."); return; }
+    if (!certPassword.trim()) { setCertErr("Informe a senha do certificado."); return; }
+    setCertBusy(true);
+    try {
+      const form = new FormData();
+      form.append("file", certFile);
+      form.append("password", certPassword);
+      const res = await fetch("/api/erp/configuracoes/fiscal/certificado", { method: "POST", body: form });
+      const data = (await res.json()) as { message?: string; error?: string };
+      if (!res.ok) throw new Error(data.error || "Não foi possível enviar o certificado.");
+      setCertMsg(data.message || "Certificado enviado com sucesso.");
+      setCertFile(null);
+      setCertPassword("");
+    } catch (e) {
+      setCertErr(e instanceof Error ? e.message : "Não foi possível enviar o certificado.");
+    } finally {
+      setCertBusy(false);
+    }
+  }
 
   const externalProvider = !["MANUAL", "INTERNO"].includes(config.provider);
   const isSpedy = config.provider === "SPEDY";
@@ -195,6 +223,34 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
           </label>
         </div>
       </div>
+
+      {isSpedy && (
+        <div className="erp-card">
+          <div className="erp-card-head"><h3>Certificado digital A1</h3></div>
+          <div className="erp-card-body">
+            <p style={{ fontSize: 12.5, color: "var(--erp-mute)", margin: "0 0 12px" }}>
+              Envie o arquivo <b>.pfx</b> do certificado A1 da empresa. Ele é transmitido com segurança ao provedor (Spedy)
+              para assinar as notas e <b>não é armazenado</b> em nosso sistema. {config.certificadoInfo ? `Atual: ${config.certificadoInfo}.` : ""}
+            </p>
+            {certErr && <div className="alert danger" style={{ marginBottom: 10 }}><span>{certErr}</span></div>}
+            {certMsg && <div className="alert success" style={{ marginBottom: 10 }}><span>{certMsg}</span></div>}
+            <div className="erp-form" style={{ gridTemplateColumns: "1fr 1fr" }}>
+              <label>Arquivo do certificado (.pfx)
+                <input type="file" accept=".pfx,application/x-pkcs12" onChange={(e) => setCertFile(e.target.files?.[0] ?? null)} />
+              </label>
+              <label>Senha do certificado
+                <input type="password" value={certPassword} onChange={(e) => setCertPassword(e.target.value)} autoComplete="off" />
+              </label>
+            </div>
+            <div className="erp-toolbar" style={{ borderBottom: "none", paddingBottom: 0, marginTop: 8 }}>
+              <div className="grow" />
+              <button type="button" className="btn-erp primary sm" onClick={enviarCertificado} disabled={certBusy}>
+                {certBusy ? "Enviando…" : "Enviar certificado"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="erp-card">
         <div className="erp-card-head"><h3>Observações</h3></div>

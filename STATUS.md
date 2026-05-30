@@ -341,3 +341,13 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Helpers compartilhados `src/domains/fiscal/nfse-tax.ts` (`computeRetencoes`, `issPorServico`) reusados pela emissao avulsa e pelo faturamento de OS (sem duplicacao).
 - Faturamento de OS (`faturarOrdemServico` + rota + `OrdemServicoDetail`) passou a aceitar alIquota de ISS, deducoes, base de calculo, natureza do ISS e retencoes (ISS retido + IRRF/INSS/PIS/COFINS/CSLL + base de retencao), exibidos quando "Emitir NFS-e" esta marcado.
 - Validacao: `tsc` (0), `lint` (0), `build` (ok) e smoke: OS com servico R$5.000, ISS 5% -> R$250; ISS retido + IRRF 1,5% (75) + PIS 0,65% (32,5) -> liquido R$4.892,50, AUTORIZADA.
+
+## Atualizacao operacional - 2026-05-30 - certificado A1 via ERP + teste real Spedy
+
+- Implementado envio do certificado digital A1 (.pfx) pela plataforma ao provedor (Spedy): helper `uploadSpedyCertificate` (descobre o companyId pela chave, POST multipart `CertificateFile`/`Password`, idempotente quando "ja cadastrado"), use-case `uploadFiscalCertificate` (so persiste metadados: nome/validade; nunca o arquivo/senha), rota `POST /api/erp/configuracoes/fiscal/certificado` (multipart) e card "Certificado digital A1" no `FiscalSettingsForm` (somente Spedy).
+- Teste real (sandbox) validou o fluxo fiscal ponta a ponta:
+  - Payload da NFS-e corrigido (bloco do tomador) — passou na validacao de schema do Ambiente Nacional.
+  - Com o certificado vinculado, a assinatura deixou de falhar (E0717 resolvido); o erro evoluiu para SPD005 ("servico de autorizacao indisponivel no ambiente de Homologacao para o municipio de Luis Eduardo Magalhaes") — limitacao da prefeitura emitente, nao do sistema.
+  - Upload de certificado pela nossa rota retornou ok (idempotente: "ja cadastrado").
+- Empresa de teste reconfigurada como Regime Normal (Lucro Presumido), conforme cadastro real.
+- Validacao: `tsc` (0), `lint` (0), `build` (rota incluida).
