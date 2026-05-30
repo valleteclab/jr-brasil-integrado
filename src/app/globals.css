@@ -2169,3 +2169,27 @@ label.checkbox input {
 .erp-page-head .erp-page-actions { display: flex; gap: 8px; align-items: center; }
 
 .erp-line-strong-token { --erp-line-strong: #d1d5db; }
+
+/* ===== KPI card (padrao do design) ===== */
+.kpi { background: #fff; border: 1px solid var(--erp-line); border-radius: 8px; padding: 14px 16px; }
+.kpi .l { font-size: 10.5px; color: var(--erp-slate); text-transform: uppercase; letter-spacing: .6px; font-weight: 700; }
+.kpi .v { font-family: "Barlow Condensed", sans-serif; font-weight: 800; font-size: 26px; line-height: 1; margin-top: 6px; font-variant-numeric: tabular-nums; }
+.kpi .v .currency { font-size: 13px; color: var(--erp-slate); font-weight: 500; margin-right: 3px; }
+.kpi .d { font-size: 11.5px; color: var(--erp-success); margin-top: 4px; }
+.kpi .d.down { color: var(--erp-danger); }
+.kpi .d.flat { color: var(--erp-slate); }
+.kpi.dark { background: var(--erp-side); border-color: rgba(255,255,255,.08); color: #fff; }
+.kpi.dark .v { color: #fff; }
+.kpi.dark .l { color: var(--erp-mute); }
+.kpi.accent { background: var(--erp-yellow); border-color: var(--erp-yellow-dk); }
+.kpi.accent .l { color: rgba(0,0,0,.6); }
+
+/* ===== Donut chart (dashboard) ===== */
+.donut { display: grid; place-items: center; position: relative; }
+.donut svg { transform: rotate(-90deg); }
+.donut .center { position: absolute; text-align: center; }
+.donut .center b { display: block; font-family: "Barlow Condensed", sans-serif; font-weight: 800; font-size: 24px; line-height: 1; }
+.donut .center span { font-size: 10.5px; color: var(--erp-slate); text-transform: uppercase; letter-spacing: .6px; font-weight: 600; }
+.donut-legend { display: flex; flex-direction: column; gap: 10px; font-size: 12px; }
+.donut-legend > div { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.donut-legend .sw { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }

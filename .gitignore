@@ -10,3 +10,4 @@ build
 coverage
 .prisma
 tsconfig.tsbuildinfo
+.design-ref/
