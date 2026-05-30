@@ -12,6 +12,7 @@ import type {
   ProviderContext,
   ProviderEmitter
 } from "./types";
+import { friendlyFiscalMessage } from "../fiscal-messages";
 
 /**
  * Provedor fiscal Spedy (https://api.spedy.com.br) — integração real e completa.
@@ -718,8 +719,7 @@ export class SpedyFiscalProvider implements FiscalProvider {
       result.motivo = "Autorizado o uso da nota fiscal.";
     } else if (status === "REJEITADA" || status === "DENEGADA") {
       const detail = invoice.processingDetail;
-      const parts = [detail?.message, detail?.code ? `(${detail.code})` : null].filter(Boolean);
-      result.motivo = parts.join(" ") || "Nota rejeitada pela Spedy/SEFAZ.";
+      result.motivo = friendlyFiscalMessage(detail?.code, detail?.message) || "Nota rejeitada pela Spedy/SEFAZ.";
     } else {
       result.motivo = "Emissão em processamento na Spedy. O status será atualizado via webhook.";
     }
