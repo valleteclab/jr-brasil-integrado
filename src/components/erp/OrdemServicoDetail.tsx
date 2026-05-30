@@ -39,6 +39,17 @@ export function OrdemServicoDetail({ os: initialOs, formData }: Props) {
   const [emitirNfse, setEmitirNfse] = useState(false);
   const [formaPagamento, setFormaPagamento] = useState("");
   const [condicaoPagamento, setCondicaoPagamento] = useState("");
+  // NFS-e: ISS informado + retenções
+  const [taxationType, setTaxationType] = useState("taxationInMunicipality");
+  const [aliquotaIss, setAliquotaIss] = useState(0);
+  const [deducoes, setDeducoes] = useState(0);
+  const [issRetido, setIssRetido] = useState(false);
+  const [retIr, setRetIr] = useState(0);
+  const [retPis, setRetPis] = useState(0);
+  const [retCofins, setRetCofins] = useState(0);
+  const [retCsll, setRetCsll] = useState(0);
+  const [retInss, setRetInss] = useState(0);
+  const [baseRetencao, setBaseRetencao] = useState(0);
 
   function formatBrl(v: number) {
     return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);

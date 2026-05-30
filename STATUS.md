@@ -333,3 +333,11 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Retencoes: base de calculo das retencoes federais informavel (sobrepoe o valor dos servicos); item carrega base/aliquota de ISS distribuidas proporcionalmente entre os servicos.
 - Pesquisa de referencia (subagentes com busca web) sobre como NFE.io/Focus/eNotas/PlugNotas/Ambiente Nacional estruturam emissao de NFS-e/NF-e, para guiar a UX.
 - Validacao: `tsc` (0), `lint` (0), `build` (ok) e smoke: NFS-e R$10.000 com deducoes R$2.000 e ISS 5% -> base 8.000, ISS 400; IRRF 1,5% sobre base de retencao 8.000 -> 120; AUTORIZADA.
+
+## Atualizacao operacional - 2026-05-30 - NFS-e: natureza do ISS + retencoes/ISS no faturamento de OS
+
+- Pesquisa de referencia (subagente web: NFE.io/Focus/PlugNotas/Bling/Conta Azul/Omie/Ambiente Nacional) confirmou o modelo: discriminacao 2000 chars; base ISS = servico - deducoes - desconto incondicionado; retencoes federais sobre o valor bruto; campos avancados colapsaveis.
+- Natureza/exigibilidade do ISS: novo `taxationType` no documento NFS-e (tributado no/fora do municipio, isento, imune, exportacao, nao incidencia, exigibilidade suspensa) mapeado no provider Spedy (`total.taxationType`); seletor na emissao avulsa e no faturamento de OS.
+- Helpers compartilhados `src/domains/fiscal/nfse-tax.ts` (`computeRetencoes`, `issPorServico`) reusados pela emissao avulsa e pelo faturamento de OS (sem duplicacao).
+- Faturamento de OS (`faturarOrdemServico` + rota + `OrdemServicoDetail`) passou a aceitar alIquota de ISS, deducoes, base de calculo, natureza do ISS e retencoes (ISS retido + IRRF/INSS/PIS/COFINS/CSLL + base de retencao), exibidos quando "Emitir NFS-e" esta marcado.
+- Validacao: `tsc` (0), `lint` (0), `build` (ok) e smoke: OS com servico R$5.000, ISS 5% -> R$250; ISS retido + IRRF 1,5% (75) + PIS 0,65% (32,5) -> liquido R$4.892,50, AUTORIZADA.

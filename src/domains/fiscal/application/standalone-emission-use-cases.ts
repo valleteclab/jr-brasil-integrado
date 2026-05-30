@@ -7,7 +7,9 @@ import { exitStock, getDefaultDeposito } from "@/domains/stock/application/stock
 import { buildDocumentFromPedido, buildNfseFromOrdemServico } from "@/domains/fiscal/document-builder";
 import { emitFiscalDocument } from "@/domains/fiscal/application/fiscal-emission-use-cases";
 import { isValidLc116 } from "@/domains/fiscal/lc116";
-import type { RetencaoTributo, RetencoesFiscais, TaxationTypeIss } from "@/domains/fiscal/types";
+import type { TaxationTypeIss } from "@/domains/fiscal/types";
+import { computeRetencoes, issPorServico } from "@/domains/fiscal/nfse-tax";
+import type { RetencoesInput } from "@/domains/fiscal/nfse-tax";
 
 function round2(value: number) {
   return Math.round((value + Number.EPSILON) * 100) / 100;
@@ -114,19 +116,6 @@ export type ProductInvoiceAvulsaInput = {
   sendEmailToCustomer?: boolean;
 };
 
-/** Alíquota (%) de uma retenção federal informada na emissão. */
-export type RetencaoFederalInput = { aliquota?: number | null };
-
-export type RetencoesInput = {
-  issRetido?: boolean;
-  ir?: RetencaoFederalInput | null;
-  pis?: RetencaoFederalInput | null;
-  cofins?: RetencaoFederalInput | null;
-  csll?: RetencaoFederalInput | null;
-  inss?: RetencaoFederalInput | null;
-  /** Base de cálculo das retenções federais (quando diferente do valor dos serviços). */
-  baseRetencao?: number | null;
-};
 
 export type ServiceInvoiceAvulsaInput = {
   receiver: ReceiverInput;
