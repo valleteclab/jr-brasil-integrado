@@ -1,9 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Button } from "@/components/shared/Button";
-import { KpiCard } from "@/components/shared/KpiCard";
-import { StatusBadge } from "@/components/shared/StatusBadge";
 import type { ColaboradorSummary, PerfilSummary } from "@/lib/services/team";
 
 // ---------------------------------------------------------------------------
@@ -273,15 +270,27 @@ export function TeamManager({ initialColaboradores, initialPerfis }: TeamManager
     <>
       {/* KPIs */}
       <div className="kpi-row">
-        <KpiCard label="Total de colaboradores" value={String(kpis.total)} />
-        <KpiCard label="Ativos" value={String(kpis.ativos)} tone="success" />
-        <KpiCard label="Inativos" value={String(kpis.inativos)} tone="warn" />
-        <KpiCard label="Perfis de acesso" value={String(kpis.perfisTotal)} tone="info" />
+        <div className="kpi">
+          <div className="l">Total de colaboradores</div>
+          <div className="v">{String(kpis.total)}</div>
+        </div>
+        <div className="kpi">
+          <div className="l">Ativos</div>
+          <div className="v">{String(kpis.ativos)}</div>
+        </div>
+        <div className="kpi">
+          <div className="l">Inativos</div>
+          <div className="v">{String(kpis.inativos)}</div>
+        </div>
+        <div className="kpi">
+          <div className="l">Perfis de acesso</div>
+          <div className="v">{String(kpis.perfisTotal)}</div>
+        </div>
       </div>
 
       {/* Tabs */}
-      <div className="erp-page-actions">
-        <nav className="tabs" style={{ flexShrink: 0 }}>
+      <div className="erp-toolbar">
+        <nav className="tabs" style={{ flexShrink: 0, borderBottom: 0, padding: 0 }}>
           <button
             type="button"
             className={tab === "colaboradores" ? "active" : ""}
@@ -297,19 +306,18 @@ export function TeamManager({ initialColaboradores, initialPerfis }: TeamManager
             Perfis e permissões
           </button>
         </nav>
-        <div className="toolbar-grow" />
+        <div className="grow" />
         {tab === "colaboradores" && (
-          <Button type="button" onClick={openInvite}>+ Convidar colaborador</Button>
+          <button type="button" className="btn-erp primary sm" onClick={openInvite}>+ Convidar colaborador</button>
         )}
         {tab === "perfis" && (
-          <Button type="button" onClick={openPerfil}>+ Novo perfil</Button>
+          <button type="button" className="btn-erp primary sm" onClick={openPerfil}>+ Novo perfil</button>
         )}
       </div>
 
       {/* Colaboradores */}
       {tab === "colaboradores" && (
-        <section className="erp-card">
-          <div className="erp-table-wrap">
+        <div className="erp-table-wrap">
             <table className="erp-table">
               <thead>
                 <tr>
@@ -323,19 +331,20 @@ export function TeamManager({ initialColaboradores, initialPerfis }: TeamManager
               <tbody>
                 {colaboradores.map((c) => (
                   <tr key={c.vinculoId}>
-                    <td><strong>{c.nome}</strong></td>
+                    <td><div style={{ fontWeight: 600, fontSize: 13 }}>{c.nome}</div></td>
                     <td className="mono">{c.email}</td>
-                    <td><span className="category-pill">{c.perfilNome}</span></td>
+                    <td><span className="pill mute">{c.perfilNome}</span></td>
                     <td>
-                      <StatusBadge tone={c.ativo ? "success" : "mute"}>
+                      <span className={`pill ${c.ativo ? "success" : "mute"}`}>
+                        <span className="dot" />
                         {c.ativo ? "Ativo" : "Inativo"}
-                      </StatusBadge>
+                      </span>
                     </td>
                     <td className="actions">
                       {c.ativo ? (
                         <button
                           type="button"
-                          className="danger-link"
+                          className="btn-erp danger xs"
                           disabled={actioning === c.vinculoId}
                           onClick={() => toggleVinculo(c.vinculoId, false)}
                         >
@@ -344,6 +353,7 @@ export function TeamManager({ initialColaboradores, initialPerfis }: TeamManager
                       ) : (
                         <button
                           type="button"
+                          className="btn-erp ghost xs"
                           disabled={actioning === c.vinculoId}
                           onClick={() => toggleVinculo(c.vinculoId, true)}
                         >
@@ -356,20 +366,21 @@ export function TeamManager({ initialColaboradores, initialPerfis }: TeamManager
                 {!colaboradores.length && (
                   <tr>
                     <td colSpan={5}>
-                      <div className="empty-st">Nenhum colaborador cadastrado. Convide o primeiro colaborador.</div>
+                      <div className="empty-st">
+                        <h4>Nenhum colaborador cadastrado</h4>
+                        <p>Convide o primeiro colaborador para começar.</p>
+                      </div>
                     </td>
                   </tr>
                 )}
               </tbody>
             </table>
-          </div>
-        </section>
+        </div>
       )}
 
       {/* Perfis */}
       {tab === "perfis" && (
-        <section className="erp-card">
-          <div className="erp-table-wrap">
+        <div className="erp-table-wrap">
             <table className="erp-table">
               <thead>
                 <tr>
@@ -384,14 +395,16 @@ export function TeamManager({ initialColaboradores, initialPerfis }: TeamManager
                   const modulos = Array.from(new Set(p.permissoes.map((pm) => pm.modulo)));
                   return (
                     <tr key={p.id}>
-                      <td><strong>{p.nome}</strong></td>
-                      <td>{p.descricao ?? <span className="muted">—</span>}</td>
+                      <td><div style={{ fontWeight: 600, fontSize: 13 }}>{p.nome}</div></td>
+                      <td>{p.descricao ?? <span className="sublabel">—</span>}</td>
                       <td className="num">{p.totalPermissoes}</td>
                       <td>
-                        {modulos.map((m) => (
-                          <span key={m} className="category-pill">{m}</span>
-                        ))}
-                        {!modulos.length && <span className="muted">Sem permissões</span>}
+                        <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
+                          {modulos.map((m) => (
+                            <span key={m} className="pill mute" style={{ fontSize: 10 }}>{m}</span>
+                          ))}
+                          {!modulos.length && <span className="sublabel">Sem permissões</span>}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -399,14 +412,16 @@ export function TeamManager({ initialColaboradores, initialPerfis }: TeamManager
                 {!perfis.length && (
                   <tr>
                     <td colSpan={4}>
-                      <div className="empty-st">Nenhum perfil criado. Crie o primeiro perfil de acesso.</div>
+                      <div className="empty-st">
+                        <h4>Nenhum perfil criado</h4>
+                        <p>Crie o primeiro perfil de acesso.</p>
+                      </div>
                     </td>
                   </tr>
                 )}
               </tbody>
             </table>
-          </div>
-        </section>
+        </div>
       )}
 
       {/* Invite drawer */}
@@ -414,13 +429,13 @@ export function TeamManager({ initialColaboradores, initialPerfis }: TeamManager
         <>
           <div className="drawer-bd" onClick={closeInvite} />
           <aside className="drawer" aria-label="Convidar colaborador">
-            <header className="drawer-head">
+            <div className="drawer-head">
               <div>
                 <h2>Convidar colaborador</h2>
-                <p>O acesso será criado com senha temporária &quot;change-me&quot;.</p>
+                <p className="erp-page-sub">O acesso será criado com senha temporária &quot;change-me&quot;.</p>
               </div>
-              <button type="button" onClick={closeInvite}>Fechar</button>
-            </header>
+              <button type="button" className="btn-erp ghost sm" onClick={closeInvite}>Fechar</button>
+            </div>
             <div className="drawer-body">
               <div className="erp-form">
                 <label className="full">
@@ -450,18 +465,18 @@ export function TeamManager({ initialColaboradores, initialPerfis }: TeamManager
                     ))}
                   </select>
                   {!perfis.length && (
-                    <small className="field-hint">Crie ao menos um perfil antes de convidar colaboradores.</small>
+                    <small className="hint">Crie ao menos um perfil antes de convidar colaboradores.</small>
                   )}
                 </label>
               </div>
-              {inviteError && <p className="form-error drawer-error">{inviteError}</p>}
+              {inviteError && <div className="alert danger" style={{ margin: "0 16px 16px" }}><span>{inviteError}</span></div>}
             </div>
-            <footer className="drawer-foot">
-              <Button type="button" variant="light" onClick={closeInvite}>Cancelar</Button>
-              <Button type="button" disabled={inviteSaving} onClick={saveInvite}>
+            <div className="drawer-foot">
+              <button type="button" className="btn-erp ghost sm" onClick={closeInvite}>Cancelar</button>
+              <button type="button" className="btn-erp primary sm" disabled={inviteSaving} onClick={saveInvite}>
                 {inviteSaving ? "Salvando..." : "Convidar"}
-              </Button>
-            </footer>
+              </button>
+            </div>
           </aside>
         </>
       )}
@@ -470,14 +485,14 @@ export function TeamManager({ initialColaboradores, initialPerfis }: TeamManager
       {perfilOpen && (
         <>
           <div className="drawer-bd" onClick={closePerfil} />
-          <aside className="drawer product-drawer" aria-label="Novo perfil">
-            <header className="drawer-head">
+          <aside className="drawer" aria-label="Novo perfil">
+            <div className="drawer-head">
               <div>
                 <h2>Novo perfil de acesso</h2>
-                <p>Defina o nome e selecione as permissões por módulo.</p>
+                <p className="erp-page-sub">Defina o nome e selecione as permissões por módulo.</p>
               </div>
-              <button type="button" onClick={closePerfil}>Fechar</button>
-            </header>
+              <button type="button" className="btn-erp ghost sm" onClick={closePerfil}>Fechar</button>
+            </div>
             <div className="drawer-body">
               <div className="erp-form">
                 <label className="full">
@@ -497,9 +512,9 @@ export function TeamManager({ initialColaboradores, initialPerfis }: TeamManager
                 </label>
               </div>
 
-              <div style={{ marginTop: "1.5rem" }}>
-                <p style={{ fontWeight: 600, marginBottom: "0.75rem" }}>Permissões por módulo</p>
-                <div className="erp-table-wrap">
+              <div style={{ padding: "4px 20px 12px" }}>
+                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".6px", textTransform: "uppercase", color: "var(--erp-slate)", marginBottom: 8 }}>Permissões por módulo</div>
+                <div className="erp-table-wrap solo">
                   <table className="erp-table">
                     <thead>
                       <tr>
@@ -543,14 +558,14 @@ export function TeamManager({ initialColaboradores, initialPerfis }: TeamManager
                 </div>
               </div>
 
-              {perfilError && <p className="form-error drawer-error">{perfilError}</p>}
+              {perfilError && <div className="alert danger" style={{ margin: "0 16px 16px" }}><span>{perfilError}</span></div>}
             </div>
-            <footer className="drawer-foot">
-              <Button type="button" variant="light" onClick={closePerfil}>Cancelar</Button>
-              <Button type="button" disabled={perfilSaving} onClick={savePerfil}>
+            <div className="drawer-foot">
+              <button type="button" className="btn-erp ghost sm" onClick={closePerfil}>Cancelar</button>
+              <button type="button" className="btn-erp primary sm" disabled={perfilSaving} onClick={savePerfil}>
                 {perfilSaving ? "Salvando..." : "Criar perfil"}
-              </Button>
-            </footer>
+              </button>
+            </div>
           </aside>
         </>
       )}

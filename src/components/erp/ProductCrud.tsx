@@ -2,9 +2,16 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
-import { Button } from "@/components/shared/Button";
-import { StatusBadge } from "@/components/shared/StatusBadge";
 import type { ErpProductSummary, ProductTaxRuleOption } from "@/lib/services/products";
+
+function Pill({ tone, children }: { tone: BadgeTone; children: React.ReactNode }) {
+  return (
+    <span className={`pill ${tone}`}>
+      <span className="dot" />
+      {children}
+    </span>
+  );
+}
 
 type ProductRecord = ErpProductSummary & {
   originalCode: string;
@@ -853,8 +860,8 @@ export function ProductCrud({ initialProducts, taxRules, warehouses }: ProductCr
   return (
     <>
       <div className="erp-page-actions product-actions">
-        <Button variant="light" type="button">Exportar</Button>
-        <Button variant="light" href="/erp/entradas-fiscais/nova">Nova entrada NF-e</Button>
+        <button type="button" className="btn-erp ghost sm">Exportar</button>
+        <a className="btn-erp ghost sm" href="/erp/entradas-fiscais/nova">Nova entrada NF-e</a>
         <input
           accept=".xml,text/xml,application/xml"
           className="sr-only-file"
@@ -862,7 +869,7 @@ export function ProductCrud({ initialProducts, taxRules, warehouses }: ProductCr
           ref={xmlInputRef}
           type="file"
         />
-        <Button type="button" onClick={openNewProduct}>+ Novo produto</Button>
+        <button type="button" className="btn-erp primary sm" onClick={openNewProduct}>+ Novo produto</button>
       </div>
 
       {importResult && (
@@ -890,8 +897,8 @@ export function ProductCrud({ initialProducts, taxRules, warehouses }: ProductCr
               </p>
             </div>
             <div className="fiscal-entry-actions">
-              <Button variant="light" type="button" onClick={() => setFiscalEntryDraft(null)}>Cancelar entrada</Button>
-              <Button type="button" onClick={processFiscalEntry}>Processar entrada</Button>
+              <button type="button" className="btn-erp ghost sm" onClick={() => setFiscalEntryDraft(null)}>Cancelar entrada</button>
+              <button type="button" className="btn-erp primary sm" onClick={processFiscalEntry}>Processar entrada</button>
             </div>
           </header>
           <div className="erp-table-wrap fiscal-entry-table">
@@ -943,9 +950,9 @@ export function ProductCrud({ initialProducts, taxRules, warehouses }: ProductCr
                         <small className="block-muted">CFOP {item.importedProduct.cfopInState || "não informado"}</small>
                       </td>
                       <td>
-                        <StatusBadge tone={item.review ? "warn" : "success"}>
+                        <Pill tone={item.review ? "warn" : "success"}>
                           {item.review ? "Revisar vínculo" : item.action === "update" ? "Vinculado" : "Criar produto"}
-                        </StatusBadge>
+                        </Pill>
                       </td>
                     </tr>
                   );
@@ -959,7 +966,7 @@ export function ProductCrud({ initialProducts, taxRules, warehouses }: ProductCr
       <section className="erp-products">
         <div className="erp-toolbar product-toolbar">
           <div className="toolbar-search">
-            <span aria-hidden="true">⌕</span>
+            <span className="ic-sr" aria-hidden="true">⌕</span>
             <input
               className="search"
               placeholder="Código, nome, marca..."
@@ -968,18 +975,18 @@ export function ProductCrud({ initialProducts, taxRules, warehouses }: ProductCr
             />
           </div>
           <div className="stat-pills">
-            <button className={stockFilter === "todos" ? "active" : ""} type="button" onClick={() => setStockFilter("todos")}>
-              Todos <span>{counts.todos}</span>
+            <button className={`stat-pill${stockFilter === "todos" ? " active" : ""}`} type="button" onClick={() => setStockFilter("todos")}>
+              Todos <span className="num">{counts.todos}</span>
             </button>
-            <button className={stockFilter === "critico" ? "active" : ""} type="button" onClick={() => setStockFilter("critico")}>
-              Crítico <span>{counts.critico}</span>
+            <button className={`stat-pill${stockFilter === "critico" ? " active" : ""}`} type="button" onClick={() => setStockFilter("critico")}>
+              Crítico <span className="num">{counts.critico}</span>
             </button>
-            <button className={stockFilter === "zerado" ? "active" : ""} type="button" onClick={() => setStockFilter("zerado")}>
-              Zerado <span>{counts.zerado}</span>
+            <button className={`stat-pill${stockFilter === "zerado" ? " active" : ""}`} type="button" onClick={() => setStockFilter("zerado")}>
+              Zerado <span className="num">{counts.zerado}</span>
             </button>
           </div>
-          <button className="toolbar-link" type="button" onClick={resetProducts}>Restaurar cadastro inicial</button>
-          <div className="toolbar-grow" />
+          <button className="btn-erp link" type="button" onClick={resetProducts}>Restaurar cadastro inicial</button>
+          <div className="grow" />
           <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}>
             <option value="todas">Categoria: todas</option>
             {categories.map((category) => <option key={category} value={category}>{category}</option>)}
@@ -1034,10 +1041,10 @@ export function ProductCrud({ initialProducts, taxRules, warehouses }: ProductCr
                     <td className="num margin-ok">{margin.toFixed(1)}%</td>
                     <td className={`num ${product.status === "Crítico" ? "stock-warn" : ""}`}>{product.availableStock} un.</td>
                     <td className="num">{product.minimumStock}</td>
-                    <td><StatusBadge tone={stockTone(product.status)}>{product.status}</StatusBadge></td>
+                    <td><Pill tone={stockTone(product.status)}>{product.status}</Pill></td>
                     <td className="actions">
-                      <button type="button" onClick={() => editProduct(product)}>Abrir</button>
-                      <button type="button" className="danger-link" onClick={() => deleteProduct(product.id)}>Excluir</button>
+                      <button type="button" className="btn-erp ghost xs" onClick={() => editProduct(product)}>Abrir</button>
+                      <button type="button" className="btn-erp danger xs" onClick={() => deleteProduct(product.id)}>Excluir</button>
                     </td>
                   </tr>
                 );
@@ -1045,7 +1052,10 @@ export function ProductCrud({ initialProducts, taxRules, warehouses }: ProductCr
               {!paginatedProducts.length && (
                 <tr>
                   <td colSpan={12}>
-                    <div className="empty-st">Nenhum produto encontrado para os filtros selecionados.</div>
+                    <div className="empty-st">
+                      <h4>Nenhum produto encontrado</h4>
+                      <p>Ajuste a busca ou os filtros selecionados.</p>
+                    </div>
                   </td>
                 </tr>
               )}
@@ -1057,6 +1067,14 @@ export function ProductCrud({ initialProducts, taxRules, warehouses }: ProductCr
             </span>
             {totalPages > 1 && (
               <div className="pagi">
+                <button
+                  type="button"
+                  aria-label="Página anterior"
+                  disabled={currentPage === 1}
+                  onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                >
+                  ‹
+                </button>
                 {Array.from({ length: totalPages }, (_, index) => index + 1).map((page) => (
                   <button
                     className={currentPage === page ? "active" : ""}
@@ -1067,6 +1085,14 @@ export function ProductCrud({ initialProducts, taxRules, warehouses }: ProductCr
                     {page}
                   </button>
                 ))}
+                <button
+                  type="button"
+                  aria-label="Próxima página"
+                  disabled={currentPage === totalPages}
+                  onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+                >
+                  ›
+                </button>
               </div>
             )}
           </div>
@@ -1082,7 +1108,7 @@ export function ProductCrud({ initialProducts, taxRules, warehouses }: ProductCr
                 <h2>{editing ? "Editar produto" : "Novo produto"}</h2>
                 <p>{form.sku || "Informe os dados principais para criar o SKU"}</p>
               </div>
-              <button type="button" onClick={closeDrawer}>Fechar</button>
+              <button type="button" className="btn-erp ghost xs" onClick={closeDrawer}>Fechar</button>
             </header>
             <nav className="tabs">
               {[
@@ -1108,8 +1134,8 @@ export function ProductCrud({ initialProducts, taxRules, warehouses }: ProductCr
               {error && <p className="form-error drawer-error">{error}</p>}
             </div>
             <footer className="drawer-foot">
-              <Button type="button" variant="light" onClick={closeDrawer}>Cancelar</Button>
-              <Button type="button" onClick={saveProduct}>{editing ? "Salvar alterações" : "Cadastrar produto"}</Button>
+              <button type="button" className="btn-erp ghost sm" onClick={closeDrawer}>Cancelar</button>
+              <button type="button" className="btn-erp primary sm" onClick={saveProduct}>{editing ? "Salvar alterações" : "Cadastrar produto"}</button>
             </footer>
           </aside>
         </>

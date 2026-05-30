@@ -2193,3 +2193,12 @@ label.checkbox input {
 .donut-legend { display: flex; flex-direction: column; gap: 10px; font-size: 12px; }
 .donut-legend > div { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .donut-legend .sw { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+
+/* helpers de paridade do design usados pelas telas migradas */
+.grow { flex: 1; }
+.btn-erp.link { background: transparent; padding: 0; height: auto; border: 0; color: var(--erp-info); text-decoration: underline; }
+.erp-toolbar .stat-pill,
+.stat-pill { padding: 5px 10px; border-radius: 5px; background: var(--erp-bg); font-size: 11.5px; font-weight: 600; color: var(--erp-slate); cursor: pointer; border: 1px solid transparent; }
+.stat-pill:hover { background: var(--erp-line); }
+.stat-pill.active { background: var(--erp-ink); color: #fff; }
+.stat-pill .num { color: inherit; opacity: .7; margin-left: 4px; }

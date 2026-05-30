@@ -1,9 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Button } from "@/components/shared/Button";
-import { KpiCard } from "@/components/shared/KpiCard";
-import { StatusBadge } from "@/components/shared/StatusBadge";
 import type { CustomerDetailedSummary, TabelaPrecoOption } from "@/lib/services/customers-admin";
 
 // ---------------------------------------------------------------------------
@@ -452,12 +449,12 @@ export function CustomersCrud({ initialCustomers, tabelasPreco }: CustomersCrudP
                 </label>
               </div>
               {form.contatos.length > 1 && (
-                <button type="button" className="danger-link" onClick={() => removeContato(i)}>Remover contato</button>
+                <button type="button" className="btn-erp danger xs" onClick={() => removeContato(i)}>Remover contato</button>
               )}
             </fieldset>
           ))}
           <div className="full">
-            <Button type="button" variant="light" onClick={addContato}>+ Adicionar contato</Button>
+            <button type="button" className="btn-erp ghost sm" onClick={addContato}>+ Adicionar contato</button>
           </div>
         </div>
       );
@@ -508,12 +505,12 @@ export function CustomersCrud({ initialCustomers, tabelasPreco }: CustomersCrudP
                 </label>
               </div>
               {form.enderecos.length > 1 && (
-                <button type="button" className="danger-link" onClick={() => removeEndereco(i)}>Remover endereço</button>
+                <button type="button" className="btn-erp danger xs" onClick={() => removeEndereco(i)}>Remover endereço</button>
               )}
             </fieldset>
           ))}
           <div className="full">
-            <Button type="button" variant="light" onClick={addEndereco}>+ Adicionar endereço</Button>
+            <button type="button" className="btn-erp ghost sm" onClick={addEndereco}>+ Adicionar endereço</button>
           </div>
         </div>
       );
@@ -551,16 +548,28 @@ export function CustomersCrud({ initialCustomers, tabelasPreco }: CustomersCrudP
     <>
       {/* KPIs */}
       <div className="kpi-row">
-        <KpiCard label="Clientes ativos" value={String(kpis.ativos)} tone="success" />
-        <KpiCard label="Pendentes de aprovação" value={String(kpis.pendentes)} tone="warn" />
-        <KpiCard label="Limite total concedido" value={formatBrl(kpis.totalLimite)} />
-        <KpiCard label="Crédito utilizado" value={formatBrl(kpis.totalUsado)} tone={kpis.totalUsado > 0 ? "info" : "default"} />
+        <div className="kpi">
+          <div className="l">Clientes ativos</div>
+          <div className="v">{String(kpis.ativos)}</div>
+        </div>
+        <div className="kpi">
+          <div className="l">Pendentes de aprovação</div>
+          <div className="v">{String(kpis.pendentes)}</div>
+        </div>
+        <div className="kpi">
+          <div className="l">Limite total concedido</div>
+          <div className="v">{formatBrl(kpis.totalLimite)}</div>
+        </div>
+        <div className="kpi">
+          <div className="l">Crédito utilizado</div>
+          <div className="v">{formatBrl(kpis.totalUsado)}</div>
+        </div>
       </div>
 
       {/* Toolbar */}
-      <div className="erp-page-actions">
+      <div className="erp-toolbar">
         <div className="toolbar-search">
-          <span aria-hidden="true">⌕</span>
+          <span className="ic-sr" aria-hidden="true">⌕</span>
           <input
             className="search"
             placeholder="Razão social, CNPJ, segmento..."
@@ -575,13 +584,12 @@ export function CustomersCrud({ initialCustomers, tabelasPreco }: CustomersCrudP
           <option value="BLOQUEADO">Bloqueados</option>
           <option value="INATIVO">Inativos</option>
         </select>
-        <div className="toolbar-grow" />
-        <Button type="button" onClick={openNew}>+ Novo cliente</Button>
+        <div className="grow" />
+        <button type="button" className="btn-erp primary sm" onClick={openNew}>+ Novo cliente</button>
       </div>
 
       {/* Table */}
-      <section className="erp-card">
-        <div className="erp-table-wrap">
+      <div className="erp-table-wrap">
           <table className="erp-table">
             <thead>
               <tr>
@@ -600,27 +608,27 @@ export function CustomersCrud({ initialCustomers, tabelasPreco }: CustomersCrudP
               {filtered.map((c) => (
                 <tr key={c.id}>
                   <td>
-                    <div className="product-cell">
-                      <span>
-                        <strong>{c.nomeFantasia ?? c.razaoSocial}</strong>
-                        {c.nomeFantasia && <small>{c.razaoSocial}</small>}
-                      </span>
-                    </div>
+                    <div style={{ fontWeight: 600, fontSize: 13 }}>{c.nomeFantasia ?? c.razaoSocial}</div>
+                    {c.nomeFantasia && <span className="sublabel">{c.razaoSocial}</span>}
                   </td>
                   <td className="mono">{c.documento}</td>
-                  <td>{c.segmento ?? <span className="muted">—</span>}</td>
-                  <td>{c.contatosPrincipal ?? <span className="muted">—</span>}</td>
+                  <td>{c.segmento ?? <span className="sublabel">—</span>}</td>
+                  <td>{c.contatosPrincipal ?? <span className="sublabel">—</span>}</td>
                   <td className="num">{c.limiteCredito}</td>
                   <td className="num">{c.creditoUsado}</td>
-                  <td>{c.condicaoPagamento ?? <span className="muted">A definir</span>}</td>
+                  <td>{c.condicaoPagamento ?? <span className="sublabel">A definir</span>}</td>
                   <td>
-                    <StatusBadge tone={c.statusTone}>{c.statusLabel}</StatusBadge>
+                    <span className={`pill ${c.statusTone}`}>
+                      <span className="dot" />
+                      {c.statusLabel}
+                    </span>
                   </td>
                   <td className="actions">
-                    <button type="button" onClick={() => openEdit(c)}>Editar</button>
+                    <button type="button" className="btn-erp ghost xs" onClick={() => openEdit(c)}>Editar</button>
                     {c.status === "PENDENTE_APROVACAO" && (
                       <button
                         type="button"
+                        className="btn-erp ghost xs"
                         disabled={actioning === c.id}
                         onClick={() => doAction(c.id, "aprovar")}
                       >
@@ -630,7 +638,7 @@ export function CustomersCrud({ initialCustomers, tabelasPreco }: CustomersCrudP
                     {c.status === "ATIVO" && (
                       <button
                         type="button"
-                        className="danger-link"
+                        className="btn-erp danger xs"
                         disabled={actioning === c.id}
                         onClick={() => doAction(c.id, "bloquear")}
                       >
@@ -640,7 +648,7 @@ export function CustomersCrud({ initialCustomers, tabelasPreco }: CustomersCrudP
                     {(c.status === "ATIVO" || c.status === "BLOQUEADO") && (
                       <button
                         type="button"
-                        className="danger-link"
+                        className="btn-erp danger xs"
                         disabled={actioning === c.id}
                         onClick={() => doAction(c.id, "arquivar")}
                       >
@@ -653,7 +661,10 @@ export function CustomersCrud({ initialCustomers, tabelasPreco }: CustomersCrudP
               {!filtered.length && (
                 <tr>
                   <td colSpan={9}>
-                    <div className="empty-st">Nenhum cliente encontrado para os filtros selecionados.</div>
+                    <div className="empty-st">
+                      <h4>Nenhum cliente encontrado</h4>
+                      <p>Ajuste os filtros ou cadastre um novo cliente.</p>
+                    </div>
                   </td>
                 </tr>
               )}
@@ -662,21 +673,20 @@ export function CustomersCrud({ initialCustomers, tabelasPreco }: CustomersCrudP
           <div className="erp-table-foot">
             <span>{filtered.length} clientes exibidos</span>
           </div>
-        </div>
-      </section>
+      </div>
 
       {/* Drawer */}
       {drawerOpen && (
         <>
           <div className="drawer-bd" onClick={closeDrawer} />
-          <aside className="drawer product-drawer" aria-label="Cadastro de cliente">
-            <header className="drawer-head">
+          <aside className="drawer" aria-label="Cadastro de cliente">
+            <div className="drawer-head">
               <div>
                 <h2>{editing ? "Editar cliente" : "Novo cliente"}</h2>
-                <p>{form.razaoSocial || "Informe os dados do cliente"}</p>
+                <p className="erp-page-sub">{form.razaoSocial || "Informe os dados do cliente"}</p>
               </div>
-              <button type="button" onClick={closeDrawer}>Fechar</button>
-            </header>
+              <button type="button" className="btn-erp ghost sm" onClick={closeDrawer}>Fechar</button>
+            </div>
             <nav className="tabs">
               {(["dados", "contatos", "enderecos", "comercial"] as CustomerTab[]).map((tab) => {
                 const labels: Record<CustomerTab, string> = {
@@ -699,14 +709,14 @@ export function CustomersCrud({ initialCustomers, tabelasPreco }: CustomersCrudP
             </nav>
             <div className="drawer-body">
               {renderTab()}
-              {error && <p className="form-error drawer-error">{error}</p>}
+              {error && <div className="alert danger" style={{ margin: "0 16px 16px" }}><span>{error}</span></div>}
             </div>
-            <footer className="drawer-foot">
-              <Button type="button" variant="light" onClick={closeDrawer}>Cancelar</Button>
-              <Button type="button" disabled={saving} onClick={saveCustomer}>
+            <div className="drawer-foot">
+              <button type="button" className="btn-erp ghost sm" onClick={closeDrawer}>Cancelar</button>
+              <button type="button" className="btn-erp primary sm" disabled={saving} onClick={saveCustomer}>
                 {saving ? "Salvando..." : editing ? "Salvar alterações" : "Cadastrar cliente"}
-              </Button>
-            </footer>
+              </button>
+            </div>
           </aside>
         </>
       )}

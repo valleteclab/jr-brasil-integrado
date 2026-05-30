@@ -1,8 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Button } from "@/components/shared/Button";
-import { StatusBadge } from "@/components/shared/StatusBadge";
 import type { TaxRuleSummary } from "@/lib/services/tax-rules";
 
 type TaxRulesCrudProps = {
@@ -185,16 +183,16 @@ export function TaxRulesCrud({ initialRules }: TaxRulesCrudProps) {
 
   return (
     <>
-      <div className="erp-page-actions product-actions">
-        <div className="product-search">
-          <span aria-hidden="true">⌕</span>
-          <input placeholder="Buscar regra, NCM, CFOP, CST..." value={query} onChange={(event) => setQuery(event.target.value)} />
+      <div className="erp-toolbar">
+        <div className="toolbar-search">
+          <span className="ic-sr" aria-hidden="true">⌕</span>
+          <input className="search" placeholder="Buscar regra, NCM, CFOP, CST..." value={query} onChange={(event) => setQuery(event.target.value)} />
         </div>
-        <div className="toolbar-grow" />
-        <Button type="button" onClick={openNew}>+ Nova regra</Button>
+        <div className="grow" />
+        <button type="button" className="btn-erp primary sm" onClick={openNew}>+ Nova regra</button>
       </div>
 
-      {error && !drawerOpen && <div className="alert danger product-import-alert"><strong>Atenção</strong><span>{error}</span></div>}
+      {error && !drawerOpen && <div className="alert danger" style={{ marginTop: 12 }}><span className="lead">Atenção:</span><span>{error}</span></div>}
 
       <div className="erp-table-wrap">
         <table className="erp-table">
@@ -214,22 +212,30 @@ export function TaxRulesCrud({ initialRules }: TaxRulesCrudProps) {
           <tbody>
             {filteredRules.map((rule) => (
               <tr key={rule.id}>
-                <td><strong>{rule.name}</strong><small className="block-muted">{rule.companyRegime || "Regime não informado"}</small></td>
+                <td>
+                  <div style={{ fontWeight: 600, fontSize: 13 }}>{rule.name}</div>
+                  <span className="sublabel">{rule.companyRegime || "Regime não informado"}</span>
+                </td>
                 <td>{rule.tax}</td>
                 <td>{rule.operation}</td>
-                <td>{rule.ncm || "-"}{rule.cest ? <small className="block-muted">CEST {rule.cest}</small> : null}</td>
+                <td>{rule.ncm || "-"}{rule.cest ? <span className="sublabel">CEST {rule.cest}</span> : null}</td>
                 <td>{rule.cfop || "-"}</td>
                 <td>{rule.cst || rule.csosn || "-"}</td>
                 <td className="num">{rule.rate ? `${rule.rate}%` : "-"}</td>
-                <td><StatusBadge tone={rule.active ? "success" : "mute"}>{rule.active ? "Ativa" : "Inativa"}</StatusBadge></td>
+                <td>
+                  <span className={`pill ${rule.active ? "success" : "mute"}`}>
+                    <span className="dot" />
+                    {rule.active ? "Ativa" : "Inativa"}
+                  </span>
+                </td>
                 <td className="actions">
-                  <Button variant="light" type="button" onClick={() => openEdit(rule)}>Abrir</Button>
-                  {rule.active && <button className="danger-link" type="button" onClick={() => archiveRule(rule)}>Inativar</button>}
+                  <button type="button" className="btn-erp ghost xs" onClick={() => openEdit(rule)}>Abrir</button>
+                  {rule.active && <button type="button" className="btn-erp danger xs" onClick={() => archiveRule(rule)}>Inativar</button>}
                 </td>
               </tr>
             ))}
             {!filteredRules.length && (
-              <tr><td colSpan={9}><div className="empty-st">Nenhuma regra tributária cadastrada.</div></td></tr>
+              <tr><td colSpan={9}><div className="empty-st"><h4>Nenhuma regra tributária</h4><p>Cadastre a primeira regra tributária.</p></div></td></tr>
             )}
           </tbody>
         </table>
@@ -238,21 +244,20 @@ export function TaxRulesCrud({ initialRules }: TaxRulesCrudProps) {
       {drawerOpen && (
         <>
           <div className="drawer-bd" onClick={closeDrawer} />
-          <aside className="drawer product-drawer">
-            <header className="drawer-head">
+          <aside className="drawer">
+            <div className="drawer-head">
               <div>
-                <span className="section-kicker">Fiscal</span>
                 <h2>{form.id ? "Editar regra tributária" : "Nova regra tributária"}</h2>
-                <p>Revise as regras com o responsável fiscal antes de emitir NF-e.</p>
+                <p className="erp-page-sub">Revise as regras com o responsável fiscal antes de emitir NF-e.</p>
               </div>
-              <button type="button" onClick={closeDrawer}>Fechar</button>
-            </header>
-
-            {message && <div className="alert info fiscal-list-alert"><strong>IA</strong><span>{message}</span></div>}
-            {error && <div className="alert danger drawer-error"><strong>Atenção</strong><span>{error}</span></div>}
+              <button type="button" className="btn-erp ghost sm" onClick={closeDrawer}>Fechar</button>
+            </div>
 
             <div className="drawer-body">
-              <div className="erp-form tax-rule-form">
+              {message && <div className="alert info" style={{ margin: "12px 16px 0" }}><span className="lead">IA:</span><span>{message}</span></div>}
+              {error && <div className="alert danger" style={{ margin: "12px 16px 0" }}><span className="lead">Atenção:</span><span>{error}</span></div>}
+
+              <div className="erp-form">
                 <label className="full">Nome da regra<input value={form.name} onChange={(event) => updateField("name", event.target.value)} /></label>
                 <label>Tributo<select value={form.tax} onChange={(event) => updateField("tax", event.target.value as TaxRuleForm["tax"])}>{taxOptions.map((tax) => <option key={tax}>{tax}</option>)}</select></label>
                 <label>Operação<select value={form.operation} onChange={(event) => updateField("operation", event.target.value as TaxRuleForm["operation"])}>{operationOptions.map((operation) => <option key={operation}>{operation}</option>)}</select></label>
@@ -280,11 +285,11 @@ export function TaxRulesCrud({ initialRules }: TaxRulesCrudProps) {
               </div>
             </div>
 
-            <footer className="drawer-foot">
-              <Button variant="light" type="button" onClick={askAi} disabled={askingAi}>{askingAi ? "Consultando IA..." : "Sugerir com IA"}</Button>
-              <Button variant="light" type="button" onClick={closeDrawer}>Cancelar</Button>
-              <Button type="button" onClick={saveRule} disabled={saving}>{saving ? "Salvando..." : "Salvar regra"}</Button>
-            </footer>
+            <div className="drawer-foot">
+              <button type="button" className="btn-erp ghost sm" onClick={askAi} disabled={askingAi}>{askingAi ? "Consultando IA..." : "Sugerir com IA"}</button>
+              <button type="button" className="btn-erp ghost sm" onClick={closeDrawer}>Cancelar</button>
+              <button type="button" className="btn-erp primary sm" onClick={saveRule} disabled={saving}>{saving ? "Salvando..." : "Salvar regra"}</button>
+            </div>
           </aside>
         </>
       )}

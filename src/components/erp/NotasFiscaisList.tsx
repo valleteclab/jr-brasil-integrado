@@ -1,8 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Button } from "@/components/shared/Button";
-import { StatusBadge } from "@/components/shared/StatusBadge";
+import Link from "next/link";
 import type { NotaFiscalSummary } from "@/lib/services/fiscal";
 
 type Props = {
@@ -80,17 +79,17 @@ export function NotasFiscaisList({ notas }: Props) {
     <>
       <div className="erp-toolbar">
         <div className="toolbar-search">
-          <span aria-hidden="true">⌕</span>
+          <span className="ic-sr" aria-hidden="true">⌕</span>
           <input
             className="search"
-            placeholder="Buscar por número, destinatário, chave de acesso..."
+            placeholder="Buscar por número, destinatário, chave de acesso…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
         </div>
-        <div className="toolbar-grow" />
-        <Button href="/erp/vendas" variant="light">Emitir por venda</Button>
-        <Button href="/erp/os" variant="light">Emitir por OS</Button>
+        <div className="grow" />
+        <Link className="btn-erp ghost sm" href="/erp/vendas">Emitir por venda</Link>
+        <Link className="btn-erp ghost sm" href="/erp/os">Emitir por OS</Link>
       </div>
 
       {error && <div className="alert danger"><strong>Atenção</strong><span>{error}</span></div>}
@@ -113,21 +112,26 @@ export function NotasFiscaisList({ notas }: Props) {
               <tr key={nota.id}>
                 <td>
                   <span className="mono bold">{nota.modeloLabel} {nota.numero}</span>
-                  <small className="block-muted">Série {nota.serie} · {nota.emitidaEm}</small>
+                  <span className="sublabel">Série {nota.serie} · {nota.emitidaEm}</span>
                 </td>
                 <td>
                   <strong>{nota.destinatario}</strong>
-                  {nota.destinatarioDocumento && <small className="block-muted">{nota.destinatarioDocumento}</small>}
+                  {nota.destinatarioDocumento && <span className="sublabel">{nota.destinatarioDocumento}</span>}
                 </td>
-                <td><span className="mono">{nota.chaveAcesso || "-"}</span></td>
-                <td><StatusBadge tone={nota.statusTone}>{nota.statusLabel}</StatusBadge></td>
+                <td><span className="mono" style={{ fontSize: 10.5, color: "var(--erp-slate)" }}>{nota.chaveAcesso || "—"}</span></td>
+                <td>
+                  <span className={`pill ${nota.statusTone}`}>
+                    <span className="dot" />
+                    {nota.statusLabel}
+                  </span>
+                </td>
                 <td>{nota.ambiente}</td>
-                <td className="num">{nota.total}</td>
+                <td className="num bold">{nota.total}</td>
                 <td className="actions">
                   {nota.canCorrect && (
-                    <Button variant="light" type="button" disabled={busyId === nota.id} onClick={() => correct(nota)}>
+                    <button className="btn-erp ghost xs" type="button" disabled={busyId === nota.id} onClick={() => correct(nota)}>
                       Carta de correção
-                    </Button>
+                    </button>
                   )}
                   {nota.canCancel && (
                     <button className="danger-link" type="button" disabled={busyId === nota.id} onClick={() => cancel(nota)}>
@@ -140,12 +144,23 @@ export function NotasFiscaisList({ notas }: Props) {
             {!filtered.length && (
               <tr>
                 <td colSpan={7}>
-                  <div className="empty-st">Nenhum documento fiscal emitido ainda. Emita pela tela de Vendas ou Ordens de Serviço.</div>
+                  <div className="empty-st">
+                    <h4>Nenhum documento fiscal</h4>
+                    <p>Nenhum documento fiscal emitido ainda. Emita pela tela de Vendas ou Ordens de Serviço.</p>
+                  </div>
                 </td>
               </tr>
             )}
           </tbody>
         </table>
+        {filtered.length > 0 && (
+          <div className="erp-table-foot">
+            <span>{filtered.length} documento(s) fiscal(is)</span>
+            <div className="pagi">
+              <button type="button" className="active">1</button>
+            </div>
+          </div>
+        )}
       </div>
     </>
   );

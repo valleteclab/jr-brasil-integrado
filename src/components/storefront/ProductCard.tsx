@@ -21,6 +21,7 @@ export function ProductCard({ product }: ProductCardProps) {
       </div>
       <h2>{product.name}</h2>
       <p>{product.category}</p>
+      <span className="eyebrow">A partir de</span>
       <strong>{product.price}</strong>
       <p>Disponível: {product.stockLabel}</p>
       <div className="actions compact">

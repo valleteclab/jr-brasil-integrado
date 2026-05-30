@@ -1,20 +1,38 @@
 "use client";
 
 import { useState } from "react";
-import { KpiCard } from "@/components/shared/KpiCard";
 import type { CashFlowData, CashFlowDay } from "@/lib/services/finance";
 
 type Props = {
   data: CashFlowData;
 };
 
+type KpiTone = "success" | "warn" | "danger" | "info" | "default";
+
+const TONE_COLORS: Record<KpiTone, string | undefined> = {
+  success: "var(--erp-success)",
+  danger: "var(--erp-danger)",
+  warn: "var(--erp-warn)",
+  info: "var(--erp-info)",
+  default: undefined
+};
+
+function Kpi({ label, value, tone = "default" }: { label: string; value: string; tone?: KpiTone }) {
+  return (
+    <div className="kpi">
+      <div className="l">{label}</div>
+      <div className="v" style={{ color: TONE_COLORS[tone] }}>{value}</div>
+    </div>
+  );
+}
+
 function formatBrl(v: number): string {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
 }
 
 function SaldoCell({ value }: { value: number }) {
-  const cls = value > 0 ? "num positive" : value < 0 ? "num negative" : "num";
-  return <td className={cls}>{formatBrl(value)}</td>;
+  const color = value > 0 ? "var(--erp-success)" : value < 0 ? "var(--erp-danger)" : undefined;
+  return <td className="num bold" style={{ color }}>{formatBrl(value)}</td>;
 }
 
 export function CashFlowView({ data }: Props) {
@@ -40,22 +58,22 @@ export function CashFlowView({ data }: Props) {
     <>
       {/* KPIs de período */}
       <div className="kpi-row">
-        <KpiCard
+        <Kpi
           label="Saldo Atual em Contas"
           value={formatBrl(data.saldoAtualContas)}
           tone={data.saldoAtualContas >= 0 ? "info" : "danger"}
         />
-        <KpiCard
+        <Kpi
           label={`Entradas Projetadas (${periodo}d)`}
           value={formatBrl(periodoAtivo.totalEntradas)}
           tone="success"
         />
-        <KpiCard
+        <Kpi
           label={`Saídas Projetadas (${periodo}d)`}
           value={formatBrl(periodoAtivo.totalSaidas)}
           tone="warn"
         />
-        <KpiCard
+        <Kpi
           label={`Saldo Projetado (${periodo}d)`}
           value={formatBrl(periodoAtivo.saldo)}
           tone={periodoAtivo.saldo >= 0 ? "success" : "danger"}
@@ -65,18 +83,18 @@ export function CashFlowView({ data }: Props) {
       {/* Realizado */}
       <div className="erp-card">
         <div className="erp-card-head"><h3>Realizado — últimos 30 dias</h3></div>
-        <div className="kpi-row">
-          <KpiCard
+        <div className="kpi-row" style={{ marginBottom: 0, padding: 16 }}>
+          <Kpi
             label="Créditos Realizados"
             value={formatBrl(data.realizado30.totalCreditos)}
             tone="success"
           />
-          <KpiCard
+          <Kpi
             label="Débitos Realizados"
             value={formatBrl(data.realizado30.totalDebitos)}
             tone="warn"
           />
-          <KpiCard
+          <Kpi
             label="Saldo Realizado"
             value={formatBrl(data.realizado30.saldo)}
             tone={data.realizado30.saldo >= 0 ? "info" : "danger"}
@@ -99,8 +117,8 @@ export function CashFlowView({ data }: Props) {
             </button>
           ))}
         </div>
-        <div className="toolbar-grow" />
-        <span className="muted">
+        <div className="grow" />
+        <span style={{ fontSize: 12, color: "var(--erp-slate)" }}>
           {diasFiltrados.length} dias com movimentação projetada
         </span>
       </div>
@@ -121,8 +139,8 @@ export function CashFlowView({ data }: Props) {
             {diasFiltrados.map((d, i) => (
               <tr key={i}>
                 <td>{d.data}</td>
-                <td className="num positive">{d.entradas > 0 ? formatBrl(d.entradas) : "—"}</td>
-                <td className="num negative">{d.saidas > 0 ? formatBrl(d.saidas) : "—"}</td>
+                <td className="num" style={{ color: d.entradas > 0 ? "var(--erp-success)" : undefined }}>{d.entradas > 0 ? formatBrl(d.entradas) : "—"}</td>
+                <td className="num" style={{ color: d.saidas > 0 ? "var(--erp-danger)" : undefined }}>{d.saidas > 0 ? formatBrl(d.saidas) : "—"}</td>
                 <SaldoCell value={d.saldoDia} />
                 <SaldoCell value={d.saldoAcumulado} />
               </tr>
@@ -131,8 +149,11 @@ export function CashFlowView({ data }: Props) {
               <tr>
                 <td colSpan={5}>
                   <div className="empty-st">
-                    Nenhuma movimentação projetada para os próximos {periodo} dias.
-                    Cadastre contas a pagar e a receber para visualizar o fluxo.
+                    <h4>Sem movimentação projetada</h4>
+                    <p>
+                      Nenhuma movimentação projetada para os próximos {periodo} dias.
+                      Cadastre contas a pagar e a receber para visualizar o fluxo.
+                    </p>
                   </div>
                 </td>
               </tr>
@@ -158,8 +179,8 @@ export function CashFlowView({ data }: Props) {
               {[data.projetado30, data.projetado60, data.projetado90].map((p) => (
                 <tr key={p.label}>
                   <td>{p.label}</td>
-                  <td className="num positive">{formatBrl(p.totalEntradas)}</td>
-                  <td className="num negative">{formatBrl(p.totalSaidas)}</td>
+                  <td className="num" style={{ color: "var(--erp-success)" }}>{formatBrl(p.totalEntradas)}</td>
+                  <td className="num" style={{ color: "var(--erp-danger)" }}>{formatBrl(p.totalSaidas)}</td>
                   <SaldoCell value={p.saldo} />
                 </tr>
               ))}

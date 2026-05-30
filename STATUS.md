@@ -280,3 +280,12 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
   - Trilho: Totais (Barlow), desconto global %, frete, Pagamento (radios), Atribuicao/Validade & condicoes; acoes (finalizar/Imprimir/Salvar rascunho); modal de sucesso.
   - Ligado as APIs reais: vendas, orcamentos e OS (serviços/peças postados apos abrir a OS).
 - Validacao: `tsc` (0), `lint` (apenas aviso de fonte), `build` (ok) e runtime HTTP 200 em `/erp/atendimento` com o sistema visual do design.
+
+## Atualizacao operacional - 2026-05-29 - telas dos modulos fieis ao design
+
+- Reconstrucao da apresentacao das telas dos modulos conforme os JSX de referencia do design (em .design-ref/, gitignored), coordenada por 5 subagentes em paralelo:
+  - Produtos/Estoque (ProductCrud, StockManager, InventoryCount), Compras/Vendas (SalesList, PurchaseList, SuppliersCrud), OS/Financeiro (OrdensServicoList, OrdemServicoDetail, FinanceManager, CashFlowView, NotasFiscaisList), Cadastros (CustomersCrud, TeamManager, TaxRulesCrud) e Loja (page + ProductCard).
+  - Todas usando o vocabulario do design: `erp-toolbar`/`toolbar-search`/`stat-pills`, `erp-table`/`erp-table-wrap`/`erp-table-foot`/`pagi`, `btn-erp` (+link), `pill`+`.dot`, `kpi`/`.l`/`.v`, `tabs`, `drawer`/`drawer-head`/`drawer-body`/`drawer-foot`, `erp-form`, `empty-st` h4/p, `prog`/`fill`.
+- Corrigidos de passagem erros de compilacao pre-existentes (uso de Button/StatusBadge sem import em StockManager, FinanceManager, SuppliersCrud) ao migrar para as classes do design.
+- Adicionados helpers de CSS faltantes (`.grow`, `.btn-erp.link`, `.stat-pill`).
+- Validacao: `tsc` (0), `lint` (0, salvo aviso de fonte), `build` (ok) e runtime HTTP 200 em todas as 16 rotas do ERP e loja, renderizando o sistema visual do design.

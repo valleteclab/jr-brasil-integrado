@@ -1,8 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Button } from "@/components/shared/Button";
-import { StatusBadge } from "@/components/shared/StatusBadge";
 import type { PayableSummary, ReceivableSummary, BankAccountSummary } from "@/lib/services/finance";
 
 type Props = {
@@ -74,23 +72,21 @@ function SettleForm({ tipo, id, descricao, saldoNumber, bankAccounts, onSuccess,
       <div className="drawer-bd" onClick={onClose} />
       <aside className="drawer">
         <header className="drawer-head">
-          <div>
-            <span className="section-kicker">Financeiro</span>
-            <h2>{tipo === "pagar" ? "Baixar Conta a Pagar" : "Baixar Conta a Receber"}</h2>
-            <p>{descricao}</p>
-          </div>
-          <button type="button" onClick={onClose}>Fechar</button>
+          <h2>{tipo === "pagar" ? "Baixar conta a pagar" : "Baixar conta a receber"}</h2>
+          <button type="button" className="btn-erp ghost xs" onClick={onClose}>Fechar</button>
         </header>
 
-        {erro && (
-          <div className="alert danger drawer-error">
-            <strong>Erro</strong>
-            <span>{erro}</span>
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit} style={{ display: "contents" }}>
           <div className="drawer-body">
+            <div style={{ padding: "12px 20px", background: "var(--erp-bg)", borderBottom: "1px solid var(--erp-line)", fontSize: 12, color: "var(--erp-slate)" }}>
+              {descricao}
+            </div>
+            {erro && (
+              <div className="alert danger" style={{ margin: "12px 20px 0" }}>
+                <span className="lead">Erro:</span>
+                <span>{erro}</span>
+              </div>
+            )}
             <div className="erp-form">
               <label>
                 Valor Pago (R$) <span className="required">*</span>
@@ -172,12 +168,12 @@ function SettleForm({ tipo, id, descricao, saldoNumber, bankAccounts, onSuccess,
           </div>
 
           <footer className="drawer-foot">
-            <Button type="button" variant="light" onClick={onClose} disabled={loading}>
+            <button type="button" className="btn-erp ghost sm" onClick={onClose} disabled={loading}>
               Cancelar
-            </Button>
-            <Button type="submit" variant="primary" disabled={loading}>
-              {loading ? "Registrando..." : "Confirmar Baixa"}
-            </Button>
+            </button>
+            <button type="submit" className="btn-erp primary sm" disabled={loading}>
+              {loading ? "Registrando…" : "Confirmar baixa"}
+            </button>
           </footer>
         </form>
       </aside>
@@ -260,23 +256,21 @@ function NewAccountForm({ tipo, onSuccess, onClose }: NewAccountFormProps) {
       <div className="drawer-bd" onClick={onClose} />
       <aside className="drawer">
         <header className="drawer-head">
-          <div>
-            <span className="section-kicker">Financeiro</span>
-            <h2>{tipo === "pagar" ? "Nova Conta a Pagar" : "Nova Conta a Receber"}</h2>
-            <p>Cadastre uma conta {tipo === "pagar" ? "a pagar" : "a receber"}.</p>
-          </div>
-          <button type="button" onClick={onClose}>Fechar</button>
+          <h2>{tipo === "pagar" ? "Nova conta a pagar" : "Nova conta a receber"}</h2>
+          <button type="button" className="btn-erp ghost xs" onClick={onClose}>Fechar</button>
         </header>
 
-        {erro && (
-          <div className="alert danger drawer-error">
-            <strong>Erro</strong>
-            <span>{erro}</span>
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit} style={{ display: "contents" }}>
           <div className="drawer-body">
+            <div style={{ padding: "12px 20px", background: "var(--erp-bg)", borderBottom: "1px solid var(--erp-line)", fontSize: 12, color: "var(--erp-slate)" }}>
+              Cadastre uma conta {tipo === "pagar" ? "a pagar" : "a receber"}.
+            </div>
+            {erro && (
+              <div className="alert danger" style={{ margin: "12px 20px 0" }}>
+                <span className="lead">Erro:</span>
+                <span>{erro}</span>
+              </div>
+            )}
             <div className="erp-form">
               <label className="full">
                 Descrição <span className="required">*</span>
@@ -343,12 +337,12 @@ function NewAccountForm({ tipo, onSuccess, onClose }: NewAccountFormProps) {
           </div>
 
           <footer className="drawer-foot">
-            <Button type="button" variant="light" onClick={onClose} disabled={loading}>
+            <button type="button" className="btn-erp ghost sm" onClick={onClose} disabled={loading}>
               Cancelar
-            </Button>
-            <Button type="submit" variant="primary" disabled={loading}>
-              {loading ? "Salvando..." : "Salvar"}
-            </Button>
+            </button>
+            <button type="submit" className="btn-erp primary sm" disabled={loading}>
+              {loading ? "Salvando…" : "Salvar"}
+            </button>
           </footer>
         </form>
       </aside>
@@ -411,42 +405,42 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
   return (
     <>
       {/* Abas */}
-      <nav className="tabs">
+      <nav className="tabs" style={{ padding: 0, background: "#fff", border: "1px solid var(--erp-line)", borderBottom: 0, borderRadius: "8px 8px 0 0" }}>
         <button
           className={aba === "pagar" ? "active" : ""}
           type="button"
           onClick={() => { setAba("pagar"); setQuery(""); }}
         >
-          A Pagar
+          Contas a pagar <span className="pill mute" style={{ marginLeft: 6, fontSize: 9 }}>{payables.length}</span>
         </button>
         <button
           className={aba === "receber" ? "active" : ""}
           type="button"
           onClick={() => { setAba("receber"); setQuery(""); }}
         >
-          A Receber
+          Contas a receber <span className="pill mute" style={{ marginLeft: 6, fontSize: 9 }}>{receivables.length}</span>
         </button>
       </nav>
 
       {/* Toolbar */}
-      <div className="erp-toolbar">
+      <div className="erp-toolbar" style={{ borderTop: 0, borderRadius: 0 }}>
         <div className="toolbar-search">
-          <span aria-hidden="true">⌕</span>
+          <span className="ic-sr" aria-hidden="true">⌕</span>
           <input
             className="search"
-            placeholder="Buscar por descrição, parte, nº documento..."
+            placeholder="Buscar por descrição, parte, nº documento…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
         </div>
-        <div className="toolbar-grow" />
-        <Button
-          variant="primary"
+        <div className="grow" />
+        <button
           type="button"
+          className="btn-erp primary sm"
           onClick={() => { setGlobalError(""); setShowNewForm(true); }}
         >
           + Nova conta
-        </Button>
+        </button>
       </div>
 
       {globalError && (
@@ -457,7 +451,7 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
       )}
 
       {/* Tabela */}
-      <div className="erp-table-wrap">
+      <div className="erp-table-wrap" style={{ borderRadius: "0 0 8px 8px", borderTop: 0 }}>
         <table className="erp-table">
           <thead>
             <tr>
@@ -478,7 +472,7 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
                 <td>
                   <strong>{r.descricao}</strong>
                   {r.formaPagamento !== "—" && (
-                    <small className="block-muted">{r.formaPagamento}</small>
+                    <span className="sublabel">{r.formaPagamento}</span>
                   )}
                 </td>
                 <td>{r.parte}</td>
@@ -490,18 +484,22 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
                   <strong>{r.saldo}</strong>
                 </td>
                 <td>
-                  <StatusBadge tone={r.statusTone}>{r.statusLabel}</StatusBadge>
+                  <span className={`pill ${r.statusTone}`}>
+                    <span className="dot" />
+                    {r.statusLabel}
+                  </span>
                 </td>
                 <td className="actions">
                   {r.canSettle && (
-                    <Button
-                      variant="light"
+                    <button
                       type="button"
+                      className="btn-erp primary xs"
                       onClick={() => { setGlobalError(""); setSettlingId(r.id); }}
                     >
                       Baixar
-                    </Button>
+                    </button>
                   )}
+                  <button type="button" className="btn-erp ghost xs">Boleto</button>
                 </td>
               </tr>
             ))}
@@ -509,17 +507,28 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
               <tr>
                 <td colSpan={9}>
                   <div className="empty-st">
-                    {query
-                      ? "Nenhum resultado para a busca."
-                      : aba === "pagar"
-                      ? "Nenhuma conta a pagar cadastrada."
-                      : "Nenhuma conta a receber cadastrada."}
+                    <h4>{query ? "Nenhum resultado" : aba === "pagar" ? "Nenhuma conta a pagar" : "Nenhuma conta a receber"}</h4>
+                    <p>
+                      {query
+                        ? "Nenhum resultado para a busca atual."
+                        : aba === "pagar"
+                        ? "Nenhuma conta a pagar cadastrada."
+                        : "Nenhuma conta a receber cadastrada."}
+                    </p>
                   </div>
                 </td>
               </tr>
             )}
           </tbody>
         </table>
+        {filtered.length > 0 && (
+          <div className="erp-table-foot">
+            <span>{filtered.length} conta(s)</span>
+            <div className="pagi">
+              <button type="button" className="active">1</button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Modal de baixa */}
