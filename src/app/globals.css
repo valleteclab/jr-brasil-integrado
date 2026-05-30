@@ -1050,6 +1050,11 @@ p {
   text-transform: uppercase;
 }
 
+.erp-table tbody tr {
+  cursor: pointer;
+  transition: background .1s;
+}
+
 .erp-table tbody tr:hover {
   background: #fafbfc;
 }
