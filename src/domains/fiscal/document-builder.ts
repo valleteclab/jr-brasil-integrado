@@ -1,5 +1,5 @@
 import type { FinalidadeNfe, ModeloFiscal } from "@prisma/client";
-import type { NormalizedFiscalDocument, NormalizedFiscalItem, RetencoesFiscais } from "./types";
+import type { NormalizedFiscalDocument, NormalizedFiscalItem, RetencoesFiscais, TaxationTypeIss } from "./types";
 
 type ProdutoFiscalLike = {
   sku: string;
@@ -136,6 +136,7 @@ export type OrdemServicoFiscalInput = {
   codigoMunicipioIbge?: string | null;
   servicos: Array<{ descricao: string; valor: number; itemListaServico?: string | null; aliquotaIss?: number | null; baseIss?: number | null }>;
   retencoes?: RetencoesFiscais | null;
+  taxationType?: TaxationTypeIss | null;
 };
 
 /** Constrói uma NFS-e a partir dos serviços (mão de obra) de uma OS. */
@@ -174,6 +175,7 @@ export function buildNfseFromOrdemServico(input: OrdemServicoFiscalInput): Norma
       aliquotaIssInformada: servico.aliquotaIss ?? null,
       baseIssInformada: servico.baseIss ?? null
     })),
-    retencoes: input.retencoes ?? null
+    retencoes: input.retencoes ?? null,
+    taxationType: input.taxationType ?? null
   };
 }

@@ -556,7 +556,7 @@ export class SpedyFiscalProvider implements FiscalProvider {
       sendEmailToCustomer: Boolean(input.document.destinatario.email),
       description,
       federalServiceCode,
-      taxationType: "taxationInMunicipality",
+      taxationType: input.document.taxationType ?? "taxationInMunicipality",
       receiver: this.buildReceiver(input),
       total: {
         invoiceAmount: input.total,

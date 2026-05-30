@@ -111,7 +111,8 @@ export function EmissaoAvulsaWorkspace({ data }: { data: EmissaoFormData }) {
   const [baixarEstoque, setBaixarEstoque] = useState(false);
   const [codigoLc116Doc, setCodigoLc116Doc] = useState("");
 
-  // ISS (NFS-e): alíquota informada, deduções e base de cálculo
+  // ISS (NFS-e): natureza/exigibilidade, alíquota informada, deduções e base de cálculo
+  const [taxationType, setTaxationType] = useState("taxationInMunicipality");
   const [aliquotaIss, setAliquotaIss] = useState(0);
   const [deducoes, setDeducoes] = useState(0);
 
@@ -203,7 +204,7 @@ export function EmissaoAvulsaWorkspace({ data }: { data: EmissaoFormData }) {
     setNaturezaOperacao("Venda de mercadoria"); setFinalidade("NORMAL");
     setFormaPagamento(FORMAS_PAGAMENTO[0]); setCondicaoPagamento(""); setBaixarEstoque(false);
     setCodigoLc116Doc(""); setFrete(0); setDescontoGlobal(0); setObs("");
-    setAliquotaIss(0); setDeducoes(0); setBaseRetencao(0);
+    setTaxationType("taxationInMunicipality"); setAliquotaIss(0); setDeducoes(0); setBaseRetencao(0);
     setIssRetido(false); setRetIr(0); setRetPis(0); setRetCofins(0); setRetCsll(0); setRetInss(0);
     setError("");
   }
@@ -316,6 +317,7 @@ export function EmissaoAvulsaWorkspace({ data }: { data: EmissaoFormData }) {
           condicaoPagamento: condicaoPagamento.trim() || undefined,
           formaPagamento: formaPagamento || undefined,
           codigoServicoLc116: codigoLc116Doc.trim() || undefined,
+          taxationType,
           aliquotaIss: aliquotaIss > 0 ? aliquotaIss : undefined,
           deducoes: deducoes > 0 ? deducoes : undefined,
           servicos: servicos.map((sv) => ({
@@ -675,6 +677,19 @@ export function EmissaoAvulsaWorkspace({ data }: { data: EmissaoFormData }) {
               </div>
             ) : (
               <div className="erp-form" style={{ gridTemplateColumns: "1fr" }}>
+                <label>
+                  Natureza / exigibilidade do ISS
+                  <select value={taxationType} onChange={(e) => setTaxationType(e.target.value)}>
+                    <option value="taxationInMunicipality">Tributado no município</option>
+                    <option value="taxationOutsideMunicipality">Tributado fora do município</option>
+                    <option value="exemption">Isento</option>
+                    <option value="immune">Imune</option>
+                    <option value="exportation">Exportação de serviço</option>
+                    <option value="nonIncidence">Não incidência</option>
+                    <option value="suspendedByCourt">Exigibilidade suspensa (judicial)</option>
+                    <option value="suspendedByAdministrativeProcedure">Exigibilidade suspensa (administrativa)</option>
+                  </select>
+                </label>
                 <label>
                   Código LC 116 padrão do documento
                   <select value={codigoLc116Doc} onChange={(e) => setCodigoLc116Doc(e.target.value)}>

@@ -7,7 +7,7 @@ import { exitStock, getDefaultDeposito } from "@/domains/stock/application/stock
 import { buildDocumentFromPedido, buildNfseFromOrdemServico } from "@/domains/fiscal/document-builder";
 import { emitFiscalDocument } from "@/domains/fiscal/application/fiscal-emission-use-cases";
 import { isValidLc116 } from "@/domains/fiscal/lc116";
-import type { RetencaoTributo, RetencoesFiscais } from "@/domains/fiscal/types";
+import type { RetencaoTributo, RetencoesFiscais, TaxationTypeIss } from "@/domains/fiscal/types";
 
 function round2(value: number) {
   return Math.round((value + Number.EPSILON) * 100) / 100;
@@ -141,6 +141,8 @@ export type ServiceInvoiceAvulsaInput = {
   deducoes?: number | null;
   /** Base de cálculo do ISS informada (R$); quando ausente, usa valor dos serviços − deduções. */
   baseCalculoIss?: number | null;
+  /** Natureza/exigibilidade do ISS (padrão: tributado no município). */
+  taxationType?: TaxationTypeIss | null;
   servicos: Array<{ descricao: string; valor: number; codigoServicoLc116?: string | null }>;
   retencoes?: RetencoesInput | null;
 };
@@ -385,7 +387,8 @@ export async function emitServiceInvoiceAvulsa(scope: TenantScope, input: Servic
     condicaoPagamento: input.condicaoPagamento ?? null,
     formaPagamento: input.formaPagamento ?? null,
     servicos,
-    retencoes
+    retencoes,
+    taxationType: input.taxationType ?? null
   });
 
   return emitFiscalDocument(scope, doc, {
