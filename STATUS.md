@@ -351,3 +351,10 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
   - Upload de certificado pela nossa rota retornou ok (idempotente: "ja cadastrado").
 - Empresa de teste reconfigurada como Regime Normal (Lucro Presumido), conforme cadastro real.
 - Validacao: `tsc` (0), `lint` (0), `build` (rota incluida).
+
+## Atualizacao operacional - 2026-05-30 - NF-e AUTORIZADA (correcao de payload Spedy)
+
+- Investigado o swagger oficial da Spedy (api.spedy.com.br/swagger/v1/swagger.json). O HTTP 500 (corpo vazio, nota nao aparecia no painel) era falha de desserializacao por payload de ICMS divergente do schema.
+- Correcao no provider: aliquota de ICMS (`taxes.icms.rate`) passa a ser enviada em FRACAO (ex.: 0.18) como PIS/COFINS; removidos os campos `fcpRate`/`valorFcp` (inexistentes em `SefazInvoiceItemIcmsDto`).
+- Resultado: NF-e emitida pelo fluxo completo retornou AUTORIZADA (numero 1, chave de acesso gerada) na SEFAZ-BA via Spedy (sandbox). NFC-e usa o mesmo builder.
+- Validacao: tsc (0), lint (0), build (ok) e emissao real AUTORIZADA.
