@@ -89,6 +89,7 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
           emitNfse: config.emitNfse,
           codigoMunicipioIbge: config.codigoMunicipioIbge,
           codigoServicoLc116Padrao: config.codigoServicoLc116Padrao,
+          spedyModoEmissao: config.spedyModoEmissao,
           certificadoInfo: config.certificadoInfo,
           active: config.active,
           notes: config.notes
@@ -223,6 +224,27 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
           </label>
         </div>
       </div>
+
+      {isSpedy && (
+        <div className="erp-card">
+          <div className="erp-card-head"><h3>Modo de emissão (Spedy)</h3></div>
+          <div className="erp-card-body">
+            <div className="erp-form">
+              <label className="full">
+                Origem da tributação
+                <select value={config.spedyModoEmissao || "COMPLETO"} onChange={(e) => update("spedyModoEmissao", e.target.value)}>
+                  <option value="COMPLETO">Completo — tributação calculada pelo ERP (ICMS/PIS/COFINS na NF-e; ISS/retenções na NFS-e)</option>
+                  <option value="SIMPLIFICADO">Simplificado — tributação no backoffice da Spedy (envia apenas dados comerciais; usa /orders)</option>
+                </select>
+              </label>
+            </div>
+            <p style={{ fontSize: 12.5, color: "var(--erp-mute)", margin: "8px 0 0" }}>
+              No modo <b>Simplificado</b>, CFOP, NCM e alíquotas são definidos no painel da Spedy — o sistema envia
+              apenas cliente, itens e valores. Use <b>Completo</b> para controlar a tributação por produto/serviço aqui no sistema.
+            </p>
+          </div>
+        </div>
+      )}
 
       {isSpedy && (
         <div className="erp-card">

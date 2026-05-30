@@ -10,6 +10,18 @@ Fonte: https://api.spedy.com.br/llms.txt — referência para implementar o prov
 - Booleano (cancelar/excluir): `{ "success": true }`.
 - Rate limit: 60/min, 5/s por chave; 429 quando excede.
 
+## Modos de emissão (configurável por empresa)
+A Spedy oferece dois modos; escolhemos por empresa em `ConfiguracaoFiscal.spedyModoEmissao`
+(propagado para `ProviderContext.emissionMode`):
+- **COMPLETO** (padrão): montamos a nota inteira com a tributação calculada pelo nosso tax-engine
+  (`POST /v1/product-invoices`, `/consumer-invoices`, `/service-invoices`). Use quando a tributação
+  varia por produto/serviço ou a empresa não usa o backoffice da Spedy.
+- **SIMPLIFICADO**: criamos uma venda (`POST /v1/orders`) só com dados comerciais (cliente, itens,
+  valores, `autoIssueMode: "immediately"`). A Spedy resolve CFOP/NCM/alíquotas/ISS pelo backoffice
+  e emite a nota; a resposta traz `invoices[]` com `id`/`model`, que acompanhamos pelo segmento
+  correspondente. **Não enviamos tributos neste modo** — a doc confirma: "O sistema do cliente não
+  precisa enviar dados tributários na API — apenas os dados comerciais da venda".
+
 ## Modelos → endpoints (modo completo)
 - NF-e (productInvoice): `POST /v1/product-invoices`
 - NFC-e (consumerInvoice): `POST /v1/consumer-invoices`

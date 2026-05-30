@@ -171,6 +171,51 @@ type SpedyServiceInvoice = {
   };
 };
 
+/** Item da venda no modo Simplificado (/orders) — apenas dados comerciais. */
+type SpedyOrderItem = {
+  quantity: number;
+  price: number;
+  amount: number;
+  discountAmount?: number;
+  product: { name: string; code: string; price: number };
+};
+
+/** Cliente da venda (/orders). Endereco usa postalCode (nao zipCode). */
+type SpedyOrderCustomer = {
+  name?: string;
+  federalTaxNumber?: string;
+  email?: string | null;
+  address?: {
+    street?: string;
+    number?: string;
+    district?: string;
+    postalCode?: string;
+    complement?: string;
+    city?: { code?: string; name?: string; state?: string };
+  };
+};
+
+/** Corpo da venda no modo Simplificado (/orders). Sem tributos: a Spedy os calcula no backoffice. */
+type SpedyOrder = {
+  transactionId?: string;
+  date?: string;
+  amount: number;
+  autoIssueMode: "immediately" | "disabled" | "afterPayment" | "afterWarrency";
+  status: "approved" | "awaitingPayment" | "created";
+  paymentMethod: string;
+  sendEmailToCustomer: boolean;
+  customer: SpedyOrderCustomer;
+  items: SpedyOrderItem[];
+};
+
+/** Resposta da criacao de venda (/orders): traz as notas geradas. */
+type SpedyOrderResponse = {
+  id?: string;
+  transactionId?: string;
+  status?: string;
+  invoices?: Array<{ id?: string; status?: string; model?: string }>;
+};
+
 /** Resposta de uma nota (POST inicial e GET de consulta). */
 type SpedyInvoiceResponse = {
   id?: string;
@@ -298,6 +343,23 @@ function modelSegment(modelo: ModeloFiscal): "product-invoices" | "consumer-invo
     default:
       // Exaustividade: novos modelos devem ser tratados explicitamente.
       throw new Error(`Modelo fiscal não suportado pela Spedy: ${String(modelo)}`);
+  }
+}
+
+/** Arredonda para 2 casas (consistencia de valores na venda /orders). */
+function round2(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+/** Mapeia o modelo retornado pela venda (/orders) para o segmento de consulta. */
+function orderModelToSegment(model: string | null | undefined): "product-invoices" | "consumer-invoices" | "service-invoices" {
+  switch ((model ?? "").toLowerCase()) {
+    case "consumerinvoice":
+      return "consumer-invoices";
+    case "serviceinvoice":
+      return "service-invoices";
+    default:
+      return "product-invoices";
   }
 }
 
@@ -630,6 +692,67 @@ export class SpedyFiscalProvider implements FiscalProvider {
     };
   }
 
+  /** Cliente da venda no modo Simplificado (/orders). */
+  private buildOrderCustomer(input: EmitInput): SpedyOrderCustomer {
+    const dest = input.document.destinatario;
+    const endereco = dest.endereco;
+    const customer: SpedyOrderCustomer = {
+      name: dest.nome,
+      federalTaxNumber: onlyDigits(dest.documento) || undefined,
+      email: dest.email
+    };
+    if (endereco) {
+      const city: { code?: string; name?: string; state?: string } = {};
+      if (endereco.codigoMunicipioIbge) city.code = endereco.codigoMunicipioIbge;
+      if (endereco.cidade) city.name = endereco.cidade;
+      const uf = endereco.uf ?? dest.uf ?? undefined;
+      if (uf) city.state = uf;
+      customer.address = {
+        street: endereco.logradouro ?? undefined,
+        number: endereco.numero ?? undefined,
+        complement: endereco.complemento ?? undefined,
+        district: endereco.bairro ?? undefined,
+        postalCode: onlyDigits(endereco.cep) || undefined,
+        city: Object.keys(city).length ? city : undefined
+      };
+    }
+    return customer;
+  }
+
+  /**
+   * Corpo da venda no modo Simplificado (/orders). Envia apenas dados comerciais
+   * (cliente, itens, valores); a tributacao e resolvida pela Spedy no backoffice.
+   * O valor da venda e a soma dos itens (amount = preco x qtde - desconto) para
+   * garantir a consistencia exigida pela API.
+   */
+  private buildOrderBody(input: EmitInput): SpedyOrder {
+    const items: SpedyOrderItem[] = input.document.itens.map((item) => {
+      const desconto = item.desconto ?? 0;
+      const amount = round2(item.quantidade * item.valorUnitario - desconto);
+      const orderItem: SpedyOrderItem = {
+        quantity: item.quantidade,
+        price: item.valorUnitario,
+        amount,
+        product: { name: item.descricao, code: item.codigo, price: item.valorUnitario }
+      };
+      if (desconto > 0) orderItem.discountAmount = round2(desconto);
+      return orderItem;
+    });
+    const amount = round2(items.reduce((sum, it) => sum + it.amount, 0));
+
+    return {
+      transactionId: input.integrationId,
+      date: new Date().toISOString().slice(0, 19),
+      amount,
+      autoIssueMode: "immediately",
+      status: "approved",
+      paymentMethod: this.mapPaymentMethod(input.document.formaPagamento),
+      sendEmailToCustomer: Boolean(input.document.destinatario.email),
+      customer: this.buildOrderCustomer(input),
+      items
+    };
+  }
+
   /** Corpo de NFS-e. */
   private buildServiceBody(input: EmitInput): SpedyServiceInvoice {
     // NFS-e: usa o primeiro item de serviço como referência de ISS/código de serviço.
@@ -732,6 +855,15 @@ export class SpedyFiscalProvider implements FiscalProvider {
   // -------------------------------------------------------------------------
 
   async emit(input: EmitInput, ctx: ProviderContext): Promise<EmitResult> {
+    // Modo Simplificado (/orders): a Spedy resolve a tributação pelo backoffice.
+    if ((ctx.emissionMode ?? "COMPLETO").toUpperCase() === "SIMPLIFICADO") {
+      return this.emitViaOrder(input, ctx);
+    }
+    return this.emitComplete(input, ctx);
+  }
+
+  /** Modo Completo: monta a nota inteira (tributos calculados pelo ERP) e a transmite. */
+  private async emitComplete(input: EmitInput, ctx: ProviderContext): Promise<EmitResult> {
     const modelo = input.document.modelo;
     const segment = modelSegment(modelo);
 
@@ -750,6 +882,33 @@ export class SpedyFiscalProvider implements FiscalProvider {
 
     // Emissão assíncrona: aguarda o estado final por polling não-bloqueante.
     const final = await this.pollUntilFinal(ctx, segment, created.id, created);
+    return this.toEmitResult(ctx, segment, final);
+  }
+
+  /**
+   * Modo Simplificado: cria uma venda (/orders) com emissão imediata. A Spedy gera a nota
+   * com a tributação configurada no backoffice e devolve o id/modelo da nota em `invoices[]`.
+   * Em seguida acompanhamos o status da nota pelo segmento correspondente.
+   */
+  private async emitViaOrder(input: EmitInput, ctx: ProviderContext): Promise<EmitResult> {
+    const body = this.buildOrderBody(input);
+    const res = await this.request<SpedyOrderResponse>(ctx, "POST", "/orders", body);
+    if (!res.ok) {
+      return { status: "ERRO", motivo: res.errorMessage ?? "Falha ao enviar a venda à Spedy (modo simplificado)." };
+    }
+
+    const invoice = res.data?.invoices?.[0];
+    if (!invoice?.id) {
+      // A venda foi criada mas nenhuma nota foi enfileirada (ex.: emissão desabilitada no backoffice).
+      return {
+        status: "PROCESSANDO",
+        providerRef: res.data?.id,
+        motivo: "Venda registrada na Spedy. A nota será emitida conforme a configuração do backoffice (modo simplificado)."
+      };
+    }
+
+    const segment = orderModelToSegment(invoice.model);
+    const final = await this.pollUntilFinal(ctx, segment, invoice.id, { id: invoice.id, status: invoice.status });
     return this.toEmitResult(ctx, segment, final);
   }
 
