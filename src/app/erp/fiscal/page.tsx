@@ -28,7 +28,12 @@ export default async function FiscalPage() {
       <PageHeader
         eyebrow="Financeiro & Fiscal"
         title="Documentos fiscais"
-        action={<Button href="/erp/configuracoes/fiscal" variant="light">Configurar emissão</Button>}
+        action={
+          <>
+            <Button href="/erp/configuracoes/fiscal" variant="light">Configurar emissão</Button>
+            <Button href="/erp/fiscal/emitir">+ Emitir nota</Button>
+          </>
+        }
       >
         <p>NF-e, NFC-e e NFS-e emitidas pela empresa, com cancelamento e carta de correção.</p>
       </PageHeader>

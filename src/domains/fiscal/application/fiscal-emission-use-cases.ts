@@ -126,6 +126,14 @@ export async function emitFiscalDocument(
         valorCofins: totals.valorCofins,
         valorIss: totals.valorIss,
         valorTotalTributos: totals.valorTotalTributos,
+        issRetido: document.retencoes?.issRetido ?? false,
+        valorIrRetido: document.retencoes?.ir?.valor ?? 0,
+        valorPisRetido: document.retencoes?.pis?.valor ?? 0,
+        valorCofinsRetido: document.retencoes?.cofins?.valor ?? 0,
+        valorCsllRetido: document.retencoes?.csll?.valor ?? 0,
+        valorInssRetido: document.retencoes?.inss?.valor ?? 0,
+        valorRetidoTotal: document.retencoes?.totalRetido ?? 0,
+        valorLiquido: document.retencoes?.valorLiquido ?? total,
         total,
         formaPagamento: document.formaPagamento,
         condicaoPagamento: document.condicaoPagamento,
@@ -210,10 +218,12 @@ export async function emitFiscalDocument(
           serie,
           itens: computedItems.map(({ item, cfop }) => ({ ...item, cfop: cfop ?? item.cfop }))
         },
-        emitter: config.emitter,
+        emitter: { ...config.emitter, regime: config.regime },
         numero: Number(created.numero),
         totals,
-        total
+        total,
+        integrationId: (links.pedidoVendaId ?? links.ordemServicoId ?? created.id).slice(0, 36),
+        computed: computedItems.map(({ numeroItem, cfop, taxes }) => ({ numeroItem, cfop, taxes }))
       },
       ctx
     );

@@ -2,6 +2,7 @@ import type { ProvedorFiscal } from "@prisma/client";
 import type { FiscalProvider } from "./types";
 import { ManualFiscalProvider } from "./manual-provider";
 import { HttpFiscalProvider } from "./http-provider";
+import { SpedyFiscalProvider } from "./spedy-provider";
 
 const manual = new ManualFiscalProvider();
 
@@ -15,6 +16,8 @@ export function resolveFiscalProvider(provedor: ProvedorFiscal): FiscalProvider 
     case "MANUAL":
     case "INTERNO":
       return manual;
+    case "SPEDY":
+      return new SpedyFiscalProvider();
     case "FOCUS_NFE":
     case "NFEIO":
     case "PLUGNOTAS":

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { OrdemServicoDetail as OsDetail } from "@/lib/services/service-order";
 import type { OsFormData } from "@/lib/services/service-order";
+import { LC116_LIST } from "@/domains/fiscal/lc116";
 
 type Props = {
   os: OsDetail;
@@ -27,6 +28,7 @@ export function OrdemServicoDetail({ os: initialOs, formData }: Props) {
   const [descricaoServ, setDescricaoServ] = useState("");
   const [horas, setHoras] = useState(1);
   const [valorHora, setValorHora] = useState(0);
+  const [codigoServLc116, setCodigoServLc116] = useState("");
 
   // Peca form
   const [produtoId, setProdutoId] = useState("");
@@ -56,13 +58,14 @@ export function OrdemServicoDetail({ os: initialOs, formData }: Props) {
       const res = await fetch(`/api/erp/os/${os.id}/servico`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ descricao: descricaoServ, horas, valorHora }),
+        body: JSON.stringify({ descricao: descricaoServ, horas, valorHora, codigoServicoLc116: codigoServLc116 || null }),
       });
       const data = (await res.json()) as { error?: string };
       if (!res.ok) throw new Error(data.error ?? "Erro ao adicionar serviço.");
       setDescricaoServ("");
       setHoras(1);
       setValorHora(0);
+      setCodigoServLc116("");
       window.location.reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao adicionar serviço.");
@@ -343,6 +346,15 @@ export function OrdemServicoDetail({ os: initialOs, formData }: Props) {
                   onChange={(e) => setValorHora(Number(e.target.value))}
                   required
                 />
+              </label>
+              <label className="full">
+                Código de serviço (LC 116) — para NFS-e
+                <select value={codigoServLc116} onChange={(e) => setCodigoServLc116(e.target.value)}>
+                  <option value="">Usar padrão da empresa (config. fiscal)</option>
+                  {LC116_LIST.map((item) => (
+                    <option key={item.code} value={item.code}>{item.code} — {item.description}</option>
+                  ))}
+                </select>
               </label>
             </div>
             <div className="erp-toolbar">

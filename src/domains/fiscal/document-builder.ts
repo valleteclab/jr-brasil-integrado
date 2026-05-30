@@ -1,5 +1,5 @@
-import type { ModeloFiscal } from "@prisma/client";
-import type { NormalizedFiscalDocument, NormalizedFiscalItem } from "./types";
+import type { FinalidadeNfe, ModeloFiscal } from "@prisma/client";
+import type { NormalizedFiscalDocument, NormalizedFiscalItem, RetencoesFiscais } from "./types";
 
 type ProdutoFiscalLike = {
   sku: string;
@@ -12,11 +12,23 @@ type ProdutoFiscalLike = {
   fiscal?: { ncm: string | null; cest: string | null; origem: string | null; regraTributariaId: string | null } | null;
 };
 
+type ClienteEnderecoLike = {
+  uf: string;
+  padrao: boolean;
+  logradouro?: string | null;
+  numero?: string | null;
+  complemento?: string | null;
+  bairro?: string | null;
+  cep?: string | null;
+  cidade?: string | null;
+  codigoMunicipioIbge?: string | null;
+};
+
 type ClienteLike = {
   razaoSocial: string;
   documento: string | null;
   inscricaoEstadual: string | null;
-  enderecos?: Array<{ uf: string; padrao: boolean }>;
+  enderecos?: ClienteEnderecoLike[];
   contatos?: Array<{ email: string | null; principal: boolean }>;
 };
 
@@ -28,7 +40,19 @@ function destinatarioFromCliente(cliente: ClienteLike) {
     documento: cliente.documento ?? null,
     inscricaoEstadual: cliente.inscricaoEstadual ?? null,
     email: contato?.email ?? null,
-    uf: endereco?.uf ?? null
+    uf: endereco?.uf ?? null,
+    endereco: endereco
+      ? {
+          logradouro: endereco.logradouro ?? null,
+          numero: endereco.numero ?? null,
+          complemento: endereco.complemento ?? null,
+          bairro: endereco.bairro ?? null,
+          cep: endereco.cep ?? null,
+          cidade: endereco.cidade ?? null,
+          uf: endereco.uf ?? null,
+          codigoMunicipioIbge: endereco.codigoMunicipioIbge ?? null
+        }
+      : null
   };
 }
 
@@ -68,6 +92,9 @@ export type PedidoFiscalInput = {
   frete?: number;
   desconto?: number;
   modelo?: ModeloFiscal;
+  finalidade?: FinalidadeNfe;
+  valorSeguro?: number;
+  outrasDespesas?: number;
   itens: Array<{
     produto: ProdutoFiscalLike & { id: string };
     quantidade: number;
@@ -81,7 +108,7 @@ export function buildDocumentFromPedido(input: PedidoFiscalInput): NormalizedFis
   const modelo = input.modelo ?? "NFE";
   return {
     modelo,
-    finalidade: "NORMAL",
+    finalidade: input.finalidade ?? "NORMAL",
     naturezaOperacao: input.naturezaOperacao ?? "Venda de mercadoria",
     ambiente: "HOMOLOGACAO",
     provedor: "MANUAL",
@@ -91,9 +118,9 @@ export function buildDocumentFromPedido(input: PedidoFiscalInput): NormalizedFis
     condicaoPagamento: input.condicaoPagamento ?? null,
     informacoesComplementares: input.observacoes ?? null,
     valorFrete: input.frete ?? 0,
-    valorSeguro: 0,
+    valorSeguro: input.valorSeguro ?? 0,
     valorDesconto: input.desconto ?? 0,
-    outrasDespesas: 0,
+    outrasDespesas: input.outrasDespesas ?? 0,
     itens: input.itens.map((linha) => ({
       ...itemFromProduto(linha.produto, linha.quantidade, linha.precoUnitario, linha.desconto ?? 0),
       produtoId: linha.produto.id
@@ -108,6 +135,7 @@ export type OrdemServicoFiscalInput = {
   condicaoPagamento?: string | null;
   codigoMunicipioIbge?: string | null;
   servicos: Array<{ descricao: string; valor: number; itemListaServico?: string | null }>;
+  retencoes?: RetencoesFiscais | null;
 };
 
 /** Constrói uma NFS-e a partir dos serviços (mão de obra) de uma OS. */
@@ -143,6 +171,7 @@ export function buildNfseFromOrdemServico(input: OrdemServicoFiscalInput): Norma
       regraTributariaId: null,
       servico: true,
       itemListaServico: servico.itemListaServico ?? null
-    }))
+    })),
+    retencoes: input.retencoes ?? null
   };
 }

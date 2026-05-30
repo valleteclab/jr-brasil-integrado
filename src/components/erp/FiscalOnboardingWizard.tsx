@@ -12,6 +12,7 @@ const PROVIDERS = [
   { value: "NFEIO", label: "NFe.io" },
   { value: "PLUGNOTAS", label: "PlugNotas" },
   { value: "WEBMANIA", label: "WebmaniaBR" },
+  { value: "SPEDY", label: "Spedy (NF-e/NFC-e/NFS-e)" },
   { value: "MANUAL", label: "Manual (registro sem transmissão)" }
 ];
 
@@ -70,7 +71,8 @@ export function FiscalOnboardingWizard({ initialData }: { initialData: FiscalOnb
       if (!form.enderecoUf.trim()) return "Selecione a UF.";
     }
     if (step === 2 && externalProvider) {
-      if (!form.baseUrl.trim()) return "Provedor externo exige a URL base.";
+      // SPEDY deriva a base do ambiente; exige apenas o token (X-Api-Key).
+      if (form.provider !== "SPEDY" && !form.baseUrl.trim()) return "Provedor externo exige a URL base.";
       if (!initialData.config.hasToken && !token.trim()) return "Provedor externo exige o token de integração.";
     }
     return "";

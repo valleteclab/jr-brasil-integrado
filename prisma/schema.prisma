@@ -99,6 +99,7 @@ enum ProvedorFiscal {
   NFEIO
   PLUGNOTAS
   WEBMANIA
+  SPEDY
   MANUAL
 }
 
@@ -920,15 +921,16 @@ model OrdemServico {
 }
 
 model OrdemServicoMaoObra {
-  id             String       @id @default(cuid())
-  tenantId       String
-  empresaId      String
-  ordemServicoId String
-  ordemServico   OrdemServico @relation(fields: [ordemServicoId], references: [id])
-  descricao      String
-  horas          Decimal      @db.Decimal(8, 2)
-  valorHora      Decimal      @db.Decimal(14, 2)
-  total          Decimal      @db.Decimal(14, 2)
+  id                 String       @id @default(cuid())
+  tenantId           String
+  empresaId          String
+  ordemServicoId     String
+  ordemServico       OrdemServico @relation(fields: [ordemServicoId], references: [id])
+  descricao          String
+  horas              Decimal      @db.Decimal(8, 2)
+  valorHora          Decimal      @db.Decimal(14, 2)
+  total              Decimal      @db.Decimal(14, 2)
+  codigoServicoLc116 String?
 
   @@index([tenantId, empresaId])
 }
@@ -1306,6 +1308,14 @@ model NotaFiscal {
   valorCofins    Decimal          @default(0) @db.Decimal(14, 2)
   valorIss       Decimal          @default(0) @db.Decimal(14, 2)
   valorTotalTributos Decimal      @default(0) @db.Decimal(14, 2)
+  issRetido      Boolean          @default(false)
+  valorIrRetido     Decimal       @default(0) @db.Decimal(14, 2)
+  valorPisRetido    Decimal       @default(0) @db.Decimal(14, 2)
+  valorCofinsRetido Decimal       @default(0) @db.Decimal(14, 2)
+  valorCsllRetido   Decimal       @default(0) @db.Decimal(14, 2)
+  valorInssRetido   Decimal       @default(0) @db.Decimal(14, 2)
+  valorRetidoTotal  Decimal       @default(0) @db.Decimal(14, 2)
+  valorLiquido      Decimal       @default(0) @db.Decimal(14, 2)
   total          Decimal          @default(0) @db.Decimal(14, 2)
   formaPagamento String?
   condicaoPagamento String?
@@ -1423,6 +1433,7 @@ model ConfiguracaoFiscal {
   emitirNfce         Boolean         @default(false)
   emitirNfse         Boolean         @default(false)
   codigoMunicipioIbge String?
+  codigoServicoLc116Padrao String?
   regimeEspecialTributacao String?
   incentivadorCultural Boolean       @default(false)
   certificadoInfo    String?

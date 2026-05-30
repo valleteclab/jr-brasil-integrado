@@ -66,6 +66,17 @@ export type NormalizedFiscalDocument = {
     inscricaoEstadual: string | null;
     email: string | null;
     uf: string | null;
+    /** Endereço do destinatário (necessário para provedores externos como Spedy). */
+    endereco: {
+      logradouro: string | null;
+      numero: string | null;
+      complemento: string | null;
+      bairro: string | null;
+      cep: string | null;
+      cidade: string | null;
+      uf: string | null;
+      codigoMunicipioIbge: string | null;
+    } | null;
   };
   formaPagamento: string | null;
   condicaoPagamento: string | null;
@@ -75,4 +86,30 @@ export type NormalizedFiscalDocument = {
   valorDesconto: number;
   outrasDespesas: number;
   itens: NormalizedFiscalItem[];
+  /** Retenções na fonte (principalmente NFS-e): ISS retido + retenções federais. */
+  retencoes?: RetencoesFiscais | null;
+};
+
+/** Retenção de um tributo na fonte. Alíquota em percentual; valor em reais. */
+export type RetencaoTributo = {
+  aliquota: number;
+  valor: number;
+};
+
+/**
+ * Retenções na fonte de uma NFS-e. `issRetido` indica que o ISS é retido pelo tomador.
+ * As retenções federais (IRRF, PIS, COFINS, CSLL, INSS) só são preenchidas quando há
+ * retenção — tipicamente quando o tomador é pessoa jurídica obrigada a reter.
+ */
+export type RetencoesFiscais = {
+  issRetido: boolean;
+  ir?: RetencaoTributo | null;
+  pis?: RetencaoTributo | null;
+  cofins?: RetencaoTributo | null;
+  csll?: RetencaoTributo | null;
+  inss?: RetencaoTributo | null;
+  /** Total retido (IRRF+PIS+COFINS+CSLL+INSS [+ISS quando retido]). */
+  totalRetido: number;
+  /** Valor líquido a receber (valor da NF − retenções). */
+  valorLiquido: number;
 };

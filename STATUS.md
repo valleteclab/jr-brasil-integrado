@@ -289,3 +289,39 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Corrigidos de passagem erros de compilacao pre-existentes (uso de Button/StatusBadge sem import em StockManager, FinanceManager, SuppliersCrud) ao migrar para as classes do design.
 - Adicionados helpers de CSS faltantes (`.grow`, `.btn-erp.link`, `.stat-pill`).
 - Validacao: `tsc` (0), `lint` (0, salvo aviso de fonte), `build` (ok) e runtime HTTP 200 em todas as 16 rotas do ERP e loja, renderizando o sistema visual do design.
+
+## Atualizacao operacional - 2026-05-30 - integracao fiscal Spedy
+
+- Adicionado o provedor fiscal SPEDY (https://api.spedy.com.br) como integracao real e completa, plugavel na camada de provedor abstrata existente.
+- Enum `ProvedorFiscal` += `SPEDY` (migration `add_spedy_provider`).
+- Contrato do provedor enriquecido para modo completo: `EmitInput` ganhou `integrationId` e `computed` (tributos por item); `ProviderEmitter` ganhou `regime`; `NormalizedFiscalDocument.destinatario` ganhou `endereco` (logradouro/numero/bairro/cep/cidade/UF/IBGE) preenchido a partir do endereco padrao do cliente. Emissao passa esses dados ao provedor.
+- `src/domains/fiscal/providers/spedy-provider.ts`: cliente HTTP (X-Api-Key, base por ambiente producao/sandbox), emit NF-e/NFC-e/NFS-e no modo completo (icms.rate em %, pis/cofins/iss em fracao; Simples via CSOSN, Normal via CST + baseTaxModality 3; ICMS-ST; cidade por IBGE ou nome+UF; destination interna/interestadual; integrationId), polling assincrono ate status final, cancel, carta de correcao (so NF-e) e queryStatus. Mapeamento de status Spedy->StatusNotaFiscal. Registrado em `resolveFiscalProvider`.
+- Recepcao e operacao: webhook `POST /api/webhooks/spedy` (localiza nota por providerRef, atualiza status/chave/numero/protocolo/datas, idempotente, sempre 200), sincronizacao manual `POST /api/erp/fiscal/[id]/sincronizar` (fallback de polling via queryStatus), e UI: SPEDY nas listas de provedor (config fiscal + onboarding) com orientacao de X-Api-Key/base automatica/webhook; `saveFiscalConfig` isenta SPEDY da exigencia de baseUrl (exige so o token).
+- Documentacao de referencia em `docs/integrations/spedy-api.md`.
+- Validacao: `tsc` (0), `lint` (0), `build` (rotas /api/webhooks/spedy e sincronizar incluidas) e smoke do provider com fetch stubado cobrindo NF-e (Lucro Presumido) AUTORIZADA, rejeitada, NFC-e Simples (CSOSN), NFS-e (issRate) e cancelamento — payloads e unidades de aliquota conferidos.
+
+## Atualizacao operacional - 2026-05-30 - codigo de servico LC 116 na NFS-e
+
+- Embutida a lista completa da LC 116/2003 (`src/domains/fiscal/lc116.ts`, ~199 itens, codigo+descricao) com validadores `isValidLc116`/`lc116Description`.
+- Schema: `OrdemServicoMaoObra.codigoServicoLc116` (por servico) e `ConfiguracaoFiscal.codigoServicoLc116Padrao` (padrao da empresa). Migration `add_lc116_service_code`.
+- Fluxo (a)+(b): cada servico da OS pode ter seu codigo LC 116; no faturamento da OS, a NFS-e usa `codigo do servico ?? padrao da empresa` como `federalServiceCode` (enviado ao provedor, ex.: Spedy).
+- `addServico` aceita/valida/salva o codigo; `saveFiscalConfig`/`FiscalConfigSummary` ganharam `codigoServicoLc116Padrao`.
+- UI: select de codigo LC 116 no lancamento de servico da OS (com opcao "usar padrao da empresa") e select de codigo padrao na configuracao fiscal.
+- Validacao: `tsc` (0), `lint` (0), `build` (ok) e smoke OS->NFS-e: servico com `14.02` saiu como 14.02 e servico sem codigo herdou o padrao `14.01`; NFS-e AUTORIZADA.
+
+## Atualizacao operacional - 2026-05-30 - emissao avulsa de notas (sem venda/OS)
+
+- Para empresas que usam o sistema apenas para emitir notas: emissao avulsa de NF-e, NFC-e e NFS-e sem exigir pedido de venda ou ordem de servico.
+- `standalone-emission-use-cases.ts`: `emitProductInvoiceAvulsa` (NF-e/NFC-e — destinatario cadastrado ou avulso; itens de catalogo ou avulsos com NCM/CFOP/origem; finalidade normal/complementar/ajuste/devolucao; baixa de estoque opcional para itens de catalogo) e `emitServiceInvoiceAvulsa` (NFS-e — LC 116 por servico com fallback no padrao da empresa). Reusa o motor `emitFiscalDocument` (tributos automaticos por NCM/regra).
+- `document-builder` estendido com `finalidade`/`seguro`/`outrasDespesas`. Itens avulsos persistem `produtoId` nulo (corrigida violacao de FK).
+- Rotas `POST /api/erp/fiscal/emitir/produto` e `/servico`; service `getEmissaoFormData` (clientes com endereco, produtos com ficha fiscal, lista LC 116).
+- UI: `/erp/fiscal/emitir` (`EmissaoAvulsaWorkspace`) com cards de tipo (NF-e/NFC-e/NFS-e), destinatario cadastrado/avulso, construtor de itens (catalogo + avulso) e servicos (LC 116), opcoes fiscais, baixa de estoque, trilho de totais e modal de resultado; CTA "Emitir nota" em `/erp/fiscal`.
+- Validacao: `tsc` (0), `lint` (0), `build` (rotas incluidas) e smoke contra PostgreSQL: NF-e (cliente+catalogo), NF-e (destinatario+item avulsos) e NFS-e (LC 116 17.01) todas AUTORIZADAS.
+
+## Atualizacao operacional - 2026-05-30 - retencoes na NFS-e
+
+- NFS-e passa a suportar retencoes na fonte: ISS retido pelo tomador + retencoes federais (IRRF, PIS, COFINS, CSLL, INSS) por aliquota.
+- Contrato: `NormalizedFiscalDocument.retencoes` (tipos `RetencoesFiscais`/`RetencaoTributo`); builder `buildNfseFromOrdemServico` aceita `retencoes`; provider Spedy mapeia para `total` (issWithheld + *Rate/*Amount/*Withheld por tributo, aliquotas em fracao, netAmount).
+- Schema `NotaFiscal` += `issRetido`, `valorIrRetido`, `valorPisRetido`, `valorCofinsRetido`, `valorCsllRetido`, `valorInssRetido`, `valorRetidoTotal`, `valorLiquido` (migration `add_nfse_retentions`); emissao persiste esses valores.
+- Emissao avulsa de NFS-e (`emitServiceInvoiceAvulsa`) calcula as retencoes a partir da base e das aliquotas; UI `/erp/fiscal/emitir` ganhou card "Retencoes na fonte" (ISS retido + IRRF/INSS/PIS/COFINS/CSLL %) com total retido e liquido a receber.
+- Validacao: `tsc` (0), `lint` (0), `build` (ok) e smoke: NFS-e R$10.000 com ISS retido + IRRF 1,5% + PIS 0,65% + COFINS 3% + CSLL 1% -> retido R$615, liquido R$9.385, AUTORIZADA.
