@@ -308,3 +308,12 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - `addServico` aceita/valida/salva o codigo; `saveFiscalConfig`/`FiscalConfigSummary` ganharam `codigoServicoLc116Padrao`.
 - UI: select de codigo LC 116 no lancamento de servico da OS (com opcao "usar padrao da empresa") e select de codigo padrao na configuracao fiscal.
 - Validacao: `tsc` (0), `lint` (0), `build` (ok) e smoke OS->NFS-e: servico com `14.02` saiu como 14.02 e servico sem codigo herdou o padrao `14.01`; NFS-e AUTORIZADA.
+
+## Atualizacao operacional - 2026-05-30 - emissao avulsa de notas (sem venda/OS)
+
+- Para empresas que usam o sistema apenas para emitir notas: emissao avulsa de NF-e, NFC-e e NFS-e sem exigir pedido de venda ou ordem de servico.
+- `standalone-emission-use-cases.ts`: `emitProductInvoiceAvulsa` (NF-e/NFC-e — destinatario cadastrado ou avulso; itens de catalogo ou avulsos com NCM/CFOP/origem; finalidade normal/complementar/ajuste/devolucao; baixa de estoque opcional para itens de catalogo) e `emitServiceInvoiceAvulsa` (NFS-e — LC 116 por servico com fallback no padrao da empresa). Reusa o motor `emitFiscalDocument` (tributos automaticos por NCM/regra).
+- `document-builder` estendido com `finalidade`/`seguro`/`outrasDespesas`. Itens avulsos persistem `produtoId` nulo (corrigida violacao de FK).
+- Rotas `POST /api/erp/fiscal/emitir/produto` e `/servico`; service `getEmissaoFormData` (clientes com endereco, produtos com ficha fiscal, lista LC 116).
+- UI: `/erp/fiscal/emitir` (`EmissaoAvulsaWorkspace`) com cards de tipo (NF-e/NFC-e/NFS-e), destinatario cadastrado/avulso, construtor de itens (catalogo + avulso) e servicos (LC 116), opcoes fiscais, baixa de estoque, trilho de totais e modal de resultado; CTA "Emitir nota" em `/erp/fiscal`.
+- Validacao: `tsc` (0), `lint` (0), `build` (rotas incluidas) e smoke contra PostgreSQL: NF-e (cliente+catalogo), NF-e (destinatario+item avulsos) e NFS-e (LC 116 17.01) todas AUTORIZADAS.

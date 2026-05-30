@@ -1,4 +1,4 @@
-import type { ModeloFiscal } from "@prisma/client";
+import type { FinalidadeNfe, ModeloFiscal } from "@prisma/client";
 import type { NormalizedFiscalDocument, NormalizedFiscalItem } from "./types";
 
 type ProdutoFiscalLike = {
@@ -92,6 +92,9 @@ export type PedidoFiscalInput = {
   frete?: number;
   desconto?: number;
   modelo?: ModeloFiscal;
+  finalidade?: FinalidadeNfe;
+  valorSeguro?: number;
+  outrasDespesas?: number;
   itens: Array<{
     produto: ProdutoFiscalLike & { id: string };
     quantidade: number;
@@ -105,7 +108,7 @@ export function buildDocumentFromPedido(input: PedidoFiscalInput): NormalizedFis
   const modelo = input.modelo ?? "NFE";
   return {
     modelo,
-    finalidade: "NORMAL",
+    finalidade: input.finalidade ?? "NORMAL",
     naturezaOperacao: input.naturezaOperacao ?? "Venda de mercadoria",
     ambiente: "HOMOLOGACAO",
     provedor: "MANUAL",
@@ -115,9 +118,9 @@ export function buildDocumentFromPedido(input: PedidoFiscalInput): NormalizedFis
     condicaoPagamento: input.condicaoPagamento ?? null,
     informacoesComplementares: input.observacoes ?? null,
     valorFrete: input.frete ?? 0,
-    valorSeguro: 0,
+    valorSeguro: input.valorSeguro ?? 0,
     valorDesconto: input.desconto ?? 0,
-    outrasDespesas: 0,
+    outrasDespesas: input.outrasDespesas ?? 0,
     itens: input.itens.map((linha) => ({
       ...itemFromProduto(linha.produto, linha.quantidade, linha.precoUnitario, linha.desconto ?? 0),
       produtoId: linha.produto.id
