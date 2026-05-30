@@ -7,7 +7,10 @@ import { exitStock, getDefaultDeposito } from "@/domains/stock/application/stock
 import { buildNfseFromOrdemServico } from "@/domains/fiscal/document-builder";
 import { emitFiscalDocument } from "@/domains/fiscal/application/fiscal-emission-use-cases";
 import { isValidLc116 } from "@/domains/fiscal/lc116";
+import { computeRetencoes, issPorServico } from "@/domains/fiscal/nfse-tax";
+import type { RetencoesInput } from "@/domains/fiscal/nfse-tax";
 import type { StatusOrdemServico } from "@prisma/client";
+import type { TaxationTypeIss } from "@/domains/fiscal/types";
 
 const TX_OPTIONS = { maxWait: 10000, timeout: 30000 };
 
@@ -292,6 +295,16 @@ export type FaturarOsInput = {
   emitirNfse?: boolean;
   condicaoPagamento?: string;
   formaPagamento?: string;
+  /** NFS-e: natureza/exigibilidade do ISS (padrão: tributado no município). */
+  taxationType?: TaxationTypeIss | null;
+  /** NFS-e: alíquota de ISS informada (%) — sobrepõe a regra tributária. */
+  aliquotaIss?: number | null;
+  /** NFS-e: deduções da base de cálculo do ISS (R$). */
+  deducoes?: number | null;
+  /** NFS-e: base de cálculo do ISS informada (R$). */
+  baseCalculoIss?: number | null;
+  /** NFS-e: retenções na fonte (ISS retido + federais). */
+  retencoes?: RetencoesInput | null;
 };
 
 export async function faturarOrdemServico(scope: TenantScope, id: string, input: FaturarOsInput = {}) {
@@ -397,15 +410,29 @@ export async function faturarOrdemServico(scope: TenantScope, id: string, input:
       });
       const lc116Padrao = configFiscal?.codigoServicoLc116Padrao ?? null;
 
+      const valorServicos = os.servicos.reduce((sum, s) => sum + Number(s.total), 0);
+      const issInput = {
+        aliquotaIss: input.aliquotaIss ?? null,
+        deducoes: input.deducoes ?? null,
+        baseCalculoIss: input.baseCalculoIss ?? null,
+      };
+
       const docNfse = buildNfseFromOrdemServico({
         cliente: os.cliente,
         condicaoPagamento: condicaoPagamento ?? null,
         formaPagamento: formaPagamento ?? null,
-        servicos: os.servicos.map((s) => ({
-          descricao: s.descricao,
-          valor: Number(s.total),
-          itemListaServico: s.codigoServicoLc116 ?? lc116Padrao,
-        })),
+        taxationType: input.taxationType ?? null,
+        retencoes: computeRetencoes(valorServicos, input.retencoes),
+        servicos: os.servicos.map((s) => {
+          const iss = issPorServico(valorServicos, Number(s.total), issInput);
+          return {
+            descricao: s.descricao,
+            valor: Number(s.total),
+            itemListaServico: s.codigoServicoLc116 ?? lc116Padrao,
+            aliquotaIss: iss.aliquotaIss,
+            baseIss: iss.baseIss,
+          };
+        }),
       });
 
       const nota = await emitFiscalDocument(scope, docNfse, {

@@ -7,42 +7,12 @@ import { exitStock, getDefaultDeposito } from "@/domains/stock/application/stock
 import { buildDocumentFromPedido, buildNfseFromOrdemServico } from "@/domains/fiscal/document-builder";
 import { emitFiscalDocument } from "@/domains/fiscal/application/fiscal-emission-use-cases";
 import { isValidLc116 } from "@/domains/fiscal/lc116";
-import type { RetencaoTributo, RetencoesFiscais } from "@/domains/fiscal/types";
+import type { TaxationTypeIss } from "@/domains/fiscal/types";
+import { computeRetencoes, issPorServico } from "@/domains/fiscal/nfse-tax";
+import type { RetencoesInput } from "@/domains/fiscal/nfse-tax";
 
 function round2(value: number) {
   return Math.round((value + Number.EPSILON) * 100) / 100;
-}
-
-/** Calcula as retenções a partir da base (valor dos serviços) e das alíquotas informadas. */
-function computeRetencoes(base: number, input?: RetencoesInput | null): RetencoesFiscais | null {
-  if (!input) return null;
-  const calc = (r?: { aliquota?: number | null } | null): RetencaoTributo | null => {
-    const aliquota = Number(r?.aliquota ?? 0);
-    if (!aliquota || aliquota <= 0) return null;
-    return { aliquota, valor: round2(base * (aliquota / 100)) };
-  };
-  const ir = calc(input.ir);
-  const pis = calc(input.pis);
-  const cofins = calc(input.cofins);
-  const csll = calc(input.csll);
-  const inss = calc(input.inss);
-  const issRetido = Boolean(input.issRetido);
-
-  if (!ir && !pis && !cofins && !csll && !inss && !issRetido) return null;
-
-  const totalFederal = round2(
-    (ir?.valor ?? 0) + (pis?.valor ?? 0) + (cofins?.valor ?? 0) + (csll?.valor ?? 0) + (inss?.valor ?? 0)
-  );
-  return {
-    issRetido,
-    ir,
-    pis,
-    cofins,
-    csll,
-    inss,
-    totalRetido: totalFederal,
-    valorLiquido: round2(base - totalFederal)
-  };
 }
 
 /**
@@ -110,17 +80,6 @@ export type ProductInvoiceAvulsaInput = {
   sendEmailToCustomer?: boolean;
 };
 
-/** Alíquota (%) de uma retenção federal informada na emissão. */
-export type RetencaoFederalInput = { aliquota?: number | null };
-
-export type RetencoesInput = {
-  issRetido?: boolean;
-  ir?: RetencaoFederalInput | null;
-  pis?: RetencaoFederalInput | null;
-  cofins?: RetencaoFederalInput | null;
-  csll?: RetencaoFederalInput | null;
-  inss?: RetencaoFederalInput | null;
-};
 
 export type ServiceInvoiceAvulsaInput = {
   receiver: ReceiverInput;
@@ -129,6 +88,14 @@ export type ServiceInvoiceAvulsaInput = {
   formaPagamento?: string | null;
   /** Código LC 116 padrão do documento (usado quando o serviço não traz o próprio). */
   codigoServicoLc116?: string | null;
+  /** Alíquota de ISS informada (%) — sobrepõe a regra tributária. */
+  aliquotaIss?: number | null;
+  /** Deduções da base de cálculo do ISS (R$). */
+  deducoes?: number | null;
+  /** Base de cálculo do ISS informada (R$); quando ausente, usa valor dos serviços − deduções. */
+  baseCalculoIss?: number | null;
+  /** Natureza/exigibilidade do ISS (padrão: tributado no município). */
+  taxationType?: TaxationTypeIss | null;
   servicos: Array<{ descricao: string; valor: number; codigoServicoLc116?: string | null }>;
   retencoes?: RetencoesInput | null;
 };
@@ -337,6 +304,18 @@ export async function emitServiceInvoiceAvulsa(scope: TenantScope, input: Servic
   });
   const fallback = docDefault ?? config?.codigoServicoLc116Padrao ?? null;
 
+  const valorServicos = round2(input.servicos.reduce((sum, s) => sum + (Number(s.valor) || 0), 0));
+
+  // Base de cálculo do ISS: informada, ou valor dos serviços − deduções.
+  const aliquotaIss = input.aliquotaIss != null && input.aliquotaIss > 0 ? input.aliquotaIss : null;
+  const deducoes = input.deducoes != null && input.deducoes > 0 ? round2(input.deducoes) : 0;
+  const baseIssTotal =
+    input.baseCalculoIss != null && input.baseCalculoIss > 0
+      ? round2(input.baseCalculoIss)
+      : round2(Math.max(valorServicos - deducoes, 0));
+  // Base de ISS é distribuída entre os serviços proporcionalmente ao valor de cada um.
+  const distribuirBaseIss = aliquotaIss != null && (deducoes > 0 || input.baseCalculoIss != null) && valorServicos > 0;
+
   const servicos = input.servicos.map((s, index) => {
     if (!s.descricao?.trim()) throw new StandaloneEmissionError(`Informe a descrição do serviço ${index + 1}.`);
     if (s.valor <= 0) throw new StandaloneEmissionError(`Valor inválido no serviço ${index + 1}.`);
@@ -344,11 +323,16 @@ export async function emitServiceInvoiceAvulsa(scope: TenantScope, input: Servic
     if (codigo && !isValidLc116(codigo)) {
       throw new StandaloneEmissionError(`Código LC 116 inválido no serviço ${index + 1}.`);
     }
-    return { descricao: s.descricao.trim(), valor: s.valor, itemListaServico: codigo };
+    return {
+      descricao: s.descricao.trim(),
+      valor: s.valor,
+      itemListaServico: codigo,
+      aliquotaIss,
+      baseIss: distribuirBaseIss ? round2(baseIssTotal * (s.valor / valorServicos)) : null
+    };
   });
 
-  const base = round2(servicos.reduce((sum, s) => sum + s.valor, 0));
-  const retencoes = computeRetencoes(base, input.retencoes);
+  const retencoes = computeRetencoes(valorServicos, input.retencoes);
 
   const doc = buildNfseFromOrdemServico({
     cliente,
@@ -356,7 +340,8 @@ export async function emitServiceInvoiceAvulsa(scope: TenantScope, input: Servic
     condicaoPagamento: input.condicaoPagamento ?? null,
     formaPagamento: input.formaPagamento ?? null,
     servicos,
-    retencoes
+    retencoes,
+    taxationType: input.taxationType ?? null
   });
 
   return emitFiscalDocument(scope, doc, {

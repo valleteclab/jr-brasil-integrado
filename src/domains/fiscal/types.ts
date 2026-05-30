@@ -50,6 +50,10 @@ export type NormalizedFiscalItem = {
   /** Serviço (NFS-e) versus produto (NF-e/NFC-e). */
   servico: boolean;
   itemListaServico: string | null;
+  /** NFS-e: alíquota de ISS informada (%) que sobrepõe a regra tributária, quando definida. */
+  aliquotaIssInformada?: number | null;
+  /** NFS-e: base de cálculo do ISS informada (após deduções), quando diferente do valor do serviço. */
+  baseIssInformada?: number | null;
 };
 
 /** Documento fiscal normalizado independente de provedor. */
@@ -88,7 +92,20 @@ export type NormalizedFiscalDocument = {
   itens: NormalizedFiscalItem[];
   /** Retenções na fonte (principalmente NFS-e): ISS retido + retenções federais. */
   retencoes?: RetencoesFiscais | null;
+  /** NFS-e: natureza/exigibilidade do ISS (valor do enum do provedor). */
+  taxationType?: TaxationTypeIss | null;
 };
+
+/** Natureza/exigibilidade do ISS na NFS-e (alinhado ao enum ServiceInvoiceTaxationType da Spedy). */
+export type TaxationTypeIss =
+  | "taxationInMunicipality"
+  | "taxationOutsideMunicipality"
+  | "exemption"
+  | "immune"
+  | "suspendedByCourt"
+  | "suspendedByAdministrativeProcedure"
+  | "exportation"
+  | "nonIncidence";
 
 /** Retenção de um tributo na fonte. Alíquota em percentual; valor em reais. */
 export type RetencaoTributo = {

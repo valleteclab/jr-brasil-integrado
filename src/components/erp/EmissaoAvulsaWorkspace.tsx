@@ -111,6 +111,11 @@ export function EmissaoAvulsaWorkspace({ data }: { data: EmissaoFormData }) {
   const [baixarEstoque, setBaixarEstoque] = useState(false);
   const [codigoLc116Doc, setCodigoLc116Doc] = useState("");
 
+  // ISS (NFS-e): natureza/exigibilidade, alíquota informada, deduções e base de cálculo
+  const [taxationType, setTaxationType] = useState("taxationInMunicipality");
+  const [aliquotaIss, setAliquotaIss] = useState(0);
+  const [deducoes, setDeducoes] = useState(0);
+
   // Retenções (NFS-e): ISS retido pelo tomador + retenções federais (alíquotas em %)
   const [issRetido, setIssRetido] = useState(false);
   const [retIr, setRetIr] = useState(0);
@@ -118,6 +123,7 @@ export function EmissaoAvulsaWorkspace({ data }: { data: EmissaoFormData }) {
   const [retCofins, setRetCofins] = useState(0);
   const [retCsll, setRetCsll] = useState(0);
   const [retInss, setRetInss] = useState(0);
+  const [baseRetencao, setBaseRetencao] = useState(0);
 
   // Totais editáveis (apenas NF-e/NFC-e)
   const [frete, setFrete] = useState(0);
@@ -140,9 +146,12 @@ export function EmissaoAvulsaWorkspace({ data }: { data: EmissaoFormData }) {
     [itens]
   );
   const subtotalServicos = useMemo(() => servicos.reduce((s, sv) => s + (Number(sv.valor) || 0), 0), [servicos]);
+  const baseIss = useMemo(() => Math.max(subtotalServicos - deducoes, 0), [subtotalServicos, deducoes]);
+  const valorIss = useMemo(() => Math.round(baseIss * (aliquotaIss / 100) * 100) / 100, [baseIss, aliquotaIss]);
+  const baseRetencaoEfetiva = useMemo(() => (baseRetencao > 0 ? baseRetencao : subtotalServicos), [baseRetencao, subtotalServicos]);
   const retidoFederal = useMemo(
-    () => Math.round(subtotalServicos * ((retIr + retPis + retCofins + retCsll + retInss) / 100) * 100) / 100,
-    [subtotalServicos, retIr, retPis, retCofins, retCsll, retInss]
+    () => Math.round(baseRetencaoEfetiva * ((retIr + retPis + retCofins + retCsll + retInss) / 100) * 100) / 100,
+    [baseRetencaoEfetiva, retIr, retPis, retCofins, retCsll, retInss]
   );
   const subtotal = isServico ? subtotalServicos : subtotalItens;
   const total = Math.max(subtotal - (Number(descontoGlobal) || 0) + (isProduto ? Number(frete) || 0 : 0), 0);
@@ -195,6 +204,7 @@ export function EmissaoAvulsaWorkspace({ data }: { data: EmissaoFormData }) {
     setNaturezaOperacao("Venda de mercadoria"); setFinalidade("NORMAL");
     setFormaPagamento(FORMAS_PAGAMENTO[0]); setCondicaoPagamento(""); setBaixarEstoque(false);
     setCodigoLc116Doc(""); setFrete(0); setDescontoGlobal(0); setObs("");
+    setTaxationType("taxationInMunicipality"); setAliquotaIss(0); setDeducoes(0); setBaseRetencao(0);
     setIssRetido(false); setRetIr(0); setRetPis(0); setRetCofins(0); setRetCsll(0); setRetInss(0);
     setError("");
   }
@@ -307,6 +317,9 @@ export function EmissaoAvulsaWorkspace({ data }: { data: EmissaoFormData }) {
           condicaoPagamento: condicaoPagamento.trim() || undefined,
           formaPagamento: formaPagamento || undefined,
           codigoServicoLc116: codigoLc116Doc.trim() || undefined,
+          taxationType,
+          aliquotaIss: aliquotaIss > 0 ? aliquotaIss : undefined,
+          deducoes: deducoes > 0 ? deducoes : undefined,
           servicos: servicos.map((sv) => ({
             descricao: sv.descricao.trim(),
             valor: Number(sv.valor) || 0,
@@ -314,6 +327,7 @@ export function EmissaoAvulsaWorkspace({ data }: { data: EmissaoFormData }) {
           })),
           retencoes: {
             issRetido,
+            baseRetencao: baseRetencao > 0 ? baseRetencao : undefined,
             ir: retIr > 0 ? { aliquota: retIr } : undefined,
             pis: retPis > 0 ? { aliquota: retPis } : undefined,
             cofins: retCofins > 0 ? { aliquota: retCofins } : undefined,
@@ -396,7 +410,10 @@ export function EmissaoAvulsaWorkspace({ data }: { data: EmissaoFormData }) {
             role="tab"
             aria-selected={tipo === t.id}
             className={`atend-type${tipo === t.id ? " active" : ""}`}
-            onClick={() => { setTipo(t.id); setError(""); }}
+            onClick={() => {
+              if (t.id === "NFSE") { router.push("/erp/fiscal/emitir/nfse"); return; }
+              setTipo(t.id); setError("");
+            }}
           >
             <span className="ic" aria-hidden="true">{t.icon}</span>
             <span><strong>{t.label}</strong><small>{t.desc}</small></span>
@@ -664,12 +681,31 @@ export function EmissaoAvulsaWorkspace({ data }: { data: EmissaoFormData }) {
             ) : (
               <div className="erp-form" style={{ gridTemplateColumns: "1fr" }}>
                 <label>
+                  Natureza / exigibilidade do ISS
+                  <select value={taxationType} onChange={(e) => setTaxationType(e.target.value)}>
+                    <option value="taxationInMunicipality">Tributado no município</option>
+                    <option value="taxationOutsideMunicipality">Tributado fora do município</option>
+                    <option value="exemption">Isento</option>
+                    <option value="immune">Imune</option>
+                    <option value="exportation">Exportação de serviço</option>
+                    <option value="nonIncidence">Não incidência</option>
+                    <option value="suspendedByCourt">Exigibilidade suspensa (judicial)</option>
+                    <option value="suspendedByAdministrativeProcedure">Exigibilidade suspensa (administrativa)</option>
+                  </select>
+                </label>
+                <label>
                   Código LC 116 padrão do documento
                   <select value={codigoLc116Doc} onChange={(e) => setCodigoLc116Doc(e.target.value)}>
                     <option value="">Usar padrão da configuração fiscal</option>
                     {data.lc116.map((l) => <option key={l.code} value={l.code}>{l.code} — {l.description}</option>)}
                   </select>
                 </label>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <label>Alíquota ISS %<input type="number" min={0} step="any" value={aliquotaIss} onChange={(e) => setAliquotaIss(Math.max(0, Number(e.target.value) || 0))} placeholder="Ex.: 5" /></label>
+                  <label>Deduções (R$)<input type="number" min={0} step="any" value={deducoes} onChange={(e) => setDeducoes(Math.max(0, Number(e.target.value) || 0))} /></label>
+                </div>
+                <div className="atend-total-row"><span>Base de cálculo do ISS</span><b>{brl(baseIss)}</b></div>
+                <div className="atend-total-row"><span>Valor do ISS</span><b>{brl(valorIss)}</b></div>
                 <label>
                   Forma de pagamento
                   <select value={formaPagamento} onChange={(e) => setFormaPagamento(e.target.value)}>
@@ -678,7 +714,7 @@ export function EmissaoAvulsaWorkspace({ data }: { data: EmissaoFormData }) {
                 </label>
                 <label>Condição de pagamento<input value={condicaoPagamento} onChange={(e) => setCondicaoPagamento(e.target.value)} placeholder="Ex.: à vista, 30 dias" /></label>
                 <p style={{ fontSize: 11.5, color: "var(--erp-mute)", margin: "2px 0 0" }}>
-                  A alíquota de ISS e o código de serviço são definidos pela configuração fiscal da empresa ou pelo código LC 116 selecionado por serviço.
+                  Informe a alíquota de ISS aqui (sobrepõe a regra tributária). Se deixar 0, o ISS é calculado pela regra tributária/configuração fiscal da empresa.
                 </p>
               </div>
             )}
@@ -695,6 +731,10 @@ export function EmissaoAvulsaWorkspace({ data }: { data: EmissaoFormData }) {
                 <p style={{ fontSize: 11.5, color: "var(--erp-mute)", margin: "0 0 10px" }}>
                   Retenções federais (informe a alíquota % quando o tomador retém):
                 </p>
+                <label style={{ display: "grid", gap: 4, marginBottom: 8 }}>
+                  <span style={{ fontSize: 12, fontWeight: 600 }}>Base de cálculo das retenções (R$)</span>
+                  <input type="number" min={0} step="any" value={baseRetencao} onChange={(e) => setBaseRetencao(Math.max(0, Number(e.target.value) || 0))} placeholder={`Padrão: valor dos serviços (${brl(subtotalServicos)})`} />
+                </label>
                 <div className="erp-form" style={{ gridTemplateColumns: "1fr 1fr", padding: 0, gap: 8 }}>
                   <label>IRRF %<input type="number" min={0} step="any" value={retIr} onChange={(e) => setRetIr(Math.max(0, Number(e.target.value) || 0))} /></label>
                   <label>INSS %<input type="number" min={0} step="any" value={retInss} onChange={(e) => setRetInss(Math.max(0, Number(e.target.value) || 0))} /></label>

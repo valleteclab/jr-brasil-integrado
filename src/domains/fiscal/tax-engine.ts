@@ -133,8 +133,10 @@ export function computeItemTaxes(
 
   if (ctx.servico) {
     const issRule = pickRule(rules, "ISS", item.ncm, ctx.ufDestino);
-    const aliquotaIss = num(issRule?.aliquota);
-    const valorIss = round2(base * (aliquotaIss / 100));
+    // Alíquota/base de ISS informadas no item (emissão avulsa) sobrepõem a regra tributária.
+    const aliquotaIss = item.aliquotaIssInformada != null ? item.aliquotaIssInformada : num(issRule?.aliquota);
+    const baseIss = item.baseIssInformada != null ? round2(Math.max(item.baseIssInformada, 0)) : base;
+    const valorIss = round2(baseIss * (aliquotaIss / 100));
     return {
       origem,
       cstIcms: null,
