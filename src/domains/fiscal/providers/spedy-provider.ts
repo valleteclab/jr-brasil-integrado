@@ -46,7 +46,7 @@ type SpedyAddress = {
 };
 
 type SpedyReceiver = {
-  name: string;
+  name?: string;
   federalTaxNumber?: string;
   stateTaxNumber?: string | null;
   email?: string | null;
@@ -350,6 +350,22 @@ export class SpedyFiscalProvider implements FiscalProvider {
   // -------------------------------------------------------------------------
 
   /** Monta o receiver (destinatário) a partir do documento normalizado. */
+  /**
+   * Tomador da NFS-e (Ambiente Nacional): quando há CNPJ/CPF, o schema nacional NÃO aceita
+   * o nome (`xNome`) — a Receita resolve o nome pelo documento (rejeição E1235). Por isso o
+   * `name` só é enviado quando NÃO há documento (tomador não identificado/sem NI).
+   */
+  private buildServiceReceiver(input: EmitInput): SpedyReceiver {
+    const base = this.buildReceiver(input);
+    // Tomador identificado por CNPJ/CPF: o schema nacional aceita apenas o documento
+    // (e contato), sem nome (`xNome`) nem endereço (`end`) — a Receita os resolve (E1235).
+    if (base.federalTaxNumber) {
+      // Tomador identificado: documento + nome (exigido), sem endereço/e-mail no bloco `toma`.
+      return { federalTaxNumber: base.federalTaxNumber, name: base.name, stateTaxNumber: base.stateTaxNumber };
+    }
+    return base;
+  }
+
   private buildReceiver(input: EmitInput): SpedyReceiver {
     const dest = input.document.destinatario;
     const endereco = dest.endereco;
@@ -557,7 +573,7 @@ export class SpedyFiscalProvider implements FiscalProvider {
       description,
       federalServiceCode,
       taxationType: input.document.taxationType ?? "taxationInMunicipality",
-      receiver: this.buildReceiver(input),
+      receiver: this.buildServiceReceiver(input),
       total: {
         invoiceAmount: input.total,
         issRate: aliquotaIss / 100, // FRAÇÃO (ex.: 0.05)
