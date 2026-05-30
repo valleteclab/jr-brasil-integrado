@@ -1308,6 +1308,14 @@ model NotaFiscal {
   valorCofins    Decimal          @default(0) @db.Decimal(14, 2)
   valorIss       Decimal          @default(0) @db.Decimal(14, 2)
   valorTotalTributos Decimal      @default(0) @db.Decimal(14, 2)
+  issRetido      Boolean          @default(false)
+  valorIrRetido     Decimal       @default(0) @db.Decimal(14, 2)
+  valorPisRetido    Decimal       @default(0) @db.Decimal(14, 2)
+  valorCofinsRetido Decimal       @default(0) @db.Decimal(14, 2)
+  valorCsllRetido   Decimal       @default(0) @db.Decimal(14, 2)
+  valorInssRetido   Decimal       @default(0) @db.Decimal(14, 2)
+  valorRetidoTotal  Decimal       @default(0) @db.Decimal(14, 2)
+  valorLiquido      Decimal       @default(0) @db.Decimal(14, 2)
   total          Decimal          @default(0) @db.Decimal(14, 2)
   formaPagamento String?
   condicaoPagamento String?

@@ -111,6 +111,14 @@ export function EmissaoAvulsaWorkspace({ data }: { data: EmissaoFormData }) {
   const [baixarEstoque, setBaixarEstoque] = useState(false);
   const [codigoLc116Doc, setCodigoLc116Doc] = useState("");
 
+  // Retenções (NFS-e): ISS retido pelo tomador + retenções federais (alíquotas em %)
+  const [issRetido, setIssRetido] = useState(false);
+  const [retIr, setRetIr] = useState(0);
+  const [retPis, setRetPis] = useState(0);
+  const [retCofins, setRetCofins] = useState(0);
+  const [retCsll, setRetCsll] = useState(0);
+  const [retInss, setRetInss] = useState(0);
+
   // Totais editáveis (apenas NF-e/NFC-e)
   const [frete, setFrete] = useState(0);
   const [descontoGlobal, setDescontoGlobal] = useState(0);
@@ -132,6 +140,10 @@ export function EmissaoAvulsaWorkspace({ data }: { data: EmissaoFormData }) {
     [itens]
   );
   const subtotalServicos = useMemo(() => servicos.reduce((s, sv) => s + (Number(sv.valor) || 0), 0), [servicos]);
+  const retidoFederal = useMemo(
+    () => Math.round(subtotalServicos * ((retIr + retPis + retCofins + retCsll + retInss) / 100) * 100) / 100,
+    [subtotalServicos, retIr, retPis, retCofins, retCsll, retInss]
+  );
   const subtotal = isServico ? subtotalServicos : subtotalItens;
   const total = Math.max(subtotal - (Number(descontoGlobal) || 0) + (isProduto ? Number(frete) || 0 : 0), 0);
 
@@ -183,6 +195,7 @@ export function EmissaoAvulsaWorkspace({ data }: { data: EmissaoFormData }) {
     setNaturezaOperacao("Venda de mercadoria"); setFinalidade("NORMAL");
     setFormaPagamento(FORMAS_PAGAMENTO[0]); setCondicaoPagamento(""); setBaixarEstoque(false);
     setCodigoLc116Doc(""); setFrete(0); setDescontoGlobal(0); setObs("");
+    setIssRetido(false); setRetIr(0); setRetPis(0); setRetCofins(0); setRetCsll(0); setRetInss(0);
     setError("");
   }
 
@@ -298,7 +311,15 @@ export function EmissaoAvulsaWorkspace({ data }: { data: EmissaoFormData }) {
             descricao: sv.descricao.trim(),
             valor: Number(sv.valor) || 0,
             codigoServicoLc116: sv.codigoServicoLc116.trim() || undefined
-          }))
+          })),
+          retencoes: {
+            issRetido,
+            ir: retIr > 0 ? { aliquota: retIr } : undefined,
+            pis: retPis > 0 ? { aliquota: retPis } : undefined,
+            cofins: retCofins > 0 ? { aliquota: retCofins } : undefined,
+            csll: retCsll > 0 ? { aliquota: retCsll } : undefined,
+            inss: retInss > 0 ? { aliquota: retInss } : undefined
+          }
         };
       }
 
@@ -662,6 +683,32 @@ export function EmissaoAvulsaWorkspace({ data }: { data: EmissaoFormData }) {
               </div>
             )}
           </div>
+
+          {/* RETENÇÕES (NFS-e) */}
+          {isServico && (
+            <div className="erp-card">
+              <div className="erp-card-head"><h3>Retenções na fonte</h3></div>
+              <div className="erp-card-body">
+                <label className="checkbox" style={{ marginBottom: 10 }}>
+                  <input type="checkbox" checked={issRetido} onChange={(e) => setIssRetido(e.target.checked)} /> ISS retido pelo tomador
+                </label>
+                <p style={{ fontSize: 11.5, color: "var(--erp-mute)", margin: "0 0 10px" }}>
+                  Retenções federais (informe a alíquota % quando o tomador retém):
+                </p>
+                <div className="erp-form" style={{ gridTemplateColumns: "1fr 1fr", padding: 0, gap: 8 }}>
+                  <label>IRRF %<input type="number" min={0} step="any" value={retIr} onChange={(e) => setRetIr(Math.max(0, Number(e.target.value) || 0))} /></label>
+                  <label>INSS %<input type="number" min={0} step="any" value={retInss} onChange={(e) => setRetInss(Math.max(0, Number(e.target.value) || 0))} /></label>
+                  <label>PIS %<input type="number" min={0} step="any" value={retPis} onChange={(e) => setRetPis(Math.max(0, Number(e.target.value) || 0))} /></label>
+                  <label>COFINS %<input type="number" min={0} step="any" value={retCofins} onChange={(e) => setRetCofins(Math.max(0, Number(e.target.value) || 0))} /></label>
+                  <label>CSLL %<input type="number" min={0} step="any" value={retCsll} onChange={(e) => setRetCsll(Math.max(0, Number(e.target.value) || 0))} /></label>
+                </div>
+                <div className="atend-total-row" style={{ marginTop: 10 }}>
+                  <span>Retido federal</span><b style={{ color: "var(--erp-danger)" }}>− {brl(retidoFederal)}</b>
+                </div>
+                <div className="atend-total-row grand"><span>Líquido a receber</span><strong>{brl(Math.max(subtotalServicos - retidoFederal, 0))}</strong></div>
+              </div>
+            </div>
+          )}
 
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             <button type="button" className="btn-erp primary lg" disabled={!podeEmitir} onClick={emitir}>

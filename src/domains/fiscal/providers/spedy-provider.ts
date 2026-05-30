@@ -151,6 +151,22 @@ type SpedyServiceInvoice = {
     issRate: number;
     issAmount: number;
     issWithheld: boolean;
+    irRate?: number;
+    irAmount?: number;
+    irWithheld?: boolean;
+    pisRate?: number;
+    pisAmount?: number;
+    pisWithheld?: boolean;
+    cofinsRate?: number;
+    cofinsAmount?: number;
+    cofinsWithheld?: boolean;
+    csllRate?: number;
+    csllAmount?: number;
+    csllWithheld?: boolean;
+    inssRate?: number;
+    inssAmount?: number;
+    inssWithheld?: boolean;
+    netAmount?: number;
   };
 };
 
@@ -528,6 +544,12 @@ export class SpedyFiscalProvider implements FiscalProvider {
       input.document.itens.map((item) => item.descricao).join("; ") ||
       input.document.naturezaOperacao;
 
+    // Retenções na fonte: ISS retido pelo tomador + retenções federais (IRRF/PIS/COFINS/CSLL/INSS).
+    // Alíquotas em fração na Spedy (ex.: 0.015 para 1,5%).
+    const ret = input.document.retencoes ?? null;
+    const retField = (r: { aliquota: number; valor: number } | null | undefined, rate: string, amount: string, withheld: string) =>
+      r ? { [rate]: r.aliquota / 100, [amount]: r.valor, [withheld]: true } : {};
+
     return {
       integrationId: input.integrationId,
       status: "enqueued",
@@ -540,7 +562,13 @@ export class SpedyFiscalProvider implements FiscalProvider {
         invoiceAmount: input.total,
         issRate: aliquotaIss / 100, // FRAÇÃO (ex.: 0.05)
         issAmount: valorIss,
-        issWithheld: false
+        issWithheld: ret?.issRetido ?? false,
+        ...retField(ret?.ir, "irRate", "irAmount", "irWithheld"),
+        ...retField(ret?.pis, "pisRate", "pisAmount", "pisWithheld"),
+        ...retField(ret?.cofins, "cofinsRate", "cofinsAmount", "cofinsWithheld"),
+        ...retField(ret?.csll, "csllRate", "csllAmount", "csllWithheld"),
+        ...retField(ret?.inss, "inssRate", "inssAmount", "inssWithheld"),
+        ...(ret ? { netAmount: ret.valorLiquido } : {})
       }
     };
   }

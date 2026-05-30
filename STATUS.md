@@ -317,3 +317,11 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Rotas `POST /api/erp/fiscal/emitir/produto` e `/servico`; service `getEmissaoFormData` (clientes com endereco, produtos com ficha fiscal, lista LC 116).
 - UI: `/erp/fiscal/emitir` (`EmissaoAvulsaWorkspace`) com cards de tipo (NF-e/NFC-e/NFS-e), destinatario cadastrado/avulso, construtor de itens (catalogo + avulso) e servicos (LC 116), opcoes fiscais, baixa de estoque, trilho de totais e modal de resultado; CTA "Emitir nota" em `/erp/fiscal`.
 - Validacao: `tsc` (0), `lint` (0), `build` (rotas incluidas) e smoke contra PostgreSQL: NF-e (cliente+catalogo), NF-e (destinatario+item avulsos) e NFS-e (LC 116 17.01) todas AUTORIZADAS.
+
+## Atualizacao operacional - 2026-05-30 - retencoes na NFS-e
+
+- NFS-e passa a suportar retencoes na fonte: ISS retido pelo tomador + retencoes federais (IRRF, PIS, COFINS, CSLL, INSS) por aliquota.
+- Contrato: `NormalizedFiscalDocument.retencoes` (tipos `RetencoesFiscais`/`RetencaoTributo`); builder `buildNfseFromOrdemServico` aceita `retencoes`; provider Spedy mapeia para `total` (issWithheld + *Rate/*Amount/*Withheld por tributo, aliquotas em fracao, netAmount).
+- Schema `NotaFiscal` += `issRetido`, `valorIrRetido`, `valorPisRetido`, `valorCofinsRetido`, `valorCsllRetido`, `valorInssRetido`, `valorRetidoTotal`, `valorLiquido` (migration `add_nfse_retentions`); emissao persiste esses valores.
+- Emissao avulsa de NFS-e (`emitServiceInvoiceAvulsa`) calcula as retencoes a partir da base e das aliquotas; UI `/erp/fiscal/emitir` ganhou card "Retencoes na fonte" (ISS retido + IRRF/INSS/PIS/COFINS/CSLL %) com total retido e liquido a receber.
+- Validacao: `tsc` (0), `lint` (0), `build` (ok) e smoke: NFS-e R$10.000 com ISS retido + IRRF 1,5% + PIS 0,65% + COFINS 3% + CSLL 1% -> retido R$615, liquido R$9.385, AUTORIZADA.

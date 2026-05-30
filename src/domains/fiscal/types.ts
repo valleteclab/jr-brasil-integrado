@@ -86,4 +86,30 @@ export type NormalizedFiscalDocument = {
   valorDesconto: number;
   outrasDespesas: number;
   itens: NormalizedFiscalItem[];
+  /** Retenções na fonte (principalmente NFS-e): ISS retido + retenções federais. */
+  retencoes?: RetencoesFiscais | null;
+};
+
+/** Retenção de um tributo na fonte. Alíquota em percentual; valor em reais. */
+export type RetencaoTributo = {
+  aliquota: number;
+  valor: number;
+};
+
+/**
+ * Retenções na fonte de uma NFS-e. `issRetido` indica que o ISS é retido pelo tomador.
+ * As retenções federais (IRRF, PIS, COFINS, CSLL, INSS) só são preenchidas quando há
+ * retenção — tipicamente quando o tomador é pessoa jurídica obrigada a reter.
+ */
+export type RetencoesFiscais = {
+  issRetido: boolean;
+  ir?: RetencaoTributo | null;
+  pis?: RetencaoTributo | null;
+  cofins?: RetencaoTributo | null;
+  csll?: RetencaoTributo | null;
+  inss?: RetencaoTributo | null;
+  /** Total retido (IRRF+PIS+COFINS+CSLL+INSS [+ISS quando retido]). */
+  totalRetido: number;
+  /** Valor líquido a receber (valor da NF − retenções). */
+  valorLiquido: number;
 };

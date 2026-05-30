@@ -7,6 +7,43 @@ import { exitStock, getDefaultDeposito } from "@/domains/stock/application/stock
 import { buildDocumentFromPedido, buildNfseFromOrdemServico } from "@/domains/fiscal/document-builder";
 import { emitFiscalDocument } from "@/domains/fiscal/application/fiscal-emission-use-cases";
 import { isValidLc116 } from "@/domains/fiscal/lc116";
+import type { RetencaoTributo, RetencoesFiscais } from "@/domains/fiscal/types";
+
+function round2(value: number) {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+/** Calcula as retenções a partir da base (valor dos serviços) e das alíquotas informadas. */
+function computeRetencoes(base: number, input?: RetencoesInput | null): RetencoesFiscais | null {
+  if (!input) return null;
+  const calc = (r?: { aliquota?: number | null } | null): RetencaoTributo | null => {
+    const aliquota = Number(r?.aliquota ?? 0);
+    if (!aliquota || aliquota <= 0) return null;
+    return { aliquota, valor: round2(base * (aliquota / 100)) };
+  };
+  const ir = calc(input.ir);
+  const pis = calc(input.pis);
+  const cofins = calc(input.cofins);
+  const csll = calc(input.csll);
+  const inss = calc(input.inss);
+  const issRetido = Boolean(input.issRetido);
+
+  if (!ir && !pis && !cofins && !csll && !inss && !issRetido) return null;
+
+  const totalFederal = round2(
+    (ir?.valor ?? 0) + (pis?.valor ?? 0) + (cofins?.valor ?? 0) + (csll?.valor ?? 0) + (inss?.valor ?? 0)
+  );
+  return {
+    issRetido,
+    ir,
+    pis,
+    cofins,
+    csll,
+    inss,
+    totalRetido: totalFederal,
+    valorLiquido: round2(base - totalFederal)
+  };
+}
 
 /**
  * Emissão fiscal AVULSA — NF-e, NFC-e e NFS-e emitidas diretamente, sem exigir um pedido de
@@ -73,6 +110,18 @@ export type ProductInvoiceAvulsaInput = {
   sendEmailToCustomer?: boolean;
 };
 
+/** Alíquota (%) de uma retenção federal informada na emissão. */
+export type RetencaoFederalInput = { aliquota?: number | null };
+
+export type RetencoesInput = {
+  issRetido?: boolean;
+  ir?: RetencaoFederalInput | null;
+  pis?: RetencaoFederalInput | null;
+  cofins?: RetencaoFederalInput | null;
+  csll?: RetencaoFederalInput | null;
+  inss?: RetencaoFederalInput | null;
+};
+
 export type ServiceInvoiceAvulsaInput = {
   receiver: ReceiverInput;
   observacoes?: string | null;
@@ -81,6 +130,7 @@ export type ServiceInvoiceAvulsaInput = {
   /** Código LC 116 padrão do documento (usado quando o serviço não traz o próprio). */
   codigoServicoLc116?: string | null;
   servicos: Array<{ descricao: string; valor: number; codigoServicoLc116?: string | null }>;
+  retencoes?: RetencoesInput | null;
 };
 
 type ClienteLike = {
@@ -297,12 +347,16 @@ export async function emitServiceInvoiceAvulsa(scope: TenantScope, input: Servic
     return { descricao: s.descricao.trim(), valor: s.valor, itemListaServico: codigo };
   });
 
+  const base = round2(servicos.reduce((sum, s) => sum + s.valor, 0));
+  const retencoes = computeRetencoes(base, input.retencoes);
+
   const doc = buildNfseFromOrdemServico({
     cliente,
     observacoes: input.observacoes ?? null,
     condicaoPagamento: input.condicaoPagamento ?? null,
     formaPagamento: input.formaPagamento ?? null,
-    servicos
+    servicos,
+    retencoes
   });
 
   return emitFiscalDocument(scope, doc, {
