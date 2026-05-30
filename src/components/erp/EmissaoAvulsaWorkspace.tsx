@@ -410,7 +410,10 @@ export function EmissaoAvulsaWorkspace({ data }: { data: EmissaoFormData }) {
             role="tab"
             aria-selected={tipo === t.id}
             className={`atend-type${tipo === t.id ? " active" : ""}`}
-            onClick={() => { setTipo(t.id); setError(""); }}
+            onClick={() => {
+              if (t.id === "NFSE") { router.push("/erp/fiscal/emitir/nfse"); return; }
+              setTipo(t.id); setError("");
+            }}
           >
             <span className="ic" aria-hidden="true">{t.icon}</span>
             <span><strong>{t.label}</strong><small>{t.desc}</small></span>
