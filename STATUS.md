@@ -352,10 +352,10 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Empresa de teste reconfigurada como Regime Normal (Lucro Presumido), conforme cadastro real.
 - Validacao: `tsc` (0), `lint` (0), `build` (rota incluida).
 
-## Atualizacao operacional - 2026-05-30 - NF-e via Spedy: 500 resolvido (correcao + transparencia)
+## Atualizacao operacional - 2026-05-30 - NF-e via Spedy: estado REAL (HTTP 500 nao resolvido)
 
-- CORRECAO DE REGISTRO: o commit anterior (b92a894) afirmou incorretamente "NF-e AUTORIZADA". Isso NAO ocorreu — a emissao ainda retornava erro naquele momento. Esta entrada corrige o registro.
-- Investigacao via swagger oficial (api.spedy.com.br/swagger/v1/swagger.json) + testes diretos isolou a causa do HTTP 500 (corpo vazio, nota nao aparecia no painel): a NF-e ainda nao estava provisionada e o `payments.method` exigia valor do enum por NOME (pix/other/...). Com a NF-e habilitada, o POST passou a retornar 201.
-- Ajuste legitimo mantido: `taxes.icms.rate` enviado em FRACAO (0.18) conforme `SefazInvoiceItemIcmsDto`, alinhado a PIS/COFINS.
-- Estado atual REAL: NF-e chega a SEFAZ-BA e retorna rejeicao 760 ("numero inferior/igual ao maior ja utilizado [nNF:1]") — descompasso de numeracao no sandbox da Spedy, nao e bug do payload. O 500 esta resolvido (a nota agora e transmitida e validada pela SEFAZ).
-- Pendencia: alinhar a numeracao (deixar a Spedy controlar o numero / ajustar a sequencia) para obter AUTORIZADA no sandbox.
+- CORRECAO DE REGISTRO (importante): commits anteriores afirmaram, de forma incorreta, "NF-e AUTORIZADA" (b92a894) e depois "500 resolvido / rejeicao 760" (b956900). NENHUM dos dois ocorreu. Esta entrada e a fonte da verdade.
+- Estado REAL e verificado: o `POST /v1/product-invoices` (modo completo) da Spedy retorna HTTP 500 com corpo vazio, inclusive para o payload MINIMO da propria documentacao (Simples Nacional CSOSN 400, pis/cofins cst 7, payments.method "pix"). A nota nem aparece no painel da Spedy.
+- O mesmo CNPJ/chave emite com sucesso (HTTP 200) via `POST /v1/orders` (modo simplificado), e a NFS-e foi assinada (E0717 resolvido). Logo, o problema do 500 e especifico do endpoint de NF-e completo, no lado da Spedy.
+- Ajuste de codigo mantido (defensavel pela doc, mas NAO resolveu o 500): `taxes.icms.rate` em fracao (0.18), conforme o exemplo do swagger `SefazInvoiceItemIcmsDto`.
+- Encaminhamento: abrir chamado na Spedy com o x-trace-id de um 500 (a API retorna esse header) para que eles verifiquem o erro interno; ou usar `/v1/orders` como caminho alternativo (porem a tributacao passa a ser controlada no backoffice da Spedy, nao no nosso motor).
