@@ -33,17 +33,18 @@ import { friendlyFiscalMessage } from "../fiscal-messages";
 // Tipos locais do payload Spedy (apenas os campos que utilizamos).
 // ---------------------------------------------------------------------------
 
-/** Cidade por código IBGE (preferencial) ou por nome+UF. */
-type SpedyCity = { code: string } | { name: string; state: string };
+/** Cidade: código IBGE e/ou nome+UF (campos do CityCreateDto da Spedy). */
+type SpedyCity = { code?: string; name?: string; state?: string };
 
 type SpedyAddress = {
   street?: string;
   number?: string;
   district?: string;
-  zipCode?: string;
-  complement?: string;
+  /** CEP — campo `postalCode` no AddressCreateDto da Spedy. */
+  postalCode?: string;
+  /** Complemento — campo `additionalInformation` no AddressCreateDto. */
+  additionalInformation?: string;
   city?: SpedyCity;
-  state?: string;
 };
 
 type SpedyReceiver = {
@@ -190,7 +191,8 @@ type SpedyOrderCustomer = {
     number?: string;
     district?: string;
     postalCode?: string;
-    complement?: string;
+    /** Complemento — campo `additionalInformation` no AddressDto da Spedy. */
+    additionalInformation?: string;
     city?: { code?: string; name?: string; state?: string };
   };
 };
@@ -521,20 +523,19 @@ export class SpedyFiscalProvider implements FiscalProvider {
 
     let address: SpedyAddress | undefined;
     if (endereco) {
-      let city: SpedyCity | undefined;
-      if (endereco.codigoMunicipioIbge) {
-        city = { code: endereco.codigoMunicipioIbge };
-      } else if (endereco.cidade && (endereco.uf ?? dest.uf)) {
-        city = { name: endereco.cidade, state: (endereco.uf ?? dest.uf) as string };
-      }
+      // CityCreateDto aceita código IBGE e nome+UF simultaneamente; enviamos o que houver.
+      const uf = endereco.uf ?? dest.uf ?? undefined;
+      const city: SpedyCity = {};
+      if (endereco.codigoMunicipioIbge) city.code = endereco.codigoMunicipioIbge;
+      if (endereco.cidade) city.name = endereco.cidade;
+      if (uf) city.state = uf;
       address = {
         street: endereco.logradouro ?? undefined,
         number: endereco.numero ?? undefined,
-        complement: endereco.complemento ?? undefined,
+        additionalInformation: endereco.complemento ?? undefined,
         district: endereco.bairro ?? undefined,
-        zipCode: onlyDigits(endereco.cep) || undefined,
-        state: endereco.uf ?? dest.uf ?? undefined,
-        city
+        postalCode: onlyDigits(endereco.cep) || undefined,
+        city: Object.keys(city).length ? city : undefined
       };
     }
 
@@ -710,7 +711,7 @@ export class SpedyFiscalProvider implements FiscalProvider {
       customer.address = {
         street: endereco.logradouro ?? undefined,
         number: endereco.numero ?? undefined,
-        complement: endereco.complemento ?? undefined,
+        additionalInformation: endereco.complemento ?? undefined,
         district: endereco.bairro ?? undefined,
         postalCode: onlyDigits(endereco.cep) || undefined,
         city: Object.keys(city).length ? city : undefined
