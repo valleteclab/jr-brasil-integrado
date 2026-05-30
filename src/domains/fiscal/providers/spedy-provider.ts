@@ -74,8 +74,8 @@ type SpedyIcmsNormal = {
   baseTaxReduction?: number;
   rate?: number;
   amount?: number;
-  stRetention?: number;
-  baseStRetention?: number;
+  stRetentionAmount?: number;
+  baseStRetentionAmount?: number;
 };
 
 type SpedyIcms = SpedyIcmsSimples | SpedyIcmsNormal;
@@ -102,9 +102,12 @@ type SpedyItem = {
   quantity: number;
   unitAmount: number;
   totalAmount: number;
-  unitTax: number;
-  quantityTax: number;
-  unitTaxAmount: number;
+  /** Unidade tributável (uTrib) — STRING no schema da Spedy (ex.: "UN"). */
+  unitTax?: string;
+  /** Quantidade tributável (qTrib). */
+  quantityTax?: number;
+  /** Valor unitário de tributação (vUnTrib) — preço por unidade, não o tributo. */
+  unitTaxAmount?: number;
   makeupTotal: true;
   taxes: SpedyItemTaxes;
 };
@@ -581,8 +584,8 @@ export class SpedyFiscalProvider implements FiscalProvider {
     };
     // CST 60 (já retido) ou 70 (com redução + ST): informar ICMS-ST quando houver.
     if ((cst === 60 || cst === 70) && taxes.valorIcmsSt > 0) {
-      icms.stRetention = taxes.valorIcmsSt;
-      icms.baseStRetention = taxes.baseIcmsSt;
+      icms.stRetentionAmount = taxes.valorIcmsSt;
+      icms.baseStRetentionAmount = taxes.baseIcmsSt;
     }
     return icms;
   }
@@ -605,10 +608,11 @@ export class SpedyFiscalProvider implements FiscalProvider {
       quantity: item.quantidade,
       unitAmount: item.valorUnitario,
       totalAmount: item.valorTotal,
-      // Tributos aproximados (Lei 12.741): valor por unidade e total.
-      unitTax: item.quantidade > 0 ? taxes.valorTributos / item.quantidade : 0,
+      // Unidade/quantidade/valor tributáveis (uTrib/qTrib/vUnTrib) — espelham os comerciais.
+      // unitTax é STRING (a unidade), unitTaxAmount é o preço unitário (não o tributo).
+      unitTax: item.unidade,
       quantityTax: item.quantidade,
-      unitTaxAmount: taxes.valorTributos,
+      unitTaxAmount: item.valorUnitario,
       makeupTotal: true,
       taxes: {
         icms: this.buildIcms(taxes, regime),
@@ -645,7 +649,26 @@ export class SpedyFiscalProvider implements FiscalProvider {
   }
 
   /** Traduz a forma de pagamento textual para o vocabulário da Spedy. */
+  /**
+   * Forma de pagamento da NF-e/NFC-e — enum SefazInvoicePaymentMethod da Spedy
+   * (dinheiro = "money", boleto = "billetBanking").
+   */
   private mapPaymentMethod(forma: string | null): string {
+    const f = (forma ?? "").toLowerCase();
+    if (f.includes("pix")) return "pix";
+    if (f.includes("credito") || f.includes("crédito") || f.includes("credit")) return "creditCard";
+    if (f.includes("debito") || f.includes("débito") || f.includes("debit")) return "debitCard";
+    if (f.includes("boleto") || f.includes("billet")) return "billetBanking";
+    if (f.includes("dinheiro") || f.includes("cash") || f.includes("especie") || f.includes("espécie")) return "money";
+    if (f.includes("transfer")) return "bankTransfer";
+    return "other";
+  }
+
+  /**
+   * Forma de pagamento da venda (/orders) — enum OrderPaymentMethod da Spedy
+   * (dinheiro = "cash", boleto = "billetBank"), distinto do enum da NF-e.
+   */
+  private mapOrderPaymentMethod(forma: string | null): string {
     const f = (forma ?? "").toLowerCase();
     if (f.includes("pix")) return "pix";
     if (f.includes("credito") || f.includes("crédito") || f.includes("credit")) return "creditCard";
@@ -747,7 +770,7 @@ export class SpedyFiscalProvider implements FiscalProvider {
       amount,
       autoIssueMode: "immediately",
       status: "approved",
-      paymentMethod: this.mapPaymentMethod(input.document.formaPagamento),
+      paymentMethod: this.mapOrderPaymentMethod(input.document.formaPagamento),
       sendEmailToCustomer: Boolean(input.document.destinatario.email),
       customer: this.buildOrderCustomer(input),
       items
