@@ -1,5 +1,5 @@
-import type { AmbienteFiscal, ModeloFiscal, ProvedorFiscal, StatusNotaFiscal } from "@prisma/client";
-import type { NormalizedFiscalDocument } from "../types";
+import type { AmbienteFiscal, ModeloFiscal, ProvedorFiscal, RegimeTributario, StatusNotaFiscal } from "@prisma/client";
+import type { ItemTaxResult, NormalizedFiscalDocument } from "../types";
 import type { DocumentTaxTotals } from "../tax-engine";
 
 export type ProviderEmitter = {
@@ -9,6 +9,14 @@ export type ProviderEmitter = {
   inscricaoMunicipal: string | null;
   uf: string | null;
   codigoMunicipioIbge: string | null;
+  regime: RegimeTributario;
+};
+
+/** Tributos calculados de um item, na ordem do documento — para provedores de modo completo. */
+export type ComputedItemTax = {
+  numeroItem: number;
+  cfop: string | null;
+  taxes: ItemTaxResult;
 };
 
 export type ProviderContext = {
@@ -27,6 +35,10 @@ export type EmitInput = {
   numero: number;
   totals: DocumentTaxTotals;
   total: number;
+  /** Identificador da transação de origem (idempotência/rastreio no provedor). */
+  integrationId?: string;
+  /** Tributos calculados por item (modo completo de provedores externos). */
+  computed: ComputedItemTax[];
 };
 
 export type EmitResult = {

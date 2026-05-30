@@ -9,7 +9,8 @@ const PROVIDERS = [
   { value: "FOCUS_NFE", label: "Focus NFe" },
   { value: "NFEIO", label: "NFe.io" },
   { value: "PLUGNOTAS", label: "PlugNotas" },
-  { value: "WEBMANIA", label: "WebmaniaBR" }
+  { value: "WEBMANIA", label: "WebmaniaBR" },
+  { value: "SPEDY", label: "Spedy (NF-e/NFC-e/NFS-e)" }
 ];
 
 const REGIMES = [
@@ -29,6 +30,7 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
   const [error, setError] = useState("");
 
   const externalProvider = !["MANUAL", "INTERNO"].includes(config.provider);
+  const isSpedy = config.provider === "SPEDY";
 
   function update<K extends keyof FiscalConfigSummary>(key: K, value: FiscalConfigSummary[K]) {
     setConfig((current) => ({ ...current, [key]: value }));
@@ -113,6 +115,17 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
         <div className="erp-card">
           <div className="erp-card-head"><h3>Credenciais do provedor</h3></div>
           <p className="muted">As credenciais são criptografadas. Exibimos apenas os últimos dígitos.</p>
+          {isSpedy && (
+            <div className="alert info">
+              <strong>Spedy</strong>
+              <span>
+                Informe a <strong>X-Api-Key</strong> da empresa no campo &ldquo;Token de integração&rdquo;.
+                A URL base de produção/sandbox é definida automaticamente pelo ambiente selecionado —
+                não é necessário preenchê-la. Cadastre o webhook na Spedy apontando para{" "}
+                <code>/api/webhooks/spedy</code> para receber as mudanças de status das notas.
+              </span>
+            </div>
+          )}
           <div className="erp-form">
             <label>
               URL base da API

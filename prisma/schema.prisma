@@ -99,6 +99,7 @@ enum ProvedorFiscal {
   NFEIO
   PLUGNOTAS
   WEBMANIA
+  SPEDY
   MANUAL
 }
 

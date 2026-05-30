@@ -289,3 +289,13 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Corrigidos de passagem erros de compilacao pre-existentes (uso de Button/StatusBadge sem import em StockManager, FinanceManager, SuppliersCrud) ao migrar para as classes do design.
 - Adicionados helpers de CSS faltantes (`.grow`, `.btn-erp.link`, `.stat-pill`).
 - Validacao: `tsc` (0), `lint` (0, salvo aviso de fonte), `build` (ok) e runtime HTTP 200 em todas as 16 rotas do ERP e loja, renderizando o sistema visual do design.
+
+## Atualizacao operacional - 2026-05-30 - integracao fiscal Spedy
+
+- Adicionado o provedor fiscal SPEDY (https://api.spedy.com.br) como integracao real e completa, plugavel na camada de provedor abstrata existente.
+- Enum `ProvedorFiscal` += `SPEDY` (migration `add_spedy_provider`).
+- Contrato do provedor enriquecido para modo completo: `EmitInput` ganhou `integrationId` e `computed` (tributos por item); `ProviderEmitter` ganhou `regime`; `NormalizedFiscalDocument.destinatario` ganhou `endereco` (logradouro/numero/bairro/cep/cidade/UF/IBGE) preenchido a partir do endereco padrao do cliente. Emissao passa esses dados ao provedor.
+- `src/domains/fiscal/providers/spedy-provider.ts`: cliente HTTP (X-Api-Key, base por ambiente producao/sandbox), emit NF-e/NFC-e/NFS-e no modo completo (icms.rate em %, pis/cofins/iss em fracao; Simples via CSOSN, Normal via CST + baseTaxModality 3; ICMS-ST; cidade por IBGE ou nome+UF; destination interna/interestadual; integrationId), polling assincrono ate status final, cancel, carta de correcao (so NF-e) e queryStatus. Mapeamento de status Spedy->StatusNotaFiscal. Registrado em `resolveFiscalProvider`.
+- Recepcao e operacao: webhook `POST /api/webhooks/spedy` (localiza nota por providerRef, atualiza status/chave/numero/protocolo/datas, idempotente, sempre 200), sincronizacao manual `POST /api/erp/fiscal/[id]/sincronizar` (fallback de polling via queryStatus), e UI: SPEDY nas listas de provedor (config fiscal + onboarding) com orientacao de X-Api-Key/base automatica/webhook; `saveFiscalConfig` isenta SPEDY da exigencia de baseUrl (exige so o token).
+- Documentacao de referencia em `docs/integrations/spedy-api.md`.
+- Validacao: `tsc` (0), `lint` (0), `build` (rotas /api/webhooks/spedy e sincronizar incluidas) e smoke do provider com fetch stubado cobrindo NF-e (Lucro Presumido) AUTORIZADA, rejeitada, NFC-e Simples (CSOSN), NFS-e (issRate) e cancelamento — payloads e unidades de aliquota conferidos.

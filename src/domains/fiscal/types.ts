@@ -66,6 +66,17 @@ export type NormalizedFiscalDocument = {
     inscricaoEstadual: string | null;
     email: string | null;
     uf: string | null;
+    /** Endereço do destinatário (necessário para provedores externos como Spedy). */
+    endereco: {
+      logradouro: string | null;
+      numero: string | null;
+      complemento: string | null;
+      bairro: string | null;
+      cep: string | null;
+      cidade: string | null;
+      uf: string | null;
+      codigoMunicipioIbge: string | null;
+    } | null;
   };
   formaPagamento: string | null;
   condicaoPagamento: string | null;

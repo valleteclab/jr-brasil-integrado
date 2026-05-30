@@ -210,10 +210,12 @@ export async function emitFiscalDocument(
           serie,
           itens: computedItems.map(({ item, cfop }) => ({ ...item, cfop: cfop ?? item.cfop }))
         },
-        emitter: config.emitter,
+        emitter: { ...config.emitter, regime: config.regime },
         numero: Number(created.numero),
         totals,
-        total
+        total,
+        integrationId: (links.pedidoVendaId ?? links.ordemServicoId ?? created.id).slice(0, 36),
+        computed: computedItems.map(({ numeroItem, cfop, taxes }) => ({ numeroItem, cfop, taxes }))
       },
       ctx
     );

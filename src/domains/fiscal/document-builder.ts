@@ -12,11 +12,23 @@ type ProdutoFiscalLike = {
   fiscal?: { ncm: string | null; cest: string | null; origem: string | null; regraTributariaId: string | null } | null;
 };
 
+type ClienteEnderecoLike = {
+  uf: string;
+  padrao: boolean;
+  logradouro?: string | null;
+  numero?: string | null;
+  complemento?: string | null;
+  bairro?: string | null;
+  cep?: string | null;
+  cidade?: string | null;
+  codigoMunicipioIbge?: string | null;
+};
+
 type ClienteLike = {
   razaoSocial: string;
   documento: string | null;
   inscricaoEstadual: string | null;
-  enderecos?: Array<{ uf: string; padrao: boolean }>;
+  enderecos?: ClienteEnderecoLike[];
   contatos?: Array<{ email: string | null; principal: boolean }>;
 };
 
@@ -28,7 +40,19 @@ function destinatarioFromCliente(cliente: ClienteLike) {
     documento: cliente.documento ?? null,
     inscricaoEstadual: cliente.inscricaoEstadual ?? null,
     email: contato?.email ?? null,
-    uf: endereco?.uf ?? null
+    uf: endereco?.uf ?? null,
+    endereco: endereco
+      ? {
+          logradouro: endereco.logradouro ?? null,
+          numero: endereco.numero ?? null,
+          complemento: endereco.complemento ?? null,
+          bairro: endereco.bairro ?? null,
+          cep: endereco.cep ?? null,
+          cidade: endereco.cidade ?? null,
+          uf: endereco.uf ?? null,
+          codigoMunicipioIbge: endereco.codigoMunicipioIbge ?? null
+        }
+      : null
   };
 }
 

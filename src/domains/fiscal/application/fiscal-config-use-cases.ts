@@ -106,9 +106,17 @@ export async function saveFiscalConfig(scope: TenantScope, input: SaveFiscalConf
   if (externalProvider && input.active) {
     const existing = await prisma.configuracaoFiscal.findUnique({ where: { empresaId: scope.empresaId } });
     const willHaveToken = Boolean(input.token?.trim()) || Boolean(existing?.tokenCriptografado);
-    const willHaveUrl = Boolean(input.baseUrl?.trim()) || Boolean(existing?.baseUrl);
-    if (!willHaveToken || !willHaveUrl) {
-      throw new Error("Para ativar um provedor externo informe a URL base e o token de integração.");
+    // SPEDY deriva a base do ambiente (produção/sandbox), então não exige baseUrl —
+    // apenas o token (X-Api-Key). Os demais provedores externos exigem URL base + token.
+    if (input.provider === "SPEDY") {
+      if (!willHaveToken) {
+        throw new Error("Para ativar a Spedy informe a chave de API (X-Api-Key) no campo token.");
+      }
+    } else {
+      const willHaveUrl = Boolean(input.baseUrl?.trim()) || Boolean(existing?.baseUrl);
+      if (!willHaveToken || !willHaveUrl) {
+        throw new Error("Para ativar um provedor externo informe a URL base e o token de integração.");
+      }
     }
   }
 
