@@ -13,13 +13,17 @@ function round2(value: number) {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
-/** Calcula as retenções a partir da base (valor dos serviços) e das alíquotas informadas. */
-function computeRetencoes(base: number, input?: RetencoesInput | null): RetencoesFiscais | null {
+/**
+ * Calcula as retenções a partir do valor dos serviços e das alíquotas informadas.
+ * A base das retenções federais pode ser sobreposta por `input.baseRetencao`.
+ */
+function computeRetencoes(valorServicos: number, input?: RetencoesInput | null): RetencoesFiscais | null {
   if (!input) return null;
+  const baseCalc = input.baseRetencao != null && input.baseRetencao > 0 ? round2(input.baseRetencao) : valorServicos;
   const calc = (r?: { aliquota?: number | null } | null): RetencaoTributo | null => {
     const aliquota = Number(r?.aliquota ?? 0);
     if (!aliquota || aliquota <= 0) return null;
-    return { aliquota, valor: round2(base * (aliquota / 100)) };
+    return { aliquota, valor: round2(baseCalc * (aliquota / 100)) };
   };
   const ir = calc(input.ir);
   const pis = calc(input.pis);
