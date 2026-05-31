@@ -604,8 +604,8 @@ export function CustomersCrud({ initialCustomers, tabelasPreco }: CustomersCrudP
                   <input value={e.uf} maxLength={2} onChange={(ev) => updateEndereco(i, "uf", ev.target.value)} />
                 </label>
                 <label>
-                  CÃ³digo IBGE do municÃ­pio
-                  <input value={e.codigoMunicipioIbge} maxLength={7} onChange={(ev) => updateEndereco(i, "codigoMunicipioIbge", ev.target.value.replace(/\D/g, ""))} placeholder="7 dÃ­gitos" />
+                  Código IBGE do município
+                  <input value={e.codigoMunicipioIbge} maxLength={7} onChange={(ev) => updateEndereco(i, "codigoMunicipioIbge", ev.target.value.replace(/\D/g, ""))} placeholder="Preenchido pela busca de CEP/CNPJ" />
                 </label>
                 <label className="check-row">
                   <input type="checkbox" checked={e.padrao} onChange={(ev) => updateEndereco(i, "padrao", ev.target.checked)} />

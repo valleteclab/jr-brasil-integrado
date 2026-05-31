@@ -14,6 +14,7 @@ import type { NormalizedFiscalDocument } from "../types";
 import { resolveFiscalProvider } from "../providers";
 import type { ProviderContext } from "../providers/types";
 import { getFiscalRuntimeConfig } from "./fiscal-config-use-cases";
+import { lookupCep } from "@/lib/lookup/cadastro-lookup";
 
 const TX_OPTIONS = { maxWait: 10000, timeout: 30000 };
 
@@ -42,6 +43,30 @@ function isValidCnpj(value: string | null | undefined): boolean {
   const d1 = calc(cnpj.slice(0, 12), [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]);
   const d2 = calc(cnpj.slice(0, 13), [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]);
   return d1 === Number(cnpj[12]) && d2 === Number(cnpj[13]);
+}
+
+/**
+ * Quando o destinatário tem CEP mas o código IBGE do município está ausente/ inválido
+ * (caso comum de clientes cadastrados antes do campo IBGE existir), deriva o IBGE do CEP
+ * via ViaCEP. Nunca quebra a emissão: qualquer falha na consulta apenas mantém o valor atual
+ * e deixa a validação seguinte reportar o que ficou faltando.
+ */
+async function enrichMunicipioIbge(document: NormalizedFiscalDocument): Promise<void> {
+  const endereco = document.destinatario.endereco;
+  if (!endereco) return;
+  if (isIbgeMunicipio(endereco.codigoMunicipioIbge)) return;
+
+  const cep = onlyDigits(endereco.cep);
+  if (cep.length !== 8) return;
+
+  try {
+    const res = await lookupCep(cep);
+    if (isIbgeMunicipio(res.codigoMunicipioIbge)) {
+      endereco.codigoMunicipioIbge = res.codigoMunicipioIbge;
+    }
+  } catch {
+    // mantém o valor atual; a validação reportará a ausência ao usuário
+  }
 }
 
 function validateBeforeProvider(
@@ -96,6 +121,7 @@ export async function emitFiscalDocument(
   }
 
   const config = await getFiscalRuntimeConfig(scope);
+  await enrichMunicipioIbge(document);
   validateBeforeProvider(config, document);
   const modelo: ModeloFiscal = document.modelo;
   const serie =
