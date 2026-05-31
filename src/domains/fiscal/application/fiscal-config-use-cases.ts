@@ -114,11 +114,15 @@ export async function saveFiscalConfig(scope: TenantScope, input: SaveFiscalConf
   if (externalProvider && input.active) {
     const existing = await prisma.configuracaoFiscal.findUnique({ where: { empresaId: scope.empresaId } });
     const willHaveToken = Boolean(input.token?.trim()) || Boolean(existing?.tokenCriptografado);
-    // SPEDY deriva a base do ambiente (produção/sandbox), então não exige baseUrl —
-    // apenas o token (X-Api-Key). Os demais provedores externos exigem URL base + token.
+    // SPEDY e Focus NFe derivam a base do ambiente (produção/sandbox), então não exigem
+    // baseUrl — apenas o token. Os demais provedores externos exigem URL base + token.
     if (input.provider === "SPEDY") {
       if (!willHaveToken) {
         throw new Error("Para ativar a Spedy informe a chave de API (X-Api-Key) no campo token.");
+      }
+    } else if (input.provider === "FOCUS_NFE") {
+      if (!willHaveToken) {
+        throw new Error("Para ativar a Focus NFe informe o token de integração.");
       }
     } else {
       const willHaveUrl = Boolean(input.baseUrl?.trim()) || Boolean(existing?.baseUrl);

@@ -7,7 +7,7 @@ import { LC116_LIST } from "@/domains/fiscal/lc116";
 
 const PROVIDERS = [
   { value: "MANUAL", label: "Interno / Homologação (funcional sem certificado)" },
-  { value: "FOCUS_NFE", label: "Focus NFe" },
+  { value: "FOCUS_NFE", label: "Focus NFe (NF-e/NFC-e/NFS-e)" },
   { value: "NFEIO", label: "NFe.io" },
   { value: "PLUGNOTAS", label: "PlugNotas" },
   { value: "WEBMANIA", label: "WebmaniaBR" },
@@ -60,6 +60,9 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
 
   const externalProvider = !["MANUAL", "INTERNO"].includes(config.provider);
   const isSpedy = config.provider === "SPEDY";
+  const isFocusNfe = config.provider === "FOCUS_NFE";
+  // Provedores que derivam a URL base do ambiente — baseUrl é opcional.
+  const baseUrlOpcional = isSpedy || isFocusNfe;
 
   function update<K extends keyof FiscalConfigSummary>(key: K, value: FiscalConfigSummary[K]) {
     setConfig((current) => ({ ...current, [key]: value }));
@@ -157,10 +160,28 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
               </span>
             </div>
           )}
+          {isFocusNfe && (
+            <div className="alert info">
+              <strong>Focus NFe</strong>
+              <span>
+                Informe o <strong>token</strong> da empresa (painel da Focus) no campo
+                &ldquo;Token de integração&rdquo;. A URL base de produção
+                (<code>api.focusnfe.com.br</code>) ou homologação
+                (<code>homologacao.focusnfe.com.br</code>) é definida automaticamente pelo
+                ambiente selecionado — deixe a URL base em branco. Os dados do emitente
+                (endereço, IE e <strong>certificado A1</strong>) são cadastrados diretamente
+                no painel da Focus, não aqui.
+              </span>
+            </div>
+          )}
           <div className="erp-form">
             <label>
-              URL base da API
-              <input value={config.baseUrl} onChange={(e) => update("baseUrl", e.target.value)} placeholder="https://api.focusnfe.com.br" />
+              URL base da API {baseUrlOpcional ? "(opcional)" : ""}
+              <input
+                value={config.baseUrl}
+                onChange={(e) => update("baseUrl", e.target.value)}
+                placeholder={baseUrlOpcional ? "Definida pelo ambiente — deixe em branco" : "https://api.exemplo.com.br"}
+              />
             </label>
             <label>
               Token de integração {config.tokenLast4 ? `(atual ••••${config.tokenLast4})` : ""}
