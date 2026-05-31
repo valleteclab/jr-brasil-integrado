@@ -138,9 +138,15 @@ export function TeamManager({ initialColaboradores, initialPerfis }: TeamManager
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(inviteForm)
       });
-      const data = await response.json() as { id?: string; error?: string };
+      const data = await response.json() as { id?: string; senhaTemporaria?: string | null; error?: string };
 
       if (!response.ok) throw new Error(data.error ?? "Não foi possível convidar o colaborador.");
+
+      if (data.senhaTemporaria) {
+        window.alert(
+          `Colaborador criado.\n\nSenha temporária: ${data.senhaTemporaria}\n\nRepasse ao colaborador — ele deve trocá-la após o primeiro login.`
+        );
+      }
 
       const perfil = perfis.find((p) => p.id === inviteForm.perfilId);
       const novo: ColaboradorSummary = {
@@ -432,7 +438,7 @@ export function TeamManager({ initialColaboradores, initialPerfis }: TeamManager
             <div className="drawer-head">
               <div>
                 <h2>Convidar colaborador</h2>
-                <p className="erp-page-sub">O acesso será criado com senha temporária &quot;change-me&quot;.</p>
+                <p className="erp-page-sub">Uma senha temporária será gerada e exibida para você repassar ao colaborador.</p>
               </div>
               <button type="button" className="btn-erp ghost sm" onClick={closeInvite}>Fechar</button>
             </div>
