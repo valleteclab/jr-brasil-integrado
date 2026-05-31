@@ -245,7 +245,7 @@ export async function invoiceSale(scope: TenantScope, id: string, options?: { mo
     observacoes: pedido.observacoes,
     frete: Number(pedido.frete),
     desconto: Number(pedido.desconto),
-    modelo: options?.modelo ?? "NFE",
+    modelo,
     itens: pedido.itens.map((item) => ({
       produto: {
         id: item.produto.id,
