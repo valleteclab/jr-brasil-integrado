@@ -505,19 +505,13 @@ export class SpedyFiscalProvider implements FiscalProvider {
 
   /** Monta o receiver (destinatário) a partir do documento normalizado. */
   /**
-   * Tomador da NFS-e (Ambiente Nacional): quando há CNPJ/CPF, o schema nacional NÃO aceita
-   * o nome (`xNome`) — a Receita resolve o nome pelo documento (rejeição E1235). Por isso o
-   * `name` só é enviado quando NÃO há documento (tomador não identificado/sem NI).
+   * Tomador da NFS-e (Ambiente Nacional). O schema nacional EXIGE o bloco `toma`
+   * completo: nome (`xNome`) é obrigatório (a omissão gera E1235 "toma incompleto —
+   * esperado CAEPF, IM, xNome"), além do documento e, quando houver, endereço. Por
+   * isso enviamos o tomador completo (nome + endereço), como nas notas autorizadas.
    */
   private buildServiceReceiver(input: EmitInput): SpedyReceiver {
-    const base = this.buildReceiver(input);
-    // Tomador identificado por CNPJ/CPF: o schema nacional aceita apenas o documento
-    // (e contato), sem nome (`xNome`) nem endereço (`end`) — a Receita os resolve (E1235).
-    if (base.federalTaxNumber) {
-      // Tomador identificado: documento + nome (exigido), sem endereço/e-mail no bloco `toma`.
-      return { federalTaxNumber: base.federalTaxNumber, name: base.name, stateTaxNumber: base.stateTaxNumber };
-    }
-    return base;
+    return this.buildReceiver(input);
   }
 
   private buildReceiver(input: EmitInput): SpedyReceiver {
