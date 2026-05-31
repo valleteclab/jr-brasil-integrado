@@ -432,6 +432,7 @@ export class AcbrFiscalProvider implements FiscalProvider {
     const cMunFG = input.emitter.codigoMunicipioIbge ?? "";
     const isNfce = modelo === "NFCE";
     const idDest = isNfce ? 1 : ufEmit && ufDest && ufEmit !== ufDest ? 2 : 1;
+    const refChave = onlyDigits(input.document.chaveReferenciada);
     // Consumidor final: NFC-e sempre; NF-e quando o destinatário é não-contribuinte (sem IE),
     // pois a SEFAZ exige indFinal=1 nesse caso ("operação com não contribuinte").
     const indFinal = isNfce || !input.document.destinatario.inscricaoEstadual ? 1 : 0;
@@ -496,9 +497,12 @@ export class AcbrFiscalProvider implements FiscalProvider {
         ide: {
           cUF, natOp: input.document.naturezaOperacao, mod: isNfce ? 65 : 55,
           serie: Number(input.document.serie) || 1, nNF: input.numero,
-          dhEmi: new Date().toISOString(), tpNF: 1, idDest, cMunFG,
+          // Devolução é emitida como entrada (tpNF=0); demais finalidades, saída (tpNF=1).
+          dhEmi: new Date().toISOString(), tpNF: input.document.finalidade === "DEVOLUCAO" ? 0 : 1, idDest, cMunFG,
           tpImp: isNfce ? 4 : 1, tpEmis: 1, finNFe: finalidade(input.document.finalidade),
-          indFinal, indPres: 1, procEmi: 0, verProc: "JR-Brasil-Integrado"
+          indFinal, indPres: 1, procEmi: 0, verProc: "JR-Brasil-Integrado",
+          // Referência à NF-e original (obrigatória na devolução): grupo NFref/refNFe.
+          ...(refChave.length === 44 ? { NFref: [{ refNFe: refChave }] } : {})
         },
         emit: { CNPJ: onlyDigits(input.emitter.cnpj), CRT: crtFocus(input.emitter.regime) },
         dest: this.buildDest(input, isNfce),
@@ -643,13 +647,39 @@ export class AcbrFiscalProvider implements FiscalProvider {
 
   async cancel(input: CancelInput, ctx: ProviderContext): Promise<CancelResult> {
     if (!input.providerRef) return { status: "ERRO", motivo: "Identificador do documento na ACBr ausente." };
+    const ref = encodeURIComponent(input.providerRef);
+
+    // NFS-e (padrão nacional): o cancelamento é um evento da própria NFS-e e a resposta é um
+    // documento NFS-e com situação atualizada (não um evento DF-e com código 135/155). Algumas
+    // prefeituras processam de forma assíncrona, então confirmamos consultando a situação.
+    if (input.modelo === "NFSE") {
+      const res = await this.request<AcbrNfseResponse>(ctx, "POST", `/nfse/${ref}/cancelamento`, {
+        justificativa: input.justificativa
+      });
+      if (!res.ok) return { status: "ERRO", motivo: res.errorMessage ?? "Falha ao cancelar a NFS-e na ACBr." };
+      if (mapNfseStatus(res.data?.status) === "CANCELADA") {
+        return { status: "AUTORIZADO", protocolo: res.data?.codigo_verificacao || undefined };
+      }
+      const id = res.data?.id || input.providerRef;
+      const check = await this.request<AcbrNfseResponse>(ctx, "GET", `/nfse/${encodeURIComponent(id)}`);
+      if (check.ok && mapNfseStatus(check.data?.status) === "CANCELADA") {
+        return { status: "AUTORIZADO", protocolo: check.data?.codigo_verificacao || undefined };
+      }
+      const mensagem = (res.data?.mensagens ?? [])
+        .map((m) => m.descricao)
+        .filter(Boolean)
+        .join("; ");
+      const situacao = check.data?.status ?? res.data?.status ?? "?";
+      return { status: "REJEITADO", motivo: mensagem || `Cancelamento da NFS-e não confirmado (situação ${situacao}).` };
+    }
+
+    // NF-e/NFC-e: a ACBr devolve um objeto de EVENTO. Cancelamento homologado pela SEFAZ:
+    // código 135 (evento registrado e vinculado) ou 155 (registrado fora do prazo).
     const resource = ACBR_RESOURCE[input.modelo];
-    const res = await this.request<AcbrCancelResponse>(ctx, "POST", `/${resource}/${encodeURIComponent(input.providerRef)}/cancelamento`, {
+    const res = await this.request<AcbrCancelResponse>(ctx, "POST", `/${resource}/${ref}/cancelamento`, {
       justificativa: input.justificativa
     });
     if (!res.ok) return { status: "ERRO", motivo: res.errorMessage ?? "Falha ao cancelar na ACBr." };
-    // A ACBr devolve um objeto de EVENTO (não o DF-e). Cancelamento homologado pela SEFAZ:
-    // código 135 (evento registrado e vinculado) ou 155 (registrado fora do prazo).
     const codigo = res.data?.codigo_status;
     const protocolo = res.data?.numero_protocolo || undefined;
     if (codigo === 135 || codigo === 155) {

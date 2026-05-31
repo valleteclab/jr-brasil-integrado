@@ -135,6 +135,12 @@ export function NotasFiscaisList({ notas }: Props) {
                       <a className="btn-erp ghost xs" href={`/api/erp/fiscal/${nota.id}/xml`}>XML</a>
                     </>
                   )}
+                  {nota.canClone && (
+                    <Link className="btn-erp ghost xs" href={`/erp/fiscal/emitir?clonar=${nota.id}`}>Clonar</Link>
+                  )}
+                  {nota.canDevolver && (
+                    <Link className="btn-erp ghost xs" href={`/erp/fiscal/emitir?devolucao=${nota.id}`}>Devolução</Link>
+                  )}
                   {nota.canCorrect && (
                     <button className="btn-erp ghost xs" type="button" disabled={busyId === nota.id} onClick={() => correct(nota)}>
                       Carta de correção

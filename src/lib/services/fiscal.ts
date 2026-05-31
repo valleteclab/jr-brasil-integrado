@@ -22,6 +22,10 @@ export type NotaFiscalSummary = {
   canCancel: boolean;
   canCorrect: boolean;
   canDownload: boolean;
+  /** Clonar é suportado para notas de produto (NF-e/NFC-e). */
+  canClone: boolean;
+  /** Devolução exige NF-e autorizada com chave de acesso. */
+  canDevolver: boolean;
 };
 
 const STATUS_LABEL: Record<StatusNotaFiscal, { label: string; tone: NotaFiscalSummary["statusTone"] }> = {
@@ -73,7 +77,10 @@ export async function listNotasFiscais(): Promise<NotaFiscalSummary[]> {
       canCancel: nota.status === "AUTORIZADA",
       canCorrect: nota.status === "AUTORIZADA" && nota.modelo !== "NFSE",
       // PDF/XML só fazem sentido quando a nota foi transmitida e está autorizada/cancelada.
-      canDownload: Boolean(nota.providerRef) && (nota.status === "AUTORIZADA" || nota.status === "CANCELADA")
+      canDownload: Boolean(nota.providerRef) && (nota.status === "AUTORIZADA" || nota.status === "CANCELADA"),
+      // Clonar reaproveita a tela de emissão (produto e serviço).
+      canClone: true,
+      canDevolver: nota.modelo === "NFE" && nota.status === "AUTORIZADA" && Boolean(nota.chaveAcesso)
     };
   });
 }
@@ -149,6 +156,8 @@ export type NotaFiscalDetalhe = {
   canCorrect: boolean;
   canDownload: boolean;
   canSync: boolean;
+  canClone: boolean;
+  canDevolver: boolean;
 };
 
 function fmtDateTime(d: Date | null): string {
@@ -216,6 +225,143 @@ export async function getNotaFiscalDetalhe(id: string): Promise<NotaFiscalDetalh
     canCancel: nota.status === "AUTORIZADA",
     canCorrect: nota.status === "AUTORIZADA" && nota.modelo === "NFE",
     canDownload: Boolean(nota.providerRef) && (nota.status === "AUTORIZADA" || nota.status === "CANCELADA"),
-    canSync: Boolean(nota.providerRef) && (nota.status === "PROCESSANDO" || nota.status === "AUTORIZADA")
+    canSync: Boolean(nota.providerRef) && (nota.status === "PROCESSANDO" || nota.status === "AUTORIZADA"),
+    canClone: true,
+    canDevolver: nota.modelo === "NFE" && nota.status === "AUTORIZADA" && Boolean(nota.chaveAcesso)
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Prefill para clonar / gerar devolução (reaproveita a tela de emissão avulsa)
+// ---------------------------------------------------------------------------
+
+export type EmissaoPrefillItem = {
+  produtoId: string | null;
+  codigo: string;
+  descricao: string;
+  ncm: string;
+  cfop: string;
+  origem: string;
+  unidade: string;
+  quantidade: number;
+  precoUnitario: number;
+  desconto: number;
+};
+
+export type EmissaoPrefillServico = {
+  descricao: string;
+  valor: number;
+  codigoServicoLc116: string;
+};
+
+export type EmissaoPrefill = {
+  modo: "CLONE" | "DEVOLUCAO";
+  origemId: string;
+  origemLabel: string;
+  origemChave: string | null;
+  tipo: "NFE" | "NFCE" | "NFSE";
+  finalidade: "NORMAL" | "DEVOLUCAO";
+  naturezaOperacao: string;
+  chaveReferenciada: string | null;
+  notaOrigemId: string | null;
+  clienteId: string | null;
+  destinatario: { nome: string; documento: string; inscricaoEstadual: string; email: string };
+  formaPagamento: string;
+  condicaoPagamento: string;
+  observacoes: string;
+  frete: number;
+  desconto: number;
+  itens: EmissaoPrefillItem[];
+  // NFS-e (clone de nota de serviço):
+  servicos: EmissaoPrefillServico[];
+  codigoServicoLc116: string;
+  aliquotaIss: number;
+  issRetido: boolean;
+};
+
+/**
+ * Monta o prefill da tela de emissão a partir de uma nota existente.
+ *  - CLONE: copia destinatário, itens e operação (finalidade Normal) para uma nova nota editável.
+ *  - DEVOLUCAO: gera NF-e de devolução referenciando a chave da nota original (finalidade
+ *    Devolução, natureza "Devolução de venda"); o CFOP é deixado em branco para o motor derivar
+ *    o CFOP de devolução (1202/2202). Exige NF-e autorizada com chave de acesso.
+ */
+export async function getNotaFiscalPrefill(
+  id: string,
+  modo: "CLONE" | "DEVOLUCAO"
+): Promise<EmissaoPrefill> {
+  const scope = await getDevelopmentTenantScope();
+  const nota = await prisma.notaFiscal.findFirst({
+    where: { id, tenantId: scope.tenantId, empresaId: scope.empresaId },
+    include: { itens: { orderBy: { numeroItem: "asc" } } }
+  });
+  if (!nota) throw new Error("Nota fiscal não encontrada.");
+
+  const isServico = nota.modelo === "NFSE";
+  const tipo: EmissaoPrefill["tipo"] = isServico ? "NFSE" : nota.modelo === "NFCE" ? "NFCE" : "NFE";
+
+  if (modo === "DEVOLUCAO") {
+    if (nota.modelo !== "NFE") {
+      throw new Error("A devolução só é aplicável a NF-e (modelo 55).");
+    }
+    if (nota.status !== "AUTORIZADA" || !nota.chaveAcesso) {
+      throw new Error("Só é possível gerar devolução de uma NF-e autorizada (com chave de acesso).");
+    }
+  }
+
+  const isDevolucao = modo === "DEVOLUCAO";
+  const label = `${MODELO_LABEL[nota.modelo]} ${nota.numero ?? "-"}`;
+
+  // NFS-e: reconstrói os serviços a partir dos itens persistidos da nota.
+  const servicos: EmissaoPrefillServico[] = isServico
+    ? nota.itens.map((it) => ({
+        descricao: it.descricao ?? "",
+        valor: Number(it.valorTotal),
+        codigoServicoLc116: it.itemListaServico ?? ""
+      }))
+    : [];
+  const primeiroItemServico = isServico ? nota.itens[0] : undefined;
+
+  return {
+    modo,
+    origemId: nota.id,
+    origemLabel: label,
+    origemChave: nota.chaveAcesso ?? null,
+    tipo,
+    finalidade: isDevolucao ? "DEVOLUCAO" : "NORMAL",
+    naturezaOperacao: isDevolucao ? "Devolução de venda" : (nota.naturezaOperacao ?? "Venda de mercadoria"),
+    chaveReferenciada: isDevolucao ? (nota.chaveAcesso ?? null) : null,
+    notaOrigemId: isDevolucao ? nota.id : null,
+    clienteId: nota.clienteId ?? null,
+    destinatario: {
+      nome: nota.destinatarioNome ?? "",
+      documento: nota.destinatarioDocumento ?? "",
+      inscricaoEstadual: nota.destinatarioIe ?? "",
+      email: nota.destinatarioEmail ?? ""
+    },
+    formaPagamento: nota.formaPagamento ?? "",
+    condicaoPagamento: nota.condicaoPagamento ?? "",
+    observacoes: nota.informacoesComplementares ?? "",
+    frete: Number(nota.valorFrete),
+    desconto: Number(nota.valorDesconto),
+    itens: isServico
+      ? []
+      : nota.itens.map((it) => ({
+          produtoId: it.produtoId ?? null,
+          codigo: it.codigo ?? "",
+          descricao: it.descricao ?? "",
+          ncm: it.ncm ?? "",
+          // Devolução: CFOP em branco para o motor derivar o CFOP de devolução (1202/2202).
+          cfop: isDevolucao ? "" : (it.cfop ?? ""),
+          origem: it.origem ?? "0",
+          unidade: it.unidade ?? "UN",
+          quantidade: Number(it.quantidade),
+          precoUnitario: Number(it.valorUnitario),
+          desconto: Number(it.desconto)
+        })),
+    servicos,
+    codigoServicoLc116: primeiroItemServico?.itemListaServico ?? "",
+    aliquotaIss: primeiroItemServico?.aliquotaIss != null ? Number(primeiroItemServico.aliquotaIss) : 0,
+    issRetido: nota.issRetido
   };
 }

@@ -66,6 +66,10 @@ export type ProductInvoiceAvulsaInput = {
   modelo?: "NFE" | "NFCE";
   finalidade?: FinalidadeNfe;
   naturezaOperacao?: string;
+  /** NF-e de devolução: chave de acesso (44 dígitos) da nota original referenciada. */
+  chaveReferenciada?: string | null;
+  /** NF-e de devolução: id da nota original (vínculo interno). */
+  notaOrigemId?: string | null;
   receiver: ReceiverInput;
   formaPagamento?: string | null;
   condicaoPagamento?: string | null;
@@ -138,7 +142,8 @@ async function resolveReceiver(scope: TenantScope, receiver: ReceiverInput): Pro
         complemento: e.complemento,
         bairro: e.bairro,
         cep: e.cep,
-        cidade: e.cidade
+        cidade: e.cidade,
+        codigoMunicipioIbge: e.codigoMunicipioIbge
       })),
       contatos: cliente.contatos.map((c) => ({ email: c.email, principal: c.principal }))
     };
@@ -258,6 +263,7 @@ export async function emitProductInvoiceAvulsa(scope: TenantScope, input: Produc
     cliente,
     modelo,
     finalidade: input.finalidade ?? "NORMAL",
+    chaveReferenciada: input.chaveReferenciada ?? null,
     naturezaOperacao: input.naturezaOperacao ?? "Venda de mercadoria",
     formaPagamento: input.formaPagamento ?? null,
     condicaoPagamento: input.condicaoPagamento ?? null,
@@ -277,7 +283,8 @@ export async function emitProductInvoiceAvulsa(scope: TenantScope, input: Produc
   });
 
   const nota = await emitFiscalDocument(scope, doc, {
-    clienteId: input.receiver.clienteId ?? null
+    clienteId: input.receiver.clienteId ?? null,
+    notaOrigemId: input.notaOrigemId ?? null
   });
 
   // Baixa de estoque opcional (somente itens de catálogo) após autorização.

@@ -93,6 +93,8 @@ export type PedidoFiscalInput = {
   desconto?: number;
   modelo?: ModeloFiscal;
   finalidade?: FinalidadeNfe;
+  /** NF-e de devolução: chave de acesso da nota original referenciada. */
+  chaveReferenciada?: string | null;
   valorSeguro?: number;
   outrasDespesas?: number;
   itens: Array<{
@@ -113,6 +115,7 @@ export function buildDocumentFromPedido(input: PedidoFiscalInput): NormalizedFis
     ambiente: "HOMOLOGACAO",
     provedor: "MANUAL",
     serie: "",
+    chaveReferenciada: input.chaveReferenciada ?? null,
     destinatario: destinatarioFromCliente(input.cliente),
     formaPagamento: input.formaPagamento ?? null,
     condicaoPagamento: input.condicaoPagamento ?? null,

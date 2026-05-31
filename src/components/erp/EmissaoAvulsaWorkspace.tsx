@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { EmissaoFormData } from "@/lib/services/fiscal-emit";
+import type { EmissaoPrefill } from "@/lib/services/fiscal";
 import { useCadastroLookup } from "./useCadastroLookup";
 
 type DocTipo = "NFE" | "NFCE" | "NFSE";
@@ -22,6 +23,8 @@ type ItemLinha = {
   quantidade: number;
   precoUnitario: number;
   desconto: number; // valor absoluto (R$)
+  /** Devolução: quantidade máxima devolvível (= quantidade da nota original). */
+  maxQuantidade?: number;
 };
 
 type ServicoLinha = {
@@ -78,18 +81,48 @@ const cellInput: React.CSSProperties = { width: "100%", height: 28, border: "1px
 const cellNum: React.CSSProperties = { width: 78, height: 28, border: "1px solid var(--erp-line)", borderRadius: 4, padding: "0 6px", fontSize: 12.5, textAlign: "right" };
 const textareaStyle: React.CSSProperties = { width: "100%", minHeight: 60, padding: "10px 12px", border: "1px solid var(--erp-line)", borderRadius: 5, fontSize: 12.5, resize: "vertical", fontFamily: "inherit" };
 
-export function EmissaoAvulsaWorkspace({ data }: { data: EmissaoFormData }) {
+const prefillToItens = (initial?: EmissaoPrefill | null): ItemLinha[] =>
+  (initial?.itens ?? []).map((it) => ({
+    uid: uid(),
+    produtoId: it.produtoId,
+    codigo: it.codigo,
+    descricao: it.descricao,
+    ncm: it.ncm,
+    cfop: it.cfop,
+    origem: it.origem,
+    unidade: it.unidade,
+    quantidade: it.quantidade,
+    precoUnitario: it.precoUnitario,
+    desconto: it.desconto,
+    // Na devolução, a quantidade da original é o teto da quantidade a devolver (devolução parcial).
+    maxQuantidade: initial?.modo === "DEVOLUCAO" ? it.quantidade : undefined
+  }));
+
+const prefillToServicos = (initial?: EmissaoPrefill | null): ServicoLinha[] =>
+  (initial?.servicos ?? []).map((sv) => ({
+    uid: uid(),
+    descricao: sv.descricao,
+    valor: sv.valor,
+    codigoServicoLc116: sv.codigoServicoLc116
+  }));
+
+export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormData; initial?: EmissaoPrefill | null }) {
   const router = useRouter();
 
-  const [tipo, setTipo] = useState<DocTipo>("NFE");
+  const [tipo, setTipo] = useState<DocTipo>(initial?.tipo ?? "NFE");
+
+  // Origem (clone/devolução): referência mantida para enviar na emissão.
+  const [origem] = useState(initial ?? null);
 
   // Destinatário
-  const [modoDest, setModoDest] = useState<"cadastrado" | "avulso">("cadastrado");
-  const [clienteId, setClienteId] = useState<string>("");
-  const [avNome, setAvNome] = useState("");
-  const [avDocumento, setAvDocumento] = useState("");
-  const [avIe, setAvIe] = useState("");
-  const [avEmail, setAvEmail] = useState("");
+  const [modoDest, setModoDest] = useState<"cadastrado" | "avulso">(
+    initial && !initial.clienteId ? "avulso" : "cadastrado"
+  );
+  const [clienteId, setClienteId] = useState<string>(initial?.clienteId ?? "");
+  const [avNome, setAvNome] = useState(initial?.destinatario.nome ?? "");
+  const [avDocumento, setAvDocumento] = useState(initial?.destinatario.documento ?? "");
+  const [avIe, setAvIe] = useState(initial?.destinatario.inscricaoEstadual ?? "");
+  const [avEmail, setAvEmail] = useState(initial?.destinatario.email ?? "");
   const [avLogradouro, setAvLogradouro] = useState("");
   const [avNumero, setAvNumero] = useState("");
   const [avComplemento, setAvComplemento] = useState("");
@@ -126,25 +159,25 @@ export function EmissaoAvulsaWorkspace({ data }: { data: EmissaoFormData }) {
   }
 
   // Itens / serviços
-  const [itens, setItens] = useState<ItemLinha[]>([]);
-  const [servicos, setServicos] = useState<ServicoLinha[]>([]);
+  const [itens, setItens] = useState<ItemLinha[]>(() => prefillToItens(initial));
+  const [servicos, setServicos] = useState<ServicoLinha[]>(() => prefillToServicos(initial));
   const [showProd, setShowProd] = useState(false);
 
   // Operação
-  const [naturezaOperacao, setNaturezaOperacao] = useState("Venda de mercadoria");
-  const [finalidade, setFinalidade] = useState<Finalidade>("NORMAL");
-  const [formaPagamento, setFormaPagamento] = useState(FORMAS_PAGAMENTO[0]);
-  const [condicaoPagamento, setCondicaoPagamento] = useState("");
+  const [naturezaOperacao, setNaturezaOperacao] = useState(initial?.naturezaOperacao ?? "Venda de mercadoria");
+  const [finalidade, setFinalidade] = useState<Finalidade>(initial?.finalidade ?? "NORMAL");
+  const [formaPagamento, setFormaPagamento] = useState(initial?.formaPagamento || FORMAS_PAGAMENTO[0]);
+  const [condicaoPagamento, setCondicaoPagamento] = useState(initial?.condicaoPagamento ?? "");
   const [baixarEstoque, setBaixarEstoque] = useState(false);
-  const [codigoLc116Doc, setCodigoLc116Doc] = useState("");
+  const [codigoLc116Doc, setCodigoLc116Doc] = useState(initial?.codigoServicoLc116 ?? "");
 
   // ISS (NFS-e): natureza/exigibilidade, alíquota informada, deduções e base de cálculo
   const [taxationType, setTaxationType] = useState("taxationInMunicipality");
-  const [aliquotaIss, setAliquotaIss] = useState(0);
+  const [aliquotaIss, setAliquotaIss] = useState(initial?.aliquotaIss ?? 0);
   const [deducoes, setDeducoes] = useState(0);
 
   // Retenções (NFS-e): ISS retido pelo tomador + retenções federais (alíquotas em %)
-  const [issRetido, setIssRetido] = useState(false);
+  const [issRetido, setIssRetido] = useState(initial?.issRetido ?? false);
   const [retIr, setRetIr] = useState(0);
   const [retPis, setRetPis] = useState(0);
   const [retCofins, setRetCofins] = useState(0);
@@ -153,10 +186,10 @@ export function EmissaoAvulsaWorkspace({ data }: { data: EmissaoFormData }) {
   const [baseRetencao, setBaseRetencao] = useState(0);
 
   // Totais editáveis (apenas NF-e/NFC-e)
-  const [frete, setFrete] = useState(0);
-  const [descontoGlobal, setDescontoGlobal] = useState(0);
+  const [frete, setFrete] = useState(initial?.frete ?? 0);
+  const [descontoGlobal, setDescontoGlobal] = useState(initial?.desconto ?? 0);
 
-  const [obs, setObs] = useState("");
+  const [obs, setObs] = useState(initial?.observacoes ?? "");
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -315,6 +348,9 @@ export function EmissaoAvulsaWorkspace({ data }: { data: EmissaoFormData }) {
         body = {
           modelo: tipo,
           finalidade,
+          // Devolução: referencia a NF-e original (NFref/refNFe) e vincula a nota de origem.
+          chaveReferenciada: finalidade === "DEVOLUCAO" ? origem?.chaveReferenciada ?? undefined : undefined,
+          notaOrigemId: finalidade === "DEVOLUCAO" ? origem?.notaOrigemId ?? undefined : undefined,
           naturezaOperacao: naturezaOperacao.trim() || undefined,
           receiver: receiverPayload,
           formaPagamento: formaPagamento || undefined,
@@ -428,6 +464,17 @@ export function EmissaoAvulsaWorkspace({ data }: { data: EmissaoFormData }) {
         </div>
         <button type="button" className="btn-erp ghost sm" onClick={reset}>Limpar</button>
       </div>
+
+      {origem && (
+        <div className={`alert ${origem.modo === "DEVOLUCAO" ? "warn" : "info"}`} style={{ marginBottom: 14 }}>
+          <strong>{origem.modo === "DEVOLUCAO" ? "Devolução de nota fiscal" : "Clonando nota fiscal"}</strong>
+          <span>
+            {origem.modo === "DEVOLUCAO"
+              ? `NF-e de devolução referente à ${origem.origemLabel}${origem.origemChave ? ` (chave ${origem.origemChave})` : ""}. Confira os itens, quantidades a devolver e o CFOP antes de emitir.`
+              : `Pré-preenchido a partir da ${origem.origemLabel}. Ajuste o que precisar e emita como uma nova nota.`}
+          </span>
+        </div>
+      )}
 
       <div className="atend-types" role="tablist" aria-label="Tipo de documento fiscal">
         {TIPOS.map((t) => (
@@ -592,7 +639,24 @@ export function EmissaoAvulsaWorkspace({ data }: { data: EmissaoFormData }) {
                             <td><input value={it.ncm} onChange={(e) => updItem(it.uid, { ncm: e.target.value })} placeholder="NCM" style={{ ...cellInput, width: 90 }} aria-label="NCM" /></td>
                             <td><input value={it.cfop} onChange={(e) => updItem(it.uid, { cfop: e.target.value })} placeholder="CFOP" style={{ ...cellInput, width: 70 }} aria-label="CFOP" /></td>
                             <td><input value={it.unidade} onChange={(e) => updItem(it.uid, { unidade: e.target.value })} style={{ ...cellInput, width: 56 }} aria-label="Unidade" /></td>
-                            <td className="num"><input type="number" min={0} step="any" value={it.quantidade} onChange={(e) => updItem(it.uid, { quantidade: Math.max(0, Number(e.target.value) || 0) })} style={cellNum} aria-label="Quantidade" /></td>
+                            <td className="num">
+                              <input
+                                type="number"
+                                min={0}
+                                max={it.maxQuantidade}
+                                step="any"
+                                value={it.quantidade}
+                                onChange={(e) => {
+                                  const v = Math.max(0, Number(e.target.value) || 0);
+                                  updItem(it.uid, { quantidade: it.maxQuantidade != null ? Math.min(v, it.maxQuantidade) : v });
+                                }}
+                                style={cellNum}
+                                aria-label="Quantidade"
+                              />
+                              {it.maxQuantidade != null && (
+                                <span style={{ display: "block", fontSize: 10, color: "var(--erp-mute)" }}>máx: {it.maxQuantidade}</span>
+                              )}
+                            </td>
                             <td className="num"><input type="number" min={0} step="any" value={it.precoUnitario} onChange={(e) => updItem(it.uid, { precoUnitario: Math.max(0, Number(e.target.value) || 0) })} style={cellNum} aria-label="Preço unitário" /></td>
                             <td className="num"><input type="number" min={0} step="any" value={it.desconto} onChange={(e) => updItem(it.uid, { desconto: Math.max(0, Number(e.target.value) || 0) })} style={cellNum} aria-label="Desconto" /></td>
                             <td className="num bold">{brl(sub)}</td>
