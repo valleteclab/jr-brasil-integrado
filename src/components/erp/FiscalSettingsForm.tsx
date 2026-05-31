@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/shared/Button";
 import type { FiscalConfigSummary } from "@/domains/fiscal/application/fiscal-config-use-cases";
 import { LC116_LIST } from "@/domains/fiscal/lc116";
@@ -80,6 +80,20 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
     }
   }
 
+  // Preview local da imagem selecionada (objeto URL revogado quando troca/limpa).
+  const logoPreview = useMemo(() => (logoFile ? URL.createObjectURL(logoFile) : null), [logoFile]);
+  useEffect(() => () => { if (logoPreview) URL.revokeObjectURL(logoPreview); }, [logoPreview]);
+
+  function selecionarLogo(file: File | null) {
+    setLogoErr("");
+    setLogoMsg("");
+    if (file) {
+      if (!["image/png", "image/jpeg"].includes(file.type)) { setLogoErr("Formato inválido. Envie PNG ou JPEG."); return; }
+      if (file.size > 200 * 1024) { setLogoErr("A logo deve ter no máximo 200 KB."); return; }
+    }
+    setLogoFile(file);
+  }
+
   async function enviarLogotipo() {
     setLogoErr("");
     setLogoMsg("");
@@ -92,10 +106,29 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
       const data = (await res.json()) as { message?: string; error?: string };
       if (!res.ok) throw new Error(data.error || "Não foi possível enviar a logo.");
       setLogoMsg(data.message || "Logo enviada com sucesso.");
-      setLogoFile(null);
       setConfig((c) => ({ ...c, logotipoInfo: logoFile.name }));
+      setLogoFile(null);
     } catch (e) {
       setLogoErr(e instanceof Error ? e.message : "Não foi possível enviar a logo.");
+    } finally {
+      setLogoBusy(false);
+    }
+  }
+
+  async function removerLogotipo() {
+    if (!window.confirm("Remover a logo da empresa? As próximas notas sairão sem logo.")) return;
+    setLogoErr("");
+    setLogoMsg("");
+    setLogoBusy(true);
+    try {
+      const res = await fetch("/api/erp/configuracoes/fiscal/logotipo", { method: "DELETE" });
+      const data = (await res.json()) as { message?: string; error?: string };
+      if (!res.ok) throw new Error(data.error || "Não foi possível remover a logo.");
+      setLogoMsg(data.message || "Logo removida.");
+      setLogoFile(null);
+      setConfig((c) => ({ ...c, logotipoInfo: "" }));
+    } catch (e) {
+      setLogoErr(e instanceof Error ? e.message : "Não foi possível remover a logo.");
     } finally {
       setLogoBusy(false);
     }
@@ -406,14 +439,28 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
             </p>
             {logoErr && <div className="alert danger" style={{ marginBottom: 10 }}><span>{logoErr}</span></div>}
             {logoMsg && <div className="alert success" style={{ marginBottom: 10 }}><span>{logoMsg}</span></div>}
-            <div className="erp-form" style={{ gridTemplateColumns: "1fr" }}>
-              <label>Arquivo da logo (PNG/JPEG)
-                <input type="file" accept="image/png,image/jpeg" onChange={(e) => setLogoFile(e.target.files?.[0] ?? null)} />
-              </label>
+            <div style={{ display: "flex", gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
+              <div className="erp-form" style={{ gridTemplateColumns: "1fr", flex: 1, minWidth: 220 }}>
+                <label>Arquivo da logo (PNG/JPEG, até 200 KB)
+                  <input type="file" accept="image/png,image/jpeg" onChange={(e) => selecionarLogo(e.target.files?.[0] ?? null)} />
+                </label>
+              </div>
+              {logoPreview && (
+                <div style={{ textAlign: "center" }}>
+                  <div style={{ fontSize: 11, color: "var(--erp-mute)", marginBottom: 4 }}>Pré-visualização</div>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={logoPreview} alt="Pré-visualização da logo" style={{ maxWidth: 160, maxHeight: 90, objectFit: "contain", border: "1px solid var(--erp-line)", borderRadius: 6, background: "#fff", padding: 4 }} />
+                </div>
+              )}
             </div>
-            <div className="erp-toolbar" style={{ borderBottom: "none", paddingBottom: 0, marginTop: 8 }}>
+            <div className="erp-toolbar" style={{ borderBottom: "none", paddingBottom: 0, marginTop: 8, gap: 8 }}>
+              {config.logotipoInfo && (
+                <button type="button" className="btn-erp danger sm" onClick={removerLogotipo} disabled={logoBusy}>
+                  Remover logo atual
+                </button>
+              )}
               <div className="grow" />
-              <button type="button" className="btn-erp primary sm" onClick={enviarLogotipo} disabled={logoBusy}>
+              <button type="button" className="btn-erp primary sm" onClick={enviarLogotipo} disabled={logoBusy || !logoFile}>
                 {logoBusy ? "Enviando…" : "Enviar logo"}
               </button>
             </div>

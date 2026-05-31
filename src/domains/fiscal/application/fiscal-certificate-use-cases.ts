@@ -3,7 +3,7 @@ import type { TenantScope } from "@/lib/auth/dev-session";
 import { createAuditLog } from "@/lib/audit/audit-service";
 import { getFiscalRuntimeConfig } from "./fiscal-config-use-cases";
 import { uploadSpedyCertificate } from "../providers/spedy-provider";
-import { uploadAcbrCertificate, uploadAcbrLogotipo } from "../providers/acbr-provider";
+import { uploadAcbrCertificate, uploadAcbrLogotipo, deleteAcbrLogotipo } from "../providers/acbr-provider";
 import type { ProviderContext } from "../providers/types";
 
 export class CertificateUploadError extends Error {}
@@ -59,6 +59,43 @@ export async function uploadFiscalLogotipo(
       entidadeId: scope.empresaId,
       acao: "UPLOAD_LOGO",
       payload: { filename: input.filename, provider: config.provider }
+    });
+  });
+
+  return result;
+}
+
+/** Remove a logo da empresa no provedor (ACBr) e limpa o metadado local. */
+export async function removeFiscalLogotipo(scope: TenantScope): Promise<{ ok: boolean; message: string }> {
+  const config = await getFiscalRuntimeConfig(scope);
+  if (config.provider !== "ACBR") {
+    throw new LogotipoUploadError("A remoção de logo pela plataforma está disponível para o provedor ACBr.");
+  }
+
+  const ctx: ProviderContext = {
+    ambiente: config.ambiente,
+    provedor: config.provider,
+    baseUrl: config.baseUrl,
+    token: config.token,
+    cscId: config.cscId,
+    cscToken: config.cscToken
+  };
+
+  const result = await deleteAcbrLogotipo(ctx, config.emitter.cnpj);
+  if (!result.ok) throw new LogotipoUploadError(result.message);
+
+  await prisma.configuracaoFiscal.update({
+    where: { empresaId: scope.empresaId },
+    data: { logotipoInfo: null }
+  });
+
+  await prisma.$transaction(async (tx) => {
+    await createAuditLog(tx, {
+      scope,
+      entidade: "ConfiguracaoFiscal",
+      entidadeId: scope.empresaId,
+      acao: "REMOVE_LOGO",
+      payload: { provider: config.provider }
     });
   });
 

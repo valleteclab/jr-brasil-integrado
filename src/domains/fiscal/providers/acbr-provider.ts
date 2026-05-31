@@ -849,6 +849,25 @@ export async function uploadAcbrLogotipo(
 }
 
 /**
+ * Remove a logo da empresa no cadastro da ACBr (`DELETE /empresas/{cpf_cnpj}/logotipo`).
+ */
+export async function deleteAcbrLogotipo(
+  ctx: ProviderContext,
+  cnpj: string
+): Promise<{ ok: boolean; message: string }> {
+  const provider = new AcbrFiscalProvider();
+  const documento = onlyDigits(cnpj);
+  const res = await (provider as unknown as {
+    request: <T>(c: ProviderContext, m: string, p: string, b?: unknown) => Promise<{ ok: boolean; status: number; data: T | undefined; errorMessage: string | null }>;
+  }).request(ctx, "DELETE", `/empresas/${documento}/logotipo`);
+  // 404 = não havia logo: tratamos como remoção bem-sucedida (idempotente).
+  if (!res.ok && res.status !== 404) {
+    return { ok: false, message: res.errorMessage ?? `Falha ao remover a logo na ACBr (HTTP ${res.status}).` };
+  }
+  return { ok: true, message: "Logo removida da ACBr." };
+}
+
+/**
  * Envia o certificado A1 (.pfx) ao cadastro da empresa na ACBr
  * (`PUT /empresas/{cpf_cnpj}/certificado`, corpo JSON com base64 + senha).
  * Reutiliza o cliente OAuth do provider. Retorna se a operação teve sucesso.

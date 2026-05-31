@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
-import { uploadFiscalLogotipo, LogotipoUploadError } from "@/domains/fiscal/application/fiscal-certificate-use-cases";
+import { uploadFiscalLogotipo, removeFiscalLogotipo, LogotipoUploadError } from "@/domains/fiscal/application/fiscal-certificate-use-cases";
 
 // Envia a logo da empresa emitente ao provedor (ACBr) — aparece no DANFE/DANFCE/DANFSE.
 export async function POST(request: Request) {
@@ -20,6 +20,18 @@ export async function POST(request: Request) {
     return NextResponse.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro ao enviar a logo.";
+    return NextResponse.json({ error: message }, { status: error instanceof LogotipoUploadError ? 400 : 500 });
+  }
+}
+
+// Remove a logo da empresa no provedor (ACBr).
+export async function DELETE() {
+  try {
+    const scope = await getDevelopmentTenantScope();
+    const result = await removeFiscalLogotipo(scope);
+    return NextResponse.json(result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Erro ao remover a logo.";
     return NextResponse.json({ error: message }, { status: error instanceof LogotipoUploadError ? 400 : 500 });
   }
 }
