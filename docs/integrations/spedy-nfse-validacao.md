@@ -32,10 +32,26 @@ GET  /v1/service-invoices/{id} → status rejected
   que retorna HTTP 500 — ver `spedy-nfe-500-diagnostico.md`).
 - Numa tentativa inicial houve `[E0717] "A assinatura é obrigatória..."`, que
   **deixou de ocorrer** nas tentativas seguintes — a Spedy passou a assinar a
-  DPS normalmente. A rejeição estabilizou em **SPD005**.
+  DPS normalmente (testado ao vivo: a rejeição migrou de E0717 para SPD005 e
+  **estabilizou em SPD005** em emissões repetidas). Ou seja, **a assinatura
+  funciona no sandbox** — o E0717 foi transitório, não um bloqueio permanente.
 - **SPD005** é uma limitação do **ambiente de homologação** (Simulação): o
   Ambiente Nacional não disponibiliza autorização para esse município em
   sandbox. Em **produção** a NFS-e será autorizada.
+
+### Notas sobre o E0717 (rejeição do Web Service Nacional)
+- E0717 é uma rejeição do **web service do Ambiente Nacional** (DPS recebida sem
+  assinatura XMLDSig válida), não uma validação interna da Spedy.
+- `issueType: "annfs"` (Ambiente Nacional da NFS-e) está **correto** — não
+  alterar para `website`/`alt`.
+- Não há passo de "ativação" de certificado além do upload: no schema
+  `CompanyDigitalCertificateDto`, `isActive` já é `true` e não há endpoint de
+  ativação/seleção de certificado de assinatura. O upload (`POST
+  /companies/{id}/certificates`) já o torna ativo.
+- Observação: como o E0717 apareceu na 1ª tentativa e sumiu nas seguintes, pode
+  haver um pequeno atraso entre o upload/ativação do certificado e a primeira
+  assinatura. Em produção, basta reemitir (idempotência via `integrationId`) se
+  ocorrer um E0717 transitório.
 
 ## Conclusão
 - O nosso payload e o fluxo NFS-e estão **corretos e conformes** ao schema da
