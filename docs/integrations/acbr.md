@@ -36,18 +36,28 @@ no factory para `ProvedorFiscal.ACBR`. Doc oficial: https://dev.acbr.api.br/docs
 - NFS-e: `autorizada`→AUTORIZADA · `negada`→DENEGADA · `cancelada`/`substituida`→CANCELADA ·
   `erro`→REJEITADA · `processando`→PROCESSANDO.
 
-## Validado ao vivo (Sandbox)
+## Validado ao vivo (Sandbox, com certificado A1)
 - ✅ OAuth `client_credentials` (escopos `nfe nfce nfse empresa cnpj conta`).
-- ✅ `testConnection` autenticado (`GET /empresas`) — empresa VALLETECLAB já cadastrada.
+- ✅ `testConnection` autenticado (`GET /empresas`).
 - ✅ Resolução de provedor NFS-e: Itabuna detectada como **PadrãoNacional → `nacional`**.
-- ✅ Shapes dos payloads NF-e (mod 55), NFC-e (mod 65) e NFS-e/DPS.
+- ✅ **NF-e AUTORIZADA pela SEFAZ-BA** (homologação): status 100 "Autorizado o uso da
+  NF-e", XML/DANFE baixados. Fluxo de ponta a ponta pelo nosso provider.
+- ⏳ **NFS-e (Ambiente Nacional)**: payload aceito (cTribNac e totTrib válidos), mas
+  retorna *"IM do emitente prestador não está autorizado a emitir NFS-e ... CNC NFS-e do
+  município"* — pendência de **credenciamento municipal** da empresa no Sistema Nacional
+  NFS-e (não é problema de código).
+
+## Aprendizados da emissão ao vivo (correções aplicadas)
+- **`autXML`**: a SEFAZ-BA exige o Grupo de Autorização de download do XML. Enviamos o
+  CNPJ da SEFAZ-BA (`13937073000156`) quando a UF do emitente é BA (`UF_AUTXML_CNPJ`).
+- **`indFinal`**: destinatário não-contribuinte (sem IE) exige `indFinal=1` (consumidor
+  final) — senão "Operação com não contribuinte deve indicar operação com consumidor final".
+- **`totTrib`**: o DPS nacional exige `valores.trib.totTrib` (federal/estadual/municipal).
+- **`cTribNac`**: derivado do LC116 como `item(2)+subitem(2)+desdobro(2)` (ex.: `"1.01"`
+  → `"010101"`). Best-effort — confirmar desdobros específicos por serviço.
 
 ## Pendências / caveats (revisar antes de produção)
-- **Emissão real exige certificado A1** cadastrado na ACBr — não validei autorização de
-  documento ao vivo (sem .pfx). Faça o upload e teste em homologação.
-- **`cServ.cTribNac`** (código nacional de tributação, 6 dígitos) é derivado do item
-  LC116 como best-effort (`"1.01"` → `"101000"`). **Confirmar** o código correto por
-  serviço/município antes de emitir em produção.
+- **NFS-e nacional**: credenciar a IM da empresa no Sistema Nacional NFS-e do município.
 - **Download de XML/PDF**: os endpoints exigem Bearer; guardamos a URL da API em
   `xmlUrl`/`danfeUrl` e o `providerRef` (id) para download server-side futuro. NFS-e
   também expõe `link_url` público quando disponível.

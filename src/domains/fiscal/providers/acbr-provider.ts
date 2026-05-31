@@ -43,6 +43,15 @@ const ACBR_SCOPES = "empresa nfe nfce nfse conta";
 /** Recurso REST por modelo. NFS-e usa o endpoint DPS (nacional). */
 const ACBR_RESOURCE = { NFE: "nfe", NFCE: "nfce", NFSE: "nfse" } as const;
 
+/**
+ * CNPJ a informar no Grupo de Autorização de download do XML (autXML) por UF que exige.
+ * A Bahia rejeita a NF-e sem esse grupo; na ausência de escritório de contabilidade,
+ * a própria SEFAZ orienta informar o CNPJ dela.
+ */
+const UF_AUTXML_CNPJ: Record<string, string> = {
+  BA: "13937073000156" // SEFAZ Bahia
+};
+
 /** Código IBGE da UF (cUF) por sigla. */
 const UF_TO_CUF: Record<string, number> = {
   RO: 11, AC: 12, AM: 13, RR: 14, PA: 15, AP: 16, TO: 17, MA: 21, PI: 22, CE: 23,
@@ -145,6 +154,19 @@ function mapTpPag(forma: string | null): string {
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Deriva o código de tributação nacional (cTribNac, 6 dígitos) a partir do item LC116.
+ * Formato: item(2) + subitem(2) + desdobro(2). Ex.: "1.01" → "010101".
+ * Best-effort — a lista nacional pode ter desdobros específicos; revisar por serviço.
+ */
+function cTribNacFromLc116(lc116: string | null | undefined): string {
+  const parts = (lc116 ?? "").split(".");
+  if (parts.length < 2) return "010101";
+  const item = parts[0].replace(/\D/g, "").padStart(2, "0").slice(-2);
+  const sub = parts[1].replace(/\D/g, "").padStart(2, "0").slice(0, 2);
+  return `${item}${sub}01`;
 }
 
 // Cache de token OAuth em memória, por ambiente+client_id. Sobrevive entre requisições no
@@ -363,6 +385,9 @@ export class AcbrFiscalProvider implements FiscalProvider {
     const cMunFG = input.emitter.codigoMunicipioIbge ?? "";
     const isNfce = modelo === "NFCE";
     const idDest = isNfce ? 1 : ufEmit && ufDest && ufEmit !== ufDest ? 2 : 1;
+    // Consumidor final: NFC-e sempre; NF-e quando o destinatário é não-contribuinte (sem IE),
+    // pois a SEFAZ exige indFinal=1 nesse caso ("operação com não contribuinte").
+    const indFinal = isNfce || !input.document.destinatario.inscricaoEstadual ? 1 : 0;
 
     const det = input.document.itens.map((item, index) => {
       const numeroItem = index + 1;
@@ -411,10 +436,12 @@ export class AcbrFiscalProvider implements FiscalProvider {
           serie: Number(input.document.serie) || 1, nNF: input.numero,
           dhEmi: new Date().toISOString(), tpNF: 1, idDest, cMunFG,
           tpImp: isNfce ? 4 : 1, tpEmis: 1, finNFe: finalidade(input.document.finalidade),
-          indFinal: isNfce ? 1 : 0, indPres: 1, procEmi: 0, verProc: "JR-Brasil-Integrado"
+          indFinal, indPres: 1, procEmi: 0, verProc: "JR-Brasil-Integrado"
         },
         emit: { CNPJ: onlyDigits(input.emitter.cnpj), CRT: crtFocus(input.emitter.regime) },
         dest: this.buildDest(input, isNfce),
+        // Grupo de Autorização de download do XML, exigido por algumas UFs (ex.: BA).
+        ...(UF_AUTXML_CNPJ[ufEmit] ? { autXML: [{ CNPJ: UF_AUTXML_CNPJ[ufEmit] }] } : {}),
         det,
         total: {
           ICMSTot: {
@@ -509,7 +536,7 @@ export class AcbrFiscalProvider implements FiscalProvider {
         serv: {
           locPrest: { cLocPrestacao: input.emitter.codigoMunicipioIbge ?? undefined },
           // cTribNac (código nacional) derivado do item LC116 — revisar conforme a cidade.
-          cServ: { cTribNac: onlyDigits(itemLc116).padEnd(6, "0").slice(0, 6) || "010101", xDescServ: descricao }
+          cServ: { cTribNac: cTribNacFromLc116(itemLc116), xDescServ: descricao }
         },
         valores: {
           vServPrest: { vServ: input.totals.valorServicos || input.total },
@@ -520,7 +547,15 @@ export class AcbrFiscalProvider implements FiscalProvider {
               vISSQN: input.totals.valorIss || undefined,
               tpRetISSQN: ret?.issRetido ? 1 : 2
             },
-            ...(tribFed ? { tribFed } : {})
+            ...(tribFed ? { tribFed } : {}),
+            // Total de tributos (obrigatório no DPS): federal/estadual/municipal.
+            totTrib: {
+              vTotTrib: {
+                vTotTribFed: (ret?.pis?.valor ?? 0) + (ret?.cofins?.valor ?? 0) + (ret?.ir?.valor ?? 0) + (ret?.csll?.valor ?? 0),
+                vTotTribEst: 0,
+                vTotTribMun: input.totals.valorIss || 0
+              }
+            }
           }
         }
       }
