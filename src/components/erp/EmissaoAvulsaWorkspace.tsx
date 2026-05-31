@@ -97,6 +97,32 @@ export function EmissaoAvulsaWorkspace({ data }: { data: EmissaoFormData }) {
   const [avCidade, setAvCidade] = useState("");
   const [avUf, setAvUf] = useState(data.emitterUf ?? "");
   const [avIbge, setAvIbge] = useState("");
+  const { buscarCep: lkCep, buscarCnpj: lkCnpj, buscandoCep, buscandoCnpj, erro: lookupErro } = useCadastroLookup();
+
+  async function preencherDestPorCnpj() {
+    const d = await lkCnpj(avDocumento);
+    if (!d) return;
+    if (d.razaoSocial) setAvNome(d.razaoSocial);
+    if (d.email) setAvEmail(d.email);
+    if (d.endereco.logradouro) setAvLogradouro(d.endereco.logradouro);
+    if (d.endereco.numero) setAvNumero(d.endereco.numero);
+    if (d.endereco.complemento) setAvComplemento(d.endereco.complemento);
+    if (d.endereco.bairro) setAvBairro(d.endereco.bairro);
+    if (d.endereco.cep) setAvCep(d.endereco.cep);
+    if (d.endereco.cidade) setAvCidade(d.endereco.cidade);
+    if (d.endereco.uf) setAvUf(d.endereco.uf);
+    if (d.endereco.codigoMunicipioIbge) setAvIbge(d.endereco.codigoMunicipioIbge);
+  }
+
+  async function preencherDestPorCep() {
+    const d = await lkCep(avCep);
+    if (!d) return;
+    if (d.logradouro) setAvLogradouro(d.logradouro);
+    if (d.bairro) setAvBairro(d.bairro);
+    if (d.cidade) setAvCidade(d.cidade);
+    if (d.uf) setAvUf(d.uf);
+    if (d.codigoMunicipioIbge) setAvIbge(d.codigoMunicipioIbge);
+  }
 
   // Itens / serviços
   const [itens, setItens] = useState<ItemLinha[]>([]);
@@ -479,15 +505,26 @@ export function EmissaoAvulsaWorkspace({ data }: { data: EmissaoFormData }) {
               </div>
             ) : (
               <div className="erp-form" style={{ gridTemplateColumns: "2fr 1fr 1fr" }}>
+                {lookupErro && <div className="alert danger full"><span>{lookupErro}</span></div>}
                 <label className="full">Nome / Razão social<input value={avNome} onChange={(e) => setAvNome(e.target.value)} placeholder="Nome do destinatário" /></label>
-                <label>CPF / CNPJ<input value={avDocumento} onChange={(e) => setAvDocumento(e.target.value)} inputMode="numeric" placeholder="Somente números" /></label>
+                <label>CPF / CNPJ
+                  <span style={{ display: "flex", gap: 6 }}>
+                    <input value={avDocumento} onChange={(e) => setAvDocumento(e.target.value)} inputMode="numeric" placeholder="Somente números" style={{ flex: 1 }} />
+                    <button type="button" className="btn-erp light xs" onClick={preencherDestPorCnpj} disabled={buscandoCnpj}>{buscandoCnpj ? "…" : "CNPJ"}</button>
+                  </span>
+                </label>
                 <label>Inscrição estadual<input value={avIe} onChange={(e) => setAvIe(e.target.value)} placeholder="ISENTO ou nº" /></label>
                 <label>E-mail<input type="email" value={avEmail} onChange={(e) => setAvEmail(e.target.value)} placeholder="email@dominio.com" /></label>
                 <label className="full">Logradouro<input value={avLogradouro} onChange={(e) => setAvLogradouro(e.target.value)} /></label>
                 <label>Número<input value={avNumero} onChange={(e) => setAvNumero(e.target.value)} /></label>
                 <label>Complemento<input value={avComplemento} onChange={(e) => setAvComplemento(e.target.value)} /></label>
                 <label>Bairro<input value={avBairro} onChange={(e) => setAvBairro(e.target.value)} /></label>
-                <label>CEP<input value={avCep} onChange={(e) => setAvCep(e.target.value)} inputMode="numeric" /></label>
+                <label>CEP
+                  <span style={{ display: "flex", gap: 6 }}>
+                    <input value={avCep} onChange={(e) => setAvCep(e.target.value)} onBlur={preencherDestPorCep} inputMode="numeric" style={{ flex: 1 }} />
+                    <button type="button" className="btn-erp light xs" onClick={preencherDestPorCep} disabled={buscandoCep}>{buscandoCep ? "…" : "CEP"}</button>
+                  </span>
+                </label>
                 <label>Cidade<input value={avCidade} onChange={(e) => setAvCidade(e.target.value)} /></label>
                 <label>
                   UF
