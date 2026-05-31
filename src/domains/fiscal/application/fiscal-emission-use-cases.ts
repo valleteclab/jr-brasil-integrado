@@ -204,6 +204,7 @@ export async function emitFiscalDocument(
     ambiente: config.ambiente,
     provedor: config.provider,
     baseUrl: config.baseUrl,
+    emissionMode: config.emissionMode,
     token: config.token,
     cscId: config.cscId,
     cscToken: config.cscToken

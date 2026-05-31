@@ -22,6 +22,7 @@ export type FiscalConfigSummary = {
   emitNfse: boolean;
   codigoMunicipioIbge: string;
   codigoServicoLc116Padrao: string;
+  spedyModoEmissao: string;
   certificadoInfo: string;
   active: boolean;
   testedAt: string | null;
@@ -45,6 +46,7 @@ export type SaveFiscalConfigInput = {
   emitNfse?: boolean;
   codigoMunicipioIbge?: string;
   codigoServicoLc116Padrao?: string;
+  spedyModoEmissao?: string;
   certificadoInfo?: string;
   active?: boolean;
   notes?: string;
@@ -66,6 +68,7 @@ function toSummary(config: {
   emitirNfse: boolean;
   codigoMunicipioIbge: string | null;
   codigoServicoLc116Padrao: string | null;
+  spedyModoEmissao: string | null;
   certificadoInfo: string | null;
   ativo: boolean;
   testadoEm: Date | null;
@@ -90,6 +93,7 @@ function toSummary(config: {
     emitNfse: config?.emitirNfse ?? false,
     codigoMunicipioIbge: config?.codigoMunicipioIbge ?? "",
     codigoServicoLc116Padrao: config?.codigoServicoLc116Padrao ?? "",
+    spedyModoEmissao: config?.spedyModoEmissao ?? "COMPLETO",
     certificadoInfo: config?.certificadoInfo ?? "",
     active: config?.ativo ?? false,
     testedAt: config?.testadoEm?.toISOString() ?? null,
@@ -143,6 +147,7 @@ export async function saveFiscalConfig(scope: TenantScope, input: SaveFiscalConf
       emitirNfse: input.emitNfse ?? false,
       codigoMunicipioIbge: input.codigoMunicipioIbge?.trim() || null,
       codigoServicoLc116Padrao: input.codigoServicoLc116Padrao?.trim() || null,
+      spedyModoEmissao: input.spedyModoEmissao?.trim() || "COMPLETO",
       certificadoInfo: input.certificadoInfo?.trim() || null,
       ativo: input.active ?? false,
       observacoes: input.notes?.trim() || null,
@@ -166,6 +171,7 @@ export async function saveFiscalConfig(scope: TenantScope, input: SaveFiscalConf
       emitirNfse: input.emitNfse ?? false,
       codigoMunicipioIbge: input.codigoMunicipioIbge?.trim() || null,
       codigoServicoLc116Padrao: input.codigoServicoLc116Padrao?.trim() || null,
+      spedyModoEmissao: input.spedyModoEmissao?.trim() || "COMPLETO",
       certificadoInfo: input.certificadoInfo?.trim() || null,
       ativo: input.active ?? false,
       observacoes: input.notes?.trim() || null,
@@ -203,6 +209,7 @@ export async function getFiscalRuntimeConfig(scope: TenantScope) {
     ambiente: config?.ambiente ?? "HOMOLOGACAO",
     regime: config?.regimeTributario ?? empresa.regimeTributario,
     baseUrl: config?.baseUrl ?? null,
+    emissionMode: config?.spedyModoEmissao ?? "COMPLETO",
     token: config?.tokenCriptografado ? decryptSecret(config.tokenCriptografado) : null,
     cscId: config?.cscId ?? null,
     cscToken: config?.cscTokenCriptografado ? decryptSecret(config.cscTokenCriptografado) : null,

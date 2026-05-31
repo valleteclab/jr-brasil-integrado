@@ -27,6 +27,8 @@ export type ProviderContext = {
   token: string | null;
   cscId: string | null;
   cscToken: string | null;
+  /** Spedy: "COMPLETO" (padrao) ou "SIMPLIFICADO" (/orders). */
+  emissionMode?: string | null;
 };
 
 export type EmitInput = {

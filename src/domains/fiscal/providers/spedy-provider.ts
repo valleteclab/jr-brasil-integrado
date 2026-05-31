@@ -12,6 +12,7 @@ import type {
   ProviderContext,
   ProviderEmitter
 } from "./types";
+import { friendlyFiscalMessage } from "../fiscal-messages";
 
 /**
  * Provedor fiscal Spedy (https://api.spedy.com.br) — integração real e completa.
@@ -32,21 +33,22 @@ import type {
 // Tipos locais do payload Spedy (apenas os campos que utilizamos).
 // ---------------------------------------------------------------------------
 
-/** Cidade por código IBGE (preferencial) ou por nome+UF. */
-type SpedyCity = { code: string } | { name: string; state: string };
+/** Cidade: código IBGE e/ou nome+UF (campos do CityCreateDto da Spedy). */
+type SpedyCity = { code?: string; name?: string; state?: string };
 
 type SpedyAddress = {
   street?: string;
   number?: string;
   district?: string;
-  zipCode?: string;
-  complement?: string;
+  /** CEP — campo `postalCode` no AddressCreateDto da Spedy. */
+  postalCode?: string;
+  /** Complemento — campo `additionalInformation` no AddressCreateDto. */
+  additionalInformation?: string;
   city?: SpedyCity;
-  state?: string;
 };
 
 type SpedyReceiver = {
-  name: string;
+  name?: string;
   federalTaxNumber?: string;
   stateTaxNumber?: string | null;
   email?: string | null;
@@ -72,8 +74,8 @@ type SpedyIcmsNormal = {
   baseTaxReduction?: number;
   rate?: number;
   amount?: number;
-  stRetention?: number;
-  baseStRetention?: number;
+  stRetentionAmount?: number;
+  baseStRetentionAmount?: number;
 };
 
 type SpedyIcms = SpedyIcmsSimples | SpedyIcmsNormal;
@@ -100,9 +102,12 @@ type SpedyItem = {
   quantity: number;
   unitAmount: number;
   totalAmount: number;
-  unitTax: number;
-  quantityTax: number;
-  unitTaxAmount: number;
+  /** Unidade tributável (uTrib) — STRING no schema da Spedy (ex.: "UN"). */
+  unitTax?: string;
+  /** Quantidade tributável (qTrib). */
+  quantityTax?: number;
+  /** Valor unitário de tributação (vUnTrib) — preço por unidade, não o tributo. */
+  unitTaxAmount?: number;
   makeupTotal: true;
   taxes: SpedyItemTaxes;
 };
@@ -170,6 +175,52 @@ type SpedyServiceInvoice = {
   };
 };
 
+/** Item da venda no modo Simplificado (/orders) — apenas dados comerciais. */
+type SpedyOrderItem = {
+  quantity: number;
+  price: number;
+  amount: number;
+  discountAmount?: number;
+  product: { name: string; code: string; price: number };
+};
+
+/** Cliente da venda (/orders). Endereco usa postalCode (nao zipCode). */
+type SpedyOrderCustomer = {
+  name?: string;
+  federalTaxNumber?: string;
+  email?: string | null;
+  address?: {
+    street?: string;
+    number?: string;
+    district?: string;
+    postalCode?: string;
+    /** Complemento — campo `additionalInformation` no AddressDto da Spedy. */
+    additionalInformation?: string;
+    city?: { code?: string; name?: string; state?: string };
+  };
+};
+
+/** Corpo da venda no modo Simplificado (/orders). Sem tributos: a Spedy os calcula no backoffice. */
+type SpedyOrder = {
+  transactionId?: string;
+  date?: string;
+  amount: number;
+  autoIssueMode: "immediately" | "disabled" | "afterPayment" | "afterWarrency";
+  status: "approved" | "awaitingPayment" | "created";
+  paymentMethod: string;
+  sendEmailToCustomer: boolean;
+  customer: SpedyOrderCustomer;
+  items: SpedyOrderItem[];
+};
+
+/** Resposta da criacao de venda (/orders): traz as notas geradas. */
+type SpedyOrderResponse = {
+  id?: string;
+  transactionId?: string;
+  status?: string;
+  invoices?: Array<{ id?: string; status?: string; model?: string }>;
+};
+
 /** Resposta de uma nota (POST inicial e GET de consulta). */
 type SpedyInvoiceResponse = {
   id?: string;
@@ -195,6 +246,92 @@ const SPEDY_BASE_URL: Record<ProviderContext["ambiente"], string> = {
   HOMOLOGACAO: "https://sandbox-api.spedy.com.br/v1"
 };
 
+/** Resolve a base URL da Spedy (override do contexto > ambiente). */
+export function resolveSpedyBaseUrl(ctx: ProviderContext): string {
+  return (ctx.baseUrl?.trim() || SPEDY_BASE_URL[ctx.ambiente]).replace(/\/$/, "");
+}
+
+type SpedyErrorBody = { errors?: Array<{ message?: string }> };
+
+function spedyErrorMessage(raw: string): string {
+  try {
+    const parsed = JSON.parse(raw) as SpedyErrorBody;
+    const msg = parsed.errors?.map((e) => e.message).filter(Boolean).join(" · ");
+    if (msg) return msg;
+  } catch {
+    /* corpo não-JSON */
+  }
+  return raw.slice(0, 300);
+}
+
+export type SpedyCertificateResult = {
+  ok: boolean;
+  alreadyRegistered: boolean;
+  message?: string;
+  expiresOn?: string | null;
+};
+
+/**
+ * Envia o certificado digital A1 (.pfx) da empresa para a Spedy
+ * (`POST /v1/companies/{id}/certificates`, multipart `CertificateFile`/`Password`).
+ * A chave de API é por empresa: descobrimos o `companyId` via `GET /v1/companies`.
+ * O arquivo e a senha nunca são persistidos/logados no nosso lado.
+ */
+export async function uploadSpedyCertificate(
+  ctx: ProviderContext,
+  file: { buffer: ArrayBuffer | Buffer; filename: string },
+  password: string
+): Promise<SpedyCertificateResult> {
+  const token = ctx.token?.trim();
+  if (!token) throw new Error("Configure a chave de API (X-Api-Key) da Spedy antes de enviar o certificado.");
+  const baseUrl = resolveSpedyBaseUrl(ctx);
+
+  // 1) Descobre o companyId associado à chave de API.
+  const companiesRes = await fetch(`${baseUrl}/companies?page=1&pageSize=1`, {
+    headers: { "X-Api-Key": token },
+    signal: AbortSignal.timeout(30000)
+  });
+  const companiesText = await companiesRes.text();
+  if (!companiesRes.ok) {
+    throw new Error(`Não foi possível identificar a empresa na Spedy (HTTP ${companiesRes.status}): ${spedyErrorMessage(companiesText)}`);
+  }
+  const companies = JSON.parse(companiesText) as { items?: Array<{ id: string }> };
+  const companyId = companies.items?.[0]?.id;
+  if (!companyId) throw new Error("Nenhuma empresa encontrada para esta chave de API da Spedy.");
+
+  // 2) Envia o certificado (multipart/form-data).
+  const form = new FormData();
+  const bytes = file.buffer instanceof Buffer ? new Uint8Array(file.buffer) : new Uint8Array(file.buffer);
+  form.append("CertificateFile", new Blob([bytes], { type: "application/x-pkcs12" }), file.filename || "certificado.pfx");
+  form.append("Password", password);
+
+  const res = await fetch(`${baseUrl}/companies/${companyId}/certificates`, {
+    method: "POST",
+    headers: { "X-Api-Key": token },
+    body: form,
+    signal: AbortSignal.timeout(60000)
+  });
+  const text = await res.text();
+
+  if (res.ok) {
+    let expiresOn: string | null = null;
+    try {
+      const body = JSON.parse(text) as { expiresOn?: string; expirationDate?: string };
+      expiresOn = body.expiresOn ?? body.expirationDate ?? null;
+    } catch {
+      /* resposta sem corpo JSON */
+    }
+    return { ok: true, alreadyRegistered: false, expiresOn };
+  }
+
+  const message = spedyErrorMessage(text);
+  // "Esse certificado já está cadastrado" é sucesso prático (idempotência).
+  if (/já está cadastrado/i.test(message)) {
+    return { ok: true, alreadyRegistered: true, message };
+  }
+  throw new Error(`A Spedy recusou o certificado (HTTP ${res.status}): ${message}`);
+}
+
 /** Quantidade de tentativas e intervalo (ms) do polling de status. */
 const POLL_ATTEMPTS = 5;
 const POLL_INTERVAL_MS = 3000;
@@ -211,6 +348,23 @@ function modelSegment(modelo: ModeloFiscal): "product-invoices" | "consumer-invo
     default:
       // Exaustividade: novos modelos devem ser tratados explicitamente.
       throw new Error(`Modelo fiscal não suportado pela Spedy: ${String(modelo)}`);
+  }
+}
+
+/** Arredonda para 2 casas (consistencia de valores na venda /orders). */
+function round2(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+/** Mapeia o modelo retornado pela venda (/orders) para o segmento de consulta. */
+function orderModelToSegment(model: string | null | undefined): "product-invoices" | "consumer-invoices" | "service-invoices" {
+  switch ((model ?? "").toLowerCase()) {
+    case "consumerinvoice":
+      return "consumer-invoices";
+    case "serviceinvoice":
+      return "service-invoices";
+    default:
+      return "product-invoices";
   }
 }
 
@@ -350,26 +504,41 @@ export class SpedyFiscalProvider implements FiscalProvider {
   // -------------------------------------------------------------------------
 
   /** Monta o receiver (destinatário) a partir do documento normalizado. */
+  /**
+   * Tomador da NFS-e (Ambiente Nacional): quando há CNPJ/CPF, o schema nacional NÃO aceita
+   * o nome (`xNome`) — a Receita resolve o nome pelo documento (rejeição E1235). Por isso o
+   * `name` só é enviado quando NÃO há documento (tomador não identificado/sem NI).
+   */
+  private buildServiceReceiver(input: EmitInput): SpedyReceiver {
+    const base = this.buildReceiver(input);
+    // Tomador identificado por CNPJ/CPF: o schema nacional aceita apenas o documento
+    // (e contato), sem nome (`xNome`) nem endereço (`end`) — a Receita os resolve (E1235).
+    if (base.federalTaxNumber) {
+      // Tomador identificado: documento + nome (exigido), sem endereço/e-mail no bloco `toma`.
+      return { federalTaxNumber: base.federalTaxNumber, name: base.name, stateTaxNumber: base.stateTaxNumber };
+    }
+    return base;
+  }
+
   private buildReceiver(input: EmitInput): SpedyReceiver {
     const dest = input.document.destinatario;
     const endereco = dest.endereco;
 
     let address: SpedyAddress | undefined;
     if (endereco) {
-      let city: SpedyCity | undefined;
-      if (endereco.codigoMunicipioIbge) {
-        city = { code: endereco.codigoMunicipioIbge };
-      } else if (endereco.cidade && (endereco.uf ?? dest.uf)) {
-        city = { name: endereco.cidade, state: (endereco.uf ?? dest.uf) as string };
-      }
+      // CityCreateDto aceita código IBGE e nome+UF simultaneamente; enviamos o que houver.
+      const uf = endereco.uf ?? dest.uf ?? undefined;
+      const city: SpedyCity = {};
+      if (endereco.codigoMunicipioIbge) city.code = endereco.codigoMunicipioIbge;
+      if (endereco.cidade) city.name = endereco.cidade;
+      if (uf) city.state = uf;
       address = {
         street: endereco.logradouro ?? undefined,
         number: endereco.numero ?? undefined,
-        complement: endereco.complemento ?? undefined,
+        additionalInformation: endereco.complemento ?? undefined,
         district: endereco.bairro ?? undefined,
-        zipCode: onlyDigits(endereco.cep) || undefined,
-        state: endereco.uf ?? dest.uf ?? undefined,
-        city
+        postalCode: onlyDigits(endereco.cep) || undefined,
+        city: Object.keys(city).length ? city : undefined
       };
     }
 
@@ -415,8 +584,8 @@ export class SpedyFiscalProvider implements FiscalProvider {
     };
     // CST 60 (já retido) ou 70 (com redução + ST): informar ICMS-ST quando houver.
     if ((cst === 60 || cst === 70) && taxes.valorIcmsSt > 0) {
-      icms.stRetention = taxes.valorIcmsSt;
-      icms.baseStRetention = taxes.baseIcmsSt;
+      icms.stRetentionAmount = taxes.valorIcmsSt;
+      icms.baseStRetentionAmount = taxes.baseIcmsSt;
     }
     return icms;
   }
@@ -439,10 +608,11 @@ export class SpedyFiscalProvider implements FiscalProvider {
       quantity: item.quantidade,
       unitAmount: item.valorUnitario,
       totalAmount: item.valorTotal,
-      // Tributos aproximados (Lei 12.741): valor por unidade e total.
-      unitTax: item.quantidade > 0 ? taxes.valorTributos / item.quantidade : 0,
+      // Unidade/quantidade/valor tributáveis (uTrib/qTrib/vUnTrib) — espelham os comerciais.
+      // unitTax é STRING (a unidade), unitTaxAmount é o preço unitário (não o tributo).
+      unitTax: item.unidade,
       quantityTax: item.quantidade,
-      unitTaxAmount: taxes.valorTributos,
+      unitTaxAmount: item.valorUnitario,
       makeupTotal: true,
       taxes: {
         icms: this.buildIcms(taxes, regime),
@@ -479,7 +649,26 @@ export class SpedyFiscalProvider implements FiscalProvider {
   }
 
   /** Traduz a forma de pagamento textual para o vocabulário da Spedy. */
+  /**
+   * Forma de pagamento da NF-e/NFC-e — enum SefazInvoicePaymentMethod da Spedy
+   * (dinheiro = "money", boleto = "billetBanking").
+   */
   private mapPaymentMethod(forma: string | null): string {
+    const f = (forma ?? "").toLowerCase();
+    if (f.includes("pix")) return "pix";
+    if (f.includes("credito") || f.includes("crédito") || f.includes("credit")) return "creditCard";
+    if (f.includes("debito") || f.includes("débito") || f.includes("debit")) return "debitCard";
+    if (f.includes("boleto") || f.includes("billet")) return "billetBanking";
+    if (f.includes("dinheiro") || f.includes("cash") || f.includes("especie") || f.includes("espécie")) return "money";
+    if (f.includes("transfer")) return "bankTransfer";
+    return "other";
+  }
+
+  /**
+   * Forma de pagamento da venda (/orders) — enum OrderPaymentMethod da Spedy
+   * (dinheiro = "cash", boleto = "billetBank"), distinto do enum da NF-e.
+   */
+  private mapOrderPaymentMethod(forma: string | null): string {
     const f = (forma ?? "").toLowerCase();
     if (f.includes("pix")) return "pix";
     if (f.includes("credito") || f.includes("crédito") || f.includes("credit")) return "creditCard";
@@ -527,6 +716,67 @@ export class SpedyFiscalProvider implements FiscalProvider {
     };
   }
 
+  /** Cliente da venda no modo Simplificado (/orders). */
+  private buildOrderCustomer(input: EmitInput): SpedyOrderCustomer {
+    const dest = input.document.destinatario;
+    const endereco = dest.endereco;
+    const customer: SpedyOrderCustomer = {
+      name: dest.nome,
+      federalTaxNumber: onlyDigits(dest.documento) || undefined,
+      email: dest.email
+    };
+    if (endereco) {
+      const city: { code?: string; name?: string; state?: string } = {};
+      if (endereco.codigoMunicipioIbge) city.code = endereco.codigoMunicipioIbge;
+      if (endereco.cidade) city.name = endereco.cidade;
+      const uf = endereco.uf ?? dest.uf ?? undefined;
+      if (uf) city.state = uf;
+      customer.address = {
+        street: endereco.logradouro ?? undefined,
+        number: endereco.numero ?? undefined,
+        additionalInformation: endereco.complemento ?? undefined,
+        district: endereco.bairro ?? undefined,
+        postalCode: onlyDigits(endereco.cep) || undefined,
+        city: Object.keys(city).length ? city : undefined
+      };
+    }
+    return customer;
+  }
+
+  /**
+   * Corpo da venda no modo Simplificado (/orders). Envia apenas dados comerciais
+   * (cliente, itens, valores); a tributacao e resolvida pela Spedy no backoffice.
+   * O valor da venda e a soma dos itens (amount = preco x qtde - desconto) para
+   * garantir a consistencia exigida pela API.
+   */
+  private buildOrderBody(input: EmitInput): SpedyOrder {
+    const items: SpedyOrderItem[] = input.document.itens.map((item) => {
+      const desconto = item.desconto ?? 0;
+      const amount = round2(item.quantidade * item.valorUnitario - desconto);
+      const orderItem: SpedyOrderItem = {
+        quantity: item.quantidade,
+        price: item.valorUnitario,
+        amount,
+        product: { name: item.descricao, code: item.codigo, price: item.valorUnitario }
+      };
+      if (desconto > 0) orderItem.discountAmount = round2(desconto);
+      return orderItem;
+    });
+    const amount = round2(items.reduce((sum, it) => sum + it.amount, 0));
+
+    return {
+      transactionId: input.integrationId,
+      date: new Date().toISOString().slice(0, 19),
+      amount,
+      autoIssueMode: "immediately",
+      status: "approved",
+      paymentMethod: this.mapOrderPaymentMethod(input.document.formaPagamento),
+      sendEmailToCustomer: Boolean(input.document.destinatario.email),
+      customer: this.buildOrderCustomer(input),
+      items
+    };
+  }
+
   /** Corpo de NFS-e. */
   private buildServiceBody(input: EmitInput): SpedyServiceInvoice {
     // NFS-e: usa o primeiro item de serviço como referência de ISS/código de serviço.
@@ -557,7 +807,7 @@ export class SpedyFiscalProvider implements FiscalProvider {
       description,
       federalServiceCode,
       taxationType: input.document.taxationType ?? "taxationInMunicipality",
-      receiver: this.buildReceiver(input),
+      receiver: this.buildServiceReceiver(input),
       total: {
         invoiceAmount: input.total,
         issRate: aliquotaIss / 100, // FRAÇÃO (ex.: 0.05)
@@ -616,8 +866,7 @@ export class SpedyFiscalProvider implements FiscalProvider {
       result.motivo = "Autorizado o uso da nota fiscal.";
     } else if (status === "REJEITADA" || status === "DENEGADA") {
       const detail = invoice.processingDetail;
-      const parts = [detail?.message, detail?.code ? `(${detail.code})` : null].filter(Boolean);
-      result.motivo = parts.join(" ") || "Nota rejeitada pela Spedy/SEFAZ.";
+      result.motivo = friendlyFiscalMessage(detail?.code, detail?.message) || "Nota rejeitada pela Spedy/SEFAZ.";
     } else {
       result.motivo = "Emissão em processamento na Spedy. O status será atualizado via webhook.";
     }
@@ -630,6 +879,15 @@ export class SpedyFiscalProvider implements FiscalProvider {
   // -------------------------------------------------------------------------
 
   async emit(input: EmitInput, ctx: ProviderContext): Promise<EmitResult> {
+    // Modo Simplificado (/orders): a Spedy resolve a tributação pelo backoffice.
+    if ((ctx.emissionMode ?? "COMPLETO").toUpperCase() === "SIMPLIFICADO") {
+      return this.emitViaOrder(input, ctx);
+    }
+    return this.emitComplete(input, ctx);
+  }
+
+  /** Modo Completo: monta a nota inteira (tributos calculados pelo ERP) e a transmite. */
+  private async emitComplete(input: EmitInput, ctx: ProviderContext): Promise<EmitResult> {
     const modelo = input.document.modelo;
     const segment = modelSegment(modelo);
 
@@ -648,6 +906,33 @@ export class SpedyFiscalProvider implements FiscalProvider {
 
     // Emissão assíncrona: aguarda o estado final por polling não-bloqueante.
     const final = await this.pollUntilFinal(ctx, segment, created.id, created);
+    return this.toEmitResult(ctx, segment, final);
+  }
+
+  /**
+   * Modo Simplificado: cria uma venda (/orders) com emissão imediata. A Spedy gera a nota
+   * com a tributação configurada no backoffice e devolve o id/modelo da nota em `invoices[]`.
+   * Em seguida acompanhamos o status da nota pelo segmento correspondente.
+   */
+  private async emitViaOrder(input: EmitInput, ctx: ProviderContext): Promise<EmitResult> {
+    const body = this.buildOrderBody(input);
+    const res = await this.request<SpedyOrderResponse>(ctx, "POST", "/orders", body);
+    if (!res.ok) {
+      return { status: "ERRO", motivo: res.errorMessage ?? "Falha ao enviar a venda à Spedy (modo simplificado)." };
+    }
+
+    const invoice = res.data?.invoices?.[0];
+    if (!invoice?.id) {
+      // A venda foi criada mas nenhuma nota foi enfileirada (ex.: emissão desabilitada no backoffice).
+      return {
+        status: "PROCESSANDO",
+        providerRef: res.data?.id,
+        motivo: "Venda registrada na Spedy. A nota será emitida conforme a configuração do backoffice (modo simplificado)."
+      };
+    }
+
+    const segment = orderModelToSegment(invoice.model);
+    const final = await this.pollUntilFinal(ctx, segment, invoice.id, { id: invoice.id, status: invoice.status });
     return this.toEmitResult(ctx, segment, final);
   }
 

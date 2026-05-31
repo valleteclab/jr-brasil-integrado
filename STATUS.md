@@ -341,3 +341,29 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Helpers compartilhados `src/domains/fiscal/nfse-tax.ts` (`computeRetencoes`, `issPorServico`) reusados pela emissao avulsa e pelo faturamento de OS (sem duplicacao).
 - Faturamento de OS (`faturarOrdemServico` + rota + `OrdemServicoDetail`) passou a aceitar alIquota de ISS, deducoes, base de calculo, natureza do ISS e retencoes (ISS retido + IRRF/INSS/PIS/COFINS/CSLL + base de retencao), exibidos quando "Emitir NFS-e" esta marcado.
 - Validacao: `tsc` (0), `lint` (0), `build` (ok) e smoke: OS com servico R$5.000, ISS 5% -> R$250; ISS retido + IRRF 1,5% (75) + PIS 0,65% (32,5) -> liquido R$4.892,50, AUTORIZADA.
+
+## Atualizacao operacional - 2026-05-30 - certificado A1 via ERP + teste real Spedy
+
+- Implementado envio do certificado digital A1 (.pfx) pela plataforma ao provedor (Spedy): helper `uploadSpedyCertificate` (descobre o companyId pela chave, POST multipart `CertificateFile`/`Password`, idempotente quando "ja cadastrado"), use-case `uploadFiscalCertificate` (so persiste metadados: nome/validade; nunca o arquivo/senha), rota `POST /api/erp/configuracoes/fiscal/certificado` (multipart) e card "Certificado digital A1" no `FiscalSettingsForm` (somente Spedy).
+- Teste real (sandbox) validou o fluxo fiscal ponta a ponta:
+  - Payload da NFS-e corrigido (bloco do tomador) — passou na validacao de schema do Ambiente Nacional.
+  - Com o certificado vinculado, a assinatura deixou de falhar (E0717 resolvido); o erro evoluiu para SPD005 ("servico de autorizacao indisponivel no ambiente de Homologacao para o municipio de Luis Eduardo Magalhaes") — limitacao da prefeitura emitente, nao do sistema.
+  - Upload de certificado pela nossa rota retornou ok (idempotente: "ja cadastrado").
+- Empresa de teste reconfigurada como Regime Normal (Lucro Presumido), conforme cadastro real.
+- Validacao: `tsc` (0), `lint` (0), `build` (rota incluida).
+
+## Atualizacao operacional - 2026-05-30 - NF-e via Spedy: estado REAL (HTTP 500 nao resolvido)
+
+- CORRECAO DE REGISTRO (importante): commits anteriores afirmaram, de forma incorreta, "NF-e AUTORIZADA" (b92a894) e depois "500 resolvido / rejeicao 760" (b956900). NENHUM dos dois ocorreu. Esta entrada e a fonte da verdade.
+- Estado REAL e verificado: o `POST /v1/product-invoices` (modo completo) da Spedy retorna HTTP 500 com corpo vazio, inclusive para o payload MINIMO da propria documentacao (Simples Nacional CSOSN 400, pis/cofins cst 7, payments.method "pix"). A nota nem aparece no painel da Spedy.
+- O mesmo CNPJ/chave emite com sucesso (HTTP 200) via `POST /v1/orders` (modo simplificado), e a NFS-e foi assinada (E0717 resolvido). Logo, o problema do 500 e especifico do endpoint de NF-e completo, no lado da Spedy.
+- Ajuste de codigo mantido (defensavel pela doc, mas NAO resolveu o 500): `taxes.icms.rate` em fracao (0.18), conforme o exemplo do swagger `SefazInvoiceItemIcmsDto`.
+- Encaminhamento: abrir chamado na Spedy com o x-trace-id de um 500 (a API retorna esse header) para que eles verifiquem o erro interno; ou usar `/v1/orders` como caminho alternativo (porem a tributacao passa a ser controlada no backoffice da Spedy, nao no nosso motor).
+
+## Atualizacao operacional - 2026-05-30 - validacao previa de NF-e + mensagens SPD003
+
+- Mensagens de rejeicao agora aparecem no nosso sistema de forma clara: mapeado SPD003 (campo obrigatorio/ausente/fora de ordem) e heuristicas para "logradouro/endereco invalido" e "campo abaixo do tamanho minimo" em fiscal-messages.ts.
+- Validacao PREVIA na emissao de NF-e/NFC-e avulsa (antes de enviar a Spedy): NCM obrigatorio com 8 digitos por item; endereco do destinatario com logradouro (>=2), bairro (>=2) e CEP (8 digitos). Espelha as rejeicoes da SEFAZ/Spedy e evita ida desnecessaria ao provedor.
+- Verificado (contas de grep resistentes a duplicacao de display): payload valido passa e chega a Spedy; NCM curto/ausente bloqueia com mensagem de NCM; logradouro curto bloqueia com mensagem de endereco.
+- Validacao: tsc (0), lint (0), build (ok).
+- Observacao de ambiente: o terminal desta sessao esta duplicando/embaralhando a saida (linhas repetidas, null bytes); os resultados foram conferidos por contagem (grep -c) e arquivos, nao pela exibicao direta.
