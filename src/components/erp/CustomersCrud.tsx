@@ -319,7 +319,7 @@ export function CustomersCrud({ initialCustomers, tabelasPreco }: CustomersCrudP
         cargo: c.cargo.trim() || null,
         principal: c.principal
       })),
-      enderecos: form.enderecos.filter((e) => e.logradouro.trim() && e.cidade.trim() && e.uf.trim()).map((e) => ({
+      enderecos: form.enderecos.filter((e) => e.cidade.trim() && e.uf.trim()).map((e) => ({
         apelido: e.apelido.trim() || "Principal",
         cep: e.cep.trim(),
         logradouro: e.logradouro.trim(),
