@@ -1,7 +1,14 @@
+import { randomBytes } from "node:crypto";
 import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import { scopedByTenantCompany } from "@/lib/auth/dev-session";
 import { createAuditLog } from "@/lib/audit/audit-service";
+import { hashPassword } from "@/lib/security/password";
+
+/** Senha temporária legível para um novo colaborador (o admin repassa; troca depois). */
+function gerarSenhaTemporaria(): string {
+  return `Jr${randomBytes(4).toString("hex")}!`;
+}
 
 export class TeamValidationError extends Error {
   constructor(message: string) {
@@ -94,12 +101,16 @@ export async function inviteColaborador(scope: TenantScope, input: InviteColabor
       where: { email: input.email.toLowerCase().trim() }
     });
 
+    // Quando o usuário é novo, gera uma senha temporária (hash scrypt) e a devolve
+    // ao chamador para repasse — o colaborador troca após o primeiro login.
+    let senhaTemporaria: string | null = null;
     if (!usuario) {
+      senhaTemporaria = gerarSenhaTemporaria();
       usuario = await tx.usuario.create({
         data: {
           nome: input.nome.trim(),
           email: input.email.toLowerCase().trim(),
-          senhaHash: "change-me",
+          senhaHash: hashPassword(senhaTemporaria),
           status: "ATIVO"
         }
       });
@@ -136,7 +147,7 @@ export async function inviteColaborador(scope: TenantScope, input: InviteColabor
       payload: { usuarioId: usuario.id, email: usuario.email, perfilId: input.perfilId }
     });
 
-    return { vinculo, usuario };
+    return { vinculo, usuario, senhaTemporaria };
   });
 }
 

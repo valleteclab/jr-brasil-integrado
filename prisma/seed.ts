@@ -166,74 +166,8 @@ async function main() {
     }
   }
 
-  const perfilAdmin = await prisma.perfil.upsert({
-    where: { tenantId_nome: { tenantId: tenant.id, nome: "SUPER_ADMIN" } },
-    update: {},
-    create: {
-      tenantId: tenant.id,
-      nome: "SUPER_ADMIN",
-      descricao: "Acesso total ao tenant JR Brasil"
-    }
-  });
-
-  const permissoes = [
-    ["usuarios", "gerenciar"],
-    ["empresas", "gerenciar"],
-    ["produtos", "gerenciar"],
-    ["clientes", "gerenciar"],
-    ["pedidos", "gerenciar"],
-    ["estoque", "gerenciar"],
-    ["financeiro", "gerenciar"],
-    ["fiscal", "gerenciar"]
-  ];
-
-  for (const [modulo, acao] of permissoes) {
-    await prisma.permissao.upsert({
-      where: {
-        tenantId_modulo_acao_perfilId: {
-          tenantId: tenant.id,
-          modulo,
-          acao,
-          perfilId: perfilAdmin.id
-        }
-      },
-      update: {},
-      create: {
-        tenantId: tenant.id,
-        perfilId: perfilAdmin.id,
-        modulo,
-        acao
-      }
-    });
-  }
-
-  const usuarioAdmin = await prisma.usuario.upsert({
-    where: { email: "admin@jrbrasilpecas.com.br" },
-    update: {},
-    create: {
-      nome: "Administrador JR Brasil",
-      email: "admin@jrbrasilpecas.com.br",
-      senhaHash: "change-me"
-    }
-  });
-
-  await prisma.usuarioVinculo.upsert({
-    where: {
-      tenantId_empresaId_usuarioId_perfilId: {
-        tenantId: tenant.id,
-        empresaId: empresa.id,
-        usuarioId: usuarioAdmin.id,
-        perfilId: perfilAdmin.id
-      }
-    },
-    update: {},
-    create: {
-      tenantId: tenant.id,
-      empresaId: empresa.id,
-      usuarioId: usuarioAdmin.id,
-      perfilId: perfilAdmin.id
-    }
-  });
+  // Perfis padrão (RBAC por módulo) + usuário administrador SUPER_ADMIN.
+  await seedPerfisEAdmin(tenant.id, empresa.id);
 
   const categoria = await prisma.produtoCategoria.upsert({
     where: { tenantId_empresaId_slug: { tenantId: tenant.id, empresaId: empresa.id, slug: "pecas-agricolas" } },

@@ -7,7 +7,11 @@ export async function POST(request: Request) {
     const scope = await getDevelopmentTenantScope();
     const body = await request.json();
     const result = await inviteColaborador(scope, body);
-    return NextResponse.json({ id: result.vinculo.id }, { status: 201 });
+    // senhaTemporaria só vem quando o usuário é novo — o admin repassa ao colaborador.
+    return NextResponse.json(
+      { id: result.vinculo.id, senhaTemporaria: result.senhaTemporaria },
+      { status: 201 }
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro ao convidar colaborador.";
     const status = error instanceof TeamValidationError ? 400 : 500;
