@@ -1,4 +1,4 @@
-import type { AmbienteFiscal, ProvedorFiscal, RegimeTributario, StatusNotaFiscal } from "@prisma/client";
+import type { AmbienteFiscal, ModeloFiscal, ProvedorFiscal, RegimeTributario, StatusNotaFiscal } from "@prisma/client";
 import type {
   CancelInput,
   CancelResult,
@@ -633,15 +633,18 @@ export class AcbrFiscalProvider implements FiscalProvider {
   async cancel(input: CancelInput, ctx: ProviderContext): Promise<CancelResult> {
     if (!input.providerRef) return { status: "ERRO", motivo: "Identificador do documento na ACBr ausente." };
     const resource = ACBR_RESOURCE[input.modelo];
-    const res = await this.request<AcbrDfeResponse>(ctx, "POST", `/${resource}/${encodeURIComponent(input.providerRef)}/cancelamento`, {
+    const res = await this.request<AcbrCancelResponse>(ctx, "POST", `/${resource}/${encodeURIComponent(input.providerRef)}/cancelamento`, {
       justificativa: input.justificativa
     });
     if (!res.ok) return { status: "ERRO", motivo: res.errorMessage ?? "Falha ao cancelar na ACBr." };
-    const status = (res.data?.status ?? "").toLowerCase();
-    if (status === "cancelado" || status === "cancelada") {
-      return { status: "AUTORIZADO", protocolo: res.data?.autorizacao?.protocolo || undefined };
+    // A ACBr devolve um objeto de EVENTO (não o DF-e). Cancelamento homologado pela SEFAZ:
+    // código 135 (evento registrado e vinculado) ou 155 (registrado fora do prazo).
+    const codigo = res.data?.codigo_status;
+    const protocolo = res.data?.numero_protocolo || undefined;
+    if (codigo === 135 || codigo === 155) {
+      return { status: "AUTORIZADO", protocolo };
     }
-    return { status: "REJEITADO", motivo: res.data?.autorizacao?.motivo_status ?? res.data?.error?.message ?? undefined };
+    return { status: "REJEITADO", motivo: res.data?.motivo_status ?? `Cancelamento não homologado (código ${codigo ?? "?"}).` };
   }
 
   async correct(input: CorrectionInput, ctx: ProviderContext): Promise<CorrectionResult> {
@@ -663,6 +666,35 @@ export class AcbrFiscalProvider implements FiscalProvider {
     const nfse = await this.request<AcbrNfseResponse>(ctx, "GET", `/nfse/${encodeURIComponent(id)}`);
     if (nfse.ok && nfse.data?.id) return this.toNfseResult(nfse.data, ctx);
     return { status: "PROCESSANDO", providerRef: id, motivo: "Documento não localizado na ACBr." };
+  }
+
+  /**
+   * Baixa o PDF (DANFE/DANFSE) ou o XML autorizado da ACBr. Os endpoints exigem Bearer,
+   * por isso o download é server-side (não dá para abrir a URL direto no navegador).
+   * Retorna os bytes e o content-type para a rota repassar ao cliente.
+   */
+  async downloadDocument(
+    kind: "pdf" | "xml",
+    ref: { providerRef: string; modelo: ModeloFiscal },
+    ctx: ProviderContext
+  ): Promise<{ ok: boolean; contentType: string; body: Buffer; filename: string; error?: string }> {
+    const { baseUrl } = this.resolveConfig(ctx);
+    const token = await this.getAccessToken(ctx);
+    const resource = ACBR_RESOURCE[ref.modelo];
+    const url = `${baseUrl}/${resource}/${encodeURIComponent(ref.providerRef)}/${kind}`;
+    const contentType = kind === "pdf" ? "application/pdf" : "application/xml";
+
+    let response: Response;
+    try {
+      response = await fetch(url, { headers: { Authorization: `Bearer ${token}`, Accept: contentType } });
+    } catch (err) {
+      return { ok: false, contentType, body: Buffer.alloc(0), filename: "", error: `Falha ao baixar da ACBr: ${err instanceof Error ? err.message : "erro de rede"}` };
+    }
+    if (!response.ok) {
+      return { ok: false, contentType, body: Buffer.alloc(0), filename: "", error: `ACBr retornou HTTP ${response.status} ao baixar o ${kind.toUpperCase()}.` };
+    }
+    const body = Buffer.from(await response.arrayBuffer());
+    return { ok: true, contentType, body, filename: `${resource}-${ref.providerRef}.${kind}` };
   }
 
   /** Ping autenticado: lista empresas. Valida OAuth + acesso à API. */
