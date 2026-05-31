@@ -146,6 +146,8 @@ type SpedyProductOrConsumerInvoice = {
 type SpedyServiceInvoice = {
   integrationId?: string;
   status: "enqueued";
+  /** Data de competência (ISO). O Ambiente Nacional usa para a competência da NFS-e. */
+  effectiveDate?: string;
   sendEmailToCustomer: boolean;
   description: string;
   federalServiceCode?: string;
@@ -153,6 +155,8 @@ type SpedyServiceInvoice = {
   receiver: SpedyReceiver;
   total: {
     invoiceAmount: number;
+    /** Base de cálculo do ISS (geralmente = valor dos serviços, após deduções). */
+    issBaseTax?: number;
     issRate: number;
     issAmount: number;
     issWithheld: boolean;
@@ -797,6 +801,7 @@ export class SpedyFiscalProvider implements FiscalProvider {
     return {
       integrationId: input.integrationId,
       status: "enqueued",
+      effectiveDate: new Date().toISOString().slice(0, 19),
       sendEmailToCustomer: Boolean(input.document.destinatario.email),
       description,
       federalServiceCode,
@@ -804,6 +809,7 @@ export class SpedyFiscalProvider implements FiscalProvider {
       receiver: this.buildServiceReceiver(input),
       total: {
         invoiceAmount: input.total,
+        issBaseTax: input.totals.valorServicos || input.total,
         issRate: aliquotaIss / 100, // FRAÇÃO (ex.: 0.05)
         issAmount: valorIss,
         issWithheld: ret?.issRetido ?? false,
