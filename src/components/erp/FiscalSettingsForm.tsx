@@ -11,7 +11,8 @@ const PROVIDERS = [
   { value: "NFEIO", label: "NFe.io" },
   { value: "PLUGNOTAS", label: "PlugNotas" },
   { value: "WEBMANIA", label: "WebmaniaBR" },
-  { value: "SPEDY", label: "Spedy (NF-e/NFC-e/NFS-e)" }
+  { value: "SPEDY", label: "Spedy (NF-e/NFC-e/NFS-e)" },
+  { value: "ACBR", label: "ACBr API (NF-e/NFC-e/NFS-e)" }
 ];
 
 const REGIMES = [
@@ -77,8 +78,11 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
   const externalProvider = !["MANUAL", "INTERNO"].includes(config.provider);
   const isSpedy = config.provider === "SPEDY";
   const isFocusNfe = config.provider === "FOCUS_NFE";
+  const isAcbr = config.provider === "ACBR";
   // Provedores que derivam a URL base do ambiente — baseUrl é opcional.
-  const baseUrlOpcional = isSpedy || isFocusNfe;
+  const baseUrlOpcional = isSpedy || isFocusNfe || isAcbr;
+  // Provedores que aceitam envio de certificado pela plataforma.
+  const aceitaCertificado = isSpedy || isAcbr;
 
   function update<K extends keyof FiscalConfigSummary>(key: K, value: FiscalConfigSummary[K]) {
     setConfig((current) => ({ ...current, [key]: value }));
@@ -190,6 +194,19 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
               </span>
             </div>
           )}
+          {isAcbr && (
+            <div className="alert info">
+              <strong>ACBr API</strong>
+              <span>
+                A ACBr usa <strong>OAuth 2.0</strong>. Informe o <strong>Client ID</strong> e o{" "}
+                <strong>Client Secret</strong> da credencial (console da ACBr). A URL base
+                (<code>prod.acbr.api.br</code> ou <code>hom.acbr.api.br</code>) é definida pelo
+                ambiente — deixe a URL base em branco. A empresa e o <strong>certificado A1</strong>{" "}
+                ficam no cadastro da ACBr (use o envio de certificado abaixo). Credenciais
+                <em> Sandbox</em> só funcionam em homologação.
+              </span>
+            </div>
+          )}
           <div className="erp-form">
             <label>
               URL base da API {baseUrlOpcional ? "(opcional)" : ""}
@@ -199,18 +216,32 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
                 placeholder={baseUrlOpcional ? "Definida pelo ambiente — deixe em branco" : "https://api.exemplo.com.br"}
               />
             </label>
+            {isAcbr && (
+              <label>
+                Client ID
+                <input value={config.cscId} onChange={(e) => update("cscId", e.target.value)} placeholder="client_id da credencial ACBr" />
+              </label>
+            )}
             <label>
-              Token de integração {config.tokenLast4 ? `(atual ••••${config.tokenLast4})` : ""}
-              <input value={token} onChange={(e) => setToken(e.target.value)} placeholder={config.hasToken ? "Manter token atual" : "Informe o token"} />
+              {isAcbr ? "Client Secret" : "Token de integração"} {config.tokenLast4 ? `(atual ••••${config.tokenLast4})` : ""}
+              <input
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+                placeholder={config.hasToken ? (isAcbr ? "Manter client_secret atual" : "Manter token atual") : isAcbr ? "Informe o client_secret" : "Informe o token"}
+              />
             </label>
-            <label>
-              CSC ID (NFC-e)
-              <input value={config.cscId} onChange={(e) => update("cscId", e.target.value)} />
-            </label>
-            <label>
-              CSC Token (NFC-e)
-              <input value={cscToken} onChange={(e) => setCscToken(e.target.value)} placeholder={config.hasCscToken ? "Manter token atual" : "Informe o CSC"} />
-            </label>
+            {!isAcbr && (
+              <>
+                <label>
+                  CSC ID (NFC-e)
+                  <input value={config.cscId} onChange={(e) => update("cscId", e.target.value)} />
+                </label>
+                <label>
+                  CSC Token (NFC-e)
+                  <input value={cscToken} onChange={(e) => setCscToken(e.target.value)} placeholder={config.hasCscToken ? "Manter token atual" : "Informe o CSC"} />
+                </label>
+              </>
+            )}
           </div>
           <div className="erp-toolbar" style={{ borderBottom: "none", paddingBottom: 0, marginTop: 8, gap: 12, alignItems: "center" }}>
             <Button type="button" variant="light" onClick={testarConexao} disabled={testBusy}>
@@ -295,12 +326,12 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
         </div>
       )}
 
-      {isSpedy && (
+      {aceitaCertificado && (
         <div className="erp-card">
           <div className="erp-card-head"><h3>Certificado digital A1</h3></div>
           <div className="erp-card-body">
             <p style={{ fontSize: 12.5, color: "var(--erp-mute)", margin: "0 0 12px" }}>
-              Envie o arquivo <b>.pfx</b> do certificado A1 da empresa. Ele é transmitido com segurança ao provedor (Spedy)
+              Envie o arquivo <b>.pfx</b> do certificado A1 da empresa. Ele é transmitido com segurança ao provedor ({isAcbr ? "ACBr" : "Spedy"})
               para assinar as notas e <b>não é armazenado</b> em nosso sistema. {config.certificadoInfo ? `Atual: ${config.certificadoInfo}.` : ""}
             </p>
             {certErr && <div className="alert danger" style={{ marginBottom: 10 }}><span>{certErr}</span></div>}

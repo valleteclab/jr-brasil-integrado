@@ -125,6 +125,12 @@ export async function saveFiscalConfig(scope: TenantScope, input: SaveFiscalConf
       if (!willHaveToken) {
         throw new Error("Para ativar a Focus NFe informe o token de integração.");
       }
+    } else if (input.provider === "ACBR") {
+      // ACBr usa OAuth2: client_secret no campo token (cripto) e client_id no campo cscId.
+      const willHaveClientId = Boolean(input.cscId?.trim()) || Boolean(existing?.cscId);
+      if (!willHaveToken || !willHaveClientId) {
+        throw new Error("Para ativar a ACBr informe o client_id e o client_secret.");
+      }
     } else {
       const willHaveUrl = Boolean(input.baseUrl?.trim()) || Boolean(existing?.baseUrl);
       if (!willHaveToken || !willHaveUrl) {
