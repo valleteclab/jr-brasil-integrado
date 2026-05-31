@@ -29,6 +29,7 @@ export type FiscalConfigSummary = {
   codigoServicoLc116Padrao: string;
   spedyModoEmissao: string;
   certificadoInfo: string;
+  logotipoInfo: string;
   active: boolean;
   testedAt: string | null;
   lastError: string | null;
@@ -79,6 +80,7 @@ function toSummary(config: {
   codigoServicoLc116Padrao: string | null;
   spedyModoEmissao: string | null;
   certificadoInfo: string | null;
+  logotipoInfo: string | null;
   ativo: boolean;
   testadoEm: Date | null;
   ultimoErro: string | null;
@@ -106,6 +108,7 @@ function toSummary(config: {
     codigoServicoLc116Padrao: config?.codigoServicoLc116Padrao ?? "",
     spedyModoEmissao: config?.spedyModoEmissao ?? "COMPLETO",
     certificadoInfo: config?.certificadoInfo ?? "",
+    logotipoInfo: config?.logotipoInfo ?? "",
     active: config?.ativo ?? false,
     testedAt: config?.testadoEm?.toISOString() ?? null,
     lastError: config?.ultimoErro ?? null,

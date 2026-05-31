@@ -1463,6 +1463,7 @@ model ConfiguracaoFiscal {
   incentivadorCultural Boolean       @default(false)
   certificadoInfo    String?
   certificadoValidade DateTime?
+  logotipoInfo       String?
   ativo              Boolean         @default(false)
   testadoEm          DateTime?
   ultimoErro         String?

@@ -36,6 +36,10 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
   const [certBusy, setCertBusy] = useState(false);
   const [certMsg, setCertMsg] = useState("");
   const [certErr, setCertErr] = useState("");
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoBusy, setLogoBusy] = useState(false);
+  const [logoMsg, setLogoMsg] = useState("");
+  const [logoErr, setLogoErr] = useState("");
   const [testBusy, setTestBusy] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
 
@@ -73,6 +77,27 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
       setCertErr(e instanceof Error ? e.message : "Não foi possível enviar o certificado.");
     } finally {
       setCertBusy(false);
+    }
+  }
+
+  async function enviarLogotipo() {
+    setLogoErr("");
+    setLogoMsg("");
+    if (!logoFile) { setLogoErr("Selecione a imagem da logo (PNG ou JPEG)."); return; }
+    setLogoBusy(true);
+    try {
+      const form = new FormData();
+      form.append("file", logoFile);
+      const res = await fetch("/api/erp/configuracoes/fiscal/logotipo", { method: "POST", body: form });
+      const data = (await res.json()) as { message?: string; error?: string };
+      if (!res.ok) throw new Error(data.error || "Não foi possível enviar a logo.");
+      setLogoMsg(data.message || "Logo enviada com sucesso.");
+      setLogoFile(null);
+      setConfig((c) => ({ ...c, logotipoInfo: logoFile.name }));
+    } catch (e) {
+      setLogoErr(e instanceof Error ? e.message : "Não foi possível enviar a logo.");
+    } finally {
+      setLogoBusy(false);
     }
   }
 
@@ -364,6 +389,32 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
               <div className="grow" />
               <button type="button" className="btn-erp primary sm" onClick={enviarCertificado} disabled={certBusy}>
                 {certBusy ? "Enviando…" : "Enviar certificado"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isAcbr && (
+        <div className="erp-card">
+          <div className="erp-card-head"><h3>Logo da empresa (DANFE/cupom)</h3></div>
+          <div className="erp-card-body">
+            <p style={{ fontSize: 12.5, color: "var(--erp-mute)", margin: "0 0 12px" }}>
+              Envie a logo da sua empresa em <b>PNG ou JPEG</b> (até <b>200 KB</b>). Ela é enviada ao
+              cadastro da empresa na ACBr e aparece no topo do <b>DANFE/DANFCE/DANFSE</b> impresso.
+              {config.logotipoInfo ? ` Atual: ${config.logotipoInfo}.` : ""}
+            </p>
+            {logoErr && <div className="alert danger" style={{ marginBottom: 10 }}><span>{logoErr}</span></div>}
+            {logoMsg && <div className="alert success" style={{ marginBottom: 10 }}><span>{logoMsg}</span></div>}
+            <div className="erp-form" style={{ gridTemplateColumns: "1fr" }}>
+              <label>Arquivo da logo (PNG/JPEG)
+                <input type="file" accept="image/png,image/jpeg" onChange={(e) => setLogoFile(e.target.files?.[0] ?? null)} />
+              </label>
+            </div>
+            <div className="erp-toolbar" style={{ borderBottom: "none", paddingBottom: 0, marginTop: 8 }}>
+              <div className="grow" />
+              <button type="button" className="btn-erp primary sm" onClick={enviarLogotipo} disabled={logoBusy}>
+                {logoBusy ? "Enviando…" : "Enviar logo"}
               </button>
             </div>
           </div>
