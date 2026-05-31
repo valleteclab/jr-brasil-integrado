@@ -9,7 +9,8 @@
     "lint": "next lint",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "prisma:studio": "prisma studio"
+    "prisma:studio": "prisma studio",
+    "mcp:stdio": "tsx scripts/mcp-stdio.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

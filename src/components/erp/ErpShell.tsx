@@ -56,13 +56,17 @@ const groups: ErpNavGroup[] = [
   },
   {
     group: "Análises",
-    items: [{ label: "Relatórios", href: "/erp/relatorios", icon: "📊" }]
+    items: [
+      { label: "Relatórios", href: "/erp/relatorios", icon: "📊" },
+      { label: "Assistente IA", href: "/erp/assistente", icon: "✦" }
+    ]
   },
   {
     group: "Configurações",
     items: [
       { label: "Emissão fiscal", href: "/erp/configuracoes/fiscal", icon: "⚙" },
-      { label: "IA do ERP", href: "/erp/configuracoes/ia", icon: "✦" }
+      { label: "IA do ERP", href: "/erp/configuracoes/ia", icon: "✦" },
+      { label: "WhatsApp", href: "/erp/configuracoes/whatsapp", icon: "💬" }
     ]
   }
 ];

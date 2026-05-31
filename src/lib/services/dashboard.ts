@@ -1,4 +1,4 @@
-import { getDevelopmentTenantScope, scopedByTenantCompany } from "@/lib/auth/dev-session";
+import { getDevelopmentTenantScope, scopedByTenantCompany, type TenantScope } from "@/lib/auth/dev-session";
 import { prisma } from "@/lib/db/prisma";
 import { formatBrl } from "@/lib/formatters/currency";
 
@@ -29,8 +29,8 @@ export type DashboardData = {
   erros: string[];
 };
 
-export async function getDashboardData(): Promise<DashboardData> {
-  const scope = await getDevelopmentTenantScope();
+export async function getDashboardData(scopeArg?: TenantScope): Promise<DashboardData> {
+  const scope = scopeArg ?? (await getDevelopmentTenantScope());
   const base = scopedByTenantCompany(scope);
   const erros: string[] = [];
 

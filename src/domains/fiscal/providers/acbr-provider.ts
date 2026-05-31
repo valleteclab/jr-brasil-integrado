@@ -808,6 +808,66 @@ export async function updateAcbrNfceCsc(
 }
 
 /**
+ * Envia a logo (logotipo) da empresa ao cadastro na ACBr
+ * (`PUT /empresas/{cpf_cnpj}/logotipo`, multipart/form-data, campo `file`).
+ * A logo aparece no DANFE/DANFCE/DANFSE gerado pela ACBr. PNG/JPEG até 200 KB.
+ */
+export async function uploadAcbrLogotipo(
+  ctx: ProviderContext,
+  cnpj: string,
+  buffer: Buffer,
+  mimeType: string,
+  filename: string
+): Promise<{ ok: boolean; message: string }> {
+  const provider = new AcbrFiscalProvider();
+  const documento = onlyDigits(cnpj);
+  const access = provider as unknown as {
+    resolveConfig: (c: ProviderContext) => { baseUrl: string };
+    getAccessToken: (c: ProviderContext) => Promise<string>;
+  };
+  const { baseUrl } = access.resolveConfig(ctx);
+  const token = await access.getAccessToken(ctx);
+
+  const form = new FormData();
+  form.append("file", new Blob([new Uint8Array(buffer)], { type: mimeType }), filename);
+
+  let res: Response;
+  try {
+    res = await fetch(`${baseUrl}/empresas/${documento}/logotipo`, {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${token}` },
+      body: form
+    });
+  } catch (err) {
+    return { ok: false, message: `Falha ao enviar a logo à ACBr: ${err instanceof Error ? err.message : "erro de rede"}` };
+  }
+  if (!res.ok) {
+    const raw = await res.text().catch(() => "");
+    return { ok: false, message: `ACBr retornou HTTP ${res.status} ao enviar a logo.${raw ? ` ${raw.slice(0, 200)}` : ""}` };
+  }
+  return { ok: true, message: "Logo enviada à ACBr com sucesso. Ela aparecerá no DANFE/cupom." };
+}
+
+/**
+ * Remove a logo da empresa no cadastro da ACBr (`DELETE /empresas/{cpf_cnpj}/logotipo`).
+ */
+export async function deleteAcbrLogotipo(
+  ctx: ProviderContext,
+  cnpj: string
+): Promise<{ ok: boolean; message: string }> {
+  const provider = new AcbrFiscalProvider();
+  const documento = onlyDigits(cnpj);
+  const res = await (provider as unknown as {
+    request: <T>(c: ProviderContext, m: string, p: string, b?: unknown) => Promise<{ ok: boolean; status: number; data: T | undefined; errorMessage: string | null }>;
+  }).request(ctx, "DELETE", `/empresas/${documento}/logotipo`);
+  // 404 = não havia logo: tratamos como remoção bem-sucedida (idempotente).
+  if (!res.ok && res.status !== 404) {
+    return { ok: false, message: res.errorMessage ?? `Falha ao remover a logo na ACBr (HTTP ${res.status}).` };
+  }
+  return { ok: true, message: "Logo removida da ACBr." };
+}
+
+/**
  * Envia o certificado A1 (.pfx) ao cadastro da empresa na ACBr
  * (`PUT /empresas/{cpf_cnpj}/certificado`, corpo JSON com base64 + senha).
  * Reutiliza o cliente OAuth do provider. Retorna se a operação teve sucesso.

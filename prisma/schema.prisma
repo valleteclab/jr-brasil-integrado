@@ -214,6 +214,23 @@ enum ProvedorIa {
   OPENROUTER
 }
 
+enum AgentRole {
+  GESTOR
+  VENDEDOR
+  CLIENTE
+}
+
+enum MensagemPapel {
+  USER
+  ASSISTANT
+  TOOL
+  SYSTEM
+}
+
+enum ProvedorWhatsapp {
+  ZAPI
+}
+
 model Tenant {
   id              String           @id @default(cuid())
   nome            String
@@ -224,6 +241,10 @@ model Tenant {
   perfis          Perfil[]
   auditorias      Auditoria[]
   configuracoesIa ConfiguracaoIa[]
+  conversasAgente ConversaAgente[]
+  chavesApiAgente ChaveApiAgente[]
+  telefonesAgente AgenteTelefone[]
+  configWhatsapp  ConfiguracaoWhatsapp[]
   criadoEm        DateTime         @default(now())
   atualizadoEm    DateTime         @updatedAt
 }
@@ -264,6 +285,10 @@ model Empresa {
   movimentosFinanceiros MovimentoFinanceiro[]
   inventarios        Inventario[]
   auditorias         Auditoria[]
+  conversasAgente    ConversaAgente[]
+  chavesApiAgente    ChaveApiAgente[]
+  telefonesAgente    AgenteTelefone[]
+  configWhatsapp     ConfiguracaoWhatsapp[]
   enderecoLogradouro String?
   enderecoNumero     String?
   enderecoComplemento String?
@@ -1463,6 +1488,7 @@ model ConfiguracaoFiscal {
   incentivadorCultural Boolean       @default(false)
   certificadoInfo    String?
   certificadoValidade DateTime?
+  logotipoInfo       String?
   ativo              Boolean         @default(false)
   testadoEm          DateTime?
   ultimoErro         String?
@@ -1626,4 +1652,94 @@ model PagamentoVenda {
   criadoEm      DateTime    @default(now())
 
   @@index([tenantId, empresaId, pedidoVendaId])
+}
+
+model ConversaAgente {
+  id           String           @id @default(cuid())
+  tenantId     String
+  empresaId    String
+  tenant       Tenant           @relation(fields: [tenantId], references: [id])
+  empresa      Empresa          @relation(fields: [empresaId], references: [id])
+  usuarioId    String?
+  role         AgentRole
+  titulo       String?
+  canal        String           @default("WEB")
+  telefone     String?
+  mensagens    MensagemAgente[]
+  criadoEm     DateTime         @default(now())
+  atualizadoEm DateTime         @updatedAt
+
+  @@index([tenantId, empresaId])
+}
+
+model MensagemAgente {
+  id          String         @id @default(cuid())
+  tenantId    String
+  empresaId   String
+  conversaId  String
+  conversa    ConversaAgente @relation(fields: [conversaId], references: [id])
+  papel       MensagemPapel
+  conteudo    String         @db.Text
+  toolName    String?
+  toolPayload Json?
+  draftTipo   String?
+  draftId     String?
+  criadoEm    DateTime       @default(now())
+
+  @@index([tenantId, empresaId, conversaId])
+}
+
+model ChaveApiAgente {
+  id           String     @id @default(cuid())
+  tenantId     String
+  empresaId    String
+  tenant       Tenant     @relation(fields: [tenantId], references: [id])
+  empresa      Empresa    @relation(fields: [empresaId], references: [id])
+  nome         String
+  role         AgentRole  @default(GESTOR)
+  hashChave    String     @unique
+  chaveFinal   String
+  ativo        Boolean    @default(true)
+  ultimoUsoEm  DateTime?
+  criadoEm     DateTime   @default(now())
+  atualizadoEm DateTime   @updatedAt
+
+  @@index([tenantId, empresaId])
+}
+
+model AgenteTelefone {
+  id           String     @id @default(cuid())
+  tenantId     String
+  empresaId    String
+  tenant       Tenant     @relation(fields: [tenantId], references: [id])
+  empresa      Empresa    @relation(fields: [empresaId], references: [id])
+  telefone     String
+  nome         String?
+  role         AgentRole  @default(VENDEDOR)
+  clienteId    String?
+  ativo        Boolean    @default(true)
+  criadoEm     DateTime   @default(now())
+  atualizadoEm DateTime   @updatedAt
+
+  @@unique([telefone])
+  @@index([tenantId, empresaId])
+}
+
+model ConfiguracaoWhatsapp {
+  id              String           @id @default(cuid())
+  tenantId        String
+  empresaId       String           @unique
+  tenant          Tenant           @relation(fields: [tenantId], references: [id])
+  empresa         Empresa          @relation(fields: [empresaId], references: [id])
+  provedor        ProvedorWhatsapp @default(ZAPI)
+  ativo           Boolean          @default(false)
+  instanceId      String?
+  tokenCripto     String?
+  clientTokenCripto String?
+  webhookSecret   String?
+  atenderClientes Boolean          @default(true)
+  criadoEm        DateTime         @default(now())
+  atualizadoEm    DateTime         @updatedAt
+
+  @@index([tenantId, empresaId])
 }
