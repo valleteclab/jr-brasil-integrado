@@ -339,7 +339,8 @@ export async function getNotaFiscalPrefill(
       inscricaoEstadual: nota.destinatarioIe ?? "",
       email: nota.destinatarioEmail ?? ""
     },
-    formaPagamento: nota.formaPagamento ?? "",
+    // Devolução não tem contraprestação financeira → "Sem pagamento" (tPag=90 na SEFAZ).
+    formaPagamento: isDevolucao ? "Sem pagamento" : (nota.formaPagamento ?? ""),
     condicaoPagamento: nota.condicaoPagamento ?? "",
     observacoes: nota.informacoesComplementares ?? "",
     frete: Number(nota.valorFrete),

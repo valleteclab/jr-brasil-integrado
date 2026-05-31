@@ -70,6 +70,8 @@ export type ProductInvoiceAvulsaInput = {
   chaveReferenciada?: string | null;
   /** NF-e de devolução: id da nota original (vínculo interno). */
   notaOrigemId?: string | null;
+  /** Reenvio: id de uma nota anterior rejeitada/erro a reaproveitar. */
+  retryNotaId?: string | null;
   receiver: ReceiverInput;
   formaPagamento?: string | null;
   condicaoPagamento?: string | null;
@@ -102,6 +104,8 @@ export type ServiceInvoiceAvulsaInput = {
   taxationType?: TaxationTypeIss | null;
   servicos: Array<{ descricao: string; valor: number; codigoServicoLc116?: string | null }>;
   retencoes?: RetencoesInput | null;
+  /** Reenvio: id de uma NFS-e anterior rejeitada/erro a reaproveitar. */
+  retryNotaId?: string | null;
 };
 
 type ClienteLike = {
@@ -284,7 +288,8 @@ export async function emitProductInvoiceAvulsa(scope: TenantScope, input: Produc
 
   const nota = await emitFiscalDocument(scope, doc, {
     clienteId: input.receiver.clienteId ?? null,
-    notaOrigemId: input.notaOrigemId ?? null
+    notaOrigemId: input.notaOrigemId ?? null,
+    retryNotaId: input.retryNotaId ?? null
   });
 
   // Baixa de estoque opcional (somente itens de catálogo) após autorização.
@@ -371,6 +376,7 @@ export async function emitServiceInvoiceAvulsa(scope: TenantScope, input: Servic
   });
 
   return emitFiscalDocument(scope, doc, {
-    clienteId: input.receiver.clienteId ?? null
+    clienteId: input.receiver.clienteId ?? null,
+    retryNotaId: input.retryNotaId ?? null
   });
 }

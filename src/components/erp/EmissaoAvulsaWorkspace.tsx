@@ -195,6 +195,8 @@ export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormDat
   const [error, setError] = useState("");
   const [resultado, setResultado] = useState<ResultadoEmissao | null>(null);
   const [syncing, setSyncing] = useState(false);
+  // Id da última nota rejeitada/erro — reenviada (reaproveitada) na próxima tentativa.
+  const [retryNotaId, setRetryNotaId] = useState<string | null>(null);
 
   const isProduto = tipo === "NFE" || tipo === "NFCE";
   const isServico = tipo === "NFSE";
@@ -266,6 +268,7 @@ export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormDat
     setCodigoLc116Doc(""); setFrete(0); setDescontoGlobal(0); setObs("");
     setTaxationType("taxationInMunicipality"); setAliquotaIss(0); setDeducoes(0); setBaseRetencao(0);
     setIssRetido(false); setRetIr(0); setRetPis(0); setRetCofins(0); setRetCsll(0); setRetInss(0);
+    setRetryNotaId(null);
     setError("");
   }
 
@@ -348,6 +351,7 @@ export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormDat
         body = {
           modelo: tipo,
           finalidade,
+          retryNotaId: retryNotaId ?? undefined,
           // Devolução: referencia a NF-e original (NFref/refNFe) e vincula a nota de origem.
           chaveReferenciada: finalidade === "DEVOLUCAO" ? origem?.chaveReferenciada ?? undefined : undefined,
           notaOrigemId: finalidade === "DEVOLUCAO" ? origem?.notaOrigemId ?? undefined : undefined,
@@ -375,6 +379,7 @@ export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormDat
       } else {
         endpoint = "/api/erp/fiscal/emitir/servico";
         body = {
+          retryNotaId: retryNotaId ?? undefined,
           receiver: receiverPayload,
           observacoes: obs.trim() || undefined,
           condicaoPagamento: condicaoPagamento.trim() || undefined,
@@ -407,6 +412,8 @@ export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormDat
       });
       const payload = (await res.json()) as ResultadoEmissao & { error?: string };
       if (!res.ok) throw new Error(payload.error || "Não foi possível emitir a nota fiscal.");
+      // Rejeição/erro: guarda o id para reaproveitar o mesmo registro no reenvio. Sucesso: limpa.
+      setRetryNotaId(statusTone(payload.status) === "danger" ? payload.id : null);
       setResultado({
         id: payload.id,
         status: payload.status,
@@ -440,6 +447,12 @@ export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormDat
   function novaEmissao() {
     setResultado(null);
     reset();
+  }
+
+  // Fecha o resultado mantendo todos os dados preenchidos — usado quando a nota é rejeitada,
+  // para que o usuário corrija o problema apontado e reenvie sem refazer tudo.
+  function corrigirEReenviar() {
+    setResultado(null);
   }
 
   const clienteSel = data.clientes.find((c) => c.id === clienteId) ?? null;
@@ -871,8 +884,12 @@ export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormDat
       )}
 
       {/* RESULTADO */}
-      {resultado && (
-        <div className="drawer-bd" style={{ display: "grid", placeItems: "center" }} onClick={novaEmissao} role="presentation">
+      {resultado && (() => {
+      const falhou = statusTone(resultado.status) === "danger";
+      // Em rejeição/erro, fechar (no backdrop) preserva os dados para correção; em sucesso, limpa.
+      const aoFechar = falhou ? corrigirEReenviar : novaEmissao;
+      return (
+        <div className="drawer-bd" style={{ display: "grid", placeItems: "center" }} onClick={aoFechar} role="presentation">
           <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 12, padding: 32, maxWidth: 520, width: "92%" }} role="dialog" aria-modal="true" aria-label="Resultado da emissão">
             <div style={{ textAlign: "center" }}>
               <div
@@ -909,18 +926,33 @@ export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormDat
               {resultado.motivo && statusTone(resultado.status) !== "success" && (
                 <div className="alert danger" style={{ marginTop: 6 }}><span className="lead">Motivo:</span> {resultado.motivo}</div>
               )}
+              {falhou && (
+                <p style={{ fontSize: 12.5, color: "var(--erp-slate)", margin: "2px 0 0" }}>
+                  Corrija o item apontado acima — seus dados foram mantidos. Reenviar gera uma nova tentativa.
+                </p>
+              )}
             </div>
 
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center" }}>
-              <button type="button" className="btn-erp ghost sm" onClick={sincronizar} disabled={syncing}>
-                {syncing ? "Sincronizando…" : "Sincronizar status"}
-              </button>
-              <button type="button" className="btn-erp ghost sm" onClick={novaEmissao}>Nova emissão</button>
-              <button type="button" className="btn-erp primary sm" onClick={() => router.push("/erp/fiscal")}>Ver notas emitidas →</button>
+              {falhou ? (
+                <>
+                  <button type="button" className="btn-erp primary sm" onClick={corrigirEReenviar}>Corrigir e reenviar</button>
+                  <button type="button" className="btn-erp ghost sm" onClick={novaEmissao}>Começar do zero</button>
+                </>
+              ) : (
+                <>
+                  <button type="button" className="btn-erp ghost sm" onClick={sincronizar} disabled={syncing}>
+                    {syncing ? "Sincronizando…" : "Sincronizar status"}
+                  </button>
+                  <button type="button" className="btn-erp ghost sm" onClick={novaEmissao}>Nova emissão</button>
+                  <button type="button" className="btn-erp primary sm" onClick={() => router.push("/erp/fiscal")}>Ver notas emitidas →</button>
+                </>
+              )}
             </div>
           </div>
         </div>
-      )}
+      );
+      })()}
     </div>
   );
 }
