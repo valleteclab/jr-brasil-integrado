@@ -195,6 +195,8 @@ export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormDat
   const [error, setError] = useState("");
   const [resultado, setResultado] = useState<ResultadoEmissao | null>(null);
   const [syncing, setSyncing] = useState(false);
+  // Id da última nota rejeitada/erro — reenviada (reaproveitada) na próxima tentativa.
+  const [retryNotaId, setRetryNotaId] = useState<string | null>(null);
 
   const isProduto = tipo === "NFE" || tipo === "NFCE";
   const isServico = tipo === "NFSE";
@@ -266,6 +268,7 @@ export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormDat
     setCodigoLc116Doc(""); setFrete(0); setDescontoGlobal(0); setObs("");
     setTaxationType("taxationInMunicipality"); setAliquotaIss(0); setDeducoes(0); setBaseRetencao(0);
     setIssRetido(false); setRetIr(0); setRetPis(0); setRetCofins(0); setRetCsll(0); setRetInss(0);
+    setRetryNotaId(null);
     setError("");
   }
 
@@ -348,6 +351,7 @@ export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormDat
         body = {
           modelo: tipo,
           finalidade,
+          retryNotaId: retryNotaId ?? undefined,
           // Devolução: referencia a NF-e original (NFref/refNFe) e vincula a nota de origem.
           chaveReferenciada: finalidade === "DEVOLUCAO" ? origem?.chaveReferenciada ?? undefined : undefined,
           notaOrigemId: finalidade === "DEVOLUCAO" ? origem?.notaOrigemId ?? undefined : undefined,
@@ -375,6 +379,7 @@ export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormDat
       } else {
         endpoint = "/api/erp/fiscal/emitir/servico";
         body = {
+          retryNotaId: retryNotaId ?? undefined,
           receiver: receiverPayload,
           observacoes: obs.trim() || undefined,
           condicaoPagamento: condicaoPagamento.trim() || undefined,
@@ -407,6 +412,8 @@ export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormDat
       });
       const payload = (await res.json()) as ResultadoEmissao & { error?: string };
       if (!res.ok) throw new Error(payload.error || "Não foi possível emitir a nota fiscal.");
+      // Rejeição/erro: guarda o id para reaproveitar o mesmo registro no reenvio. Sucesso: limpa.
+      setRetryNotaId(statusTone(payload.status) === "danger" ? payload.id : null);
       setResultado({
         id: payload.id,
         status: payload.status,

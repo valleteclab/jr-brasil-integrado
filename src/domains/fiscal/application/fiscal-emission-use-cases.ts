@@ -103,6 +103,8 @@ export type FiscalDocumentLinks = {
   ordemServicoId?: string | null;
   /** NF-e de devolução: id da nota original que está sendo devolvida. */
   notaOrigemId?: string | null;
+  /** Reenvio: id de uma nota anterior rejeitada/erro a reaproveitar (em vez de criar nova). */
+  retryNotaId?: string | null;
   usuarioId?: string | null;
 };
 
@@ -173,101 +175,141 @@ export async function emitFiscalDocument(
     .join(" ");
 
   // 1) Persiste a nota em PROCESSANDO com itens e tributos calculados (numeração atômica).
+  // Campos escalares da nota — reutilizados tanto na criação quanto no reenvio de um rascunho.
+  const notaScalarData = {
+    modelo,
+    finalidade: document.finalidade,
+    ambiente: config.ambiente,
+    provedor: config.provider,
+    naturezaOperacao: document.naturezaOperacao,
+    clienteId: links.clienteId ?? null,
+    pedidoVendaId: links.pedidoVendaId ?? null,
+    ordemServicoId: links.ordemServicoId ?? null,
+    notaOrigemId: links.notaOrigemId ?? null,
+    chaveReferenciada: document.chaveReferenciada ?? null,
+    destinatarioNome: document.destinatario.nome,
+    destinatarioDocumento: document.destinatario.documento,
+    destinatarioIe: document.destinatario.inscricaoEstadual,
+    destinatarioEmail: document.destinatario.email,
+    valorProdutos: totals.valorProdutos,
+    valorServicos: totals.valorServicos,
+    valorDesconto: document.valorDesconto || totals.valorDesconto,
+    valorFrete: document.valorFrete,
+    valorSeguro: document.valorSeguro,
+    outrasDespesas: document.outrasDespesas,
+    valorIcms: totals.valorIcms,
+    valorIcmsSt: totals.valorIcmsSt,
+    valorFcp: totals.valorFcp,
+    valorIpi: totals.valorIpi,
+    valorPis: totals.valorPis,
+    valorCofins: totals.valorCofins,
+    valorIss: totals.valorIss,
+    valorTotalTributos: totals.valorTotalTributos,
+    issRetido: document.retencoes?.issRetido ?? false,
+    valorIrRetido: document.retencoes?.ir?.valor ?? 0,
+    valorPisRetido: document.retencoes?.pis?.valor ?? 0,
+    valorCofinsRetido: document.retencoes?.cofins?.valor ?? 0,
+    valorCsllRetido: document.retencoes?.csll?.valor ?? 0,
+    valorInssRetido: document.retencoes?.inss?.valor ?? 0,
+    valorRetidoTotal: document.retencoes?.totalRetido ?? 0,
+    valorLiquido: document.retencoes?.valorLiquido ?? total,
+    total,
+    formaPagamento: document.formaPagamento,
+    condicaoPagamento: document.condicaoPagamento,
+    informacoesComplementares
+  };
+
+  const itensCreate = computedItems.map(({ item, taxes, cfop, numeroItem }) => ({
+    tenantId: scope.tenantId,
+    empresaId: scope.empresaId,
+    produtoId: item.produtoId,
+    numeroItem,
+    codigo: item.codigo,
+    descricao: item.descricao,
+    ncm: item.ncm,
+    cest: item.cest,
+    cfop,
+    unidade: item.unidade,
+    quantidade: item.quantidade,
+    valorUnitario: item.valorUnitario,
+    valorTotal: item.valorTotal,
+    desconto: item.desconto,
+    origem: taxes.origem,
+    cstIcms: taxes.cstIcms,
+    csosn: taxes.csosn,
+    baseIcms: taxes.baseIcms,
+    aliquotaIcms: taxes.aliquotaIcms,
+    valorIcms: taxes.valorIcms,
+    percentualFcp: taxes.percentualFcp,
+    valorFcp: taxes.valorFcp,
+    modalidadeBcSt: taxes.modalidadeBcSt,
+    percentualMva: taxes.percentualMva,
+    baseIcmsSt: taxes.baseIcmsSt,
+    aliquotaIcmsSt: taxes.aliquotaIcmsSt,
+    valorIcmsSt: taxes.valorIcmsSt,
+    valorTributos: taxes.valorTributos,
+    cstIpi: taxes.cstIpi,
+    aliquotaIpi: taxes.aliquotaIpi,
+    valorIpi: taxes.valorIpi,
+    cstPis: taxes.cstPis,
+    aliquotaPis: taxes.aliquotaPis,
+    valorPis: taxes.valorPis,
+    cstCofins: taxes.cstCofins,
+    aliquotaCofins: taxes.aliquotaCofins,
+    valorCofins: taxes.valorCofins,
+    itemListaServico: taxes.itemListaServico,
+    aliquotaIss: taxes.aliquotaIss,
+    valorIss: taxes.valorIss,
+    cClassTrib: taxes.cClassTrib
+  }));
+
   const created = await prisma.$transaction(async (tx) => {
+    // Reenvio: se for indicada uma nota anterior rejeitada/erro (mesmo modelo), reaproveita
+    // o registro e a numeração já atribuída (não autorizada) em vez de criar uma nova nota.
+    const retry = links.retryNotaId
+      ? await tx.notaFiscal.findFirst({
+          where: { id: links.retryNotaId, tenantId: scope.tenantId, empresaId: scope.empresaId }
+        })
+      : null;
+    const reusar = retry && retry.modelo === modelo && (retry.status === "REJEITADA" || retry.status === "ERRO");
+
+    if (reusar) {
+      await tx.notaFiscalItem.deleteMany({ where: { notaFiscalId: retry.id } });
+      const nota = await tx.notaFiscal.update({
+        where: { id: retry.id },
+        data: {
+          ...notaScalarData,
+          status: "PROCESSANDO",
+          motivo: null,
+          chaveAcesso: null,
+          protocolo: null,
+          reciboLote: null,
+          providerRef: null,
+          emitidaEm: new Date(),
+          itens: { create: itensCreate }
+        }
+      });
+      await createAuditLog(tx, {
+        scope,
+        entidade: "NotaFiscal",
+        entidadeId: nota.id,
+        acao: "EMIT_RETRY",
+        payload: { modelo, serie: nota.serie, numero: nota.numero, total, itens: itensCreate.length }
+      });
+      return nota;
+    }
+
     const numero = await nextFiscalNumber(tx, scope, modelo, serie);
     const nota = await tx.notaFiscal.create({
       data: {
         tenantId: scope.tenantId,
         empresaId: scope.empresaId,
-        modelo,
-        finalidade: document.finalidade,
-        ambiente: config.ambiente,
-        provedor: config.provider,
+        ...notaScalarData,
         numero: String(numero),
         serie,
         status: "PROCESSANDO",
-        naturezaOperacao: document.naturezaOperacao,
-        clienteId: links.clienteId ?? null,
-        pedidoVendaId: links.pedidoVendaId ?? null,
-        ordemServicoId: links.ordemServicoId ?? null,
-        notaOrigemId: links.notaOrigemId ?? null,
-        chaveReferenciada: document.chaveReferenciada ?? null,
-        destinatarioNome: document.destinatario.nome,
-        destinatarioDocumento: document.destinatario.documento,
-        destinatarioIe: document.destinatario.inscricaoEstadual,
-        destinatarioEmail: document.destinatario.email,
-        valorProdutos: totals.valorProdutos,
-        valorServicos: totals.valorServicos,
-        valorDesconto: document.valorDesconto || totals.valorDesconto,
-        valorFrete: document.valorFrete,
-        valorSeguro: document.valorSeguro,
-        outrasDespesas: document.outrasDespesas,
-        valorIcms: totals.valorIcms,
-        valorIcmsSt: totals.valorIcmsSt,
-        valorFcp: totals.valorFcp,
-        valorIpi: totals.valorIpi,
-        valorPis: totals.valorPis,
-        valorCofins: totals.valorCofins,
-        valorIss: totals.valorIss,
-        valorTotalTributos: totals.valorTotalTributos,
-        issRetido: document.retencoes?.issRetido ?? false,
-        valorIrRetido: document.retencoes?.ir?.valor ?? 0,
-        valorPisRetido: document.retencoes?.pis?.valor ?? 0,
-        valorCofinsRetido: document.retencoes?.cofins?.valor ?? 0,
-        valorCsllRetido: document.retencoes?.csll?.valor ?? 0,
-        valorInssRetido: document.retencoes?.inss?.valor ?? 0,
-        valorRetidoTotal: document.retencoes?.totalRetido ?? 0,
-        valorLiquido: document.retencoes?.valorLiquido ?? total,
-        total,
-        formaPagamento: document.formaPagamento,
-        condicaoPagamento: document.condicaoPagamento,
-        informacoesComplementares,
         emitidaEm: new Date(),
-        itens: {
-          create: computedItems.map(({ item, taxes, cfop, numeroItem }) => ({
-            tenantId: scope.tenantId,
-            empresaId: scope.empresaId,
-            produtoId: item.produtoId,
-            numeroItem,
-            codigo: item.codigo,
-            descricao: item.descricao,
-            ncm: item.ncm,
-            cest: item.cest,
-            cfop,
-            unidade: item.unidade,
-            quantidade: item.quantidade,
-            valorUnitario: item.valorUnitario,
-            valorTotal: item.valorTotal,
-            desconto: item.desconto,
-            origem: taxes.origem,
-            cstIcms: taxes.cstIcms,
-            csosn: taxes.csosn,
-            baseIcms: taxes.baseIcms,
-            aliquotaIcms: taxes.aliquotaIcms,
-            valorIcms: taxes.valorIcms,
-            percentualFcp: taxes.percentualFcp,
-            valorFcp: taxes.valorFcp,
-            modalidadeBcSt: taxes.modalidadeBcSt,
-            percentualMva: taxes.percentualMva,
-            baseIcmsSt: taxes.baseIcmsSt,
-            aliquotaIcmsSt: taxes.aliquotaIcmsSt,
-            valorIcmsSt: taxes.valorIcmsSt,
-            valorTributos: taxes.valorTributos,
-            cstIpi: taxes.cstIpi,
-            aliquotaIpi: taxes.aliquotaIpi,
-            valorIpi: taxes.valorIpi,
-            cstPis: taxes.cstPis,
-            aliquotaPis: taxes.aliquotaPis,
-            valorPis: taxes.valorPis,
-            cstCofins: taxes.cstCofins,
-            aliquotaCofins: taxes.aliquotaCofins,
-            valorCofins: taxes.valorCofins,
-            itemListaServico: taxes.itemListaServico,
-            aliquotaIss: taxes.aliquotaIss,
-            valorIss: taxes.valorIss,
-            cClassTrib: taxes.cClassTrib
-          }))
-        }
+        itens: { create: itensCreate }
       }
     });
 
@@ -276,7 +318,7 @@ export async function emitFiscalDocument(
       entidade: "NotaFiscal",
       entidadeId: nota.id,
       acao: "EMIT_REQUEST",
-      payload: { modelo, serie, numero, total, itens: computedItems.length }
+      payload: { modelo, serie, numero, total, itens: itensCreate.length }
     });
 
     return nota;
