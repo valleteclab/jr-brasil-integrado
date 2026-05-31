@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { SupplierSummary } from "@/lib/services/purchasing";
+import { useCadastroLookup } from "./useCadastroLookup";
 
 type Props = {
   initialSuppliers: SupplierSummary[];
@@ -65,6 +66,23 @@ export function SuppliersCrud({ initialSuppliers }: Props) {
 
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((c) => ({ ...c, [key]: value }));
+  }
+
+  const { buscarCnpj, buscandoCnpj, erro: lookupErro } = useCadastroLookup();
+
+  // Autopreenche o fornecedor a partir do CNPJ (Receita via BrasilAPI).
+  async function preencherPorCnpj() {
+    const d = await buscarCnpj(form.documento);
+    if (!d) return;
+    setForm((c) => ({
+      ...c,
+      razaoSocial: d.razaoSocial ?? c.razaoSocial,
+      nomeFantasia: d.nomeFantasia ?? c.nomeFantasia,
+      email: d.email ?? c.email,
+      telefone: d.telefone ?? c.telefone,
+      cidade: d.endereco.cidade ?? c.cidade,
+      uf: d.endereco.uf ?? c.uf
+    }));
   }
 
   function openNew() {
@@ -292,11 +310,17 @@ export function SuppliersCrud({ initialSuppliers }: Props) {
                 </label>
                 <label>
                   CNPJ / CPF
-                  <input
-                    value={form.documento}
-                    onChange={(e) => update("documento", e.target.value)}
-                    placeholder="Somente números"
-                  />
+                  <span style={{ display: "flex", gap: 6 }}>
+                    <input
+                      value={form.documento}
+                      onChange={(e) => update("documento", e.target.value)}
+                      placeholder="Somente números"
+                      style={{ flex: 1 }}
+                    />
+                    <button type="button" className="btn-erp light sm" onClick={preencherPorCnpj} disabled={buscandoCnpj}>
+                      {buscandoCnpj ? "Buscando…" : "Buscar CNPJ"}
+                    </button>
+                  </span>
                 </label>
                 <label>
                   E-mail
@@ -338,6 +362,7 @@ export function SuppliersCrud({ initialSuppliers }: Props) {
                 </label>
               </div>
               {error && <p className="form-error drawer-error">{error}</p>}
+              {lookupErro && <p className="form-error drawer-error">{lookupErro}</p>}
             </div>
             <footer className="drawer-foot">
               <button className="btn-erp ghost sm" type="button" onClick={closeDrawer}>Cancelar</button>

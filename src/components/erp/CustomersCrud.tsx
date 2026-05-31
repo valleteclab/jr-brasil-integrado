@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { CustomerDetailedSummary, TabelaPrecoOption } from "@/lib/services/customers-admin";
+import { useCadastroLookup } from "./useCadastroLookup";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -195,6 +196,55 @@ export function CustomersCrud({ initialCustomers, tabelasPreco }: CustomersCrudP
 
   function updateField<K extends keyof CustomerFormState>(key: K, value: CustomerFormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
+  }
+
+  const { buscarCnpj, buscarCep, buscandoCnpj, buscandoCep, erro: lookupErro } = useCadastroLookup();
+
+  // Autopreenche dados + 1º endereço a partir do CNPJ (Receita via BrasilAPI).
+  async function preencherPorCnpj() {
+    const d = await buscarCnpj(form.documento);
+    if (!d) return;
+    setForm((prev) => {
+      const enderecos = prev.enderecos.length ? [...prev.enderecos] : [emptyEndereco()];
+      enderecos[0] = {
+        ...enderecos[0],
+        cep: d.endereco.cep ?? enderecos[0].cep,
+        logradouro: d.endereco.logradouro ?? enderecos[0].logradouro,
+        numero: d.endereco.numero ?? enderecos[0].numero,
+        complemento: d.endereco.complemento ?? enderecos[0].complemento,
+        bairro: d.endereco.bairro ?? enderecos[0].bairro,
+        cidade: d.endereco.cidade ?? enderecos[0].cidade,
+        uf: d.endereco.uf ?? enderecos[0].uf
+      };
+      return {
+        ...prev,
+        razaoSocial: d.razaoSocial ?? prev.razaoSocial,
+        nomeFantasia: d.nomeFantasia ?? prev.nomeFantasia,
+        enderecos
+      };
+    });
+  }
+
+  // Autopreenche um endereço específico a partir do CEP (não sobrescreve número/complemento).
+  async function preencherEnderecoPorCep(index: number) {
+    const endereco = form.enderecos[index];
+    if (!endereco) return;
+    const d = await buscarCep(endereco.cep);
+    if (!d) return;
+    setForm((prev) => {
+      const enderecos = prev.enderecos.map((e, i) =>
+        i === index
+          ? {
+              ...e,
+              logradouro: d.logradouro ?? e.logradouro,
+              bairro: d.bairro ?? e.bairro,
+              cidade: d.cidade ?? e.cidade,
+              uf: d.uf ?? e.uf
+            }
+          : e
+      );
+      return { ...prev, enderecos };
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -393,7 +443,12 @@ export function CustomersCrud({ initialCustomers, tabelasPreco }: CustomersCrudP
           </label>
           <label>
             CNPJ / CPF
-            <input value={form.documento} onChange={(e) => updateField("documento", e.target.value)} />
+            <span style={{ display: "flex", gap: 6 }}>
+              <input value={form.documento} onChange={(e) => updateField("documento", e.target.value)} style={{ flex: 1 }} />
+              <button type="button" className="btn-erp light sm" onClick={preencherPorCnpj} disabled={buscandoCnpj}>
+                {buscandoCnpj ? "Buscando…" : "Buscar CNPJ"}
+              </button>
+            </span>
           </label>
           <label>
             Inscrição estadual
@@ -473,7 +528,12 @@ export function CustomersCrud({ initialCustomers, tabelasPreco }: CustomersCrudP
                 </label>
                 <label>
                   CEP
-                  <input value={e.cep} onChange={(ev) => updateEndereco(i, "cep", ev.target.value)} />
+                  <span style={{ display: "flex", gap: 6 }}>
+                    <input value={e.cep} onChange={(ev) => updateEndereco(i, "cep", ev.target.value)} onBlur={() => preencherEnderecoPorCep(i)} style={{ flex: 1 }} />
+                    <button type="button" className="btn-erp light sm" onClick={() => preencherEnderecoPorCep(i)} disabled={buscandoCep}>
+                      {buscandoCep ? "…" : "Buscar"}
+                    </button>
+                  </span>
                 </label>
                 <label className="full">
                   Logradouro
@@ -710,6 +770,7 @@ export function CustomersCrud({ initialCustomers, tabelasPreco }: CustomersCrudP
             <div className="drawer-body">
               {renderTab()}
               {error && <div className="alert danger" style={{ margin: "0 16px 16px" }}><span>{error}</span></div>}
+              {lookupErro && <div className="alert danger" style={{ margin: "0 16px 16px" }}><span>{lookupErro}</span></div>}
             </div>
             <div className="drawer-foot">
               <button type="button" className="btn-erp ghost sm" onClick={closeDrawer}>Cancelar</button>
