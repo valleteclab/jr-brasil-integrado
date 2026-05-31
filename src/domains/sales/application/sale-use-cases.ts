@@ -224,6 +224,9 @@ export async function invoiceSale(scope: TenantScope, id: string, options?: { mo
   if (pedido.status !== "AGUARDANDO_NOTA") {
     throw new Error("Somente pedidos AGUARDANDO_NOTA podem ser faturados. Confirme o pedido primeiro.");
   }
+  if (!pedido.cliente) {
+    throw new Error("Pedido sem cliente identificado. Use o caixa (NFC-e) para vendas a consumidor anônimo.");
+  }
 
   // Monta documento fiscal — fora de transação (emitFiscalDocument gerencia suas próprias)
   const doc = buildDocumentFromPedido({
