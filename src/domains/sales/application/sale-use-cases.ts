@@ -16,9 +16,11 @@ import { emitFiscalDocument } from "@/domains/fiscal/application/fiscal-emission
 const TX_OPTIONS = { maxWait: 15000, timeout: 30000 };
 
 export type CreateSaleInput = {
-  clienteId: string;
+  clienteId?: string | null;
   depositoId?: string;
   canal?: string;
+  /** Status inicial do pedido (padrão RASCUNHO; pré-venda de balcão usa AGUARDANDO_PAGAMENTO). */
+  statusInicial?: "RASCUNHO" | "AGUARDANDO_PAGAMENTO";
   naturezaOperacao?: string;
   vendedor?: string;
   condicaoPagamento?: string;
@@ -36,7 +38,6 @@ export type CreateSaleInput = {
 };
 
 export async function createSale(scope: TenantScope, input: CreateSaleInput) {
-  if (!input.clienteId) throw new Error("Cliente é obrigatório.");
   if (!input.itens || input.itens.length === 0) throw new Error("Pedido deve ter ao menos um item.");
 
   return prisma.$transaction(async (tx) => {
@@ -80,10 +81,10 @@ export async function createSale(scope: TenantScope, input: CreateSaleInput) {
         tenantId: scope.tenantId,
         empresaId: scope.empresaId,
         numero,
-        clienteId: input.clienteId,
+        clienteId: input.clienteId ?? null,
         depositoId,
         canal: input.canal ?? "BALCAO",
-        status: "RASCUNHO",
+        status: input.statusInicial ?? "RASCUNHO",
         naturezaOperacao: input.naturezaOperacao ?? null,
         vendedor: input.vendedor ?? null,
         condicaoPagamento: input.condicaoPagamento ?? null,
@@ -149,29 +150,32 @@ export async function confirmSale(scope: TenantScope, id: string) {
       documentoId: id
     });
 
-    // Cria ContaReceber (1 parcela, vencimento +30 dias)
-    const vencimento = new Date();
-    vencimento.setDate(vencimento.getDate() + 30);
+    // Cria ContaReceber (1 parcela, vencimento +30 dias) — apenas quando há cliente
+    // identificado (venda anônima de balcão é paga à vista, sem contas a receber).
+    if (pedido.clienteId) {
+      const vencimento = new Date();
+      vencimento.setDate(vencimento.getDate() + 30);
 
-    await tx.contaReceber.create({
-      data: {
-        tenantId: scope.tenantId,
-        empresaId: scope.empresaId,
-        clienteId: pedido.clienteId,
-        pedidoVendaId: pedido.id,
-        descricao: `Pedido ${pedido.numero}`,
-        numeroDocumento: pedido.numero,
-        origem: "VENDA",
-        formaPagamento: pedido.formaPagamento ?? null,
-        vencimento,
-        valor: pedido.total,
-        valorPago: 0,
-        juros: 0,
-        multa: 0,
-        descontoBaixa: 0,
-        status: "ABERTO"
-      }
-    });
+      await tx.contaReceber.create({
+        data: {
+          tenantId: scope.tenantId,
+          empresaId: scope.empresaId,
+          clienteId: pedido.clienteId,
+          pedidoVendaId: pedido.id,
+          descricao: `Pedido ${pedido.numero}`,
+          numeroDocumento: pedido.numero,
+          origem: "VENDA",
+          formaPagamento: pedido.formaPagamento ?? null,
+          vencimento,
+          valor: pedido.total,
+          valorPago: 0,
+          juros: 0,
+          multa: 0,
+          descontoBaixa: 0,
+          status: "ABERTO"
+        }
+      });
+    }
 
     const updated = await tx.pedidoVenda.update({
       where: { id },
@@ -219,6 +223,9 @@ export async function invoiceSale(scope: TenantScope, id: string, options?: { mo
   if (!pedido) throw new Error("Pedido de venda não encontrado.");
   if (pedido.status !== "AGUARDANDO_NOTA") {
     throw new Error("Somente pedidos AGUARDANDO_NOTA podem ser faturados. Confirme o pedido primeiro.");
+  }
+  if (!pedido.cliente) {
+    throw new Error("Pedido sem cliente identificado. Use o caixa (NFC-e) para vendas a consumidor anônimo.");
   }
 
   // Monta documento fiscal — fora de transação (emitFiscalDocument gerencia suas próprias)
@@ -296,6 +303,74 @@ export async function invoiceSale(scope: TenantScope, id: string, options?: { mo
   }, TX_OPTIONS);
 
   return nota;
+}
+
+export type CheckoutResult = {
+  pedidoId: string;
+  pedidoNumero: string;
+  pedidoStatus: string;
+  nota: {
+    id: string;
+    status: string;
+    numero: string | null;
+    chaveAcesso: string | null;
+    motivo: string | null;
+  } | null;
+  /** Mensagem quando a emissão falhou — a venda continua registrada/confirmada. */
+  emitErro: string | null;
+};
+
+/**
+ * Checkout de balcão em um clique: cria o pedido, confirma (baixa estoque + conta a receber)
+ * e emite a nota fiscal (NFC-e/NF-e). Se a emissão falhar (rejeição/erro), a venda permanece
+ * confirmada (AGUARDANDO_NOTA) com a nota rejeitada registrada — o usuário reemite em Vendas
+ * sem refazer a venda.
+ */
+export async function checkoutSale(
+  scope: TenantScope,
+  input: CreateSaleInput,
+  options: { modelo: "NFE" | "NFCE" }
+): Promise<CheckoutResult> {
+  const pedido = await createSale(scope, input);
+  await confirmSale(scope, pedido.id);
+
+  try {
+    const nota = await invoiceSale(scope, pedido.id, { modelo: options.modelo });
+    return {
+      pedidoId: pedido.id,
+      pedidoNumero: pedido.numero,
+      pedidoStatus: "ENVIADO",
+      nota: {
+        id: nota.id,
+        status: nota.status,
+        numero: nota.numero ?? null,
+        chaveAcesso: nota.chaveAcesso ?? null,
+        motivo: nota.motivo ?? null
+      },
+      emitErro: null
+    };
+  } catch (error) {
+    // A venda já está confirmada; a nota rejeitada (se houver) ficou registrada e vinculada.
+    const notaRejeitada = await prisma.notaFiscal.findFirst({
+      where: { pedidoVendaId: pedido.id, ...scopedByTenantCompany(scope) },
+      orderBy: { criadoEm: "desc" }
+    });
+    return {
+      pedidoId: pedido.id,
+      pedidoNumero: pedido.numero,
+      pedidoStatus: "AGUARDANDO_NOTA",
+      nota: notaRejeitada
+        ? {
+            id: notaRejeitada.id,
+            status: notaRejeitada.status,
+            numero: notaRejeitada.numero ?? null,
+            chaveAcesso: notaRejeitada.chaveAcesso ?? null,
+            motivo: notaRejeitada.motivo ?? null
+          }
+        : null,
+      emitErro: error instanceof Error ? error.message : "Não foi possível emitir a nota fiscal."
+    };
+  }
 }
 
 export async function cancelSale(scope: TenantScope, id: string) {

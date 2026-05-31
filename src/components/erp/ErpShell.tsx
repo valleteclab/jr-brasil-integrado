@@ -22,6 +22,7 @@ const groups: ErpNavGroup[] = [
     items: [
       { label: "Dashboard", href: "/erp", icon: "▦" },
       { label: "Novo atendimento", href: "/erp/atendimento", icon: "＋", accent: true },
+      { label: "Caixa", href: "/erp/caixa", icon: "🧮" },
       { label: "Vendas", href: "/erp/vendas", icon: "🏪", badgeKey: "vendas" },
       { label: "Orçamentos", href: "/erp/orcamentos", icon: "📄", badgeKey: "orcamentos" },
       { label: "Ordens de Serviço", href: "/erp/os", icon: "🔧", badgeKey: "os" }

@@ -143,16 +143,22 @@ export async function emitFiscalDocument(
     });
     // CFOP automático para mercadorias: respeita CFOP explícito do item; senão deriva de
     // origem/destino e da existência de substituição tributária nos tributos calculados.
-    // Devolução é emitida como entrada (tpNF=0) e usa CFOPs da família 1xxx/2xxx.
     const cfopCtx = {
       ufOrigem: config.emitter.uf,
       ufDestino: document.destinatario.uf,
       substituicaoTributaria: isSubstituicaoTributaria(taxes)
     };
-    const cfop = item.servico
-      ? null
-      : item.cfop ??
-        (document.finalidade === "DEVOLUCAO" ? resolveCfopDevolucao(cfopCtx) : resolveCfopVenda(cfopCtx));
+    let cfop: string | null;
+    if (item.servico) {
+      cfop = null;
+    } else if (document.finalidade === "DEVOLUCAO") {
+      // Devolução é emitida como entrada (tpNF=0): exige CFOP de entrada (1xxx/2xxx). Um CFOP
+      // de saída (5/6) herdado do produto não vale — só respeitamos um CFOP explícito de entrada.
+      const explicitoEntrada = item.cfop && /^[12]/.test(item.cfop) ? item.cfop : null;
+      cfop = explicitoEntrada ?? resolveCfopDevolucao(cfopCtx);
+    } else {
+      cfop = item.cfop ?? resolveCfopVenda(cfopCtx);
+    }
     accumulateTotals(totals, item, taxes);
     return { item, taxes, cfop, numeroItem: index + 1 };
   });

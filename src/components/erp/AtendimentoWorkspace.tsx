@@ -10,6 +10,17 @@ type Cliente = SaleFormData["clientes"][number];
 type ItemLinha = { produto: Produto; quantidade: number; preco: number; desconto: number };
 type Servico = { descricao: string; horas: number; valorHora: number };
 
+type SuccessState = {
+  tipo: string;
+  total: number;
+  route: string;
+  // Checkout de balcão (venda + nota em um clique):
+  pedidoNumero?: string;
+  modeloLabel?: string;
+  nota?: { id: string; status: string; numero: string | null; chave: string | null; motivo: string | null } | null;
+  emitErro?: string | null;
+};
+
 const TIPOS: Array<{ id: Tipo; icon: string; label: string; desc: string }> = [
   { id: "VENDA_BALCAO", icon: "🛒", label: "Venda balcão", desc: "Saída imediata · NF + pagamento à vista" },
   { id: "PEDIDO_FATURADO", icon: "📦", label: "Pedido faturado", desc: "Faturamento com prazo · entrega ou retirada" },
@@ -47,7 +58,7 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO" }: { d
   const [showProd, setShowProd] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState<{ tipo: string; total: number; route: string } | null>(null);
+  const [success, setSuccess] = useState<SuccessState | null>(null);
 
   const isOs = tipo === "OS";
   const isOrcamento = tipo === "ORCAMENTO";
@@ -85,6 +96,78 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO" }: { d
   }
 
   const canFinalize = isOs ? (servicos.length > 0 || items.length > 0) : items.length > 0 || isOrcamento;
+
+  // Venda balcão em um clique: cria + confirma + emite a nota (NFC-e/NF-e) numa só ação.
+  // Pré-venda: envia a venda do balcão para o caixa cobrar e emitir (AGUARDANDO_PAGAMENTO).
+  async function enviarParaCaixa() {
+    setError("");
+    if (!items.length) { setError("Adicione ao menos um item."); return; }
+    setSaving(true);
+    try {
+      const itensPayload = items.map((it) => ({
+        produtoId: it.produto.id,
+        quantidade: it.quantidade,
+        precoUnitario: it.preco,
+        desconto: Math.round(it.quantidade * it.preco * (it.desconto / 100) * 100) / 100
+      }));
+      const res = await fetch("/api/erp/vendas", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          clienteId: cliente?.id ?? null, canal: "BALCAO", statusInicial: "AGUARDANDO_PAGAMENTO",
+          itens: itensPayload, desconto: descontoVal, frete: Number(frete) || 0,
+          formaPagamento: pagamento, condicaoPagamento: condicao, observacoes: obs
+        })
+      });
+      const p = await res.json();
+      if (!res.ok) throw new Error(p.error || "Falha ao enviar para o caixa.");
+      setSuccess({ tipo: "Pré-venda", total, route: "/erp/caixa", pedidoNumero: p.numero });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não foi possível enviar para o caixa.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function finalizeBalcao(modelo: "NFCE" | "NFE") {
+    setError("");
+    if (!cliente && modelo === "NFE") { setError("NF-e exige cliente. Selecione o cliente ou use NFC-e."); return; }
+    if (!items.length) { setError("Adicione ao menos um item."); return; }
+
+    setSaving(true);
+    try {
+      const itensPayload = items.map((it) => ({
+        produtoId: it.produto.id,
+        quantidade: it.quantidade,
+        precoUnitario: it.preco,
+        desconto: Math.round(it.quantidade * it.preco * (it.desconto / 100) * 100) / 100
+      }));
+      const res = await fetch("/api/erp/vendas/checkout", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          clienteId: cliente?.id ?? null, canal: "BALCAO", itens: itensPayload,
+          desconto: descontoVal, frete: Number(frete) || 0,
+          formaPagamento: pagamento, condicaoPagamento: condicao, observacoes: obs, modelo
+        })
+      });
+      const p = await res.json();
+      if (!res.ok) throw new Error(p.error || "Falha ao finalizar a venda.");
+      setSuccess({
+        tipo: "Venda",
+        total,
+        route: "/erp/vendas",
+        pedidoNumero: p.pedidoNumero,
+        modeloLabel: modelo === "NFCE" ? "NFC-e" : "NF-e",
+        nota: p.nota
+          ? { id: p.nota.id, status: p.nota.status, numero: p.nota.numero, chave: p.nota.chaveAcesso, motivo: p.nota.motivo }
+          : null,
+        emitErro: p.emitErro ?? null
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não foi possível finalizar a venda.");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   async function finalize() {
     setError("");
@@ -337,7 +420,23 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO" }: { d
           )}
 
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <button type="button" className="btn-erp primary lg" disabled={!cliente || !canFinalize || saving} onClick={finalize}>{saving ? "Processando…" : acaoLabel}</button>
+            {tipo === "VENDA_BALCAO" ? (
+              <>
+                <button type="button" className="btn-erp primary lg" disabled={!canFinalize || saving} onClick={enviarParaCaixa}>
+                  {saving ? "Processando…" : `Enviar para o caixa · ${brl(total)}`}
+                </button>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button type="button" className="btn-erp ghost sm" style={{ flex: 1 }} disabled={!canFinalize || saving} onClick={() => finalizeBalcao("NFCE")}>
+                    Finalizar direto + NFC-e
+                  </button>
+                  <button type="button" className="btn-erp ghost sm" style={{ flex: 1 }} disabled={!cliente || !canFinalize || saving} onClick={() => finalizeBalcao("NFE")}>
+                    + NF-e
+                  </button>
+                </div>
+              </>
+            ) : (
+              <button type="button" className="btn-erp primary lg" disabled={!cliente || !canFinalize || saving} onClick={finalize}>{saving ? "Processando…" : acaoLabel}</button>
+            )}
             <div style={{ display: "flex", gap: 8 }}>
               <button type="button" className="btn-erp ghost sm" style={{ flex: 1 }}>Imprimir</button>
               <button type="button" className="btn-erp ghost sm" style={{ flex: 1 }}>Salvar rascunho</button>
@@ -375,19 +474,61 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO" }: { d
       )}
 
       {/* SUCCESS */}
-      {success && (
-        <div className="drawer-bd" style={{ display: "grid", placeItems: "center" }} onClick={() => { setSuccess(null); reset(); }}>
+      {success && (() => {
+        const fechar = () => { setSuccess(null); reset(); };
+        const n = success.nota;
+        const autorizada = n?.status === "AUTORIZADA";
+        const processando = n?.status === "PROCESSANDO";
+        // "Falhou" = checkout de balcão em que a nota não foi autorizada (a venda continua válida).
+        const falhou = Boolean(success.emitErro) || (n != null && !autorizada && !processando);
+        const isCheckout = Boolean(success.nota || success.emitErro || success.modeloLabel);
+        const tone = autorizada || !isCheckout ? "success" : falhou ? "danger" : "warn";
+        const visual =
+          tone === "success" ? { bg: "rgba(22,163,74,.15)", c: "var(--erp-success)", ic: "✓" }
+          : tone === "danger" ? { bg: "rgba(220,38,38,.15)", c: "var(--erp-danger)", ic: "!" }
+          : { bg: "rgba(217,119,6,.15)", c: "var(--erp-warn)", ic: "⏳" };
+        const titulo = !isCheckout
+          ? `${success.tipo} criada!`
+          : autorizada ? `Venda concluída · ${success.modeloLabel} autorizada`
+          : falhou ? "Venda registrada · nota pendente"
+          : "Venda concluída · nota em processamento";
+        const motivo = success.emitErro || (n && !autorizada ? n.motivo : null);
+        return (
+        <div className="drawer-bd" style={{ display: "grid", placeItems: "center" }} onClick={fechar}>
           <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 12, padding: 36, maxWidth: 480, textAlign: "center" }}>
-            <div style={{ width: 64, height: 64, margin: "0 auto 14px", borderRadius: "50%", background: "rgba(22,163,74,.15)", color: "var(--erp-success)", display: "grid", placeItems: "center", fontSize: 30 }} aria-hidden="true">✓</div>
-            <h2 style={{ fontFamily: "Barlow Condensed", fontWeight: 800, fontSize: 26, margin: "0 0 6px" }}>{success.tipo} criada!</h2>
-            <p style={{ color: "var(--erp-slate)", margin: "0 0 18px", fontSize: 13.5 }}>Total {brl(success.total)} · registrado no sistema.</p>
-            <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
-              <button type="button" className="btn-erp ghost sm" onClick={() => { setSuccess(null); reset(); }}>Novo atendimento</button>
-              <button type="button" className="btn-erp primary sm" onClick={() => router.push(success.route)}>Ver na lista →</button>
+            <div style={{ width: 64, height: 64, margin: "0 auto 14px", borderRadius: "50%", background: visual.bg, color: visual.c, display: "grid", placeItems: "center", fontSize: 30 }} aria-hidden="true">{visual.ic}</div>
+            <h2 style={{ fontFamily: "Barlow Condensed", fontWeight: 800, fontSize: 26, margin: "0 0 6px" }}>{titulo}</h2>
+            <p style={{ color: "var(--erp-slate)", margin: "0 0 12px", fontSize: 13.5 }}>
+              {success.pedidoNumero ? `Pedido ${success.pedidoNumero} · ` : ""}Total {brl(success.total)}
+              {autorizada && n?.numero ? ` · ${success.modeloLabel} nº ${n.numero}` : ""}
+            </p>
+            {motivo && (
+              <div className="alert danger" style={{ textAlign: "left", marginBottom: 12 }}><span className="lead">Motivo:</span> {motivo}</div>
+            )}
+            {falhou && (
+              <p style={{ color: "var(--erp-slate)", margin: "0 0 16px", fontSize: 12.5 }}>
+                A venda foi registrada e o estoque baixado. Corrija o problema e reemita a nota em Vendas — sem refazer a venda.
+              </p>
+            )}
+            <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
+              <button type="button" className="btn-erp ghost sm" onClick={fechar}>Novo atendimento</button>
+              {autorizada && n && (
+                <>
+                  <a className="btn-erp ghost sm" href={`/api/erp/fiscal/${n.id}/pdf`} target="_blank" rel="noopener noreferrer">Baixar PDF</a>
+                  <button type="button" className="btn-erp primary sm" onClick={() => router.push(`/erp/fiscal/${n.id}`)}>Ver nota →</button>
+                </>
+              )}
+              {falhou && (
+                <button type="button" className="btn-erp primary sm" onClick={() => router.push("/erp/vendas")}>Reemitir em Vendas →</button>
+              )}
+              {!autorizada && !falhou && (
+                <button type="button" className="btn-erp primary sm" onClick={() => router.push(success.route)}>Ver na lista →</button>
+              )}
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
