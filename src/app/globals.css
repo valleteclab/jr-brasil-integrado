@@ -949,6 +949,38 @@ p {
 
 .erp-form .check-row input {
   height: auto;
+  width: auto;
+}
+
+/* Itens repetíveis (Contatos/Endereços) dentro de um .erp-form em grade. */
+.erp-form .sub-fieldset {
+  border: 1px solid var(--erp-line);
+  border-radius: 8px;
+  grid-column: 1 / -1;
+  margin: 0;
+  min-width: 0;
+  padding: 4px 14px 14px;
+}
+
+.erp-form .sub-fieldset > legend {
+  color: var(--erp-slate);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 0 6px;
+}
+
+/* O .erp-form aninhado não precisa do padding externo; só a grade. */
+.erp-form .sub-fieldset .erp-form {
+  padding: 6px 0 0;
+}
+
+/* Garante que inputs não estourem a célula da grade. */
+.erp-form input,
+.erp-form select,
+.erp-form textarea {
+  box-sizing: border-box;
+  min-width: 0;
+  width: 100%;
 }
 
 .inline-foot {
@@ -1305,7 +1337,8 @@ p {
   padding: 18px 20px;
 }
 
-.erp-form label.full {
+.erp-form label.full,
+.erp-form > .full {
   grid-column: 1 / -1;
 }
 
