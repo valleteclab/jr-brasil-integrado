@@ -7,6 +7,7 @@ import { relatorioVendas } from "./read/relatorio-vendas";
 import { relatorioEstoque } from "./read/relatorio-estoque";
 import { relatorioFinanceiro } from "./read/relatorio-financeiro";
 import { dashboardTool } from "./read/dashboard";
+import { consultarMeusPedidos } from "./read/consultar-meus-pedidos";
 import { criarOrcamento } from "./write/criar-orcamento";
 import { criarPreVenda } from "./write/criar-pre-venda";
 
@@ -20,6 +21,7 @@ export const ALL_TOOLS: AgentTool[] = [
   relatorioEstoque,
   relatorioFinanceiro,
   dashboardTool,
+  consultarMeusPedidos,
   criarOrcamento,
   criarPreVenda
 ];

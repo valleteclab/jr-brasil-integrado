@@ -35,8 +35,10 @@ export async function runAgentTurn(params: {
   historico: ToolChatMessage[];
   mensagemUsuario: string;
   conversaId: string;
+  /** Quando o solicitante é um cliente final, injetamos o clienteId nas tools CLIENTE. */
+  clienteId?: string | null;
 }): Promise<AgentTurnResult> {
-  const { scope, role, empresaNome, historico, mensagemUsuario, conversaId } = params;
+  const { scope, role, empresaNome, historico, mensagemUsuario, conversaId, clienteId } = params;
 
   const tools = getToolsForRole(role);
   const openAiTools = toOpenAiTools(tools);
@@ -76,6 +78,10 @@ export async function runAgentTurn(params: {
           args = call.function.arguments ? JSON.parse(call.function.arguments) : {};
         } catch {
           args = {};
+        }
+        // Cliente final: força o clienteId do solicitante (nunca confia no que o modelo mandar).
+        if (role === "CLIENTE" && clienteId) {
+          args.clienteId = clienteId;
         }
         try {
           const result = await tool.handler(scope, args);

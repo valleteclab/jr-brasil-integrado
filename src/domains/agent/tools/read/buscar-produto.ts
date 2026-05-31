@@ -6,7 +6,7 @@ export const buscarProduto: AgentTool = {
   description:
     "Busca produtos do catálogo por SKU, nome, código original ou GTIN. Retorna preço de venda, unidade e NCM. Use para encontrar o produtoId antes de montar orçamento/pré-venda.",
   mode: "read",
-  roles: ["GESTOR", "VENDEDOR"],
+  roles: ["GESTOR", "VENDEDOR", "CLIENTE"],
   inputSchema: {
     type: "object",
     properties: {
