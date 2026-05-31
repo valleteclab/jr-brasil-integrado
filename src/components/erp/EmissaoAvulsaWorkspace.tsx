@@ -442,6 +442,12 @@ export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormDat
     reset();
   }
 
+  // Fecha o resultado mantendo todos os dados preenchidos — usado quando a nota é rejeitada,
+  // para que o usuário corrija o problema apontado e reenvie sem refazer tudo.
+  function corrigirEReenviar() {
+    setResultado(null);
+  }
+
   const clienteSel = data.clientes.find((c) => c.id === clienteId) ?? null;
   const destResumo: string =
     modoDest === "cadastrado"
@@ -871,8 +877,12 @@ export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormDat
       )}
 
       {/* RESULTADO */}
-      {resultado && (
-        <div className="drawer-bd" style={{ display: "grid", placeItems: "center" }} onClick={novaEmissao} role="presentation">
+      {resultado && (() => {
+      const falhou = statusTone(resultado.status) === "danger";
+      // Em rejeição/erro, fechar (no backdrop) preserva os dados para correção; em sucesso, limpa.
+      const aoFechar = falhou ? corrigirEReenviar : novaEmissao;
+      return (
+        <div className="drawer-bd" style={{ display: "grid", placeItems: "center" }} onClick={aoFechar} role="presentation">
           <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 12, padding: 32, maxWidth: 520, width: "92%" }} role="dialog" aria-modal="true" aria-label="Resultado da emissão">
             <div style={{ textAlign: "center" }}>
               <div
@@ -909,18 +919,33 @@ export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormDat
               {resultado.motivo && statusTone(resultado.status) !== "success" && (
                 <div className="alert danger" style={{ marginTop: 6 }}><span className="lead">Motivo:</span> {resultado.motivo}</div>
               )}
+              {falhou && (
+                <p style={{ fontSize: 12.5, color: "var(--erp-slate)", margin: "2px 0 0" }}>
+                  Corrija o item apontado acima — seus dados foram mantidos. Reenviar gera uma nova tentativa.
+                </p>
+              )}
             </div>
 
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center" }}>
-              <button type="button" className="btn-erp ghost sm" onClick={sincronizar} disabled={syncing}>
-                {syncing ? "Sincronizando…" : "Sincronizar status"}
-              </button>
-              <button type="button" className="btn-erp ghost sm" onClick={novaEmissao}>Nova emissão</button>
-              <button type="button" className="btn-erp primary sm" onClick={() => router.push("/erp/fiscal")}>Ver notas emitidas →</button>
+              {falhou ? (
+                <>
+                  <button type="button" className="btn-erp primary sm" onClick={corrigirEReenviar}>Corrigir e reenviar</button>
+                  <button type="button" className="btn-erp ghost sm" onClick={novaEmissao}>Começar do zero</button>
+                </>
+              ) : (
+                <>
+                  <button type="button" className="btn-erp ghost sm" onClick={sincronizar} disabled={syncing}>
+                    {syncing ? "Sincronizando…" : "Sincronizar status"}
+                  </button>
+                  <button type="button" className="btn-erp ghost sm" onClick={novaEmissao}>Nova emissão</button>
+                  <button type="button" className="btn-erp primary sm" onClick={() => router.push("/erp/fiscal")}>Ver notas emitidas →</button>
+                </>
+              )}
             </div>
           </div>
         </div>
-      )}
+      );
+      })()}
     </div>
   );
 }

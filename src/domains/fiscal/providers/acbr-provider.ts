@@ -151,9 +151,11 @@ function isDfeFinal(status: string | null | undefined): boolean {
   return ["autorizado", "cancelado", "denegado", "rejeitado", "erro", "autorizada", "cancelada", "negada", "substituida"].includes(s);
 }
 
-/** tPag (forma de pagamento SEFAZ): 01=dinheiro, 03=crédito, 04=débito, 17=pix... */
+/** tPag (forma de pagamento SEFAZ): 01=dinheiro, 03=crédito, 04=débito, 17=pix, 90=sem pagamento... */
 function mapTpPag(forma: string | null): string {
   const f = (forma ?? "").toLowerCase();
+  // "Sem pagamento" (90) é obrigatório em operações sem contraprestação financeira (ex.: devolução).
+  if (f.includes("sem pagamento") || f.includes("sem pgto")) return "90";
   if (f.includes("pix")) return "17";
   if (f.includes("credito") || f.includes("crédito") || f.includes("credit")) return "03";
   if (f.includes("debito") || f.includes("débito") || f.includes("debit")) return "04";
@@ -433,6 +435,8 @@ export class AcbrFiscalProvider implements FiscalProvider {
     const isNfce = modelo === "NFCE";
     const idDest = isNfce ? 1 : ufEmit && ufDest && ufEmit !== ufDest ? 2 : 1;
     const refChave = onlyDigits(input.document.chaveReferenciada);
+    // Devolução é operação sem pagamento (tPag=90), independente da forma informada.
+    const tpPag = input.document.finalidade === "DEVOLUCAO" ? "90" : mapTpPag(input.document.formaPagamento);
     // Consumidor final: NFC-e sempre; NF-e quando o destinatário é não-contribuinte (sem IE),
     // pois a SEFAZ exige indFinal=1 nesse caso ("operação com não contribuinte").
     const indFinal = isNfce || !input.document.destinatario.inscricaoEstadual ? 1 : 0;
@@ -520,7 +524,8 @@ export class AcbrFiscalProvider implements FiscalProvider {
           }
         },
         transp: { modFrete: 9 },
-        pag: { detPag: [{ tPag: mapTpPag(input.document.formaPagamento), vPag: input.total }] }
+        // Devolução não tem contraprestação financeira → tPag=90 (Sem Pagamento), vPag=0.
+        pag: { detPag: [tpPag === "90" ? { tPag: "90", vPag: 0 } : { tPag: tpPag, vPag: input.total }] }
       }
     };
   }
