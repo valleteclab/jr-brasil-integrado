@@ -48,8 +48,10 @@ type SpedyAddress = {
 };
 
 type SpedyReceiver = {
-  name?: string;
+  // Documento antes do nome: a Spedy monta o XML na ordem do JSON e o schema
+  // nacional exige CNPJ/CPF/NIF antes de xNome no bloco `toma` (ver buildReceiver).
   federalTaxNumber?: string;
+  name?: string;
   stateTaxNumber?: string | null;
   email?: string | null;
   address?: SpedyAddress;
@@ -522,9 +524,16 @@ export class SpedyFiscalProvider implements FiscalProvider {
     const dest = input.document.destinatario;
     const endereco = dest.endereco;
 
+    // CEP só é enviado quando tem 8 dígitos válidos: o schema nacional (TSCEP) rejeita
+    // valores como "0"/"00000000" (rejeição E1235 "CEP ... pattern constraint failed").
+    const cepDigitos = onlyDigits(endereco?.cep);
+    const cepValido = cepDigitos.length === 8 && cepDigitos !== "00000000" ? cepDigitos : undefined;
+
     let address: SpedyAddress | undefined;
-    if (endereco) {
-      // CityCreateDto aceita código IBGE e nome+UF simultaneamente; enviamos o que houver.
+    // Só monta o endereço quando há dados mínimos válidos (logradouro + CEP válido).
+    // Para tomador identificado por CNPJ/CPF, o Ambiente Nacional dispensa o endereço,
+    // então é melhor omiti-lo do que enviar dados inválidos que quebram o schema.
+    if (endereco && (endereco.logradouro ?? "").trim() && cepValido) {
       const uf = endereco.uf ?? dest.uf ?? undefined;
       const city: SpedyCity = {};
       if (endereco.codigoMunicipioIbge) city.code = endereco.codigoMunicipioIbge;
@@ -535,14 +544,15 @@ export class SpedyFiscalProvider implements FiscalProvider {
         number: endereco.numero ?? undefined,
         additionalInformation: endereco.complemento ?? undefined,
         district: endereco.bairro ?? undefined,
-        postalCode: onlyDigits(endereco.cep) || undefined,
+        postalCode: cepValido,
         city: Object.keys(city).length ? city : undefined
       };
     }
 
+    // Documento antes do nome para acompanhar a ordem do bloco `toma` do schema nacional.
     return {
-      name: dest.nome,
       federalTaxNumber: onlyDigits(dest.documento) || undefined,
+      name: dest.nome,
       stateTaxNumber: dest.inscricaoEstadual,
       email: dest.email,
       address

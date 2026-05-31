@@ -1,9 +1,29 @@
 # Spedy — NFS-e: validação de emissão (sandbox)
 
-> **Resultado: ✅ NFS-e AUTORIZADA de ponta a ponta no sandbox.** Com o ambiente
-> `serviceInvoice.environmentType = simulation` (Spedy), a emissão retorna
-> `status: authorized`. O nosso payload é aceito sem rejeições (E0717/E1235/SPD005
-> resolvidos). Empresa em Luís Eduardo Magalhães/BA, Ambiente Nacional.
+> **Resultado:** o **fluxo do nosso ERP** (use-case `emitFiscalDocument`, o mesmo
+> da tela) foi validado de ponta a ponta: monta o documento, calcula tributos,
+> persiste a `NotaFiscal` e chama o provider Spedy. Esse caminho revelou e
+> **corrigiu 3 bugs reais** no payload do tomador/endereço.
+>
+> **Sobre a autorização:** o ambiente `simulation` da Spedy é **instável** — o
+> MESMO payload retornou `authorized` numa sessão e `SPD005` em outra (3/3),
+> comprovando que o resultado de autorização no sandbox não depende do nosso
+> payload. A autorização com valor fiscal só é confiável em **produção**.
+>
+> Empresa em Luís Eduardo Magalhães/BA, Ambiente Nacional.
+
+## Bugs reais encontrados e corrigidos validando o fluxo do ERP
+Testar via `emitFiscalDocument` (não só API direta) pegou o que os testes diretos
+não pegavam:
+1. **Tomador sem nome** → E1235 "toma incompleto (xNome)". Fix: `buildServiceReceiver`
+   envia o tomador completo (documento + nome).
+2. **CEP inválido** (seed com CEP "0") → E1235 "CEP ... TSCEP pattern failed". Fix:
+   `buildReceiver` só envia `postalCode` com 8 dígitos válidos e **omite o endereço**
+   quando incompleto (o Ambiente Nacional dispensa endereço para tomador com CNPJ).
+3. **Documento inválido** (seed com CNPJ `12345678000190`, dígito verificador
+   inválido) → a Spedy descarta o documento e o `toma` fica sem CNPJ. Não é bug de
+   código (dado de seed ruim), mas evidencia a necessidade de CNPJ/CPF válido.
+4. Mensagem amigável do E1235 atualizada (nome/razão social obrigatórios).
 
 ## Combinação que autoriza (confirmada ao vivo)
 - **`environmentType: simulation`** (configurado no painel da Spedy / `PUT
