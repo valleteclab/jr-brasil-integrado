@@ -111,7 +111,7 @@ export function NotasFiscaisList({ notas }: Props) {
             {filtered.map((nota) => (
               <tr key={nota.id}>
                 <td>
-                  <span className="mono bold">{nota.modeloLabel} {nota.numero}</span>
+                  <Link className="mono bold" href={`/erp/fiscal/${nota.id}`}>{nota.modeloLabel} {nota.numero}</Link>
                   <span className="sublabel">Série {nota.serie} · {nota.emitidaEm}</span>
                 </td>
                 <td>
@@ -128,6 +128,13 @@ export function NotasFiscaisList({ notas }: Props) {
                 <td>{nota.ambiente}</td>
                 <td className="num bold">{nota.total}</td>
                 <td className="actions">
+                  <Link className="btn-erp ghost xs" href={`/erp/fiscal/${nota.id}`}>Ver</Link>
+                  {nota.canDownload && (
+                    <>
+                      <a className="btn-erp ghost xs" href={`/api/erp/fiscal/${nota.id}/pdf`} target="_blank" rel="noopener noreferrer">PDF</a>
+                      <a className="btn-erp ghost xs" href={`/api/erp/fiscal/${nota.id}/xml`}>XML</a>
+                    </>
+                  )}
                   {nota.canCorrect && (
                     <button className="btn-erp ghost xs" type="button" disabled={busyId === nota.id} onClick={() => correct(nota)}>
                       Carta de correção

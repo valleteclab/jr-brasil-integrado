@@ -1,4 +1,4 @@
-import type { AmbienteFiscal, ProvedorFiscal, RegimeTributario, StatusNotaFiscal } from "@prisma/client";
+import type { AmbienteFiscal, ModeloFiscal, ProvedorFiscal, RegimeTributario, StatusNotaFiscal } from "@prisma/client";
 import type {
   CancelInput,
   CancelResult,
@@ -69,6 +69,17 @@ type AcbrDfeResponse = {
   numero?: number;
   data_emissao?: string;
   autorizacao?: { protocolo?: string; data_recebimento?: string; codigo_status?: number; motivo_status?: string };
+  error?: { code?: string; message?: string; errors?: Array<{ message?: string }> };
+};
+
+/** Resposta de evento (cancelamento / carta de correção): objeto de evento, não o DF-e. */
+type AcbrCancelResponse = {
+  id?: string;
+  status?: string;
+  codigo_status?: number;
+  motivo_status?: string;
+  numero_protocolo?: string;
+  numero_sequencial?: number;
   error?: { code?: string; message?: string; errors?: Array<{ message?: string }> };
 };
 
@@ -154,6 +165,37 @@ function mapTpPag(forma: string | null): string {
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Arredonda para 2 casas (valores monetários do XML da SEFAZ). */
+function round2(n: number): number {
+  return Math.round((n + Number.EPSILON) * 100) / 100;
+}
+
+/**
+ * Monta o grupo PIS/COFINS do XML conforme o CST (a SEFAZ valida o par CST↔grupo):
+ *  - 01, 02 → PISAliq/COFINSAliq (tributação por alíquota: vBC/pPIS/vPIS)
+ *  - 04, 05, 06, 07, 08, 09 → PISNT/COFINSNT (não tributado: só CST)
+ *  - demais (ex.: 49, 99) → PISOutr/COFINSOutr (outras operações: vBC/alíquota/valor)
+ * Ex.: CST 49 com PISAliq é rejeitado; aqui ele cai corretamente em PISOutr.
+ */
+function pisCofinsGroup(
+  tipo: "PIS" | "COFINS",
+  cst: string,
+  base: number,
+  aliquota: number,
+  valor: number
+): Record<string, unknown> {
+  const c = (cst || "").padStart(2, "0");
+  const aliqKey = tipo === "PIS" ? "pPIS" : "pCOFINS";
+  const valKey = tipo === "PIS" ? "vPIS" : "vCOFINS";
+  if (c === "01" || c === "02") {
+    return { [`${tipo}Aliq`]: { CST: c, vBC: base, [aliqKey]: aliquota, [valKey]: valor } };
+  }
+  if (["04", "05", "06", "07", "08", "09"].includes(c)) {
+    return { [`${tipo}NT`]: { CST: c } };
+  }
+  return { [`${tipo}Outr`]: { CST: c, vBC: base, [aliqKey]: aliquota, [valKey]: valor } };
 }
 
 /**
@@ -268,8 +310,11 @@ export class AcbrFiscalProvider implements FiscalProvider {
       } else if (response.status === 402) {
         errorMessage = "Créditos insuficientes ou cota excedida na ACBr (HTTP 402). Adquira nova franquia no console da ACBr.";
       } else {
-        const err = (data as { error?: { message?: string; errors?: Array<{ message?: string }> } } | undefined)?.error;
-        errorMessage = err?.message ?? err?.errors?.[0]?.message ?? `ACBr retornou HTTP ${response.status}.`;
+        const err = (data as { error?: { message?: string; errors?: Array<{ message?: string; field?: string }> } } | undefined)?.error;
+        const detalhe = err?.errors?.map((e) => (e.field ? `${e.field}: ${e.message}` : e.message)).filter(Boolean).join("; ");
+        errorMessage = detalhe
+          ? `${err?.message ?? "Falha de validação"}: ${detalhe}`
+          : err?.message ?? `ACBr retornou HTTP ${response.status}.`;
       }
     }
     return { ok: response.ok, status: response.status, data: data as T | undefined, errorMessage };
@@ -295,7 +340,8 @@ export class AcbrFiscalProvider implements FiscalProvider {
     const body = this.buildDfeBody(input, modelo);
     const posted = await this.request<AcbrDfeResponse>(ctx, "POST", `/${resource}`, body);
 
-    if (!posted.ok && posted.status !== 422) {
+    // Sem id no retorno = erro de validação/envelope (não há documento criado na ACBr).
+    if (!posted.ok && !posted.data?.id) {
       return { status: "ERRO", motivo: posted.errorMessage ?? "Falha ao emitir na ACBr." };
     }
     let result = this.toDfeResult(posted.data, ctx, resource);
@@ -321,10 +367,11 @@ export class AcbrFiscalProvider implements FiscalProvider {
   private toDfeResult(data: AcbrDfeResponse | undefined, ctx: ProviderContext, resource: string): EmitResult {
     const { baseUrl } = this.resolveConfig(ctx);
     const id = data?.id;
+    // Prefere os erros detalhados (error.errors[]) ao genérico "Validation failed".
+    const detalhe = data?.error?.errors?.map((e) => e.message).filter(Boolean).join("; ");
     const motivo =
       data?.autorizacao?.motivo_status ??
-      data?.error?.message ??
-      data?.error?.errors?.map((e) => e.message).filter(Boolean).join("; ") ??
+      (detalhe ? `${data?.error?.message ?? "Falha de validação"}: ${detalhe}` : data?.error?.message) ??
       undefined;
     return {
       status: mapDfeStatus(data?.status),
@@ -389,6 +436,10 @@ export class AcbrFiscalProvider implements FiscalProvider {
     // pois a SEFAZ exige indFinal=1 nesse caso ("operação com não contribuinte").
     const indFinal = isNfce || !input.document.destinatario.inscricaoEstadual ? 1 : 0;
 
+    // Acumula os totais a partir dos MESMOS valores por item que serão emitidos —
+    // a SEFAZ rejeita se total.ICMSTot.* divergir da soma dos itens (ex.: vFCP).
+    const sum = { vBC: 0, vICMS: 0, vFCP: 0, vProd: 0, vPIS: 0, vCOFINS: 0 };
+
     const det = input.document.itens.map((item, index) => {
       const numeroItem = index + 1;
       const taxes = input.computed.find((c) => c.numeroItem === numeroItem)?.taxes;
@@ -401,21 +452,32 @@ export class AcbrFiscalProvider implements FiscalProvider {
         : {
             ICMS00: {
               orig, CST: taxes?.cstIcms ?? "00", modBC: 3,
-              vBC: taxes?.baseIcms ?? base, pICMS: taxes?.aliquotaIcms ?? 0, vICMS: taxes?.valorIcms ?? 0
+              vBC: taxes?.baseIcms ?? base, pICMS: taxes?.aliquotaIcms ?? 0, vICMS: taxes?.valorIcms ?? 0,
+              // FCP por item para reconciliar com total.ICMSTot.vFCP (a SEFAZ valida a soma).
+              pFCP: taxes?.percentualFcp ?? 0, vFCP: taxes?.valorFcp ?? 0
             }
           };
-      // PIS/COFINS: Simples normalmente não tributa (CST 49); Normal destaca alíquota.
-      const pis = simples
-        ? { PISNT: { CST: taxes?.cstPis ?? "49" } }
-        : { PISAliq: { CST: taxes?.cstPis ?? "01", vBC: base, pPIS: taxes?.aliquotaPis ?? 0, vPIS: taxes?.valorPis ?? 0 } };
-      const cofins = simples
-        ? { COFINSNT: { CST: taxes?.cstCofins ?? "49" } }
-        : { COFINSAliq: { CST: taxes?.cstCofins ?? "01", vBC: base, pCOFINS: taxes?.aliquotaCofins ?? 0, vCOFINS: taxes?.valorCofins ?? 0 } };
+      // PIS/COFINS: o grupo do XML depende do CST, não do regime. Simples normalmente
+      // não tributa (CST 49 → grupo "Outras Operações"); CST 01/02 → alíquota; 04-09 → NT.
+      const pis = pisCofinsGroup("PIS", simples ? taxes?.cstPis ?? "49" : taxes?.cstPis ?? "01", base, taxes?.aliquotaPis ?? 0, taxes?.valorPis ?? 0);
+      const cofins = pisCofinsGroup("COFINS", simples ? taxes?.cstCofins ?? "49" : taxes?.cstCofins ?? "01", base, taxes?.aliquotaCofins ?? 0, taxes?.valorCofins ?? 0);
+
+      // Acumula exatamente o que foi colocado no item.
+      sum.vProd += item.valorTotal;
+      if (!simples) {
+        sum.vBC += taxes?.baseIcms ?? base;
+        sum.vICMS += taxes?.valorIcms ?? 0;
+        sum.vFCP += taxes?.valorFcp ?? 0;
+      }
+      // PIS/COFINS NT não destacam valor; só Aliq/Outr entram no total.
+      if (pis.PISNT === undefined) sum.vPIS += taxes?.valorPis ?? 0;
+      if (cofins.COFINSNT === undefined) sum.vCOFINS += taxes?.valorCofins ?? 0;
 
       return {
         nItem: numeroItem,
         prod: {
-          cProd: item.codigo, cEAN: "SEM GTIN", xProd: item.descricao,
+          // cProd é obrigatório na SEFAZ; itens avulsos podem vir sem código — usa o nº do item.
+          cProd: item.codigo?.trim() || String(numeroItem), cEAN: "SEM GTIN", xProd: item.descricao,
           NCM: item.ncm ?? "00000000", CFOP: item.cfop ?? (isNfce ? "5102" : "5102"),
           uCom: item.unidade, qCom: item.quantidade, vUnCom: item.valorUnitario, vProd: item.valorTotal,
           cEANTrib: "SEM GTIN", uTrib: item.unidade, qTrib: item.quantidade, vUnTrib: item.valorUnitario,
@@ -445,11 +507,12 @@ export class AcbrFiscalProvider implements FiscalProvider {
         det,
         total: {
           ICMSTot: {
-            vBC: t.valorIcms > 0 ? t.valorProdutos : 0, vICMS: t.valorIcms, vICMSDeson: 0,
-            vFCP: t.valorFcp, vBCST: 0, vST: t.valorIcmsSt, vFCPST: 0, vFCPSTRet: 0,
-            vProd: t.valorProdutos, vFrete: input.document.valorFrete, vSeg: input.document.valorSeguro,
+            // Somados a partir dos itens emitidos (não de t.*), para bater na validação da SEFAZ.
+            vBC: round2(sum.vBC), vICMS: round2(sum.vICMS), vICMSDeson: 0,
+            vFCP: round2(sum.vFCP), vBCST: 0, vST: t.valorIcmsSt, vFCPST: 0, vFCPSTRet: 0,
+            vProd: round2(sum.vProd), vFrete: input.document.valorFrete, vSeg: input.document.valorSeguro,
             vDesc: input.document.valorDesconto, vII: 0, vIPI: t.valorIpi, vIPIDevol: 0,
-            vPIS: t.valorPis, vCOFINS: t.valorCofins, vOutro: input.document.outrasDespesas, vNF: input.total
+            vPIS: round2(sum.vPIS), vCOFINS: round2(sum.vCOFINS), vOutro: input.document.outrasDespesas, vNF: input.total
           }
         },
         transp: { modFrete: 9 },
@@ -581,15 +644,18 @@ export class AcbrFiscalProvider implements FiscalProvider {
   async cancel(input: CancelInput, ctx: ProviderContext): Promise<CancelResult> {
     if (!input.providerRef) return { status: "ERRO", motivo: "Identificador do documento na ACBr ausente." };
     const resource = ACBR_RESOURCE[input.modelo];
-    const res = await this.request<AcbrDfeResponse>(ctx, "POST", `/${resource}/${encodeURIComponent(input.providerRef)}/cancelamento`, {
+    const res = await this.request<AcbrCancelResponse>(ctx, "POST", `/${resource}/${encodeURIComponent(input.providerRef)}/cancelamento`, {
       justificativa: input.justificativa
     });
     if (!res.ok) return { status: "ERRO", motivo: res.errorMessage ?? "Falha ao cancelar na ACBr." };
-    const status = (res.data?.status ?? "").toLowerCase();
-    if (status === "cancelado" || status === "cancelada") {
-      return { status: "AUTORIZADO", protocolo: res.data?.autorizacao?.protocolo || undefined };
+    // A ACBr devolve um objeto de EVENTO (não o DF-e). Cancelamento homologado pela SEFAZ:
+    // código 135 (evento registrado e vinculado) ou 155 (registrado fora do prazo).
+    const codigo = res.data?.codigo_status;
+    const protocolo = res.data?.numero_protocolo || undefined;
+    if (codigo === 135 || codigo === 155) {
+      return { status: "AUTORIZADO", protocolo };
     }
-    return { status: "REJEITADO", motivo: res.data?.autorizacao?.motivo_status ?? res.data?.error?.message ?? undefined };
+    return { status: "REJEITADO", motivo: res.data?.motivo_status ?? `Cancelamento não homologado (código ${codigo ?? "?"}).` };
   }
 
   async correct(input: CorrectionInput, ctx: ProviderContext): Promise<CorrectionResult> {
@@ -611,6 +677,35 @@ export class AcbrFiscalProvider implements FiscalProvider {
     const nfse = await this.request<AcbrNfseResponse>(ctx, "GET", `/nfse/${encodeURIComponent(id)}`);
     if (nfse.ok && nfse.data?.id) return this.toNfseResult(nfse.data, ctx);
     return { status: "PROCESSANDO", providerRef: id, motivo: "Documento não localizado na ACBr." };
+  }
+
+  /**
+   * Baixa o PDF (DANFE/DANFSE) ou o XML autorizado da ACBr. Os endpoints exigem Bearer,
+   * por isso o download é server-side (não dá para abrir a URL direto no navegador).
+   * Retorna os bytes e o content-type para a rota repassar ao cliente.
+   */
+  async downloadDocument(
+    kind: "pdf" | "xml",
+    ref: { providerRef: string; modelo: ModeloFiscal },
+    ctx: ProviderContext
+  ): Promise<{ ok: boolean; contentType: string; body: Buffer; filename: string; error?: string }> {
+    const { baseUrl } = this.resolveConfig(ctx);
+    const token = await this.getAccessToken(ctx);
+    const resource = ACBR_RESOURCE[ref.modelo];
+    const url = `${baseUrl}/${resource}/${encodeURIComponent(ref.providerRef)}/${kind}`;
+    const contentType = kind === "pdf" ? "application/pdf" : "application/xml";
+
+    let response: Response;
+    try {
+      response = await fetch(url, { headers: { Authorization: `Bearer ${token}`, Accept: contentType } });
+    } catch (err) {
+      return { ok: false, contentType, body: Buffer.alloc(0), filename: "", error: `Falha ao baixar da ACBr: ${err instanceof Error ? err.message : "erro de rede"}` };
+    }
+    if (!response.ok) {
+      return { ok: false, contentType, body: Buffer.alloc(0), filename: "", error: `ACBr retornou HTTP ${response.status} ao baixar o ${kind.toUpperCase()}.` };
+    }
+    const body = Buffer.from(await response.arrayBuffer());
+    return { ok: true, contentType, body, filename: `${resource}-${ref.providerRef}.${kind}` };
   }
 
   /** Ping autenticado: lista empresas. Valida OAuth + acesso à API. */

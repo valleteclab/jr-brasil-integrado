@@ -282,6 +282,21 @@ export async function cancelNotaFiscal(scope: TenantScope, notaId: string, justi
   if (nota.status !== "AUTORIZADA") {
     throw new Error("Apenas notas autorizadas podem ser canceladas.");
   }
+  // Trava de prazo legal de cancelamento (a SEFAZ também valida, mas avisamos antes):
+  //  - NF-e (mod 55): 24h após a autorização; após isso exige cancelamento extemporâneo.
+  //  - NFC-e (mod 65): 30 min (regra adotada pela maioria das UFs).
+  //  - NFS-e: prazo varia por município — não bloqueamos aqui, a prefeitura valida.
+  const limiteCancelHoras = nota.modelo === "NFE" ? 24 : nota.modelo === "NFCE" ? 0.5 : null;
+  if (limiteCancelHoras !== null) {
+    const referencia = nota.autorizadaEm ?? nota.emitidaEm;
+    const horas = referencia ? (Date.now() - referencia.getTime()) / 3_600_000 : 0;
+    if (horas > limiteCancelHoras) {
+      const prazoLabel = limiteCancelHoras < 1 ? `${limiteCancelHoras * 60} minutos` : `${limiteCancelHoras} horas`;
+      throw new Error(
+        `Prazo de cancelamento da ${nota.modelo} esgotado (${prazoLabel} após a autorização). Use o procedimento de cancelamento extemporâneo junto à SEFAZ, se aplicável.`
+      );
+    }
+  }
   if (justificativa.trim().length < 15) {
     throw new Error("A justificativa de cancelamento deve ter ao menos 15 caracteres.");
   }
@@ -355,6 +370,17 @@ export async function createCartaCorrecao(scope: TenantScope, notaId: string, co
   if (nota.status !== "AUTORIZADA") {
     throw new Error("Apenas notas autorizadas aceitam carta de correção.");
   }
+  // Carta de correção é exclusiva de NF-e e tem prazo legal de 30 dias (720h) da autorização.
+  if (nota.modelo !== "NFE") {
+    throw new Error("Carta de correção é exclusiva de NF-e (modelo 55).");
+  }
+  {
+    const referencia = nota.autorizadaEm ?? nota.emitidaEm;
+    const horas = referencia ? (Date.now() - referencia.getTime()) / 3_600_000 : 0;
+    if (horas > 720) {
+      throw new Error("Prazo de carta de correção esgotado (30 dias após a autorização).");
+    }
+  }
   if (correcao.trim().length < 15) {
     throw new Error("O texto da carta de correção deve ter ao menos 15 caracteres.");
   }
@@ -404,4 +430,53 @@ export async function createCartaCorrecao(scope: TenantScope, notaId: string, co
 
     return { id: nota.id, eventoId: evento.id, sequencia };
   }, TX_OPTIONS);
+}
+
+/**
+ * Baixa o PDF (DANFE/DANFSE) ou o XML autorizado de uma nota, via provedor (server-side,
+ * pois a ACBr exige Bearer). Retorna os bytes + content-type para a rota repassar.
+ */
+export async function downloadNotaFiscalDocumento(
+  scope: TenantScope,
+  notaId: string,
+  kind: "pdf" | "xml"
+): Promise<{ contentType: string; body: Buffer; filename: string }> {
+  const nota = await prisma.notaFiscal.findFirst({
+    where: { id: notaId, tenantId: scope.tenantId, empresaId: scope.empresaId }
+  });
+  if (!nota) {
+    throw new Error("Nota fiscal não encontrada.");
+  }
+  if (!nota.providerRef) {
+    throw new Error("A nota ainda não possui referência no provedor (não foi transmitida).");
+  }
+  if (nota.status !== "AUTORIZADA" && nota.status !== "CANCELADA") {
+    throw new Error("Só é possível baixar PDF/XML de notas autorizadas ou canceladas.");
+  }
+
+  const config = await getFiscalRuntimeConfig(scope);
+  const provider = resolveFiscalProvider(nota.provedor);
+  if (!provider.downloadDocument) {
+    throw new Error(`O provedor ${nota.provedor} não suporta download de PDF/XML pela plataforma.`);
+  }
+
+  const result = await provider.downloadDocument(
+    kind,
+    { providerRef: nota.providerRef, modelo: nota.modelo },
+    {
+      ambiente: config.ambiente,
+      provedor: nota.provedor,
+      baseUrl: config.baseUrl,
+      token: config.token,
+      cscId: config.cscId,
+      cscToken: config.cscToken
+    }
+  );
+
+  if (!result.ok) {
+    throw new Error(result.error || `Não foi possível baixar o ${kind.toUpperCase()} da nota.`);
+  }
+  // Nome amigável: <modelo>-<numero>.<kind> (ex.: NFE-31.pdf).
+  const filename = `${nota.modelo}-${nota.numero}.${kind}`;
+  return { contentType: result.contentType, body: result.body, filename };
 }

@@ -97,6 +97,15 @@ export interface FiscalProvider {
    * Opcional — provedores que não suportam devolvem undefined e a UI informa isso.
    */
   testConnection?(ctx: ProviderContext): Promise<TestConnectionResult>;
+  /**
+   * Baixa o PDF (DANFE/DANFSE) ou o XML autorizado quando o provedor exige autenticação
+   * (download server-side). Opcional — provedores com URLs públicas não precisam.
+   */
+  downloadDocument?(
+    kind: "pdf" | "xml",
+    ref: { providerRef: string; modelo: ModeloFiscal },
+    ctx: ProviderContext
+  ): Promise<{ ok: boolean; contentType: string; body: Buffer; filename: string; error?: string }>;
 }
 
 export type TestConnectionResult = {
