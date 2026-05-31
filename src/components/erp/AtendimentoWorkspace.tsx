@@ -98,9 +98,39 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO" }: { d
   const canFinalize = isOs ? (servicos.length > 0 || items.length > 0) : items.length > 0 || isOrcamento;
 
   // Venda balcão em um clique: cria + confirma + emite a nota (NFC-e/NF-e) numa só ação.
+  // Pré-venda: envia a venda do balcão para o caixa cobrar e emitir (AGUARDANDO_PAGAMENTO).
+  async function enviarParaCaixa() {
+    setError("");
+    if (!items.length) { setError("Adicione ao menos um item."); return; }
+    setSaving(true);
+    try {
+      const itensPayload = items.map((it) => ({
+        produtoId: it.produto.id,
+        quantidade: it.quantidade,
+        precoUnitario: it.preco,
+        desconto: Math.round(it.quantidade * it.preco * (it.desconto / 100) * 100) / 100
+      }));
+      const res = await fetch("/api/erp/vendas", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          clienteId: cliente?.id ?? null, canal: "BALCAO", statusInicial: "AGUARDANDO_PAGAMENTO",
+          itens: itensPayload, desconto: descontoVal, frete: Number(frete) || 0,
+          formaPagamento: pagamento, condicaoPagamento: condicao, observacoes: obs
+        })
+      });
+      const p = await res.json();
+      if (!res.ok) throw new Error(p.error || "Falha ao enviar para o caixa.");
+      setSuccess({ tipo: "Pré-venda", total, route: "/erp/caixa", pedidoNumero: p.numero });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não foi possível enviar para o caixa.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function finalizeBalcao(modelo: "NFCE" | "NFE") {
     setError("");
-    if (!cliente) { setError("Selecione um cliente."); return; }
+    if (!cliente && modelo === "NFE") { setError("NF-e exige cliente. Selecione o cliente ou use NFC-e."); return; }
     if (!items.length) { setError("Adicione ao menos um item."); return; }
 
     setSaving(true);
@@ -114,7 +144,7 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO" }: { d
       const res = await fetch("/api/erp/vendas/checkout", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          clienteId: cliente.id, canal: "BALCAO", itens: itensPayload,
+          clienteId: cliente?.id ?? null, canal: "BALCAO", itens: itensPayload,
           desconto: descontoVal, frete: Number(frete) || 0,
           formaPagamento: pagamento, condicaoPagamento: condicao, observacoes: obs, modelo
         })
@@ -392,12 +422,17 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO" }: { d
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {tipo === "VENDA_BALCAO" ? (
               <>
-                <button type="button" className="btn-erp primary lg" disabled={!cliente || !canFinalize || saving} onClick={() => finalizeBalcao("NFCE")}>
-                  {saving ? "Processando…" : `Finalizar + NFC-e · ${brl(total)}`}
+                <button type="button" className="btn-erp primary lg" disabled={!canFinalize || saving} onClick={enviarParaCaixa}>
+                  {saving ? "Processando…" : `Enviar para o caixa · ${brl(total)}`}
                 </button>
-                <button type="button" className="btn-erp ghost sm" disabled={!cliente || !canFinalize || saving} onClick={() => finalizeBalcao("NFE")}>
-                  {saving ? "Processando…" : "Finalizar + NF-e (modelo 55)"}
-                </button>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button type="button" className="btn-erp ghost sm" style={{ flex: 1 }} disabled={!canFinalize || saving} onClick={() => finalizeBalcao("NFCE")}>
+                    Finalizar direto + NFC-e
+                  </button>
+                  <button type="button" className="btn-erp ghost sm" style={{ flex: 1 }} disabled={!cliente || !canFinalize || saving} onClick={() => finalizeBalcao("NFE")}>
+                    + NF-e
+                  </button>
+                </div>
               </>
             ) : (
               <button type="button" className="btn-erp primary lg" disabled={!cliente || !canFinalize || saving} onClick={finalize}>{saving ? "Processando…" : acaoLabel}</button>
@@ -446,7 +481,7 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO" }: { d
         const processando = n?.status === "PROCESSANDO";
         // "Falhou" = checkout de balcão em que a nota não foi autorizada (a venda continua válida).
         const falhou = Boolean(success.emitErro) || (n != null && !autorizada && !processando);
-        const isCheckout = Boolean(success.nota || success.emitErro || success.pedidoNumero);
+        const isCheckout = Boolean(success.nota || success.emitErro || success.modeloLabel);
         const tone = autorizada || !isCheckout ? "success" : falhou ? "danger" : "warn";
         const visual =
           tone === "success" ? { bg: "rgba(22,163,74,.15)", c: "var(--erp-success)", ic: "✓" }

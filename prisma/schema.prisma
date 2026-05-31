@@ -35,6 +35,19 @@ enum StatusPedido {
   CANCELADO
 }
 
+enum StatusCaixa {
+  ABERTO
+  FECHADO
+}
+
+enum TipoCaixaMovimento {
+  ABERTURA
+  SUPRIMENTO
+  SANGRIA
+  VENDA
+  AJUSTE
+}
+
 enum StatusOrcamento {
   RASCUNHO
   EM_ANALISE
@@ -798,8 +811,8 @@ model PedidoVenda {
   empresaId         String
   empresa           Empresa           @relation(fields: [empresaId], references: [id])
   numero            String
-  clienteId         String
-  cliente           Cliente           @relation(fields: [clienteId], references: [id])
+  clienteId         String?
+  cliente           Cliente?          @relation(fields: [clienteId], references: [id])
   depositoId        String?
   deposito          Deposito?         @relation(fields: [depositoId], references: [id])
   canal             String
@@ -820,6 +833,8 @@ model PedidoVenda {
   itens             PedidoVendaItem[]
   contasReceber     ContaReceber[]
   notasFiscais      NotaFiscal[]
+  pagamentos        PagamentoVenda[]
+  caixaMovimentos   CaixaMovimento[]
   origemOrcamentoId String?
   criadoEm          DateTime          @default(now())
   atualizadoEm      DateTime          @updatedAt
@@ -1559,4 +1574,54 @@ model InventarioItem {
 
   @@unique([tenantId, empresaId, inventarioId, produtoId])
   @@index([tenantId, empresaId, inventarioId])
+}
+
+model Caixa {
+  id            String      @id @default(cuid())
+  tenantId      String
+  empresaId     String
+  operador      String
+  status        StatusCaixa @default(ABERTO)
+  saldoInicial  Decimal     @default(0) @db.Decimal(14, 2)
+  saldoFinalInformado Decimal? @db.Decimal(14, 2)
+  observacaoAbertura  String?
+  observacaoFechamento String?
+  abertoEm      DateTime    @default(now())
+  fechadoEm     DateTime?
+  movimentos    CaixaMovimento[]
+  criadoEm      DateTime    @default(now())
+  atualizadoEm  DateTime    @updatedAt
+
+  @@index([tenantId, empresaId, status])
+}
+
+model CaixaMovimento {
+  id            String             @id @default(cuid())
+  tenantId      String
+  empresaId     String
+  caixaId       String
+  caixa         Caixa              @relation(fields: [caixaId], references: [id])
+  tipo          TipoCaixaMovimento
+  formaPagamento String?
+  valor         Decimal            @db.Decimal(14, 2)
+  pedidoVendaId String?
+  pedidoVenda   PedidoVenda?       @relation(fields: [pedidoVendaId], references: [id])
+  descricao     String?
+  criadoEm      DateTime           @default(now())
+
+  @@index([tenantId, empresaId, caixaId])
+}
+
+model PagamentoVenda {
+  id            String      @id @default(cuid())
+  tenantId      String
+  empresaId     String
+  pedidoVendaId String
+  pedidoVenda   PedidoVenda @relation(fields: [pedidoVendaId], references: [id])
+  forma         String
+  valor         Decimal     @db.Decimal(14, 2)
+  troco         Decimal     @default(0) @db.Decimal(14, 2)
+  criadoEm      DateTime    @default(now())
+
+  @@index([tenantId, empresaId, pedidoVendaId])
 }

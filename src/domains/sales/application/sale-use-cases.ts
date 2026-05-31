@@ -16,9 +16,11 @@ import { emitFiscalDocument } from "@/domains/fiscal/application/fiscal-emission
 const TX_OPTIONS = { maxWait: 15000, timeout: 30000 };
 
 export type CreateSaleInput = {
-  clienteId: string;
+  clienteId?: string | null;
   depositoId?: string;
   canal?: string;
+  /** Status inicial do pedido (padrão RASCUNHO; pré-venda de balcão usa AGUARDANDO_PAGAMENTO). */
+  statusInicial?: "RASCUNHO" | "AGUARDANDO_PAGAMENTO";
   naturezaOperacao?: string;
   vendedor?: string;
   condicaoPagamento?: string;
@@ -36,7 +38,6 @@ export type CreateSaleInput = {
 };
 
 export async function createSale(scope: TenantScope, input: CreateSaleInput) {
-  if (!input.clienteId) throw new Error("Cliente é obrigatório.");
   if (!input.itens || input.itens.length === 0) throw new Error("Pedido deve ter ao menos um item.");
 
   return prisma.$transaction(async (tx) => {
@@ -80,10 +81,10 @@ export async function createSale(scope: TenantScope, input: CreateSaleInput) {
         tenantId: scope.tenantId,
         empresaId: scope.empresaId,
         numero,
-        clienteId: input.clienteId,
+        clienteId: input.clienteId ?? null,
         depositoId,
         canal: input.canal ?? "BALCAO",
-        status: "RASCUNHO",
+        status: input.statusInicial ?? "RASCUNHO",
         naturezaOperacao: input.naturezaOperacao ?? null,
         vendedor: input.vendedor ?? null,
         condicaoPagamento: input.condicaoPagamento ?? null,
@@ -149,29 +150,32 @@ export async function confirmSale(scope: TenantScope, id: string) {
       documentoId: id
     });
 
-    // Cria ContaReceber (1 parcela, vencimento +30 dias)
-    const vencimento = new Date();
-    vencimento.setDate(vencimento.getDate() + 30);
+    // Cria ContaReceber (1 parcela, vencimento +30 dias) — apenas quando há cliente
+    // identificado (venda anônima de balcão é paga à vista, sem contas a receber).
+    if (pedido.clienteId) {
+      const vencimento = new Date();
+      vencimento.setDate(vencimento.getDate() + 30);
 
-    await tx.contaReceber.create({
-      data: {
-        tenantId: scope.tenantId,
-        empresaId: scope.empresaId,
-        clienteId: pedido.clienteId,
-        pedidoVendaId: pedido.id,
-        descricao: `Pedido ${pedido.numero}`,
-        numeroDocumento: pedido.numero,
-        origem: "VENDA",
-        formaPagamento: pedido.formaPagamento ?? null,
-        vencimento,
-        valor: pedido.total,
-        valorPago: 0,
-        juros: 0,
-        multa: 0,
-        descontoBaixa: 0,
-        status: "ABERTO"
-      }
-    });
+      await tx.contaReceber.create({
+        data: {
+          tenantId: scope.tenantId,
+          empresaId: scope.empresaId,
+          clienteId: pedido.clienteId,
+          pedidoVendaId: pedido.id,
+          descricao: `Pedido ${pedido.numero}`,
+          numeroDocumento: pedido.numero,
+          origem: "VENDA",
+          formaPagamento: pedido.formaPagamento ?? null,
+          vencimento,
+          valor: pedido.total,
+          valorPago: 0,
+          juros: 0,
+          multa: 0,
+          descontoBaixa: 0,
+          status: "ABERTO"
+        }
+      });
+    }
 
     const updated = await tx.pedidoVenda.update({
       where: { id },
