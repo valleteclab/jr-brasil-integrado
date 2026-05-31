@@ -77,6 +77,8 @@ export type ProductInvoiceAvulsaInput = {
   condicaoPagamento?: string | null;
   observacoes?: string | null;
   frete?: number;
+  /** Modalidade do frete (modFrete): 0=CIF,1=FOB,2=terceiros,3/4=próprio,9=sem transporte. */
+  modalidadeFrete?: number | null;
   seguro?: number;
   desconto?: number;
   outrasDespesas?: number;
@@ -273,6 +275,7 @@ export async function emitProductInvoiceAvulsa(scope: TenantScope, input: Produc
     condicaoPagamento: input.condicaoPagamento ?? null,
     observacoes: input.observacoes ?? null,
     frete: input.frete ?? 0,
+    modalidadeFrete: input.modalidadeFrete ?? null,
     valorSeguro: input.seguro ?? 0,
     desconto: input.desconto ?? 0,
     outrasDespesas: input.outrasDespesas ?? 0,

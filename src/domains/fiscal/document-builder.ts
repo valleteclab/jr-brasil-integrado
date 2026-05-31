@@ -90,6 +90,8 @@ export type PedidoFiscalInput = {
   condicaoPagamento?: string | null;
   observacoes?: string | null;
   frete?: number;
+  /** Modalidade do frete (modFrete). Quando ausente, o provedor deriva pelo valor do frete. */
+  modalidadeFrete?: number | null;
   desconto?: number;
   modelo?: ModeloFiscal;
   finalidade?: FinalidadeNfe;
@@ -121,6 +123,7 @@ export function buildDocumentFromPedido(input: PedidoFiscalInput): NormalizedFis
     condicaoPagamento: input.condicaoPagamento ?? null,
     informacoesComplementares: input.observacoes ?? null,
     valorFrete: input.frete ?? 0,
+    modalidadeFrete: input.modalidadeFrete ?? null,
     valorSeguro: input.valorSeguro ?? 0,
     valorDesconto: input.desconto ?? 0,
     outrasDespesas: input.outrasDespesas ?? 0,

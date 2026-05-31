@@ -523,7 +523,8 @@ export class AcbrFiscalProvider implements FiscalProvider {
             vPIS: round2(sum.vPIS), vCOFINS: round2(sum.vCOFINS), vOutro: input.document.outrasDespesas, vNF: input.total
           }
         },
-        transp: { modFrete: 9 },
+        // modFrete: usa a modalidade informada; senão deriva (9=sem transporte se frete=0, senão 0=CIF).
+        transp: { modFrete: input.document.modalidadeFrete ?? (input.document.valorFrete > 0 ? 0 : 9) },
         // Devolução não tem contraprestação financeira → tPag=90 (Sem Pagamento), vPag=0.
         pag: { detPag: [tpPag === "90" ? { tPag: "90", vPag: 0 } : { tPag: tpPag, vPag: input.total }] }
       }
