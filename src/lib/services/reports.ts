@@ -1,4 +1,4 @@
-import { getDevelopmentTenantScope, scopedByTenantCompany } from "@/lib/auth/dev-session";
+import { getDevelopmentTenantScope, scopedByTenantCompany, type TenantScope } from "@/lib/auth/dev-session";
 import { prisma } from "@/lib/db/prisma";
 import { formatBrl } from "@/lib/formatters/currency";
 
@@ -152,8 +152,8 @@ export type DreSimplificado = {
 
 // ─── Sales Report ─────────────────────────────────────────────────────────────
 
-export async function salesReport(periodoDias = 30): Promise<SalesReport> {
-  const scope = await getDevelopmentTenantScope();
+export async function salesReport(periodoDias = 30, scopeArg?: TenantScope): Promise<SalesReport> {
+  const scope = scopeArg ?? (await getDevelopmentTenantScope());
   const base = scopedByTenantCompany(scope);
 
   const hoje = new Date();
@@ -244,8 +244,8 @@ export async function salesReport(periodoDias = 30): Promise<SalesReport> {
 
 // ─── Stock Report ─────────────────────────────────────────────────────────────
 
-export async function stockReport(): Promise<StockReport> {
-  const scope = await getDevelopmentTenantScope();
+export async function stockReport(scopeArg?: TenantScope): Promise<StockReport> {
+  const scope = scopeArg ?? (await getDevelopmentTenantScope());
   const base = scopedByTenantCompany(scope);
 
   const saldos = await prisma.estoqueSaldo.findMany({
@@ -345,8 +345,8 @@ export async function stockReport(): Promise<StockReport> {
 
 // ─── Finance Report ───────────────────────────────────────────────────────────
 
-export async function financeReport(): Promise<FinanceReport> {
-  const scope = await getDevelopmentTenantScope();
+export async function financeReport(scopeArg?: TenantScope): Promise<FinanceReport> {
+  const scope = scopeArg ?? (await getDevelopmentTenantScope());
   const base = scopedByTenantCompany(scope);
   const hoje = new Date();
   hoje.setHours(0, 0, 0, 0);
@@ -448,8 +448,8 @@ export async function financeReport(): Promise<FinanceReport> {
 
 // ─── Fiscal Report ────────────────────────────────────────────────────────────
 
-export async function fiscalReport(): Promise<FiscalReport> {
-  const scope = await getDevelopmentTenantScope();
+export async function fiscalReport(scopeArg?: TenantScope): Promise<FiscalReport> {
+  const scope = scopeArg ?? (await getDevelopmentTenantScope());
   const base = scopedByTenantCompany(scope);
 
   const agora = new Date();
@@ -513,7 +513,7 @@ export async function fiscalReport(): Promise<FiscalReport> {
 
 // ─── DRE Simplificado ─────────────────────────────────────────────────────────
 
-export async function dreSimplificado(periodoDias = 30): Promise<DreSimplificado> {
+export async function dreSimplificado(periodoDias = 30, scopeArg?: TenantScope): Promise<DreSimplificado> {
   /**
    * PREMISSAS do DRE Gerencial Simplificado:
    * - Receita (regime de caixa): ContaReceber com pagoEm no período (dinheiro efetivamente recebido).
@@ -525,7 +525,7 @@ export async function dreSimplificado(periodoDias = 30): Promise<DreSimplificado
    * - NÃO inclui: depreciação, provisões, encargos financeiros, IR/CSLL, ajustes de competência.
    * - Uso exclusivamente gerencial para acompanhamento operacional do período.
    */
-  const scope = await getDevelopmentTenantScope();
+  const scope = scopeArg ?? (await getDevelopmentTenantScope());
   const base = scopedByTenantCompany(scope);
 
   const hoje = new Date();

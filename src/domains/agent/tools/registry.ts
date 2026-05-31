@@ -43,3 +43,12 @@ export function toOpenAiTools(tools: AgentTool[]) {
     }
   }));
 }
+
+/** Converte para o formato `tools/list` do MCP (JSON-RPC). Mesma fonte de verdade. */
+export function toMcpTools(tools: AgentTool[]) {
+  return tools.map((t) => ({
+    name: t.name,
+    description: t.description,
+    inputSchema: t.inputSchema
+  }));
+}

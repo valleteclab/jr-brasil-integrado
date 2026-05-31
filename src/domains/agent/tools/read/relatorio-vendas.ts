@@ -14,9 +14,9 @@ export const relatorioVendas: AgentTool = {
     },
     additionalProperties: false
   },
-  handler: async (_scope, args) => {
+  handler: async (scope, args) => {
     const periodo = typeof args.periodoDias === "number" ? args.periodoDias : 30;
-    const data = await salesReport(periodo);
+    const data = await salesReport(periodo, scope);
     return { ok: true, data };
   }
 };

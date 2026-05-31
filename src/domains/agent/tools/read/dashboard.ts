@@ -8,8 +8,8 @@ export const dashboardTool: AgentTool = {
   mode: "read",
   roles: ["GESTOR"],
   inputSchema: { type: "object", properties: {}, additionalProperties: false },
-  handler: async () => {
-    const data = await getDashboardData();
+  handler: async (scope) => {
+    const data = await getDashboardData(scope);
     return { ok: true, data };
   }
 };

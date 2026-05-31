@@ -238,6 +238,7 @@ model Tenant {
   auditorias      Auditoria[]
   configuracoesIa ConfiguracaoIa[]
   conversasAgente ConversaAgente[]
+  chavesApiAgente ChaveApiAgente[]
   criadoEm        DateTime         @default(now())
   atualizadoEm    DateTime         @updatedAt
 }
@@ -279,6 +280,7 @@ model Empresa {
   inventarios        Inventario[]
   auditorias         Auditoria[]
   conversasAgente    ConversaAgente[]
+  chavesApiAgente    ChaveApiAgente[]
   enderecoLogradouro String?
   enderecoNumero     String?
   enderecoComplemento String?
@@ -1675,4 +1677,22 @@ model MensagemAgente {
   criadoEm    DateTime       @default(now())
 
   @@index([tenantId, empresaId, conversaId])
+}
+
+model ChaveApiAgente {
+  id           String     @id @default(cuid())
+  tenantId     String
+  empresaId    String
+  tenant       Tenant     @relation(fields: [tenantId], references: [id])
+  empresa      Empresa    @relation(fields: [empresaId], references: [id])
+  nome         String
+  role         AgentRole  @default(GESTOR)
+  hashChave    String     @unique
+  chaveFinal   String
+  ativo        Boolean    @default(true)
+  ultimoUsoEm  DateTime?
+  criadoEm     DateTime   @default(now())
+  atualizadoEm DateTime   @updatedAt
+
+  @@index([tenantId, empresaId])
 }

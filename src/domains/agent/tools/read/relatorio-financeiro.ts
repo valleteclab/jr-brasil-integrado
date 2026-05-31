@@ -14,9 +14,9 @@ export const relatorioFinanceiro: AgentTool = {
     },
     additionalProperties: false
   },
-  handler: async (_scope, args) => {
+  handler: async (scope, args) => {
     const periodo = typeof args.periodoDias === "number" ? args.periodoDias : 30;
-    const [financeiro, dre] = await Promise.all([financeReport(), dreSimplificado(periodo)]);
+    const [financeiro, dre] = await Promise.all([financeReport(scope), dreSimplificado(periodo, scope)]);
     return { ok: true, data: { contas: financeiro, dre } };
   }
 };

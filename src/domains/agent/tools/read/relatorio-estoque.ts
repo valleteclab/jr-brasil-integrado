@@ -8,8 +8,8 @@ export const relatorioEstoque: AgentTool = {
   mode: "read",
   roles: ["GESTOR"],
   inputSchema: { type: "object", properties: {}, additionalProperties: false },
-  handler: async () => {
-    const data = await stockReport();
+  handler: async (scope) => {
+    const data = await stockReport(scope);
     return { ok: true, data };
   }
 };
