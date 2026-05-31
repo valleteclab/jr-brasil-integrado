@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import { createAuditLog } from "@/lib/audit/audit-service";
 import { decryptSecret, encryptSecret, secretLastChars } from "@/lib/security/secret-crypto";
+import { resolveFiscalProvider } from "@/domains/fiscal/providers";
 
 export type FiscalConfigSummary = {
   configured: boolean;
@@ -114,11 +115,21 @@ export async function saveFiscalConfig(scope: TenantScope, input: SaveFiscalConf
   if (externalProvider && input.active) {
     const existing = await prisma.configuracaoFiscal.findUnique({ where: { empresaId: scope.empresaId } });
     const willHaveToken = Boolean(input.token?.trim()) || Boolean(existing?.tokenCriptografado);
-    // SPEDY deriva a base do ambiente (produção/sandbox), então não exige baseUrl —
-    // apenas o token (X-Api-Key). Os demais provedores externos exigem URL base + token.
+    // SPEDY e Focus NFe derivam a base do ambiente (produção/sandbox), então não exigem
+    // baseUrl — apenas o token. Os demais provedores externos exigem URL base + token.
     if (input.provider === "SPEDY") {
       if (!willHaveToken) {
         throw new Error("Para ativar a Spedy informe a chave de API (X-Api-Key) no campo token.");
+      }
+    } else if (input.provider === "FOCUS_NFE") {
+      if (!willHaveToken) {
+        throw new Error("Para ativar a Focus NFe informe o token de integração.");
+      }
+    } else if (input.provider === "ACBR") {
+      // ACBr usa OAuth2: client_secret no campo token (cripto) e client_id no campo cscId.
+      const willHaveClientId = Boolean(input.cscId?.trim()) || Boolean(existing?.cscId);
+      if (!willHaveToken || !willHaveClientId) {
+        throw new Error("Para ativar a ACBr informe o client_id e o client_secret.");
       }
     } else {
       const willHaveUrl = Boolean(input.baseUrl?.trim()) || Boolean(existing?.baseUrl);
@@ -226,4 +237,47 @@ export async function getFiscalRuntimeConfig(scope: TenantScope) {
       codigoMunicipioIbge: config?.codigoMunicipioIbge ?? empresa.codigoMunicipioIbge ?? null
     }
   };
+}
+
+export type TestFiscalConnectionResult = { ok: boolean; message: string };
+
+/**
+ * Testa as credenciais do provedor fiscal configurado, sem emitir nenhum documento.
+ * Usa a configuração persistida (token descriptografado) e o `testConnection` do provedor.
+ */
+export async function testFiscalConnection(scope: TenantScope): Promise<TestFiscalConnectionResult> {
+  const runtime = await getFiscalRuntimeConfig(scope);
+
+  if (runtime.provider === "MANUAL" || runtime.provider === "INTERNO") {
+    return { ok: true, message: "Provedor interno/homologação não requer credenciais externas." };
+  }
+  if (!runtime.token) {
+    return { ok: false, message: "Nenhum token configurado. Salve a credencial do provedor antes de testar." };
+  }
+
+  const provider = resolveFiscalProvider(runtime.provider);
+  if (!provider.testConnection) {
+    return { ok: false, message: "Teste de conexão ainda não disponível para este provedor." };
+  }
+
+  try {
+    const result = await provider.testConnection({
+      ambiente: runtime.ambiente,
+      provedor: runtime.provider,
+      baseUrl: runtime.baseUrl,
+      emissionMode: runtime.emissionMode,
+      token: runtime.token,
+      cscId: runtime.cscId,
+      cscToken: runtime.cscToken
+    });
+    // Registra o último resultado para diagnóstico (sem expor o token).
+    await prisma.configuracaoFiscal.update({
+      where: { empresaId: scope.empresaId },
+      data: { testadoEm: new Date(), ultimoErro: result.ok ? null : result.message }
+    });
+    return result;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Falha ao testar conexão com o provedor.";
+    return { ok: false, message };
+  }
 }

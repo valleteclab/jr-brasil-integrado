@@ -92,4 +92,14 @@ export interface FiscalProvider {
   cancel(input: CancelInput, ctx: ProviderContext): Promise<CancelResult>;
   correct(input: CorrectionInput, ctx: ProviderContext): Promise<CorrectionResult>;
   queryStatus(chaveAcesso: string, ctx: ProviderContext): Promise<EmitResult>;
+  /**
+   * Verifica de forma leve se as credenciais autenticam no provedor (sem emitir nada).
+   * Opcional — provedores que não suportam devolvem undefined e a UI informa isso.
+   */
+  testConnection?(ctx: ProviderContext): Promise<TestConnectionResult>;
 }
+
+export type TestConnectionResult = {
+  ok: boolean;
+  message: string;
+};

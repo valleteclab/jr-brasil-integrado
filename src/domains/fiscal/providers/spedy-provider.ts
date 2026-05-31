@@ -10,7 +10,8 @@ import type {
   EmitResult,
   FiscalProvider,
   ProviderContext,
-  ProviderEmitter
+  ProviderEmitter,
+  TestConnectionResult
 } from "./types";
 import { friendlyFiscalMessage } from "../fiscal-messages";
 
@@ -48,8 +49,10 @@ type SpedyAddress = {
 };
 
 type SpedyReceiver = {
-  name?: string;
+  // Documento antes do nome: a Spedy monta o XML na ordem do JSON e o schema
+  // nacional exige CNPJ/CPF/NIF antes de xNome no bloco `toma` (ver buildReceiver).
   federalTaxNumber?: string;
+  name?: string;
   stateTaxNumber?: string | null;
   email?: string | null;
   address?: SpedyAddress;
@@ -146,6 +149,8 @@ type SpedyProductOrConsumerInvoice = {
 type SpedyServiceInvoice = {
   integrationId?: string;
   status: "enqueued";
+  /** Data de competência (ISO). O Ambiente Nacional usa para a competência da NFS-e. */
+  effectiveDate?: string;
   sendEmailToCustomer: boolean;
   description: string;
   federalServiceCode?: string;
@@ -153,6 +158,8 @@ type SpedyServiceInvoice = {
   receiver: SpedyReceiver;
   total: {
     invoiceAmount: number;
+    /** Base de cálculo do ISS (geralmente = valor dos serviços, após deduções). */
+    issBaseTax?: number;
     issRate: number;
     issAmount: number;
     issWithheld: boolean;
@@ -505,28 +512,29 @@ export class SpedyFiscalProvider implements FiscalProvider {
 
   /** Monta o receiver (destinatário) a partir do documento normalizado. */
   /**
-   * Tomador da NFS-e (Ambiente Nacional): quando há CNPJ/CPF, o schema nacional NÃO aceita
-   * o nome (`xNome`) — a Receita resolve o nome pelo documento (rejeição E1235). Por isso o
-   * `name` só é enviado quando NÃO há documento (tomador não identificado/sem NI).
+   * Tomador da NFS-e (Ambiente Nacional). O schema nacional EXIGE o bloco `toma`
+   * completo: nome (`xNome`) é obrigatório (a omissão gera E1235 "toma incompleto —
+   * esperado CAEPF, IM, xNome"), além do documento e, quando houver, endereço. Por
+   * isso enviamos o tomador completo (nome + endereço), como nas notas autorizadas.
    */
   private buildServiceReceiver(input: EmitInput): SpedyReceiver {
-    const base = this.buildReceiver(input);
-    // Tomador identificado por CNPJ/CPF: o schema nacional aceita apenas o documento
-    // (e contato), sem nome (`xNome`) nem endereço (`end`) — a Receita os resolve (E1235).
-    if (base.federalTaxNumber) {
-      // Tomador identificado: documento + nome (exigido), sem endereço/e-mail no bloco `toma`.
-      return { federalTaxNumber: base.federalTaxNumber, name: base.name, stateTaxNumber: base.stateTaxNumber };
-    }
-    return base;
+    return this.buildReceiver(input);
   }
 
   private buildReceiver(input: EmitInput): SpedyReceiver {
     const dest = input.document.destinatario;
     const endereco = dest.endereco;
 
+    // CEP só é enviado quando tem 8 dígitos válidos: o schema nacional (TSCEP) rejeita
+    // valores como "0"/"00000000" (rejeição E1235 "CEP ... pattern constraint failed").
+    const cepDigitos = onlyDigits(endereco?.cep);
+    const cepValido = cepDigitos.length === 8 && cepDigitos !== "00000000" ? cepDigitos : undefined;
+
     let address: SpedyAddress | undefined;
-    if (endereco) {
-      // CityCreateDto aceita código IBGE e nome+UF simultaneamente; enviamos o que houver.
+    // Só monta o endereço quando há dados mínimos válidos (logradouro + CEP válido).
+    // Para tomador identificado por CNPJ/CPF, o Ambiente Nacional dispensa o endereço,
+    // então é melhor omiti-lo do que enviar dados inválidos que quebram o schema.
+    if (endereco && (endereco.logradouro ?? "").trim() && cepValido) {
       const uf = endereco.uf ?? dest.uf ?? undefined;
       const city: SpedyCity = {};
       if (endereco.codigoMunicipioIbge) city.code = endereco.codigoMunicipioIbge;
@@ -537,14 +545,15 @@ export class SpedyFiscalProvider implements FiscalProvider {
         number: endereco.numero ?? undefined,
         additionalInformation: endereco.complemento ?? undefined,
         district: endereco.bairro ?? undefined,
-        postalCode: onlyDigits(endereco.cep) || undefined,
+        postalCode: cepValido,
         city: Object.keys(city).length ? city : undefined
       };
     }
 
+    // Documento antes do nome para acompanhar a ordem do bloco `toma` do schema nacional.
     return {
-      name: dest.nome,
       federalTaxNumber: onlyDigits(dest.documento) || undefined,
+      name: dest.nome,
       stateTaxNumber: dest.inscricaoEstadual,
       email: dest.email,
       address
@@ -803,6 +812,7 @@ export class SpedyFiscalProvider implements FiscalProvider {
     return {
       integrationId: input.integrationId,
       status: "enqueued",
+      effectiveDate: new Date().toISOString().slice(0, 19),
       sendEmailToCustomer: Boolean(input.document.destinatario.email),
       description,
       federalServiceCode,
@@ -810,6 +820,7 @@ export class SpedyFiscalProvider implements FiscalProvider {
       receiver: this.buildServiceReceiver(input),
       total: {
         invoiceAmount: input.total,
+        issBaseTax: input.totals.valorServicos || input.total,
         issRate: aliquotaIss / 100, // FRAÇÃO (ex.: 0.05)
         issAmount: valorIss,
         issWithheld: ret?.issRetido ?? false,
@@ -997,5 +1008,17 @@ export class SpedyFiscalProvider implements FiscalProvider {
       }
     }
     return { status: "PROCESSANDO", providerRef: idOrKey, motivo: "Nota não localizada na Spedy para consulta de status." };
+  }
+
+  /** Ping autenticado: lista empresas (1 registro). Falha de auth ⇒ token inválido. */
+  async testConnection(ctx: ProviderContext): Promise<TestConnectionResult> {
+    const res = await this.request<unknown>(ctx, "GET", "/companies?page=1&pageSize=1");
+    if (res.ok) {
+      return { ok: true, message: `Conexão com a Spedy (${ctx.ambiente.toLowerCase()}) autenticada com sucesso.` };
+    }
+    if (res.status === 401 || res.status === 403) {
+      return { ok: false, message: "Chave de API (X-Api-Key) recusada pela Spedy (HTTP 401/403). Verifique a credencial." };
+    }
+    return { ok: false, message: res.errorMessage ?? `Falha ao testar conexão com a Spedy (HTTP ${res.status}).` };
   }
 }

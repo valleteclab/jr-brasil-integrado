@@ -19,7 +19,7 @@ const POR_CODIGO: Record<string, FriendlyEntry> = {
   // NFS-e Nacional — schema do tomador
   E1235: {
     titulo: "Dados do tomador inválidos para o padrão Nacional.",
-    orientacao: "Confira o CNPJ/CPF e o nome do tomador. Para tomador identificado, o Ambiente Nacional dispensa endereço/e-mail no bloco do tomador."
+    orientacao: "Confira o CNPJ/CPF e o nome (razão social) do tomador — ambos são obrigatórios no bloco do tomador do Ambiente Nacional."
   },
   // NFS-e — município do prestador
   E125: {

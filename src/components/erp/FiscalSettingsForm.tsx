@@ -7,11 +7,12 @@ import { LC116_LIST } from "@/domains/fiscal/lc116";
 
 const PROVIDERS = [
   { value: "MANUAL", label: "Interno / Homologação (funcional sem certificado)" },
-  { value: "FOCUS_NFE", label: "Focus NFe" },
+  { value: "FOCUS_NFE", label: "Focus NFe (NF-e/NFC-e/NFS-e)" },
   { value: "NFEIO", label: "NFe.io" },
   { value: "PLUGNOTAS", label: "PlugNotas" },
   { value: "WEBMANIA", label: "WebmaniaBR" },
-  { value: "SPEDY", label: "Spedy (NF-e/NFC-e/NFS-e)" }
+  { value: "SPEDY", label: "Spedy (NF-e/NFC-e/NFS-e)" },
+  { value: "ACBR", label: "ACBr API (NF-e/NFC-e/NFS-e)" }
 ];
 
 const REGIMES = [
@@ -34,6 +35,22 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
   const [certBusy, setCertBusy] = useState(false);
   const [certMsg, setCertMsg] = useState("");
   const [certErr, setCertErr] = useState("");
+  const [testBusy, setTestBusy] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+  async function testarConexao() {
+    setTestBusy(true);
+    setTestResult(null);
+    try {
+      const res = await fetch("/api/erp/fiscal/configuracao/testar", { method: "POST" });
+      const data = (await res.json()) as { ok?: boolean; message?: string; error?: string };
+      setTestResult({ ok: Boolean(data.ok), message: data.message || data.error || "Sem resposta do provedor." });
+    } catch {
+      setTestResult({ ok: false, message: "Não foi possível contatar o provedor." });
+    } finally {
+      setTestBusy(false);
+    }
+  }
 
   async function enviarCertificado() {
     setCertErr("");
@@ -60,6 +77,12 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
 
   const externalProvider = !["MANUAL", "INTERNO"].includes(config.provider);
   const isSpedy = config.provider === "SPEDY";
+  const isFocusNfe = config.provider === "FOCUS_NFE";
+  const isAcbr = config.provider === "ACBR";
+  // Provedores que derivam a URL base do ambiente — baseUrl é opcional.
+  const baseUrlOpcional = isSpedy || isFocusNfe || isAcbr;
+  // Provedores que aceitam envio de certificado pela plataforma.
+  const aceitaCertificado = isSpedy || isAcbr;
 
   function update<K extends keyof FiscalConfigSummary>(key: K, value: FiscalConfigSummary[K]) {
     setConfig((current) => ({ ...current, [key]: value }));
@@ -157,24 +180,81 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
               </span>
             </div>
           )}
+          {isFocusNfe && (
+            <div className="alert info">
+              <strong>Focus NFe</strong>
+              <span>
+                Informe o <strong>token</strong> da empresa (painel da Focus) no campo
+                &ldquo;Token de integração&rdquo;. A URL base de produção
+                (<code>api.focusnfe.com.br</code>) ou homologação
+                (<code>homologacao.focusnfe.com.br</code>) é definida automaticamente pelo
+                ambiente selecionado — deixe a URL base em branco. Os dados do emitente
+                (endereço, IE e <strong>certificado A1</strong>) são cadastrados diretamente
+                no painel da Focus, não aqui.
+              </span>
+            </div>
+          )}
+          {isAcbr && (
+            <div className="alert info">
+              <strong>ACBr API</strong>
+              <span>
+                A ACBr usa <strong>OAuth 2.0</strong>. Informe o <strong>Client ID</strong> e o{" "}
+                <strong>Client Secret</strong> da credencial (console da ACBr). A URL base
+                (<code>prod.acbr.api.br</code> ou <code>hom.acbr.api.br</code>) é definida pelo
+                ambiente — deixe a URL base em branco. A empresa e o <strong>certificado A1</strong>{" "}
+                ficam no cadastro da ACBr (use o envio de certificado abaixo). Credenciais
+                <em> Sandbox</em> só funcionam em homologação.
+              </span>
+            </div>
+          )}
           <div className="erp-form">
             <label>
-              URL base da API
-              <input value={config.baseUrl} onChange={(e) => update("baseUrl", e.target.value)} placeholder="https://api.focusnfe.com.br" />
+              URL base da API {baseUrlOpcional ? "(opcional)" : ""}
+              <input
+                value={config.baseUrl}
+                onChange={(e) => update("baseUrl", e.target.value)}
+                placeholder={baseUrlOpcional ? "Definida pelo ambiente — deixe em branco" : "https://api.exemplo.com.br"}
+              />
             </label>
+            {isAcbr && (
+              <label>
+                Client ID
+                <input value={config.cscId} onChange={(e) => update("cscId", e.target.value)} placeholder="client_id da credencial ACBr" />
+              </label>
+            )}
             <label>
-              Token de integração {config.tokenLast4 ? `(atual ••••${config.tokenLast4})` : ""}
-              <input value={token} onChange={(e) => setToken(e.target.value)} placeholder={config.hasToken ? "Manter token atual" : "Informe o token"} />
+              {isAcbr ? "Client Secret" : "Token de integração"} {config.tokenLast4 ? `(atual ••••${config.tokenLast4})` : ""}
+              <input
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+                placeholder={config.hasToken ? (isAcbr ? "Manter client_secret atual" : "Manter token atual") : isAcbr ? "Informe o client_secret" : "Informe o token"}
+              />
             </label>
-            <label>
-              CSC ID (NFC-e)
-              <input value={config.cscId} onChange={(e) => update("cscId", e.target.value)} />
-            </label>
-            <label>
-              CSC Token (NFC-e)
-              <input value={cscToken} onChange={(e) => setCscToken(e.target.value)} placeholder={config.hasCscToken ? "Manter token atual" : "Informe o CSC"} />
-            </label>
+            {!isAcbr && (
+              <>
+                <label>
+                  CSC ID (NFC-e)
+                  <input value={config.cscId} onChange={(e) => update("cscId", e.target.value)} />
+                </label>
+                <label>
+                  CSC Token (NFC-e)
+                  <input value={cscToken} onChange={(e) => setCscToken(e.target.value)} placeholder={config.hasCscToken ? "Manter token atual" : "Informe o CSC"} />
+                </label>
+              </>
+            )}
           </div>
+          <div className="erp-toolbar" style={{ borderBottom: "none", paddingBottom: 0, marginTop: 8, gap: 12, alignItems: "center" }}>
+            <Button type="button" variant="light" onClick={testarConexao} disabled={testBusy}>
+              {testBusy ? "Testando…" : "Testar conexão"}
+            </Button>
+            <span className="muted">Testa a credencial já salva. Salve antes de testar uma credencial nova.</span>
+          </div>
+          {testResult && (
+            <div className={`alert ${testResult.ok ? "success" : "danger"}`}>
+              <strong>{testResult.ok ? "Conexão OK" : "Falha na conexão"}</strong>
+              <span>{testResult.message}</span>
+            </div>
+          )}
         </div>
       )}
 
@@ -246,12 +326,12 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
         </div>
       )}
 
-      {isSpedy && (
+      {aceitaCertificado && (
         <div className="erp-card">
           <div className="erp-card-head"><h3>Certificado digital A1</h3></div>
           <div className="erp-card-body">
             <p style={{ fontSize: 12.5, color: "var(--erp-mute)", margin: "0 0 12px" }}>
-              Envie o arquivo <b>.pfx</b> do certificado A1 da empresa. Ele é transmitido com segurança ao provedor (Spedy)
+              Envie o arquivo <b>.pfx</b> do certificado A1 da empresa. Ele é transmitido com segurança ao provedor ({isAcbr ? "ACBr" : "Spedy"})
               para assinar as notas e <b>não é armazenado</b> em nosso sistema. {config.certificadoInfo ? `Atual: ${config.certificadoInfo}.` : ""}
             </p>
             {certErr && <div className="alert danger" style={{ marginBottom: 10 }}><span>{certErr}</span></div>}
