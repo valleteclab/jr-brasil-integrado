@@ -336,8 +336,24 @@ model Usuario {
   status       StatusUsuario    @default(ATIVO)
   vinculos     UsuarioVinculo[]
   auditorias   Auditoria[]
+  sessoes      Sessao[]
+  ultimoAcessoEm DateTime?
   criadoEm     DateTime         @default(now())
   atualizadoEm DateTime         @updatedAt
+}
+
+model Sessao {
+  id         String   @id @default(cuid())
+  usuarioId  String
+  usuario    Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  tenantId   String
+  empresaId  String
+  tokenHash  String   @unique
+  expiraEm   DateTime
+  userAgent  String?
+  criadoEm   DateTime @default(now())
+
+  @@index([usuarioId])
 }
 
 model UsuarioVinculo {

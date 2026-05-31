@@ -1,33 +1,18 @@
-import { prisma } from "@/lib/db/prisma";
+import { getSessionScope } from "@/lib/auth/session";
 
 export type TenantScope = {
   tenantId: string;
   empresaId: string;
 };
 
-const DEFAULT_TENANT_SLUG = "jr-brasil";
-
+/**
+ * Escopo (tenant/empresa) da requisição atual, resolvido a partir da SESSÃO
+ * autenticada. Mantém o nome histórico para não quebrar os ~46 call sites; hoje
+ * exige login válido (lança se não houver sessão). Rotas/páginas /erp já são
+ * protegidas pelo middleware + layout, então aqui só chega requisição autenticada.
+ */
 export async function getDevelopmentTenantScope(): Promise<TenantScope> {
-  const tenant = await prisma.tenant.findUnique({
-    where: { slug: DEFAULT_TENANT_SLUG },
-    include: {
-      empresas: {
-        where: { matriz: true },
-        take: 1
-      }
-    }
-  });
-
-  const empresa = tenant?.empresas[0];
-
-  if (!tenant || !empresa) {
-    throw new Error("Tenant/empresa de desenvolvimento nao encontrados. Rode a migration e o seed inicial.");
-  }
-
-  return {
-    tenantId: tenant.id,
-    empresaId: empresa.id
-  };
+  return getSessionScope();
 }
 
 export function scopedByTenantCompany(scope: TenantScope) {

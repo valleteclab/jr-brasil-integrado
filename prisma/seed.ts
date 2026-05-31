@@ -1,6 +1,74 @@
 ﻿import { PrismaClient } from "@prisma/client";
+import { randomBytes, scryptSync } from "node:crypto";
 
 const prisma = new PrismaClient();
+
+// Hash scrypt no MESMO formato de src/lib/security/password.ts ("salt:hash").
+function hashPasswordSeed(senha: string): string {
+  const salt = randomBytes(16).toString("hex");
+  const hash = scryptSync(senha, salt, 64).toString("hex");
+  return `${salt}:${hash}`;
+}
+
+// Catálogo de módulos (espelha src/lib/auth/modules.ts).
+const TODOS_MODULOS = [
+  "dashboard", "atendimento", "caixa", "vendas", "orcamentos", "os", "compras",
+  "estoque", "inventarios", "produtos", "clientes", "fornecedores", "colaboradores",
+  "regras-tributarias", "financeiro", "fluxo-caixa", "fiscal", "relatorios",
+  "assistente", "configuracoes"
+] as const;
+
+const PERFIS_PADRAO: Array<{ nome: string; descricao: string; modulos: readonly string[] | "*" }> = [
+  { nome: "SUPER_ADMIN", descricao: "Acesso total à plataforma.", modulos: "*" },
+  { nome: "COMPANY_ADMIN", descricao: "Administra a empresa (todos os módulos).", modulos: "*" },
+  { nome: "SALES", descricao: "Vendas, atendimento, caixa e orçamentos.", modulos: ["dashboard", "atendimento", "caixa", "vendas", "orcamentos", "os", "clientes", "produtos", "assistente"] },
+  { nome: "STOCK", descricao: "Estoque, inventários e produtos.", modulos: ["dashboard", "estoque", "inventarios", "produtos", "compras"] },
+  { nome: "PURCHASE", descricao: "Compras e fornecedores.", modulos: ["dashboard", "compras", "fornecedores", "produtos", "estoque"] },
+  { nome: "WORKSHOP", descricao: "Oficina: ordens de serviço.", modulos: ["dashboard", "os", "clientes", "produtos", "estoque"] },
+  { nome: "FINANCE", descricao: "Financeiro, fluxo de caixa e relatórios.", modulos: ["dashboard", "financeiro", "fluxo-caixa", "relatorios", "assistente"] },
+  { nome: "FISCAL", descricao: "Notas fiscais, regras tributárias e configuração fiscal.", modulos: ["dashboard", "fiscal", "regras-tributarias", "configuracoes"] }
+];
+
+const ADMIN_EMAIL = "admin@jrbrasilpecas.com.br";
+// Senha temporária forte do admin. Pode ser sobrescrita por ADMIN_INITIAL_PASSWORD.
+// IMPORTANTE: troque após o primeiro login.
+const ADMIN_SENHA = process.env.ADMIN_INITIAL_PASSWORD ?? "Jr#Brasil@2026!Adm7qZ";
+
+/** Cria/atualiza os perfis padrão (com permissões por módulo) e o admin SUPER_ADMIN. */
+async function seedPerfisEAdmin(tenantId: string, empresaId: string) {
+  let superAdminId = "";
+  for (const def of PERFIS_PADRAO) {
+    const perfil = await prisma.perfil.upsert({
+      where: { tenantId_nome: { tenantId, nome: def.nome } },
+      update: { descricao: def.descricao },
+      create: { tenantId, nome: def.nome, descricao: def.descricao }
+    });
+    if (def.nome === "SUPER_ADMIN") superAdminId = perfil.id;
+
+    const modulos = def.modulos === "*" ? [...TODOS_MODULOS] : def.modulos;
+    // Recria as permissões (acao = "acessar") do perfil de forma idempotente.
+    await prisma.permissao.deleteMany({ where: { perfilId: perfil.id } });
+    await prisma.permissao.createMany({
+      data: modulos.map((modulo) => ({ perfilId: perfil.id, modulo, acao: "acessar", permitido: true }))
+    });
+  }
+
+  const admin = await prisma.usuario.upsert({
+    where: { email: ADMIN_EMAIL },
+    update: { status: "ATIVO" },
+    create: { nome: "Administrador", email: ADMIN_EMAIL, senhaHash: hashPasswordSeed(ADMIN_SENHA), status: "ATIVO" }
+  });
+  // Garante a senha (caso o usuário já existisse sem a senha correta).
+  await prisma.usuario.update({ where: { id: admin.id }, data: { senhaHash: hashPasswordSeed(ADMIN_SENHA) } });
+
+  await prisma.usuarioVinculo.upsert({
+    where: { tenantId_empresaId_usuarioId_perfilId: { tenantId, empresaId, usuarioId: admin.id, perfilId: superAdminId } },
+    update: { ativo: true },
+    create: { tenantId, empresaId, usuarioId: admin.id, perfilId: superAdminId, ativo: true }
+  });
+
+  console.log(`\n👤 Admin: ${ADMIN_EMAIL}\n🔑 Senha: ${ADMIN_SENHA}\n(troque após o primeiro login)\n`);
+}
 
 async function main() {
   const tenant = await prisma.tenant.upsert({
