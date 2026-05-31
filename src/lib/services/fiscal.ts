@@ -78,7 +78,8 @@ export async function listNotasFiscais(): Promise<NotaFiscalSummary[]> {
       canCorrect: nota.status === "AUTORIZADA" && nota.modelo !== "NFSE",
       // PDF/XML só fazem sentido quando a nota foi transmitida e está autorizada/cancelada.
       canDownload: Boolean(nota.providerRef) && (nota.status === "AUTORIZADA" || nota.status === "CANCELADA"),
-      canClone: nota.modelo !== "NFSE",
+      // Clonar reaproveita a tela de emissão (produto e serviço).
+      canClone: true,
       canDevolver: nota.modelo === "NFE" && nota.status === "AUTORIZADA" && Boolean(nota.chaveAcesso)
     };
   });
@@ -225,7 +226,7 @@ export async function getNotaFiscalDetalhe(id: string): Promise<NotaFiscalDetalh
     canCorrect: nota.status === "AUTORIZADA" && nota.modelo === "NFE",
     canDownload: Boolean(nota.providerRef) && (nota.status === "AUTORIZADA" || nota.status === "CANCELADA"),
     canSync: Boolean(nota.providerRef) && (nota.status === "PROCESSANDO" || nota.status === "AUTORIZADA"),
-    canClone: nota.modelo !== "NFSE",
+    canClone: true,
     canDevolver: nota.modelo === "NFE" && nota.status === "AUTORIZADA" && Boolean(nota.chaveAcesso)
   };
 }
@@ -247,12 +248,18 @@ export type EmissaoPrefillItem = {
   desconto: number;
 };
 
+export type EmissaoPrefillServico = {
+  descricao: string;
+  valor: number;
+  codigoServicoLc116: string;
+};
+
 export type EmissaoPrefill = {
   modo: "CLONE" | "DEVOLUCAO";
   origemId: string;
   origemLabel: string;
   origemChave: string | null;
-  tipo: "NFE" | "NFCE";
+  tipo: "NFE" | "NFCE" | "NFSE";
   finalidade: "NORMAL" | "DEVOLUCAO";
   naturezaOperacao: string;
   chaveReferenciada: string | null;
@@ -265,6 +272,11 @@ export type EmissaoPrefill = {
   frete: number;
   desconto: number;
   itens: EmissaoPrefillItem[];
+  // NFS-e (clone de nota de serviço):
+  servicos: EmissaoPrefillServico[];
+  codigoServicoLc116: string;
+  aliquotaIss: number;
+  issRetido: boolean;
 };
 
 /**
@@ -285,10 +297,8 @@ export async function getNotaFiscalPrefill(
   });
   if (!nota) throw new Error("Nota fiscal não encontrada.");
 
-  if (nota.modelo === "NFSE") {
-    throw new Error("Clonar/devolver NFS-e ainda não é suportado nesta tela. Use a emissão de serviço.");
-  }
-  const tipo = nota.modelo === "NFCE" ? "NFCE" : "NFE";
+  const isServico = nota.modelo === "NFSE";
+  const tipo: EmissaoPrefill["tipo"] = isServico ? "NFSE" : nota.modelo === "NFCE" ? "NFCE" : "NFE";
 
   if (modo === "DEVOLUCAO") {
     if (nota.modelo !== "NFE") {
@@ -301,6 +311,16 @@ export async function getNotaFiscalPrefill(
 
   const isDevolucao = modo === "DEVOLUCAO";
   const label = `${MODELO_LABEL[nota.modelo]} ${nota.numero ?? "-"}`;
+
+  // NFS-e: reconstrói os serviços a partir dos itens persistidos da nota.
+  const servicos: EmissaoPrefillServico[] = isServico
+    ? nota.itens.map((it) => ({
+        descricao: it.descricao ?? "",
+        valor: Number(it.valorTotal),
+        codigoServicoLc116: it.itemListaServico ?? ""
+      }))
+    : [];
+  const primeiroItemServico = isServico ? nota.itens[0] : undefined;
 
   return {
     modo,
@@ -324,18 +344,24 @@ export async function getNotaFiscalPrefill(
     observacoes: nota.informacoesComplementares ?? "",
     frete: Number(nota.valorFrete),
     desconto: Number(nota.valorDesconto),
-    itens: nota.itens.map((it) => ({
-      produtoId: it.produtoId ?? null,
-      codigo: it.codigo ?? "",
-      descricao: it.descricao ?? "",
-      ncm: it.ncm ?? "",
-      // Devolução: CFOP em branco para o motor derivar o CFOP de devolução (1202/2202).
-      cfop: isDevolucao ? "" : (it.cfop ?? ""),
-      origem: it.origem ?? "0",
-      unidade: it.unidade ?? "UN",
-      quantidade: Number(it.quantidade),
-      precoUnitario: Number(it.valorUnitario),
-      desconto: Number(it.desconto)
-    }))
+    itens: isServico
+      ? []
+      : nota.itens.map((it) => ({
+          produtoId: it.produtoId ?? null,
+          codigo: it.codigo ?? "",
+          descricao: it.descricao ?? "",
+          ncm: it.ncm ?? "",
+          // Devolução: CFOP em branco para o motor derivar o CFOP de devolução (1202/2202).
+          cfop: isDevolucao ? "" : (it.cfop ?? ""),
+          origem: it.origem ?? "0",
+          unidade: it.unidade ?? "UN",
+          quantidade: Number(it.quantidade),
+          precoUnitario: Number(it.valorUnitario),
+          desconto: Number(it.desconto)
+        })),
+    servicos,
+    codigoServicoLc116: primeiroItemServico?.itemListaServico ?? "",
+    aliquotaIss: primeiroItemServico?.aliquotaIss != null ? Number(primeiroItemServico.aliquotaIss) : 0,
+    issRetido: nota.issRetido
   };
 }

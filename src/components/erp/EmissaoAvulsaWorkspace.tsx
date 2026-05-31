@@ -23,6 +23,8 @@ type ItemLinha = {
   quantidade: number;
   precoUnitario: number;
   desconto: number; // valor absoluto (R$)
+  /** Devolução: quantidade máxima devolvível (= quantidade da nota original). */
+  maxQuantidade?: number;
 };
 
 type ServicoLinha = {
@@ -91,7 +93,17 @@ const prefillToItens = (initial?: EmissaoPrefill | null): ItemLinha[] =>
     unidade: it.unidade,
     quantidade: it.quantidade,
     precoUnitario: it.precoUnitario,
-    desconto: it.desconto
+    desconto: it.desconto,
+    // Na devolução, a quantidade da original é o teto da quantidade a devolver (devolução parcial).
+    maxQuantidade: initial?.modo === "DEVOLUCAO" ? it.quantidade : undefined
+  }));
+
+const prefillToServicos = (initial?: EmissaoPrefill | null): ServicoLinha[] =>
+  (initial?.servicos ?? []).map((sv) => ({
+    uid: uid(),
+    descricao: sv.descricao,
+    valor: sv.valor,
+    codigoServicoLc116: sv.codigoServicoLc116
   }));
 
 export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormData; initial?: EmissaoPrefill | null }) {
@@ -148,7 +160,7 @@ export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormDat
 
   // Itens / serviços
   const [itens, setItens] = useState<ItemLinha[]>(() => prefillToItens(initial));
-  const [servicos, setServicos] = useState<ServicoLinha[]>([]);
+  const [servicos, setServicos] = useState<ServicoLinha[]>(() => prefillToServicos(initial));
   const [showProd, setShowProd] = useState(false);
 
   // Operação
@@ -157,15 +169,15 @@ export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormDat
   const [formaPagamento, setFormaPagamento] = useState(initial?.formaPagamento || FORMAS_PAGAMENTO[0]);
   const [condicaoPagamento, setCondicaoPagamento] = useState(initial?.condicaoPagamento ?? "");
   const [baixarEstoque, setBaixarEstoque] = useState(false);
-  const [codigoLc116Doc, setCodigoLc116Doc] = useState("");
+  const [codigoLc116Doc, setCodigoLc116Doc] = useState(initial?.codigoServicoLc116 ?? "");
 
   // ISS (NFS-e): natureza/exigibilidade, alíquota informada, deduções e base de cálculo
   const [taxationType, setTaxationType] = useState("taxationInMunicipality");
-  const [aliquotaIss, setAliquotaIss] = useState(0);
+  const [aliquotaIss, setAliquotaIss] = useState(initial?.aliquotaIss ?? 0);
   const [deducoes, setDeducoes] = useState(0);
 
   // Retenções (NFS-e): ISS retido pelo tomador + retenções federais (alíquotas em %)
-  const [issRetido, setIssRetido] = useState(false);
+  const [issRetido, setIssRetido] = useState(initial?.issRetido ?? false);
   const [retIr, setRetIr] = useState(0);
   const [retPis, setRetPis] = useState(0);
   const [retCofins, setRetCofins] = useState(0);
@@ -627,7 +639,24 @@ export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormDat
                             <td><input value={it.ncm} onChange={(e) => updItem(it.uid, { ncm: e.target.value })} placeholder="NCM" style={{ ...cellInput, width: 90 }} aria-label="NCM" /></td>
                             <td><input value={it.cfop} onChange={(e) => updItem(it.uid, { cfop: e.target.value })} placeholder="CFOP" style={{ ...cellInput, width: 70 }} aria-label="CFOP" /></td>
                             <td><input value={it.unidade} onChange={(e) => updItem(it.uid, { unidade: e.target.value })} style={{ ...cellInput, width: 56 }} aria-label="Unidade" /></td>
-                            <td className="num"><input type="number" min={0} step="any" value={it.quantidade} onChange={(e) => updItem(it.uid, { quantidade: Math.max(0, Number(e.target.value) || 0) })} style={cellNum} aria-label="Quantidade" /></td>
+                            <td className="num">
+                              <input
+                                type="number"
+                                min={0}
+                                max={it.maxQuantidade}
+                                step="any"
+                                value={it.quantidade}
+                                onChange={(e) => {
+                                  const v = Math.max(0, Number(e.target.value) || 0);
+                                  updItem(it.uid, { quantidade: it.maxQuantidade != null ? Math.min(v, it.maxQuantidade) : v });
+                                }}
+                                style={cellNum}
+                                aria-label="Quantidade"
+                              />
+                              {it.maxQuantidade != null && (
+                                <span style={{ display: "block", fontSize: 10, color: "var(--erp-mute)" }}>máx: {it.maxQuantidade}</span>
+                              )}
+                            </td>
                             <td className="num"><input type="number" min={0} step="any" value={it.precoUnitario} onChange={(e) => updItem(it.uid, { precoUnitario: Math.max(0, Number(e.target.value) || 0) })} style={cellNum} aria-label="Preço unitário" /></td>
                             <td className="num"><input type="number" min={0} step="any" value={it.desconto} onChange={(e) => updItem(it.uid, { desconto: Math.max(0, Number(e.target.value) || 0) })} style={cellNum} aria-label="Desconto" /></td>
                             <td className="num bold">{brl(sub)}</td>
