@@ -59,7 +59,7 @@ export async function lookupCep(cep: string): Promise<CepLookupResult> {
   let res: Response;
   try {
     res = await fetch(`https://viacep.com.br/ws/${digits}/json/`, {
-      headers: { Accept: "application/json" }
+      headers: LOOKUP_HEADERS
     });
   } catch (err) {
     throw new CadastroLookupError(`Falha ao consultar o CEP: ${err instanceof Error ? err.message : "erro de rede"}`);
