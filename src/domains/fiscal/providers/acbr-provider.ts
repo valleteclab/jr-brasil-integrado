@@ -415,7 +415,8 @@ export class AcbrFiscalProvider implements FiscalProvider {
       return {
         nItem: numeroItem,
         prod: {
-          cProd: item.codigo, cEAN: "SEM GTIN", xProd: item.descricao,
+          // cProd é obrigatório na SEFAZ; itens avulsos podem vir sem código — usa o nº do item.
+          cProd: item.codigo?.trim() || String(numeroItem), cEAN: "SEM GTIN", xProd: item.descricao,
           NCM: item.ncm ?? "00000000", CFOP: item.cfop ?? (isNfce ? "5102" : "5102"),
           uCom: item.unidade, qCom: item.quantidade, vUnCom: item.valorUnitario, vProd: item.valorTotal,
           cEANTrib: "SEM GTIN", uTrib: item.unidade, qTrib: item.quantidade, vUnTrib: item.valorUnitario,
