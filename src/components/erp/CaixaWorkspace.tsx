@@ -88,6 +88,18 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
     finally { setBusy(false); }
   }
 
+  async function cancelarPreVenda(p: PreVendaResumo) {
+    if (!window.confirm(`Cancelar a pré-venda ${p.numero}? O estoque reservado será liberado.`)) return;
+    setBusy(true);
+    try {
+      await post(`/api/erp/vendas/${p.id}/cancelar`, {});
+      setInfo(`Pré-venda ${p.numero} cancelada e estoque liberado.`);
+      if (sel?.id === p.id) setSel(null);
+      router.refresh();
+    } catch (e) { setError(e instanceof Error ? e.message : "Erro ao cancelar a pré-venda."); }
+    finally { setBusy(false); }
+  }
+
   function selecionar(p: PreVendaResumo) {
     setSel(p);
     setResultado(null);
@@ -112,6 +124,10 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
         pagamentos: pagamentos.filter((p) => Number(p.valor) > 0).map((p) => ({ forma: p.forma, valor: Number(p.valor) }))
       });
       setResultado({ pedidoNumero: r.pedidoNumero, troco: r.troco, notaId: r.nota?.id ?? null, notaStatus: r.nota?.status ?? null, emitErro: r.emitErro ?? null });
+      // Impressão automática do cupom (DANFE/DANFCE) ao autorizar.
+      if (r.nota?.status === "AUTORIZADA" && r.nota?.id) {
+        window.open(`/api/erp/fiscal/${r.nota.id}/pdf`, "_blank", "noopener,noreferrer");
+      }
       router.refresh();
     } catch (e) { setError(e instanceof Error ? e.message : "Erro ao receber."); }
     finally { setBusy(false); }
@@ -181,7 +197,10 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
                       <td>{p.clienteNome ?? <span style={{ color: "var(--erp-mute)" }}>Consumidor não identificado</span>}{p.clienteDocumento && <span className="sublabel">{p.clienteDocumento}</span>}</td>
                       <td className="num">{p.qtdItens}</td>
                       <td className="num bold">{brl(p.total)}</td>
-                      <td className="actions"><button type="button" className="btn-erp primary xs" onClick={() => selecionar(p)}>Receber</button></td>
+                      <td className="actions">
+                        <button type="button" className="btn-erp primary xs" onClick={() => selecionar(p)}>Receber</button>
+                        <button type="button" className="btn-erp danger xs" disabled={busy} onClick={() => cancelarPreVenda(p)}>Cancelar</button>
+                      </td>
                     </tr>
                   ))}
                   {!preVendasFiltradas.length && (
@@ -255,10 +274,10 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
                 {resultado.troco > 0 && <div className="alert info"><span className="lead">Troco:</span> {brl(resultado.troco)}</div>}
                 {resultado.notaStatus === "AUTORIZADA" ? (
                   <>
-                    <div className="alert success"><span>Nota autorizada.</span></div>
+                    <div className="alert success"><span>Nota autorizada. O cupom foi aberto para impressão.</span></div>
                     {resultado.notaId && (
                       <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
-                        <a className="btn-erp primary sm" style={{ flex: 1 }} href={`/api/erp/fiscal/${resultado.notaId}/pdf`} target="_blank" rel="noopener noreferrer">Imprimir cupom</a>
+                        <a className="btn-erp primary sm" style={{ flex: 1 }} href={`/api/erp/fiscal/${resultado.notaId}/pdf`} target="_blank" rel="noopener noreferrer">Reimprimir cupom</a>
                         <a className="btn-erp ghost sm" href={`/erp/fiscal/${resultado.notaId}`}>Ver nota</a>
                       </div>
                     )}
