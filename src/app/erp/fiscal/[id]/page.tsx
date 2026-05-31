@@ -46,6 +46,8 @@ export default async function NotaFiscalDetalhePage({ params }: { params: { id: 
         canCorrect={nota.canCorrect}
         canDownload={nota.canDownload}
         canSync={nota.canSync}
+        canClone={nota.canClone}
+        canDevolver={nota.canDevolver}
       />
 
       <div className="erp-card">

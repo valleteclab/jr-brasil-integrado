@@ -64,6 +64,8 @@ export type NormalizedFiscalDocument = {
   ambiente: AmbienteFiscal;
   provedor: ProvedorFiscal;
   serie: string;
+  /** NF-e de devolução: chave de acesso (44 dígitos) da nota original referenciada (NFref/refNFe). */
+  chaveReferenciada?: string | null;
   destinatario: {
     nome: string;
     documento: string | null;

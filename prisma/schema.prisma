@@ -1289,9 +1289,13 @@ model NotaFiscal {
   clienteId      String?
   pedidoVendaId  String?
   ordemServicoId String?
+  notaOrigemId   String?
+  chaveReferenciada String?
   cliente        Cliente?         @relation(fields: [clienteId], references: [id])
   pedidoVenda    PedidoVenda?     @relation(fields: [pedidoVendaId], references: [id])
   ordemServico   OrdemServico?    @relation(fields: [ordemServicoId], references: [id])
+  notaOrigem     NotaFiscal?      @relation("NotaDevolucao", fields: [notaOrigemId], references: [id])
+  devolucoes     NotaFiscal[]     @relation("NotaDevolucao")
   destinatarioNome     String?
   destinatarioDocumento String?
   destinatarioIe       String?

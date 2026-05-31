@@ -11,9 +11,11 @@ type Props = {
   canCorrect: boolean;
   canDownload: boolean;
   canSync: boolean;
+  canClone: boolean;
+  canDevolver: boolean;
 };
 
-export function NotaFiscalActions({ id, modeloLabel, numero, canCancel, canCorrect, canDownload, canSync }: Props) {
+export function NotaFiscalActions({ id, modeloLabel, numero, canCancel, canCorrect, canDownload, canSync, canClone, canDevolver }: Props) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState("");
@@ -89,6 +91,12 @@ export function NotaFiscalActions({ id, modeloLabel, numero, canCancel, canCorre
           <button type="button" className="btn-erp ghost sm" onClick={sincronizar} disabled={busy !== null}>
             {busy === "sync" ? "Atualizando…" : "Atualizar status"}
           </button>
+        )}
+        {canClone && (
+          <a className="btn-erp ghost sm" href={`/erp/fiscal/emitir?clonar=${id}`}>Clonar nota</a>
+        )}
+        {canDevolver && (
+          <a className="btn-erp ghost sm" href={`/erp/fiscal/emitir?devolucao=${id}`}>Gerar devolução</a>
         )}
         {canCorrect && (
           <button type="button" className="btn-erp ghost sm" onClick={corrigir} disabled={busy !== null}>

@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { EmissaoFormData } from "@/lib/services/fiscal-emit";
+import type { EmissaoPrefill } from "@/lib/services/fiscal";
 import { useCadastroLookup } from "./useCadastroLookup";
 
 type DocTipo = "NFE" | "NFCE" | "NFSE";
@@ -78,18 +79,38 @@ const cellInput: React.CSSProperties = { width: "100%", height: 28, border: "1px
 const cellNum: React.CSSProperties = { width: 78, height: 28, border: "1px solid var(--erp-line)", borderRadius: 4, padding: "0 6px", fontSize: 12.5, textAlign: "right" };
 const textareaStyle: React.CSSProperties = { width: "100%", minHeight: 60, padding: "10px 12px", border: "1px solid var(--erp-line)", borderRadius: 5, fontSize: 12.5, resize: "vertical", fontFamily: "inherit" };
 
-export function EmissaoAvulsaWorkspace({ data }: { data: EmissaoFormData }) {
+const prefillToItens = (initial?: EmissaoPrefill | null): ItemLinha[] =>
+  (initial?.itens ?? []).map((it) => ({
+    uid: uid(),
+    produtoId: it.produtoId,
+    codigo: it.codigo,
+    descricao: it.descricao,
+    ncm: it.ncm,
+    cfop: it.cfop,
+    origem: it.origem,
+    unidade: it.unidade,
+    quantidade: it.quantidade,
+    precoUnitario: it.precoUnitario,
+    desconto: it.desconto
+  }));
+
+export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormData; initial?: EmissaoPrefill | null }) {
   const router = useRouter();
 
-  const [tipo, setTipo] = useState<DocTipo>("NFE");
+  const [tipo, setTipo] = useState<DocTipo>(initial?.tipo ?? "NFE");
+
+  // Origem (clone/devolução): referência mantida para enviar na emissão.
+  const [origem] = useState(initial ?? null);
 
   // Destinatário
-  const [modoDest, setModoDest] = useState<"cadastrado" | "avulso">("cadastrado");
-  const [clienteId, setClienteId] = useState<string>("");
-  const [avNome, setAvNome] = useState("");
-  const [avDocumento, setAvDocumento] = useState("");
-  const [avIe, setAvIe] = useState("");
-  const [avEmail, setAvEmail] = useState("");
+  const [modoDest, setModoDest] = useState<"cadastrado" | "avulso">(
+    initial && !initial.clienteId ? "avulso" : "cadastrado"
+  );
+  const [clienteId, setClienteId] = useState<string>(initial?.clienteId ?? "");
+  const [avNome, setAvNome] = useState(initial?.destinatario.nome ?? "");
+  const [avDocumento, setAvDocumento] = useState(initial?.destinatario.documento ?? "");
+  const [avIe, setAvIe] = useState(initial?.destinatario.inscricaoEstadual ?? "");
+  const [avEmail, setAvEmail] = useState(initial?.destinatario.email ?? "");
   const [avLogradouro, setAvLogradouro] = useState("");
   const [avNumero, setAvNumero] = useState("");
   const [avComplemento, setAvComplemento] = useState("");
@@ -126,15 +147,15 @@ export function EmissaoAvulsaWorkspace({ data }: { data: EmissaoFormData }) {
   }
 
   // Itens / serviços
-  const [itens, setItens] = useState<ItemLinha[]>([]);
+  const [itens, setItens] = useState<ItemLinha[]>(() => prefillToItens(initial));
   const [servicos, setServicos] = useState<ServicoLinha[]>([]);
   const [showProd, setShowProd] = useState(false);
 
   // Operação
-  const [naturezaOperacao, setNaturezaOperacao] = useState("Venda de mercadoria");
-  const [finalidade, setFinalidade] = useState<Finalidade>("NORMAL");
-  const [formaPagamento, setFormaPagamento] = useState(FORMAS_PAGAMENTO[0]);
-  const [condicaoPagamento, setCondicaoPagamento] = useState("");
+  const [naturezaOperacao, setNaturezaOperacao] = useState(initial?.naturezaOperacao ?? "Venda de mercadoria");
+  const [finalidade, setFinalidade] = useState<Finalidade>(initial?.finalidade ?? "NORMAL");
+  const [formaPagamento, setFormaPagamento] = useState(initial?.formaPagamento || FORMAS_PAGAMENTO[0]);
+  const [condicaoPagamento, setCondicaoPagamento] = useState(initial?.condicaoPagamento ?? "");
   const [baixarEstoque, setBaixarEstoque] = useState(false);
   const [codigoLc116Doc, setCodigoLc116Doc] = useState("");
 
@@ -153,10 +174,10 @@ export function EmissaoAvulsaWorkspace({ data }: { data: EmissaoFormData }) {
   const [baseRetencao, setBaseRetencao] = useState(0);
 
   // Totais editáveis (apenas NF-e/NFC-e)
-  const [frete, setFrete] = useState(0);
-  const [descontoGlobal, setDescontoGlobal] = useState(0);
+  const [frete, setFrete] = useState(initial?.frete ?? 0);
+  const [descontoGlobal, setDescontoGlobal] = useState(initial?.desconto ?? 0);
 
-  const [obs, setObs] = useState("");
+  const [obs, setObs] = useState(initial?.observacoes ?? "");
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -315,6 +336,9 @@ export function EmissaoAvulsaWorkspace({ data }: { data: EmissaoFormData }) {
         body = {
           modelo: tipo,
           finalidade,
+          // Devolução: referencia a NF-e original (NFref/refNFe) e vincula a nota de origem.
+          chaveReferenciada: finalidade === "DEVOLUCAO" ? origem?.chaveReferenciada ?? undefined : undefined,
+          notaOrigemId: finalidade === "DEVOLUCAO" ? origem?.notaOrigemId ?? undefined : undefined,
           naturezaOperacao: naturezaOperacao.trim() || undefined,
           receiver: receiverPayload,
           formaPagamento: formaPagamento || undefined,
@@ -428,6 +452,17 @@ export function EmissaoAvulsaWorkspace({ data }: { data: EmissaoFormData }) {
         </div>
         <button type="button" className="btn-erp ghost sm" onClick={reset}>Limpar</button>
       </div>
+
+      {origem && (
+        <div className={`alert ${origem.modo === "DEVOLUCAO" ? "warn" : "info"}`} style={{ marginBottom: 14 }}>
+          <strong>{origem.modo === "DEVOLUCAO" ? "Devolução de nota fiscal" : "Clonando nota fiscal"}</strong>
+          <span>
+            {origem.modo === "DEVOLUCAO"
+              ? `NF-e de devolução referente à ${origem.origemLabel}${origem.origemChave ? ` (chave ${origem.origemChave})` : ""}. Confira os itens, quantidades a devolver e o CFOP antes de emitir.`
+              : `Pré-preenchido a partir da ${origem.origemLabel}. Ajuste o que precisar e emita como uma nova nota.`}
+          </span>
+        </div>
+      )}
 
       <div className="atend-types" role="tablist" aria-label="Tipo de documento fiscal">
         {TIPOS.map((t) => (

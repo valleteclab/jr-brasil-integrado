@@ -432,6 +432,7 @@ export class AcbrFiscalProvider implements FiscalProvider {
     const cMunFG = input.emitter.codigoMunicipioIbge ?? "";
     const isNfce = modelo === "NFCE";
     const idDest = isNfce ? 1 : ufEmit && ufDest && ufEmit !== ufDest ? 2 : 1;
+    const refChave = onlyDigits(input.document.chaveReferenciada);
     // Consumidor final: NFC-e sempre; NF-e quando o destinatário é não-contribuinte (sem IE),
     // pois a SEFAZ exige indFinal=1 nesse caso ("operação com não contribuinte").
     const indFinal = isNfce || !input.document.destinatario.inscricaoEstadual ? 1 : 0;
@@ -496,9 +497,12 @@ export class AcbrFiscalProvider implements FiscalProvider {
         ide: {
           cUF, natOp: input.document.naturezaOperacao, mod: isNfce ? 65 : 55,
           serie: Number(input.document.serie) || 1, nNF: input.numero,
-          dhEmi: new Date().toISOString(), tpNF: 1, idDest, cMunFG,
+          // Devolução é emitida como entrada (tpNF=0); demais finalidades, saída (tpNF=1).
+          dhEmi: new Date().toISOString(), tpNF: input.document.finalidade === "DEVOLUCAO" ? 0 : 1, idDest, cMunFG,
           tpImp: isNfce ? 4 : 1, tpEmis: 1, finNFe: finalidade(input.document.finalidade),
-          indFinal, indPres: 1, procEmi: 0, verProc: "JR-Brasil-Integrado"
+          indFinal, indPres: 1, procEmi: 0, verProc: "JR-Brasil-Integrado",
+          // Referência à NF-e original (obrigatória na devolução): grupo NFref/refNFe.
+          ...(refChave.length === 44 ? { NFref: [{ refNFe: refChave }] } : {})
         },
         emit: { CNPJ: onlyDigits(input.emitter.cnpj), CRT: crtFocus(input.emitter.regime) },
         dest: this.buildDest(input, isNfce),

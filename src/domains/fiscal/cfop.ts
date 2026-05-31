@@ -36,6 +36,28 @@ export function resolveCfopVenda(ctx: CfopVendaContext): string {
   return `${prefixo}${sufixo}`;
 }
 
+/**
+ * CFOP de devolução de venda, emitida pelo próprio vendedor como entrada (tpNF=0).
+ * Espelha `resolveCfopVenda`: revenda de mercadoria de terceiros é o caso predominante.
+ *  - Sem ST: 1202 (interna) / 2202 (interestadual)
+ *  - Produção própria: 1201 / 2201
+ *  - Com ST (revenda): 1411 / 2411; produção própria com ST: 1410 / 2410
+ */
+export function resolveCfopDevolucao(ctx: CfopVendaContext): string {
+  const origem = ctx.ufOrigem?.trim().toUpperCase();
+  const destino = ctx.ufDestino?.trim().toUpperCase();
+  const interestadual = Boolean(origem && destino && origem !== destino);
+  const prefixo = interestadual ? "2" : "1";
+
+  if (ctx.substituicaoTributaria) {
+    if (ctx.producaoPropria) return interestadual ? "2410" : "1410";
+    return interestadual ? "2411" : "1411";
+  }
+
+  const sufixo = ctx.producaoPropria ? "201" : "202";
+  return `${prefixo}${sufixo}`;
+}
+
 /** Indica se os tributos calculados caracterizam substituição tributária de ICMS. */
 export function isSubstituicaoTributaria(taxes: { csosn: string | null; cstIcms: string | null }): boolean {
   if (taxes.csosn && ["201", "202", "203", "500"].includes(taxes.csosn)) return true;

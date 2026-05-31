@@ -9,7 +9,7 @@ import {
   emptyTotals,
   loadSalesTaxRules
 } from "../tax-engine";
-import { isSubstituicaoTributaria, resolveCfopVenda } from "../cfop";
+import { isSubstituicaoTributaria, resolveCfopDevolucao, resolveCfopVenda } from "../cfop";
 import type { NormalizedFiscalDocument } from "../types";
 import { resolveFiscalProvider } from "../providers";
 import type { ProviderContext } from "../providers/types";
@@ -101,6 +101,8 @@ export type FiscalDocumentLinks = {
   clienteId?: string | null;
   pedidoVendaId?: string | null;
   ordemServicoId?: string | null;
+  /** NF-e de devolução: id da nota original que está sendo devolvida. */
+  notaOrigemId?: string | null;
   usuarioId?: string | null;
 };
 
@@ -139,14 +141,16 @@ export async function emitFiscalDocument(
     });
     // CFOP automático para mercadorias: respeita CFOP explícito do item; senão deriva de
     // origem/destino e da existência de substituição tributária nos tributos calculados.
+    // Devolução é emitida como entrada (tpNF=0) e usa CFOPs da família 1xxx/2xxx.
+    const cfopCtx = {
+      ufOrigem: config.emitter.uf,
+      ufDestino: document.destinatario.uf,
+      substituicaoTributaria: isSubstituicaoTributaria(taxes)
+    };
     const cfop = item.servico
       ? null
       : item.cfop ??
-        resolveCfopVenda({
-          ufOrigem: config.emitter.uf,
-          ufDestino: document.destinatario.uf,
-          substituicaoTributaria: isSubstituicaoTributaria(taxes)
-        });
+        (document.finalidade === "DEVOLUCAO" ? resolveCfopDevolucao(cfopCtx) : resolveCfopVenda(cfopCtx));
     accumulateTotals(totals, item, taxes);
     return { item, taxes, cfop, numeroItem: index + 1 };
   });
@@ -186,6 +190,8 @@ export async function emitFiscalDocument(
         clienteId: links.clienteId ?? null,
         pedidoVendaId: links.pedidoVendaId ?? null,
         ordemServicoId: links.ordemServicoId ?? null,
+        notaOrigemId: links.notaOrigemId ?? null,
+        chaveReferenciada: document.chaveReferenciada ?? null,
         destinatarioNome: document.destinatario.nome,
         destinatarioDocumento: document.destinatario.documento,
         destinatarioIe: document.destinatario.inscricaoEstadual,
