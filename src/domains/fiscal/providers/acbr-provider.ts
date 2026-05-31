@@ -156,6 +156,11 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** Arredonda para 2 casas (valores monetários do XML da SEFAZ). */
+function round2(n: number): number {
+  return Math.round((n + Number.EPSILON) * 100) / 100;
+}
+
 /**
  * Monta o grupo PIS/COFINS do XML conforme o CST (a SEFAZ valida o par CST↔grupo):
  *  - 01, 02 → PISAliq/COFINSAliq (tributação por alíquota: vBC/pPIS/vPIS)
@@ -420,6 +425,10 @@ export class AcbrFiscalProvider implements FiscalProvider {
     // pois a SEFAZ exige indFinal=1 nesse caso ("operação com não contribuinte").
     const indFinal = isNfce || !input.document.destinatario.inscricaoEstadual ? 1 : 0;
 
+    // Acumula os totais a partir dos MESMOS valores por item que serão emitidos —
+    // a SEFAZ rejeita se total.ICMSTot.* divergir da soma dos itens (ex.: vFCP).
+    const sum = { vBC: 0, vICMS: 0, vFCP: 0, vProd: 0, vPIS: 0, vCOFINS: 0 };
+
     const det = input.document.itens.map((item, index) => {
       const numeroItem = index + 1;
       const taxes = input.computed.find((c) => c.numeroItem === numeroItem)?.taxes;
@@ -432,13 +441,26 @@ export class AcbrFiscalProvider implements FiscalProvider {
         : {
             ICMS00: {
               orig, CST: taxes?.cstIcms ?? "00", modBC: 3,
-              vBC: taxes?.baseIcms ?? base, pICMS: taxes?.aliquotaIcms ?? 0, vICMS: taxes?.valorIcms ?? 0
+              vBC: taxes?.baseIcms ?? base, pICMS: taxes?.aliquotaIcms ?? 0, vICMS: taxes?.valorIcms ?? 0,
+              // FCP por item para reconciliar com total.ICMSTot.vFCP (a SEFAZ valida a soma).
+              pFCP: taxes?.percentualFcp ?? 0, vFCP: taxes?.valorFcp ?? 0
             }
           };
       // PIS/COFINS: o grupo do XML depende do CST, não do regime. Simples normalmente
       // não tributa (CST 49 → grupo "Outras Operações"); CST 01/02 → alíquota; 04-09 → NT.
       const pis = pisCofinsGroup("PIS", simples ? taxes?.cstPis ?? "49" : taxes?.cstPis ?? "01", base, taxes?.aliquotaPis ?? 0, taxes?.valorPis ?? 0);
       const cofins = pisCofinsGroup("COFINS", simples ? taxes?.cstCofins ?? "49" : taxes?.cstCofins ?? "01", base, taxes?.aliquotaCofins ?? 0, taxes?.valorCofins ?? 0);
+
+      // Acumula exatamente o que foi colocado no item.
+      sum.vProd += item.valorTotal;
+      if (!simples) {
+        sum.vBC += taxes?.baseIcms ?? base;
+        sum.vICMS += taxes?.valorIcms ?? 0;
+        sum.vFCP += taxes?.valorFcp ?? 0;
+      }
+      // PIS/COFINS NT não destacam valor; só Aliq/Outr entram no total.
+      if (pis.PISNT === undefined) sum.vPIS += taxes?.valorPis ?? 0;
+      if (cofins.COFINSNT === undefined) sum.vCOFINS += taxes?.valorCofins ?? 0;
 
       return {
         nItem: numeroItem,
@@ -474,11 +496,12 @@ export class AcbrFiscalProvider implements FiscalProvider {
         det,
         total: {
           ICMSTot: {
-            vBC: t.valorIcms > 0 ? t.valorProdutos : 0, vICMS: t.valorIcms, vICMSDeson: 0,
-            vFCP: t.valorFcp, vBCST: 0, vST: t.valorIcmsSt, vFCPST: 0, vFCPSTRet: 0,
-            vProd: t.valorProdutos, vFrete: input.document.valorFrete, vSeg: input.document.valorSeguro,
+            // Somados a partir dos itens emitidos (não de t.*), para bater na validação da SEFAZ.
+            vBC: round2(sum.vBC), vICMS: round2(sum.vICMS), vICMSDeson: 0,
+            vFCP: round2(sum.vFCP), vBCST: 0, vST: t.valorIcmsSt, vFCPST: 0, vFCPSTRet: 0,
+            vProd: round2(sum.vProd), vFrete: input.document.valorFrete, vSeg: input.document.valorSeguro,
             vDesc: input.document.valorDesconto, vII: 0, vIPI: t.valorIpi, vIPIDevol: 0,
-            vPIS: t.valorPis, vCOFINS: t.valorCofins, vOutro: input.document.outrasDespesas, vNF: input.total
+            vPIS: round2(sum.vPIS), vCOFINS: round2(sum.vCOFINS), vOutro: input.document.outrasDespesas, vNF: input.total
           }
         },
         transp: { modFrete: 9 },
