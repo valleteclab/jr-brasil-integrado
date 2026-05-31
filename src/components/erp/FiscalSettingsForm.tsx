@@ -27,6 +27,7 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
   const [config, setConfig] = useState(initialConfig);
   const [token, setToken] = useState("");
   const [cscToken, setCscToken] = useState("");
+  const [nfceCsc, setNfceCsc] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -104,6 +105,8 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
           token: token || undefined,
           cscId: config.cscId,
           cscToken: cscToken || undefined,
+          nfceIdCsc: config.nfceIdCsc,
+          nfceCsc: nfceCsc || undefined,
           serieNfe: config.serieNfe,
           serieNfce: config.serieNfce,
           serieNfse: config.serieNfse,
@@ -123,6 +126,7 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
       setConfig(data);
       setToken("");
       setCscToken("");
+      setNfceCsc("");
       setMessage("Configuração fiscal salva com sucesso.");
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Não foi possível salvar a configuração.");
@@ -230,6 +234,18 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
                 placeholder={config.hasToken ? (isAcbr ? "Manter client_secret atual" : "Manter token atual") : isAcbr ? "Informe o client_secret" : "Informe o token"}
               />
             </label>
+            {isAcbr && (
+              <>
+                <label>
+                  ID CSC (NFC-e)
+                  <input value={config.nfceIdCsc} onChange={(e) => update("nfceIdCsc", e.target.value)} placeholder="Ex.: 1" inputMode="numeric" />
+                </label>
+                <label>
+                  Código CSC (NFC-e){config.hasNfceCsc ? " (já salvo)" : ""}
+                  <input value={nfceCsc} onChange={(e) => setNfceCsc(e.target.value)} placeholder={config.hasNfceCsc ? "Manter CSC atual" : "Código de Segurança do Contribuinte"} />
+                </label>
+              </>
+            )}
             {!isAcbr && (
               <>
                 <label>

@@ -758,6 +758,30 @@ export class AcbrFiscalProvider implements FiscalProvider {
 }
 
 /**
+ * Configura o CSC da NFC-e no cadastro da empresa na ACBr
+ * (`PUT /empresas/{cpf_cnpj}`, grupo `config_nfce: { id_csc, csc }` — compatível Nuvem Fiscal).
+ * O CSC é um segredo da SEFAZ: nunca logar/persistir fora do nosso banco (criptografado).
+ */
+export async function updateAcbrNfceCsc(
+  ctx: ProviderContext,
+  cnpj: string,
+  idCsc: string,
+  csc: string
+): Promise<{ ok: boolean; message: string }> {
+  const provider = new AcbrFiscalProvider();
+  const documento = onlyDigits(cnpj);
+  const res = await (provider as unknown as {
+    request: <T>(c: ProviderContext, m: string, p: string, b?: unknown) => Promise<{ ok: boolean; status: number; data: T | undefined; errorMessage: string | null }>;
+  }).request(ctx, "PUT", `/empresas/${documento}`, {
+    config_nfce: { id_csc: String(idCsc), csc }
+  });
+  if (!res.ok) {
+    return { ok: false, message: res.errorMessage ?? `Falha ao configurar o CSC da NFC-e na ACBr (HTTP ${res.status}).` };
+  }
+  return { ok: true, message: "CSC da NFC-e configurado na ACBr." };
+}
+
+/**
  * Envia o certificado A1 (.pfx) ao cadastro da empresa na ACBr
  * (`PUT /empresas/{cpf_cnpj}/certificado`, corpo JSON com base64 + senha).
  * Reutiliza o cliente OAuth do provider. Retorna se a operação teve sucesso.

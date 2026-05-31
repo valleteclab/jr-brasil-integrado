@@ -4,6 +4,7 @@ import type { TenantScope } from "@/lib/auth/dev-session";
 import { createAuditLog } from "@/lib/audit/audit-service";
 import { decryptSecret, encryptSecret, secretLastChars } from "@/lib/security/secret-crypto";
 import { resolveFiscalProvider } from "@/domains/fiscal/providers";
+import { updateAcbrNfceCsc } from "@/domains/fiscal/providers/acbr-provider";
 
 export type FiscalConfigSummary = {
   configured: boolean;
@@ -15,6 +16,9 @@ export type FiscalConfigSummary = {
   hasToken: boolean;
   cscId: string;
   hasCscToken: boolean;
+  /** CSC da NFC-e (ACBr): idCSC (curto) + indicador de que o código já foi salvo. */
+  nfceIdCsc: string;
+  hasNfceCsc: boolean;
   serieNfe: string;
   serieNfce: string;
   serieNfse: string;
@@ -39,6 +43,8 @@ export type SaveFiscalConfigInput = {
   token?: string;
   cscId?: string;
   cscToken?: string;
+  nfceIdCsc?: string;
+  nfceCsc?: string;
   serieNfe?: string;
   serieNfce?: string;
   serieNfse?: string;
@@ -61,6 +67,8 @@ function toSummary(config: {
   tokenCriptografado: string | null;
   cscId: string | null;
   cscTokenCriptografado: string | null;
+  nfceIdCsc: string | null;
+  nfceCscCriptografado: string | null;
   serieNfe: string;
   serieNfce: string;
   serieNfse: string;
@@ -86,6 +94,8 @@ function toSummary(config: {
     hasToken: Boolean(config?.tokenCriptografado),
     cscId: config?.cscId ?? "",
     hasCscToken: Boolean(config?.cscTokenCriptografado),
+    nfceIdCsc: config?.nfceIdCsc ?? "",
+    hasNfceCsc: Boolean(config?.nfceCscCriptografado),
     serieNfe: config?.serieNfe ?? "1",
     serieNfce: config?.serieNfce ?? "1",
     serieNfse: config?.serieNfse ?? "1",
@@ -141,6 +151,7 @@ export async function saveFiscalConfig(scope: TenantScope, input: SaveFiscalConf
 
   const tokenData = input.token?.trim() ? { tokenCriptografado: encryptSecret(input.token.trim()) } : {};
   const cscData = input.cscToken?.trim() ? { cscTokenCriptografado: encryptSecret(input.cscToken.trim()) } : {};
+  const nfceCscData = input.nfceCsc?.trim() ? { nfceCscCriptografado: encryptSecret(input.nfceCsc.trim()) } : {};
 
   const config = await prisma.configuracaoFiscal.upsert({
     where: { empresaId: scope.empresaId },
@@ -150,6 +161,7 @@ export async function saveFiscalConfig(scope: TenantScope, input: SaveFiscalConf
       regimeTributario: input.regime,
       baseUrl: input.baseUrl?.trim() || null,
       cscId: input.cscId?.trim() || null,
+      nfceIdCsc: input.nfceIdCsc?.trim() || null,
       serieNfe: input.serieNfe?.trim() || "1",
       serieNfce: input.serieNfce?.trim() || "1",
       serieNfse: input.serieNfse?.trim() || "1",
@@ -164,7 +176,8 @@ export async function saveFiscalConfig(scope: TenantScope, input: SaveFiscalConf
       observacoes: input.notes?.trim() || null,
       ultimoErro: null,
       ...tokenData,
-      ...cscData
+      ...cscData,
+      ...nfceCscData
     },
     create: {
       tenantId: scope.tenantId,
@@ -174,6 +187,7 @@ export async function saveFiscalConfig(scope: TenantScope, input: SaveFiscalConf
       regimeTributario: input.regime,
       baseUrl: input.baseUrl?.trim() || null,
       cscId: input.cscId?.trim() || null,
+      nfceIdCsc: input.nfceIdCsc?.trim() || null,
       serieNfe: input.serieNfe?.trim() || "1",
       serieNfce: input.serieNfce?.trim() || "1",
       serieNfse: input.serieNfse?.trim() || "1",
@@ -187,9 +201,37 @@ export async function saveFiscalConfig(scope: TenantScope, input: SaveFiscalConf
       ativo: input.active ?? false,
       observacoes: input.notes?.trim() || null,
       ...tokenData,
-      ...cscData
+      ...cscData,
+      ...nfceCscData
     }
   });
+
+  // ACBr: quando um novo CSC da NFC-e é informado, propaga ao cadastro da empresa na ACBr
+  // (config_nfce). Best-effort: a falha aqui não impede salvar a configuração local.
+  let cscWarning: string | null = null;
+  if (input.provider === "ACBR" && input.nfceCsc?.trim() && input.nfceIdCsc?.trim() && config.tokenCriptografado) {
+    const empresa = await prisma.empresa.findFirst({ where: { id: scope.empresaId, tenantId: scope.tenantId } });
+    if (empresa) {
+      try {
+        const result = await updateAcbrNfceCsc(
+          {
+            ambiente: config.ambiente,
+            provedor: "ACBR",
+            baseUrl: config.baseUrl,
+            token: decryptSecret(config.tokenCriptografado),
+            cscId: config.cscId,
+            cscToken: null
+          },
+          empresa.cnpj,
+          input.nfceIdCsc.trim(),
+          input.nfceCsc.trim()
+        );
+        if (!result.ok) cscWarning = result.message;
+      } catch (e) {
+        cscWarning = e instanceof Error ? e.message : "Não foi possível enviar o CSC à ACBr agora.";
+      }
+    }
+  }
 
   await prisma.$transaction(async (tx) => {
     await createAuditLog(tx, {
@@ -197,11 +239,13 @@ export async function saveFiscalConfig(scope: TenantScope, input: SaveFiscalConf
       entidade: "ConfiguracaoFiscal",
       entidadeId: config.id,
       acao: "SAVE",
-      payload: { provider: input.provider, environment: input.environment, active: config.ativo }
+      // Nunca registrar o CSC; só se foi configurado.
+      payload: { provider: input.provider, environment: input.environment, active: config.ativo, cscNfceAtualizado: Boolean(input.nfceCsc?.trim()) }
     });
   });
 
-  return toSummary(config);
+  const summary = toSummary(config);
+  return cscWarning ? { ...summary, lastError: cscWarning } : summary;
 }
 
 /** Carrega a configuração fiscal efetiva com o token descriptografado (uso interno na emissão). */
@@ -224,6 +268,8 @@ export async function getFiscalRuntimeConfig(scope: TenantScope) {
     token: config?.tokenCriptografado ? decryptSecret(config.tokenCriptografado) : null,
     cscId: config?.cscId ?? null,
     cscToken: config?.cscTokenCriptografado ? decryptSecret(config.cscTokenCriptografado) : null,
+    nfceIdCsc: config?.nfceIdCsc ?? null,
+    nfceCsc: config?.nfceCscCriptografado ? decryptSecret(config.nfceCscCriptografado) : null,
     serieNfe: config?.serieNfe ?? "1",
     serieNfce: config?.serieNfce ?? "1",
     serieNfse: config?.serieNfse ?? "1",

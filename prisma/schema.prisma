@@ -1447,6 +1447,8 @@ model ConfiguracaoFiscal {
   tokenCriptografado String?
   cscId              String?
   cscTokenCriptografado String?
+  nfceIdCsc          String?
+  nfceCscCriptografado String?
   serieNfe           String          @default("1")
   serieNfce          String          @default("1")
   serieNfse          String          @default("1")
