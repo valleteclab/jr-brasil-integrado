@@ -434,14 +434,6 @@ export function CustomersCrud({ initialCustomers, tabelasPreco }: CustomersCrudP
       return (
         <div className="erp-form">
           <label className="full">
-            Razão social
-            <input value={form.razaoSocial} onChange={(e) => updateField("razaoSocial", e.target.value)} />
-          </label>
-          <label className="full">
-            Nome fantasia
-            <input value={form.nomeFantasia} onChange={(e) => updateField("nomeFantasia", e.target.value)} />
-          </label>
-          <label className="full">
             CNPJ / CPF
             <span style={{ display: "flex", gap: 6 }}>
               <input value={form.documento} onChange={(e) => updateField("documento", e.target.value)} placeholder="Informe o CNPJ e clique em Buscar" style={{ flex: 1 }} />
@@ -449,6 +441,14 @@ export function CustomersCrud({ initialCustomers, tabelasPreco }: CustomersCrudP
                 {buscandoCnpj ? "Buscando…" : "Buscar CNPJ"}
               </button>
             </span>
+          </label>
+          <label className="full">
+            Razão social
+            <input value={form.razaoSocial} onChange={(e) => updateField("razaoSocial", e.target.value)} />
+          </label>
+          <label className="full">
+            Nome fantasia
+            <input value={form.nomeFantasia} onChange={(e) => updateField("nomeFantasia", e.target.value)} />
           </label>
           <label>
             Inscrição estadual
