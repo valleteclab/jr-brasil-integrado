@@ -172,7 +172,7 @@ export async function getDashboardData(): Promise<DashboardData> {
     pedidosRecentes = pedidos.map((p) => ({
       id: p.id,
       numero: p.numero,
-      cliente: p.cliente.nomeFantasia ?? p.cliente.razaoSocial,
+      cliente: p.cliente ? (p.cliente.nomeFantasia ?? p.cliente.razaoSocial) : "Consumidor não identificado",
       status: p.status,
       total: formatBrl(Number(p.total))
     }));

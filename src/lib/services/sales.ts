@@ -113,7 +113,7 @@ export async function listSales(): Promise<SaleSummary[]> {
       return {
         id: p.id,
         numero: p.numero,
-        clienteNome: p.cliente.nomeFantasia ?? p.cliente.razaoSocial,
+        clienteNome: p.cliente ? (p.cliente.nomeFantasia ?? p.cliente.razaoSocial) : "Consumidor não identificado",
         status: p.status,
         statusLabel: statusLabel(p.status),
         statusTone: statusTone(p.status),
@@ -165,9 +165,9 @@ export async function getSaleDetail(id: string): Promise<SaleDetail | null> {
     return {
       id: p.id,
       numero: p.numero,
-      clienteId: p.clienteId,
-      clienteNome: p.cliente.nomeFantasia ?? p.cliente.razaoSocial,
-      clienteDocumento: p.cliente.documento,
+      clienteId: p.clienteId ?? "",
+      clienteNome: p.cliente ? (p.cliente.nomeFantasia ?? p.cliente.razaoSocial) : "Consumidor não identificado",
+      clienteDocumento: p.cliente?.documento ?? "",
       status: p.status,
       statusLabel: statusLabel(p.status),
       statusTone: statusTone(p.status),
