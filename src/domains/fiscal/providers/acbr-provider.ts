@@ -157,6 +157,32 @@ function delay(ms: number): Promise<void> {
 }
 
 /**
+ * Monta o grupo PIS/COFINS do XML conforme o CST (a SEFAZ valida o par CST↔grupo):
+ *  - 01, 02 → PISAliq/COFINSAliq (tributação por alíquota: vBC/pPIS/vPIS)
+ *  - 04, 05, 06, 07, 08, 09 → PISNT/COFINSNT (não tributado: só CST)
+ *  - demais (ex.: 49, 99) → PISOutr/COFINSOutr (outras operações: vBC/alíquota/valor)
+ * Ex.: CST 49 com PISAliq é rejeitado; aqui ele cai corretamente em PISOutr.
+ */
+function pisCofinsGroup(
+  tipo: "PIS" | "COFINS",
+  cst: string,
+  base: number,
+  aliquota: number,
+  valor: number
+): Record<string, unknown> {
+  const c = (cst || "").padStart(2, "0");
+  const aliqKey = tipo === "PIS" ? "pPIS" : "pCOFINS";
+  const valKey = tipo === "PIS" ? "vPIS" : "vCOFINS";
+  if (c === "01" || c === "02") {
+    return { [`${tipo}Aliq`]: { CST: c, vBC: base, [aliqKey]: aliquota, [valKey]: valor } };
+  }
+  if (["04", "05", "06", "07", "08", "09"].includes(c)) {
+    return { [`${tipo}NT`]: { CST: c } };
+  }
+  return { [`${tipo}Outr`]: { CST: c, vBC: base, [aliqKey]: aliquota, [valKey]: valor } };
+}
+
+/**
  * Deriva o código de tributação nacional (cTribNac, 6 dígitos) a partir do item LC116.
  * Formato: item(2) + subitem(2) + desdobro(2). Ex.: "1.01" → "010101".
  * Best-effort — a lista nacional pode ter desdobros específicos; revisar por serviço.
@@ -409,13 +435,10 @@ export class AcbrFiscalProvider implements FiscalProvider {
               vBC: taxes?.baseIcms ?? base, pICMS: taxes?.aliquotaIcms ?? 0, vICMS: taxes?.valorIcms ?? 0
             }
           };
-      // PIS/COFINS: Simples normalmente não tributa (CST 49); Normal destaca alíquota.
-      const pis = simples
-        ? { PISNT: { CST: taxes?.cstPis ?? "49" } }
-        : { PISAliq: { CST: taxes?.cstPis ?? "01", vBC: base, pPIS: taxes?.aliquotaPis ?? 0, vPIS: taxes?.valorPis ?? 0 } };
-      const cofins = simples
-        ? { COFINSNT: { CST: taxes?.cstCofins ?? "49" } }
-        : { COFINSAliq: { CST: taxes?.cstCofins ?? "01", vBC: base, pCOFINS: taxes?.aliquotaCofins ?? 0, vCOFINS: taxes?.valorCofins ?? 0 } };
+      // PIS/COFINS: o grupo do XML depende do CST, não do regime. Simples normalmente
+      // não tributa (CST 49 → grupo "Outras Operações"); CST 01/02 → alíquota; 04-09 → NT.
+      const pis = pisCofinsGroup("PIS", simples ? taxes?.cstPis ?? "49" : taxes?.cstPis ?? "01", base, taxes?.aliquotaPis ?? 0, taxes?.valorPis ?? 0);
+      const cofins = pisCofinsGroup("COFINS", simples ? taxes?.cstCofins ?? "49" : taxes?.cstCofins ?? "01", base, taxes?.aliquotaCofins ?? 0, taxes?.valorCofins ?? 0);
 
       return {
         nItem: numeroItem,
