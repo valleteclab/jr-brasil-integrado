@@ -10,7 +10,7 @@ import {
   commitReservationsAsExit,
   applyStockMovement
 } from "@/domains/stock/application/stock-service";
-import { buildDocumentFromPedido } from "@/domains/fiscal/document-builder";
+import { buildDocumentFromPedido, type ClienteLike } from "@/domains/fiscal/document-builder";
 import { emitFiscalDocument } from "@/domains/fiscal/application/fiscal-emission-use-cases";
 
 const TX_OPTIONS = { maxWait: 15000, timeout: 30000 };
@@ -224,19 +224,28 @@ export async function invoiceSale(scope: TenantScope, id: string, options?: { mo
   if (pedido.status !== "AGUARDANDO_NOTA") {
     throw new Error("Somente pedidos AGUARDANDO_NOTA podem ser faturados. Confirme o pedido primeiro.");
   }
-  if (!pedido.cliente) {
-    throw new Error("Pedido sem cliente identificado. Use o caixa (NFC-e) para vendas a consumidor anônimo.");
+  const modelo = options?.modelo ?? "NFE";
+  // NFC-e (mod 65) admite consumidor anônimo; NF-e (mod 55) exige destinatário identificado.
+  if (!pedido.cliente && modelo !== "NFCE") {
+    throw new Error("Pedido sem cliente identificado. Para venda a consumidor anônimo, emita NFC-e.");
   }
+  const clienteDoc: ClienteLike = pedido.cliente ?? {
+    razaoSocial: "Consumidor final",
+    documento: null,
+    inscricaoEstadual: null,
+    enderecos: [],
+    contatos: []
+  };
 
   // Monta documento fiscal — fora de transação (emitFiscalDocument gerencia suas próprias)
   const doc = buildDocumentFromPedido({
-    cliente: pedido.cliente,
+    cliente: clienteDoc,
     formaPagamento: pedido.formaPagamento,
     condicaoPagamento: pedido.condicaoPagamento,
     observacoes: pedido.observacoes,
     frete: Number(pedido.frete),
     desconto: Number(pedido.desconto),
-    modelo: options?.modelo ?? "NFE",
+    modelo,
     itens: pedido.itens.map((item) => ({
       produto: {
         id: item.produto.id,

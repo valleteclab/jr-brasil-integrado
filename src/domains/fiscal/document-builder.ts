@@ -24,7 +24,7 @@ type ClienteEnderecoLike = {
   codigoMunicipioIbge?: string | null;
 };
 
-type ClienteLike = {
+export type ClienteLike = {
   razaoSocial: string;
   documento: string | null;
   inscricaoEstadual: string | null;
