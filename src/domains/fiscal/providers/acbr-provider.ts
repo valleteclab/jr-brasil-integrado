@@ -72,6 +72,17 @@ type AcbrDfeResponse = {
   error?: { code?: string; message?: string; errors?: Array<{ message?: string }> };
 };
 
+/** Resposta de evento (cancelamento / carta de correção): objeto de evento, não o DF-e. */
+type AcbrCancelResponse = {
+  id?: string;
+  status?: string;
+  codigo_status?: number;
+  motivo_status?: string;
+  numero_protocolo?: string;
+  numero_sequencial?: number;
+  error?: { code?: string; message?: string; errors?: Array<{ message?: string }> };
+};
+
 /** Resposta de NFS-e. */
 type AcbrNfseResponse = {
   id?: string;
