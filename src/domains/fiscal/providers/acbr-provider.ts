@@ -268,8 +268,11 @@ export class AcbrFiscalProvider implements FiscalProvider {
       } else if (response.status === 402) {
         errorMessage = "Créditos insuficientes ou cota excedida na ACBr (HTTP 402). Adquira nova franquia no console da ACBr.";
       } else {
-        const err = (data as { error?: { message?: string; errors?: Array<{ message?: string }> } } | undefined)?.error;
-        errorMessage = err?.message ?? err?.errors?.[0]?.message ?? `ACBr retornou HTTP ${response.status}.`;
+        const err = (data as { error?: { message?: string; errors?: Array<{ message?: string; field?: string }> } } | undefined)?.error;
+        const detalhe = err?.errors?.map((e) => (e.field ? `${e.field}: ${e.message}` : e.message)).filter(Boolean).join("; ");
+        errorMessage = detalhe
+          ? `${err?.message ?? "Falha de validação"}: ${detalhe}`
+          : err?.message ?? `ACBr retornou HTTP ${response.status}.`;
       }
     }
     return { ok: response.ok, status: response.status, data: data as T | undefined, errorMessage };
@@ -295,7 +298,8 @@ export class AcbrFiscalProvider implements FiscalProvider {
     const body = this.buildDfeBody(input, modelo);
     const posted = await this.request<AcbrDfeResponse>(ctx, "POST", `/${resource}`, body);
 
-    if (!posted.ok && posted.status !== 422) {
+    // Sem id no retorno = erro de validação/envelope (não há documento criado na ACBr).
+    if (!posted.ok && !posted.data?.id) {
       return { status: "ERRO", motivo: posted.errorMessage ?? "Falha ao emitir na ACBr." };
     }
     let result = this.toDfeResult(posted.data, ctx, resource);
@@ -321,10 +325,11 @@ export class AcbrFiscalProvider implements FiscalProvider {
   private toDfeResult(data: AcbrDfeResponse | undefined, ctx: ProviderContext, resource: string): EmitResult {
     const { baseUrl } = this.resolveConfig(ctx);
     const id = data?.id;
+    // Prefere os erros detalhados (error.errors[]) ao genérico "Validation failed".
+    const detalhe = data?.error?.errors?.map((e) => e.message).filter(Boolean).join("; ");
     const motivo =
       data?.autorizacao?.motivo_status ??
-      data?.error?.message ??
-      data?.error?.errors?.map((e) => e.message).filter(Boolean).join("; ") ??
+      (detalhe ? `${data?.error?.message ?? "Falha de validação"}: ${detalhe}` : data?.error?.message) ??
       undefined;
     return {
       status: mapDfeStatus(data?.status),
