@@ -702,20 +702,20 @@ export class AcbrFiscalProvider implements FiscalProvider {
 
     const protocolo = evento?.numero_protocolo || undefined;
     if (homologado(evento?.codigo_status)) {
-      return { status: "AUTORIZADO", protocolo, status_sefaz: evento?.codigo_status ?? null };
+      return { status: "AUTORIZADO", protocolo };
     }
 
     // Fallback: confirma pelo próprio documento (status do DF-e vira "cancelado" quando homologa).
     const dfe = await this.request<AcbrDfeResponse>(ctx, "GET", `/${resource}/${ref}`);
     if (dfe.ok && mapDfeStatus(dfe.data?.status) === "CANCELADA") {
-      return { status: "AUTORIZADO", protocolo, status_sefaz: evento?.codigo_status ?? null };
+      return { status: "AUTORIZADO", protocolo };
     }
 
     // Sem confirmação da SEFAZ: NÃO marca como cancelada (evita divergência com o portal).
     const motivo = evento?.motivo_status
       ? `Cancelamento não confirmado pela SEFAZ (código ${evento?.codigo_status ?? "?"}): ${evento.motivo_status}`
       : `Cancelamento ainda não homologado pela SEFAZ (situação "${evento?.status ?? "pendente"}"). Tente "Atualizar status" em instantes.`;
-    return { status: "REJEITADO", motivo, status_sefaz: evento?.codigo_status ?? null };
+    return { status: "REJEITADO", motivo };
   }
 
   async correct(input: CorrectionInput, ctx: ProviderContext): Promise<CorrectionResult> {
