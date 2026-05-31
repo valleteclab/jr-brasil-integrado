@@ -230,24 +230,28 @@ export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormDat
   const total = Math.max(subtotal - (Number(descontoGlobal) || 0) + (isProduto ? Number(frete) || 0 : 0), 0);
 
   // ---- Itens ----
+  // Adiciona/incrementa um produto do catálogo SEM fechar o seletor (adição múltipla).
   function addProduto(p: Produto) {
-    setItens((cur) => [
-      ...cur,
-      {
-        uid: uid(),
-        produtoId: p.id,
-        codigo: p.sku,
-        descricao: p.nome,
-        ncm: p.ncm ?? "",
-        cfop: p.cfop ?? "",
-        origem: p.origem ?? "0",
-        unidade: p.unidade,
-        quantidade: 1,
-        precoUnitario: p.preco,
-        desconto: 0
-      }
-    ]);
-    setShowProd(false);
+    setItens((cur) => {
+      const ex = cur.find((it) => it.produtoId === p.id);
+      if (ex) return cur.map((it) => (it.produtoId === p.id ? { ...it, quantidade: it.quantidade + 1 } : it));
+      return [
+        ...cur,
+        {
+          uid: uid(),
+          produtoId: p.id,
+          codigo: p.sku,
+          descricao: p.nome,
+          ncm: p.ncm ?? "",
+          cfop: p.cfop ?? "",
+          origem: p.origem ?? "0",
+          unidade: p.unidade,
+          quantidade: 1,
+          precoUnitario: p.preco,
+          desconto: 0
+        }
+      ];
+    });
   }
 
   function addItemAvulso() {
@@ -894,12 +898,14 @@ export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormDat
         </aside>
       </div>
 
-      {/* PRODUTO PICKER */}
+      {/* PRODUTO PICKER — adiciona vários sem fechar */}
       {showProd && (
         <ProductPicker
           produtos={data.produtos}
+          itens={itens}
+          onAdd={addProduto}
+          onRemoveProduto={(produtoId) => setItens((cur) => cur.filter((it) => it.produtoId !== produtoId))}
           onClose={() => setShowProd(false)}
-          onPick={addProduto}
         />
       )}
 
@@ -977,37 +983,51 @@ export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormDat
   );
 }
 
-function ProductPicker({ produtos, onClose, onPick }: { produtos: Produto[]; onClose: () => void; onPick: (p: Produto) => void }) {
+// Seletor de produtos com adição múltipla: cada clique adiciona/incrementa o item e mostra a
+// quantidade no carrinho, sem fechar o drawer. "Concluir (N)" volta para a emissão.
+function ProductPicker({ produtos, itens, onAdd, onRemoveProduto, onClose }: {
+  produtos: Produto[]; itens: ItemLinha[]; onAdd: (p: Produto) => void; onRemoveProduto: (produtoId: string) => void; onClose: () => void;
+}) {
   const [q, setQ] = useState("");
+  const qtyById = new Map(itens.filter((it) => it.produtoId).map((it) => [it.produtoId as string, it.quantidade]));
+  const totalCatalogo = itens.filter((it) => it.produtoId).reduce((s, it) => s + it.quantidade, 0);
   const list = produtos
     .filter((p) => !q || p.sku.toLowerCase().includes(q.toLowerCase()) || p.nome.toLowerCase().includes(q.toLowerCase()))
-    .slice(0, 40);
+    .slice(0, 50);
   return (
     <>
       <div className="drawer-bd" onClick={onClose} role="presentation" />
-      <aside className="drawer" style={{ width: 680 }} role="dialog" aria-modal="true" aria-label="Buscar produto">
+      <aside className="drawer" style={{ width: 720 }} role="dialog" aria-modal="true" aria-label="Adicionar produtos">
         <header className="drawer-head">
-          <h2>Buscar produto</h2>
-          <button type="button" className="btn-erp ghost xs" onClick={onClose}>Fechar</button>
+          <h2>Adicionar produtos</h2>
+          <button type="button" className="btn-erp primary sm" onClick={onClose}>Concluir ({totalCatalogo})</button>
         </header>
         <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--erp-line)" }}>
-          <input autoFocus placeholder="Buscar por SKU ou nome…" value={q} onChange={(e) => setQ(e.target.value)} style={{ width: "100%", height: 38, padding: "0 12px", border: "1px solid var(--erp-line)", borderRadius: 6, fontSize: 13 }} aria-label="Buscar produto" />
+          <input autoFocus placeholder="Busque por SKU ou nome e clique para adicionar (pode adicionar vários)…" value={q} onChange={(e) => setQ(e.target.value)} style={{ width: "100%", height: 38, padding: "0 12px", border: "1px solid var(--erp-line)", borderRadius: 6, fontSize: 13 }} aria-label="Buscar produto" />
         </div>
         <div className="drawer-body">
           <table className="erp-table">
             <thead>
-              <tr><th>SKU</th><th>Produto</th><th>NCM</th><th className="num">Estoque</th><th className="num">Preço</th></tr>
+              <tr><th>SKU</th><th>Produto</th><th>NCM</th><th className="num">Estoque</th><th className="num">Preço</th><th className="num">No carrinho</th><th className="actions" /></tr>
             </thead>
             <tbody>
-              {list.map((p) => (
-                <tr key={p.id} onClick={() => onPick(p)} style={{ cursor: "pointer" }}>
-                  <td className="mono bold">{p.sku}</td>
-                  <td><div style={{ fontWeight: 600 }}>{p.nome}</div></td>
-                  <td className="mono">{p.ncm || "—"}</td>
-                  <td className="num bold" style={{ color: p.disponivel <= 0 ? "var(--erp-danger)" : p.disponivel <= 5 ? "var(--erp-warn)" : "var(--erp-success)" }}>{p.disponivel}</td>
-                  <td className="num bold">{new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(p.preco)}</td>
-                </tr>
-              ))}
+              {list.map((p) => {
+                const qty = qtyById.get(p.id) ?? 0;
+                return (
+                  <tr key={p.id} onClick={() => onAdd(p)} style={{ cursor: "pointer", background: qty > 0 ? "rgba(255,193,7,.06)" : undefined }}>
+                    <td className="mono bold">{p.sku}</td>
+                    <td><div style={{ fontWeight: 600 }}>{p.nome}</div></td>
+                    <td className="mono">{p.ncm || "—"}</td>
+                    <td className="num bold" style={{ color: p.disponivel <= 0 ? "var(--erp-danger)" : p.disponivel <= 5 ? "var(--erp-warn)" : "var(--erp-success)" }}>{p.disponivel}</td>
+                    <td className="num bold">{new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(p.preco)}</td>
+                    <td className="num bold">{qty > 0 ? `${qty}×` : "—"}</td>
+                    <td className="actions" onClick={(e) => e.stopPropagation()}>
+                      {qty > 0 && <button type="button" className="btn-erp ghost xs icon-only" aria-label="Remover" onClick={() => onRemoveProduto(p.id)}>✕</button>}
+                      <button type="button" className="btn-erp primary xs" onClick={() => onAdd(p)}>+ Add</button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
           {!list.length && <div className="empty-st"><h4>Nenhum resultado</h4><p>Tente outro termo de busca.</p></div>}
