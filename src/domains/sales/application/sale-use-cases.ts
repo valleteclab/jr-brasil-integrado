@@ -298,6 +298,74 @@ export async function invoiceSale(scope: TenantScope, id: string, options?: { mo
   return nota;
 }
 
+export type CheckoutResult = {
+  pedidoId: string;
+  pedidoNumero: string;
+  pedidoStatus: string;
+  nota: {
+    id: string;
+    status: string;
+    numero: string | null;
+    chaveAcesso: string | null;
+    motivo: string | null;
+  } | null;
+  /** Mensagem quando a emissão falhou — a venda continua registrada/confirmada. */
+  emitErro: string | null;
+};
+
+/**
+ * Checkout de balcão em um clique: cria o pedido, confirma (baixa estoque + conta a receber)
+ * e emite a nota fiscal (NFC-e/NF-e). Se a emissão falhar (rejeição/erro), a venda permanece
+ * confirmada (AGUARDANDO_NOTA) com a nota rejeitada registrada — o usuário reemite em Vendas
+ * sem refazer a venda.
+ */
+export async function checkoutSale(
+  scope: TenantScope,
+  input: CreateSaleInput,
+  options: { modelo: "NFE" | "NFCE" }
+): Promise<CheckoutResult> {
+  const pedido = await createSale(scope, input);
+  await confirmSale(scope, pedido.id);
+
+  try {
+    const nota = await invoiceSale(scope, pedido.id, { modelo: options.modelo });
+    return {
+      pedidoId: pedido.id,
+      pedidoNumero: pedido.numero,
+      pedidoStatus: "ENVIADO",
+      nota: {
+        id: nota.id,
+        status: nota.status,
+        numero: nota.numero ?? null,
+        chaveAcesso: nota.chaveAcesso ?? null,
+        motivo: nota.motivo ?? null
+      },
+      emitErro: null
+    };
+  } catch (error) {
+    // A venda já está confirmada; a nota rejeitada (se houver) ficou registrada e vinculada.
+    const notaRejeitada = await prisma.notaFiscal.findFirst({
+      where: { pedidoVendaId: pedido.id, ...scopedByTenantCompany(scope) },
+      orderBy: { criadoEm: "desc" }
+    });
+    return {
+      pedidoId: pedido.id,
+      pedidoNumero: pedido.numero,
+      pedidoStatus: "AGUARDANDO_NOTA",
+      nota: notaRejeitada
+        ? {
+            id: notaRejeitada.id,
+            status: notaRejeitada.status,
+            numero: notaRejeitada.numero ?? null,
+            chaveAcesso: notaRejeitada.chaveAcesso ?? null,
+            motivo: notaRejeitada.motivo ?? null
+          }
+        : null,
+      emitErro: error instanceof Error ? error.message : "Não foi possível emitir a nota fiscal."
+    };
+  }
+}
+
 export async function cancelSale(scope: TenantScope, id: string) {
   const pedido = await prisma.pedidoVenda.findFirst({
     where: { id, ...scopedByTenantCompany(scope) },
