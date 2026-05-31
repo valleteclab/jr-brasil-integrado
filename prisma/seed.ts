@@ -24,7 +24,7 @@ async function main() {
     enderecoCidade: "Luís Eduardo Magalhães",
     enderecoUf: "BA",
     enderecoCep: "47850-000",
-    codigoMunicipioIbge: "2919926",
+    codigoMunicipioIbge: "2919553",
     telefone: "(77) 3628-0000",
     email: "fiscal@jrbrasilpecas.com.br"
   };
@@ -54,7 +54,7 @@ async function main() {
       emitirNfe: true,
       emitirNfce: true,
       emitirNfse: true,
-      codigoMunicipioIbge: "2919926",
+      codigoMunicipioIbge: "2919553",
       ativo: true
     }
   });
