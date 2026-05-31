@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { SaleFormData } from "@/lib/services/sales";
+import { useCadastroLookup } from "./useCadastroLookup";
 
 type Tipo = "VENDA_BALCAO" | "PEDIDO_FATURADO" | "ORCAMENTO" | "OS";
 type Produto = SaleFormData["produtos"][number];
@@ -42,6 +43,7 @@ const brl = (v: number) => new Intl.NumberFormat("pt-BR", { style: "currency", c
 export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO" }: { data: SaleFormData; defaultTipo?: Tipo }) {
   const router = useRouter();
   const [tipo, setTipo] = useState<Tipo>(defaultTipo);
+  const [clientes, setClientes] = useState<Cliente[]>(data.clientes);
   const [cliente, setCliente] = useState<Cliente | null>(null);
   const [items, setItems] = useState<ItemLinha[]>([]);
   const [servicos, setServicos] = useState<Servico[]>([]);
@@ -55,6 +57,7 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO" }: { d
   const [condicao, setCondicao] = useState("");
   const [validadeDias, setValidadeDias] = useState(7);
   const [showCli, setShowCli] = useState(false);
+  const [showNovoCli, setShowNovoCli] = useState(false);
   const [showProd, setShowProd] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -73,17 +76,25 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO" }: { d
   const descontoVal = subtotal * (descGlobal / 100);
   const total = Math.max(subtotal - descontoVal + (isVendaPedido ? Number(frete) || 0 : 0), 0);
 
+  // Adiciona/incrementa um produto SEM fechar o seletor — permite adicionar vários itens seguidos.
   function addItem(p: Produto) {
     setItems((cur) => {
       const ex = cur.find((it) => it.produto.id === p.id);
       if (ex) return cur.map((it) => (it.produto.id === p.id ? { ...it, quantidade: it.quantidade + 1 } : it));
       return [...cur, { produto: p, quantidade: 1, preco: p.preco, desconto: 0 }];
     });
-    setShowProd(false);
   }
   const updItem = (id: string, patch: Partial<ItemLinha>) =>
     setItems((cur) => cur.map((it) => (it.produto.id === id ? { ...it, ...patch } : it)));
   const rmItem = (id: string) => setItems((cur) => cur.filter((it) => it.produto.id !== id));
+
+  // Cliente recém-cadastrado pelo drawer: entra na lista local e já fica selecionado.
+  function onClienteCriado(novo: Cliente) {
+    setClientes((cur) => [novo, ...cur.filter((c) => c.id !== novo.id)]);
+    setCliente(novo);
+    setShowNovoCli(false);
+    setShowCli(false);
+  }
 
   const addServico = () => setServicos((cur) => [...cur, { descricao: "", horas: 1, valorHora: 180 }]);
   const updServ = (i: number, patch: Partial<Servico>) =>
@@ -448,7 +459,10 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO" }: { d
       {/* CLIENTE PICKER */}
       {showCli && (
         <PickerDrawer title="Selecionar cliente" placeholder="Buscar por nome ou documento…" onClose={() => setShowCli(false)}
-          rows={data.clientes} filter={(c, q) => c.label.toLowerCase().includes(q) || (c.documento ?? "").toLowerCase().includes(q)}
+          rows={clientes} filter={(c, q) => c.label.toLowerCase().includes(q) || (c.documento ?? "").toLowerCase().includes(q)}
+          headerActions={
+            <button type="button" className="btn-erp primary sm" onClick={() => { setShowCli(false); setShowNovoCli(true); }}>+ Novo cliente</button>
+          }
           render={(c) => (
             <tr key={c.id} onClick={() => { setCliente(c); setShowCli(false); }}>
               <td><div style={{ fontWeight: 600 }}>{c.label}</div></td>
@@ -458,19 +472,20 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO" }: { d
           headers={["Cliente", "Documento"]} />
       )}
 
-      {/* PRODUTO PICKER */}
+      {/* NOVO CLIENTE (PJ/PF com busca por CNPJ/CEP) */}
+      {showNovoCli && (
+        <NovoClienteDrawer onClose={() => setShowNovoCli(false)} onCreated={onClienteCriado} />
+      )}
+
+      {/* PRODUTO PICKER — adiciona vários sem fechar */}
       {showProd && (
-        <PickerDrawer title="Buscar produto" placeholder="Ex.: AXE72011, cardan, John Deere…" onClose={() => setShowProd(false)}
-          rows={data.produtos} filter={(p, q) => p.sku.toLowerCase().includes(q) || p.nome.toLowerCase().includes(q)}
-          render={(p) => (
-            <tr key={p.id} onClick={() => addItem(p)}>
-              <td className="mono bold">{p.sku}</td>
-              <td><div style={{ fontWeight: 600 }}>{p.nome}</div></td>
-              <td className="num bold" style={{ color: p.disponivel <= 0 ? "var(--erp-danger)" : p.disponivel <= 5 ? "var(--erp-warn)" : "var(--erp-success)" }}>{p.disponivel}</td>
-              <td className="num bold">{brl(p.preco)}</td>
-            </tr>
-          )}
-          headers={["SKU", "Produto", "Estoque", "Preço"]} />
+        <ProdutoPickerMulti
+          produtos={data.produtos}
+          items={items}
+          onAdd={addItem}
+          onRemove={rmItem}
+          onClose={() => setShowProd(false)}
+        />
       )}
 
       {/* SUCCESS */}
@@ -536,9 +551,10 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO" }: { d
 const cellInput: React.CSSProperties = { width: "100%", height: 28, border: "1px solid var(--erp-line)", borderRadius: 4, padding: "0 8px", fontSize: 12.5 };
 const cellNum: React.CSSProperties = { width: 70, height: 28, border: "1px solid var(--erp-line)", borderRadius: 4, padding: "0 6px", fontSize: 12.5, textAlign: "right" };
 
-function PickerDrawer<T>({ title, placeholder, headers, rows, filter, render, onClose }: {
+function PickerDrawer<T>({ title, placeholder, headers, rows, filter, render, onClose, headerActions }: {
   title: string; placeholder: string; headers: string[]; rows: T[];
   filter: (row: T, q: string) => boolean; render: (row: T) => React.ReactNode; onClose: () => void;
+  headerActions?: React.ReactNode;
 }) {
   const [q, setQ] = useState("");
   const list = rows.filter((r) => !q || filter(r, q.toLowerCase())).slice(0, 30);
@@ -546,7 +562,13 @@ function PickerDrawer<T>({ title, placeholder, headers, rows, filter, render, on
     <>
       <div className="drawer-bd" onClick={onClose} />
       <aside className="drawer" style={{ width: 640 }}>
-        <header className="drawer-head"><h2>{title}</h2><button type="button" className="btn-erp ghost xs" onClick={onClose}>Fechar</button></header>
+        <header className="drawer-head">
+          <h2>{title}</h2>
+          <div style={{ display: "flex", gap: 8 }}>
+            {headerActions}
+            <button type="button" className="btn-erp ghost xs" onClick={onClose}>Fechar</button>
+          </div>
+        </header>
         <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--erp-line)" }}>
           <input autoFocus placeholder={placeholder} value={q} onChange={(e) => setQ(e.target.value)} style={{ width: "100%", height: 38, padding: "0 12px", border: "1px solid var(--erp-line)", borderRadius: 6, fontSize: 13 }} />
         </div>
@@ -557,6 +579,193 @@ function PickerDrawer<T>({ title, placeholder, headers, rows, filter, render, on
           </table>
           {!list.length && <div className="empty-st"><h4>Nenhum resultado</h4><p>Tente outro termo.</p></div>}
         </div>
+      </aside>
+    </>
+  );
+}
+
+// Seletor de produtos com adição múltipla: a cada clique adiciona/incrementa o item e mostra
+// a quantidade já no carrinho, sem fechar o drawer. Botão "Concluir" volta para a venda.
+function ProdutoPickerMulti({ produtos, items, onAdd, onRemove, onClose }: {
+  produtos: Produto[]; items: ItemLinha[]; onAdd: (p: Produto) => void; onRemove: (id: string) => void; onClose: () => void;
+}) {
+  const [q, setQ] = useState("");
+  const qtyById = new Map(items.map((it) => [it.produto.id, it.quantidade]));
+  const list = produtos
+    .filter((p) => !q || p.sku.toLowerCase().includes(q.toLowerCase()) || p.nome.toLowerCase().includes(q.toLowerCase()))
+    .slice(0, 50);
+  const totalItens = items.reduce((s, it) => s + it.quantidade, 0);
+  return (
+    <>
+      <div className="drawer-bd" onClick={onClose} />
+      <aside className="drawer" style={{ width: 680 }}>
+        <header className="drawer-head">
+          <h2>Adicionar produtos</h2>
+          <button type="button" className="btn-erp primary sm" onClick={onClose}>Concluir ({totalItens})</button>
+        </header>
+        <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--erp-line)" }}>
+          <input autoFocus placeholder="Busque por código ou nome e clique para adicionar (pode adicionar vários)…" value={q} onChange={(e) => setQ(e.target.value)} style={{ width: "100%", height: 38, padding: "0 12px", border: "1px solid var(--erp-line)", borderRadius: 6, fontSize: 13 }} />
+        </div>
+        <div className="drawer-body">
+          <table className="erp-table">
+            <thead><tr><th>SKU</th><th>Produto</th><th className="num">Estoque</th><th className="num">Preço</th><th className="num">No carrinho</th><th className="actions" /></tr></thead>
+            <tbody>
+              {list.map((p) => {
+                const qty = qtyById.get(p.id) ?? 0;
+                return (
+                  <tr key={p.id} style={{ cursor: "pointer", background: qty > 0 ? "rgba(255,193,7,.06)" : undefined }} onClick={() => onAdd(p)}>
+                    <td className="mono bold">{p.sku}</td>
+                    <td><div style={{ fontWeight: 600 }}>{p.nome}</div></td>
+                    <td className="num bold" style={{ color: p.disponivel <= 0 ? "var(--erp-danger)" : p.disponivel <= 5 ? "var(--erp-warn)" : "var(--erp-success)" }}>{p.disponivel}</td>
+                    <td className="num bold">{brl(p.preco)}</td>
+                    <td className="num bold">{qty > 0 ? `${qty}×` : "—"}</td>
+                    <td className="actions" onClick={(e) => e.stopPropagation()}>
+                      {qty > 0 && <button type="button" className="btn-erp ghost xs icon-only" aria-label="Remover" onClick={() => onRemove(p.id)}>✕</button>}
+                      <button type="button" className="btn-erp primary xs" onClick={() => onAdd(p)}>+ Add</button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          {!list.length && <div className="empty-st"><h4>Nenhum resultado</h4><p>Tente outro termo.</p></div>}
+        </div>
+      </aside>
+    </>
+  );
+}
+
+type NovoClienteTipo = "PJ" | "PF";
+
+// Drawer de cadastro rápido de cliente (PJ/PF) com autopreenchimento por CNPJ (Receita) e CEP.
+function NovoClienteDrawer({ onClose, onCreated }: { onClose: () => void; onCreated: (c: Cliente) => void }) {
+  const { buscarCnpj, buscarCep, buscandoCnpj, buscandoCep, erro: lookupErro } = useCadastroLookup();
+  const [tipoPessoa, setTipoPessoa] = useState<NovoClienteTipo>("PJ");
+  const [documento, setDocumento] = useState("");
+  const [razaoSocial, setRazaoSocial] = useState("");
+  const [nomeFantasia, setNomeFantasia] = useState("");
+  const [email, setEmail] = useState("");
+  const [telefone, setTelefone] = useState("");
+  const [cep, setCep] = useState("");
+  const [logradouro, setLogradouro] = useState("");
+  const [numero, setNumero] = useState("");
+  const [bairro, setBairro] = useState("");
+  const [cidade, setCidade] = useState("");
+  const [uf, setUf] = useState("");
+  const [ibge, setIbge] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function preencherPorCnpj() {
+    const d = await buscarCnpj(documento);
+    if (!d) return;
+    if (d.razaoSocial) setRazaoSocial(d.razaoSocial);
+    if (d.nomeFantasia) setNomeFantasia(d.nomeFantasia);
+    if (d.email) setEmail(d.email);
+    if (d.telefone) setTelefone(d.telefone);
+    if (d.endereco.cep) setCep(d.endereco.cep);
+    if (d.endereco.logradouro) setLogradouro(d.endereco.logradouro);
+    if (d.endereco.numero) setNumero(d.endereco.numero);
+    if (d.endereco.bairro) setBairro(d.endereco.bairro);
+    if (d.endereco.cidade) setCidade(d.endereco.cidade);
+    if (d.endereco.uf) setUf(d.endereco.uf);
+    if (d.endereco.codigoMunicipioIbge) setIbge(d.endereco.codigoMunicipioIbge);
+  }
+
+  async function preencherPorCep() {
+    const d = await buscarCep(cep);
+    if (!d) return;
+    if (d.logradouro) setLogradouro(d.logradouro);
+    if (d.bairro) setBairro(d.bairro);
+    if (d.cidade) setCidade(d.cidade);
+    if (d.uf) setUf(d.uf);
+    if (d.codigoMunicipioIbge) setIbge(d.codigoMunicipioIbge);
+  }
+
+  async function salvar() {
+    setError("");
+    if (!razaoSocial.trim()) { setError(tipoPessoa === "PJ" ? "Informe a razão social." : "Informe o nome."); return; }
+    if (!documento.trim()) { setError(tipoPessoa === "PJ" ? "Informe o CNPJ." : "Informe o CPF."); return; }
+    setSaving(true);
+    try {
+      const enderecoValido = cidade.trim() && uf.trim();
+      const payload = {
+        razaoSocial: razaoSocial.trim(),
+        nomeFantasia: nomeFantasia.trim() || null,
+        documento: documento.trim(),
+        status: "ATIVO",
+        contatos: (email.trim() || telefone.trim())
+          ? [{ nome: nomeFantasia.trim() || razaoSocial.trim(), email: email.trim() || null, telefone: telefone.trim() || null, principal: true }]
+          : [],
+        enderecos: enderecoValido
+          ? [{
+              apelido: "Principal", cep: cep.trim(), logradouro: logradouro.trim(), numero: numero.trim() || null,
+              bairro: bairro.trim() || null, cidade: cidade.trim(), uf: uf.trim().toUpperCase(),
+              codigoMunicipioIbge: ibge.trim() || null, padrao: true
+            }]
+          : []
+      };
+      const res = await fetch("/api/erp/clientes", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
+      });
+      const data = await res.json() as { id?: string; error?: string };
+      if (!res.ok) throw new Error(data.error || "Não foi possível cadastrar o cliente.");
+      const label = nomeFantasia.trim() ? `${nomeFantasia.trim()} (${razaoSocial.trim()})` : razaoSocial.trim();
+      onCreated({ id: data.id ?? `tmp-${Date.now()}`, label, documento: documento.replace(/\D/g, "") });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Não foi possível cadastrar o cliente.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const isPj = tipoPessoa === "PJ";
+  return (
+    <>
+      <div className="drawer-bd" onClick={onClose} />
+      <aside className="drawer" style={{ width: 560 }}>
+        <header className="drawer-head"><h2>Novo cliente</h2><button type="button" className="btn-erp ghost xs" onClick={onClose}>Fechar</button></header>
+        <div className="drawer-body">
+          <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+            <button type="button" className={`btn-erp ${isPj ? "primary" : "ghost"} sm`} style={{ flex: 1 }} onClick={() => setTipoPessoa("PJ")}>Pessoa Jurídica</button>
+            <button type="button" className={`btn-erp ${!isPj ? "primary" : "ghost"} sm`} style={{ flex: 1 }} onClick={() => setTipoPessoa("PF")}>Pessoa Física</button>
+          </div>
+          <div className="erp-form">
+            <label className="full">
+              {isPj ? "CNPJ" : "CPF"}
+              <span style={{ display: "flex", gap: 6 }}>
+                <input value={documento} onChange={(e) => setDocumento(e.target.value)} placeholder={isPj ? "Somente números" : "Somente números"} style={{ flex: 1 }} />
+                {isPj && (
+                  <button type="button" className="btn-erp light sm" onClick={preencherPorCnpj} disabled={buscandoCnpj} style={{ flexShrink: 0, whiteSpace: "nowrap" }}>
+                    {buscandoCnpj ? "Buscando…" : "Buscar CNPJ"}
+                  </button>
+                )}
+              </span>
+            </label>
+            <label className="full">{isPj ? "Razão social" : "Nome completo"}<input value={razaoSocial} onChange={(e) => setRazaoSocial(e.target.value)} /></label>
+            {isPj && <label className="full">Nome fantasia<input value={nomeFantasia} onChange={(e) => setNomeFantasia(e.target.value)} /></label>}
+            <label>E-mail<input type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></label>
+            <label>Telefone<input value={telefone} onChange={(e) => setTelefone(e.target.value)} /></label>
+            <label>
+              CEP
+              <span style={{ display: "flex", gap: 6 }}>
+                <input value={cep} onChange={(e) => setCep(e.target.value)} onBlur={preencherPorCep} style={{ flex: 1 }} />
+                <button type="button" className="btn-erp light sm" onClick={preencherPorCep} disabled={buscandoCep} style={{ flexShrink: 0 }}>{buscandoCep ? "…" : "Buscar"}</button>
+              </span>
+            </label>
+            <label>Número<input value={numero} onChange={(e) => setNumero(e.target.value)} /></label>
+            <label className="full">Logradouro<input value={logradouro} onChange={(e) => setLogradouro(e.target.value)} /></label>
+            <label>Bairro<input value={bairro} onChange={(e) => setBairro(e.target.value)} /></label>
+            <label>Cidade<input value={cidade} onChange={(e) => setCidade(e.target.value)} /></label>
+            <label>UF<input value={uf} maxLength={2} onChange={(e) => setUf(e.target.value.toUpperCase())} /></label>
+          </div>
+          {error && <div className="alert danger" style={{ marginTop: 12 }}><span>{error}</span></div>}
+          {lookupErro && <div className="alert danger" style={{ marginTop: 12 }}><span>{lookupErro}</span></div>}
+        </div>
+        <footer className="drawer-foot" style={{ display: "flex", gap: 8, justifyContent: "flex-end", padding: "14px 20px", borderTop: "1px solid var(--erp-line)" }}>
+          <button type="button" className="btn-erp ghost sm" onClick={onClose}>Cancelar</button>
+          <button type="button" className="btn-erp primary sm" disabled={saving} onClick={salvar}>{saving ? "Salvando…" : "Cadastrar e selecionar"}</button>
+        </footer>
       </aside>
     </>
   );
