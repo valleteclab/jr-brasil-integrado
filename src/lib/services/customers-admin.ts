@@ -44,6 +44,7 @@ export type CustomerDetail = CustomerDetailedSummary & {
     bairro: string | null;
     cidade: string;
     uf: string;
+    codigoMunicipioIbge: string | null;
     padrao: boolean;
   }[];
 };
@@ -183,6 +184,7 @@ export async function getCustomerDetail(id: string): Promise<CustomerDetail | nu
         bairro: e.bairro,
         cidade: e.cidade,
         uf: e.uf,
+        codigoMunicipioIbge: e.codigoMunicipioIbge,
         padrao: e.padrao
       }))
     };

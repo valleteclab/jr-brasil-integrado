@@ -21,6 +21,57 @@ function round2(value: number) {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
+function onlyDigits(value: string | null | undefined): string {
+  return (value ?? "").replace(/\D/g, "");
+}
+
+function isIbgeMunicipio(value: string | null | undefined): boolean {
+  return /^\d{7}$/.test(onlyDigits(value));
+}
+
+function isValidCnpj(value: string | null | undefined): boolean {
+  const cnpj = onlyDigits(value);
+  if (cnpj.length !== 14 || /^(\d)\1{13}$/.test(cnpj)) return false;
+
+  const calc = (base: string, weights: number[]) => {
+    const sum = weights.reduce((acc, weight, index) => acc + Number(base[index]) * weight, 0);
+    const mod = sum % 11;
+    return mod < 2 ? 0 : 11 - mod;
+  };
+
+  const d1 = calc(cnpj.slice(0, 12), [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]);
+  const d2 = calc(cnpj.slice(0, 13), [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]);
+  return d1 === Number(cnpj[12]) && d2 === Number(cnpj[13]);
+}
+
+function validateBeforeProvider(
+  config: Awaited<ReturnType<typeof getFiscalRuntimeConfig>>,
+  document: NormalizedFiscalDocument
+) {
+  if (document.modelo !== "NFE" && document.modelo !== "NFCE") return;
+
+  const issues: string[] = [];
+  if (!isValidCnpj(config.emitter.cnpj)) {
+    issues.push("CNPJ do emitente inválido. Atualize a empresa no onboarding fiscal com um CNPJ real do certificado.");
+  }
+  if (!isIbgeMunicipio(config.emitter.codigoMunicipioIbge)) {
+    issues.push("Código IBGE do município do emitente ausente ou inválido (7 dígitos). Preencha em Configurações > Emissão fiscal ou no onboarding fiscal.");
+  }
+
+  const endereco = document.destinatario.endereco;
+  if (document.modelo === "NFE") {
+    if (!endereco) {
+      issues.push("Endereço do destinatário é obrigatório para NF-e.");
+    } else if (!isIbgeMunicipio(endereco.codigoMunicipioIbge)) {
+      issues.push("Código IBGE do município do destinatário ausente ou inválido (7 dígitos). Atualize o endereço do cliente ou use a busca por CEP/CNPJ.");
+    }
+  }
+
+  if (issues.length) {
+    throw new Error(`Não foi possível emitir a nota fiscal: ${issues.join(" ")}`);
+  }
+}
+
 export type FiscalDocumentLinks = {
   clienteId?: string | null;
   pedidoVendaId?: string | null;
@@ -45,6 +96,7 @@ export async function emitFiscalDocument(
   }
 
   const config = await getFiscalRuntimeConfig(scope);
+  validateBeforeProvider(config, document);
   const modelo: ModeloFiscal = document.modelo;
   const serie =
     document.serie ||

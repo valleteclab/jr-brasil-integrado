@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { CustomerDetailedSummary, TabelaPrecoOption } from "@/lib/services/customers-admin";
+import type { CustomerDetail, CustomerDetailedSummary, TabelaPrecoOption } from "@/lib/services/customers-admin";
 import { useCadastroLookup } from "./useCadastroLookup";
 
 // ---------------------------------------------------------------------------
@@ -28,6 +28,7 @@ type EnderecoForm = {
   bairro: string;
   cidade: string;
   uf: string;
+  codigoMunicipioIbge: string;
   padrao: boolean;
 };
 
@@ -75,6 +76,7 @@ const emptyEndereco = (): EnderecoForm => ({
   bairro: "",
   cidade: "",
   uf: "",
+  codigoMunicipioIbge: "",
   padrao: false
 });
 
@@ -131,6 +133,7 @@ export function CustomersCrud({ initialCustomers, tabelasPreco }: CustomersCrudP
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [actioning, setActioning] = useState<string | null>(null);
+  const [loadingDetail, setLoadingDetail] = useState<string | null>(null);
 
   const editing = Boolean(form.id);
 
@@ -174,24 +177,60 @@ export function CustomersCrud({ initialCustomers, tabelasPreco }: CustomersCrudP
     setDrawerOpen(true);
   }
 
-  function openEdit(c: CustomerDetailedSummary) {
-    setForm({
-      id: c.id,
-      razaoSocial: c.razaoSocial,
-      nomeFantasia: c.nomeFantasia ?? "",
-      documento: c.documento,
-      inscricaoEstadual: c.inscricaoEstadual ?? "",
-      segmento: c.segmento ?? "",
-      limiteCredito: String(parseCurrency(c.limiteCredito)),
-      condicaoPagamento: c.condicaoPagamento ?? "",
-      tabelaPrecoId: c.tabelaPrecoId ?? "",
-      status: c.status,
-      contatos: [emptyContato()],
-      enderecos: [emptyEndereco()]
-    });
+  async function openEdit(c: CustomerDetailedSummary) {
+    setLoadingDetail(c.id);
     setError("");
-    setActiveTab("dados");
-    setDrawerOpen(true);
+    try {
+      const response = await fetch(`/api/erp/clientes/${c.id}`);
+      const detail = await response.json() as CustomerDetail & { error?: string };
+
+      if (!response.ok) {
+        throw new Error(detail.error ?? "Não foi possível carregar os dados do cliente.");
+      }
+
+      setForm({
+        id: detail.id,
+        razaoSocial: detail.razaoSocial,
+        nomeFantasia: detail.nomeFantasia ?? "",
+        documento: detail.documento,
+        inscricaoEstadual: detail.inscricaoEstadual ?? "",
+        segmento: detail.segmento ?? "",
+        limiteCredito: String(parseCurrency(detail.limiteCredito)),
+        condicaoPagamento: detail.condicaoPagamento ?? "",
+        tabelaPrecoId: detail.tabelaPrecoId ?? "",
+        status: detail.status,
+        contatos: detail.contatos.length
+          ? detail.contatos.map((ct) => ({
+              nome: ct.nome,
+              email: ct.email ?? "",
+              telefone: ct.telefone ?? "",
+              whatsapp: ct.whatsapp ?? "",
+              cargo: ct.cargo ?? "",
+              principal: ct.principal
+            }))
+          : [emptyContato()],
+        enderecos: detail.enderecos.length
+          ? detail.enderecos.map((endereco) => ({
+              apelido: endereco.apelido,
+              cep: endereco.cep,
+              logradouro: endereco.logradouro,
+              numero: endereco.numero ?? "",
+              complemento: endereco.complemento ?? "",
+              bairro: endereco.bairro ?? "",
+              cidade: endereco.cidade,
+              uf: endereco.uf,
+              codigoMunicipioIbge: endereco.codigoMunicipioIbge ?? "",
+              padrao: endereco.padrao
+            }))
+          : [emptyEndereco()]
+      });
+      setActiveTab("dados");
+      setDrawerOpen(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não foi possível carregar os dados do cliente.");
+    } finally {
+      setLoadingDetail(null);
+    }
   }
 
   function updateField<K extends keyof CustomerFormState>(key: K, value: CustomerFormState[K]) {
@@ -214,7 +253,8 @@ export function CustomersCrud({ initialCustomers, tabelasPreco }: CustomersCrudP
         complemento: d.endereco.complemento ?? enderecos[0].complemento,
         bairro: d.endereco.bairro ?? enderecos[0].bairro,
         cidade: d.endereco.cidade ?? enderecos[0].cidade,
-        uf: d.endereco.uf ?? enderecos[0].uf
+        uf: d.endereco.uf ?? enderecos[0].uf,
+        codigoMunicipioIbge: d.endereco.codigoMunicipioIbge ?? enderecos[0].codigoMunicipioIbge
       };
       return {
         ...prev,
@@ -239,7 +279,8 @@ export function CustomersCrud({ initialCustomers, tabelasPreco }: CustomersCrudP
               logradouro: d.logradouro ?? e.logradouro,
               bairro: d.bairro ?? e.bairro,
               cidade: d.cidade ?? e.cidade,
-              uf: d.uf ?? e.uf
+              uf: d.uf ?? e.uf,
+              codigoMunicipioIbge: d.codigoMunicipioIbge ?? e.codigoMunicipioIbge
             }
           : e
       );
@@ -330,6 +371,7 @@ export function CustomersCrud({ initialCustomers, tabelasPreco }: CustomersCrudP
         bairro: e.bairro.trim() || null,
         cidade: e.cidade.trim(),
         uf: e.uf.trim().toUpperCase(),
+        codigoMunicipioIbge: e.codigoMunicipioIbge.trim() || null,
         padrao: e.padrao
       }))
     };
@@ -561,6 +603,10 @@ export function CustomersCrud({ initialCustomers, tabelasPreco }: CustomersCrudP
                   UF
                   <input value={e.uf} maxLength={2} onChange={(ev) => updateEndereco(i, "uf", ev.target.value)} />
                 </label>
+                <label>
+                  CÃ³digo IBGE do municÃ­pio
+                  <input value={e.codigoMunicipioIbge} maxLength={7} onChange={(ev) => updateEndereco(i, "codigoMunicipioIbge", ev.target.value.replace(/\D/g, ""))} placeholder="7 dÃ­gitos" />
+                </label>
                 <label className="check-row">
                   <input type="checkbox" checked={e.padrao} onChange={(ev) => updateEndereco(i, "padrao", ev.target.checked)} />
                   Endereço padrão para faturamento
@@ -686,7 +732,9 @@ export function CustomersCrud({ initialCustomers, tabelasPreco }: CustomersCrudP
                     </span>
                   </td>
                   <td className="actions">
-                    <button type="button" className="btn-erp ghost xs" onClick={() => openEdit(c)}>Editar</button>
+                    <button type="button" className="btn-erp ghost xs" disabled={loadingDetail === c.id} onClick={() => openEdit(c)}>
+                      {loadingDetail === c.id ? "Abrindo..." : "Editar"}
+                    </button>
                     {c.status === "PENDENTE_APROVACAO" && (
                       <button
                         type="button"

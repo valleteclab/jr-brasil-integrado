@@ -6,6 +6,7 @@ build
 .env
 .env*.local
 *.log
+.codex-logs/
 .DS_Store
 coverage
 .prisma

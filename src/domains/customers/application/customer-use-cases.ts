@@ -28,6 +28,7 @@ type EnderecoInput = {
   bairro?: string;
   cidade: string;
   uf: string;
+  codigoMunicipioIbge?: string;
   padrao?: boolean;
 };
 
@@ -98,6 +99,7 @@ export async function createCustomer(scope: TenantScope, input: CreateCustomerIn
             bairro: e.bairro ?? null,
             cidade: e.cidade,
             uf: e.uf,
+            codigoMunicipioIbge: e.codigoMunicipioIbge ?? null,
             padrao: e.padrao ?? false
           }))
         }
@@ -182,6 +184,7 @@ export async function updateCustomer(scope: TenantScope, id: string, input: Upda
             bairro: e.bairro ?? null,
             cidade: e.cidade,
             uf: e.uf,
+            codigoMunicipioIbge: e.codigoMunicipioIbge ?? null,
             padrao: e.padrao ?? false
           }))
         });

@@ -431,6 +431,7 @@ model ClienteEndereco {
   bairro       String?
   cidade       String
   uf           String
+  codigoMunicipioIbge String?
   referencia   String?
   padrao       Boolean  @default(false)
   criadoEm     DateTime @default(now())
