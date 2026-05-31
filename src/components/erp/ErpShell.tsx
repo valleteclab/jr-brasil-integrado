@@ -56,7 +56,10 @@ const groups: ErpNavGroup[] = [
   },
   {
     group: "Análises",
-    items: [{ label: "Relatórios", href: "/erp/relatorios", icon: "📊" }]
+    items: [
+      { label: "Relatórios", href: "/erp/relatorios", icon: "📊" },
+      { label: "Assistente IA", href: "/erp/assistente", icon: "✦" }
+    ]
   },
   {
     group: "Configurações",

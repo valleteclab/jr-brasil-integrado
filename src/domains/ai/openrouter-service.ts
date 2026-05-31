@@ -9,6 +9,29 @@ type ChatMessage = {
   content: string;
 };
 
+/** Mensagem no formato OpenAI/OpenRouter, incluindo tool calls e mensagens de tool. */
+export type ToolChatMessage = {
+  role: "system" | "user" | "assistant" | "tool";
+  content: string | null;
+  tool_calls?: Array<{
+    id: string;
+    type: "function";
+    function: { name: string; arguments: string };
+  }>;
+  tool_call_id?: string;
+};
+
+/** Mensagem retornada pelo modelo numa chamada com tools. */
+export type AssistantToolMessage = {
+  role: "assistant";
+  content: string | null;
+  tool_calls?: Array<{
+    id: string;
+    type: "function";
+    function: { name: string; arguments: string };
+  }>;
+};
+
 type SaveAiConfigInput = {
   apiKey?: string;
   model: string;
@@ -194,6 +217,57 @@ export async function callOpenRouter(scope: TenantScope, messages: ChatMessage[]
   }
 
   return content;
+}
+
+/**
+ * Variante com function calling: envia `tools` e devolve a MENSAGEM completa do
+ * assistant (incluindo `tool_calls`), para o runtime do agente conduzir o loop.
+ * Reusa a mesma credencial/modelo criptografados de `callOpenRouter`.
+ */
+export async function callOpenRouterWithTools(
+  scope: TenantScope,
+  messages: ToolChatMessage[],
+  tools: unknown[],
+  options?: { maxTokens?: number; temperature?: number }
+): Promise<AssistantToolMessage> {
+  const config = await getActiveOpenRouterSecret(scope);
+  const response = await fetch(OPENROUTER_CHAT_URL, {
+    body: JSON.stringify({
+      model: config.model,
+      messages,
+      tools,
+      tool_choice: "auto",
+      temperature: options?.temperature ?? 0.2,
+      max_tokens: options?.maxTokens ?? 900
+    }),
+    headers: {
+      Authorization: `Bearer ${config.apiKey}`,
+      "Content-Type": "application/json",
+      "X-Title": "JR Brasil ERP"
+    },
+    method: "POST"
+  });
+
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    const message = typeof data?.error?.message === "string"
+      ? data.error.message
+      : `OpenRouter retornou HTTP ${response.status}.`;
+    await prisma.configuracaoIa.update({ where: { id: config.id }, data: { ultimoErro: message } });
+    throw new Error(message);
+  }
+
+  await prisma.configuracaoIa.update({
+    where: { id: config.id },
+    data: { testadoEm: new Date(), ultimoErro: null }
+  });
+
+  const message = data?.choices?.[0]?.message;
+  if (!message || typeof message !== "object") {
+    throw new Error("OpenRouter respondeu sem mensagem utilizável.");
+  }
+  return message as AssistantToolMessage;
 }
 
 export async function testOpenRouter(scope: TenantScope) {

@@ -214,6 +214,19 @@ enum ProvedorIa {
   OPENROUTER
 }
 
+enum AgentRole {
+  GESTOR
+  VENDEDOR
+  CLIENTE
+}
+
+enum MensagemPapel {
+  USER
+  ASSISTANT
+  TOOL
+  SYSTEM
+}
+
 model Tenant {
   id              String           @id @default(cuid())
   nome            String
@@ -224,6 +237,7 @@ model Tenant {
   perfis          Perfil[]
   auditorias      Auditoria[]
   configuracoesIa ConfiguracaoIa[]
+  conversasAgente ConversaAgente[]
   criadoEm        DateTime         @default(now())
   atualizadoEm    DateTime         @updatedAt
 }
@@ -264,6 +278,7 @@ model Empresa {
   movimentosFinanceiros MovimentoFinanceiro[]
   inventarios        Inventario[]
   auditorias         Auditoria[]
+  conversasAgente    ConversaAgente[]
   enderecoLogradouro String?
   enderecoNumero     String?
   enderecoComplemento String?
@@ -1627,4 +1642,37 @@ model PagamentoVenda {
   criadoEm      DateTime    @default(now())
 
   @@index([tenantId, empresaId, pedidoVendaId])
+}
+
+model ConversaAgente {
+  id           String           @id @default(cuid())
+  tenantId     String
+  empresaId    String
+  tenant       Tenant           @relation(fields: [tenantId], references: [id])
+  empresa      Empresa          @relation(fields: [empresaId], references: [id])
+  usuarioId    String?
+  role         AgentRole
+  titulo       String?
+  mensagens    MensagemAgente[]
+  criadoEm     DateTime         @default(now())
+  atualizadoEm DateTime         @updatedAt
+
+  @@index([tenantId, empresaId])
+}
+
+model MensagemAgente {
+  id          String         @id @default(cuid())
+  tenantId    String
+  empresaId   String
+  conversaId  String
+  conversa    ConversaAgente @relation(fields: [conversaId], references: [id])
+  papel       MensagemPapel
+  conteudo    String         @db.Text
+  toolName    String?
+  toolPayload Json?
+  draftTipo   String?
+  draftId     String?
+  criadoEm    DateTime       @default(now())
+
+  @@index([tenantId, empresaId, conversaId])
 }
