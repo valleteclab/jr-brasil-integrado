@@ -317,7 +317,7 @@ export function SuppliersCrud({ initialSuppliers }: Props) {
                       placeholder="Somente números"
                       style={{ flex: 1 }}
                     />
-                    <button type="button" className="btn-erp light sm" onClick={preencherPorCnpj} disabled={buscandoCnpj}>
+                    <button type="button" className="btn-erp light sm" onClick={preencherPorCnpj} disabled={buscandoCnpj} style={{ flexShrink: 0, whiteSpace: "nowrap" }}>
                       {buscandoCnpj ? "Buscando…" : "Buscar CNPJ"}
                     </button>
                   </span>

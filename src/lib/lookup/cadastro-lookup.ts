@@ -39,6 +39,13 @@ export class CadastroLookupError extends Error {}
 
 const onlyDigits = (v: string) => (v ?? "").replace(/\D/g, "");
 
+// O fetch do Node envia "User-Agent: node" por padrão, e provedores atrás de
+// Cloudflare (BrasilAPI) respondem 403 a UAs não-navegador. Usamos um UA de navegador.
+const LOOKUP_HEADERS = {
+  Accept: "application/json",
+  "User-Agent": "Mozilla/5.0 (compatible; jr-brasil-integrado/1.0)"
+};
+
 type ViaCepResponse = {
   cep?: string;
   logradouro?: string;
@@ -59,7 +66,7 @@ export async function lookupCep(cep: string): Promise<CepLookupResult> {
   let res: Response;
   try {
     res = await fetch(`https://viacep.com.br/ws/${digits}/json/`, {
-      headers: { Accept: "application/json" }
+      headers: LOOKUP_HEADERS
     });
   } catch (err) {
     throw new CadastroLookupError(`Falha ao consultar o CEP: ${err instanceof Error ? err.message : "erro de rede"}`);
@@ -108,31 +115,14 @@ function formatPhone(raw: string | null | undefined): string | null {
   return raw || null;
 }
 
-/** Busca um CNPJ na BrasilAPI (Receita). O IBGE já vem da própria resposta. */
-export async function lookupCnpj(cnpj: string): Promise<CnpjLookupResult> {
-  const digits = onlyDigits(cnpj);
-  if (digits.length !== 14) throw new CadastroLookupError("CNPJ deve ter 14 dígitos.");
-
-  let res: Response;
-  try {
-    res = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${digits}`, {
-      headers: { Accept: "application/json" }
-    });
-  } catch (err) {
-    throw new CadastroLookupError(`Falha ao consultar o CNPJ: ${err instanceof Error ? err.message : "erro de rede"}`);
-  }
-  if (res.status === 404) throw new CadastroLookupError("CNPJ não encontrado.");
-  if (!res.ok) throw new CadastroLookupError(`Serviço de CNPJ indisponível (HTTP ${res.status}).`);
-
-  const d = (await res.json().catch(() => ({}))) as BrasilApiCnpjResponse;
+function mapBrasilApiShape(d: BrasilApiCnpjResponse, digits: string): CnpjLookupResult {
   const cep = d.cep ? onlyDigits(d.cep) : null;
-
   return {
     cnpj: digits,
     razaoSocial: d.razao_social || null,
     nomeFantasia: d.nome_fantasia || null,
     situacaoCadastral: d.descricao_situacao_cadastral || null,
-    // BrasilAPI não retorna inscrição estadual.
+    // Estas APIs públicas não retornam inscrição estadual.
     inscricaoEstadual: null,
     email: d.email || null,
     telefone: formatPhone(d.ddd_telefone_1),
@@ -144,7 +134,47 @@ export async function lookupCnpj(cnpj: string): Promise<CnpjLookupResult> {
       cep,
       cidade: d.municipio || null,
       uf: d.uf || null,
-      codigoMunicipioIbge: d.codigo_municipio_ibge || null
+      codigoMunicipioIbge: d.codigo_municipio_ibge ? String(d.codigo_municipio_ibge) : null
     }
   };
+}
+
+/**
+ * Busca um CNPJ na Receita. Tenta provedores públicos em cadeia (mesmo formato
+ * BrasilAPI), pois têm rate limit por IP e podem responder 403/429:
+ *  1) BrasilAPI  2) minhareceita.org
+ * Só 404 significa "não encontrado"; demais falhas tentam o próximo provedor.
+ */
+export async function lookupCnpj(cnpj: string): Promise<CnpjLookupResult> {
+  const digits = onlyDigits(cnpj);
+  if (digits.length !== 14) throw new CadastroLookupError("CNPJ deve ter 14 dígitos.");
+
+  const sources = [
+    `https://brasilapi.com.br/api/cnpj/v1/${digits}`,
+    `https://minhareceita.org/${digits}`
+  ];
+
+  let lastStatus = 0;
+  for (const url of sources) {
+    let res: Response;
+    try {
+      res = await fetch(url, { headers: LOOKUP_HEADERS });
+    } catch {
+      continue; // erro de rede neste provedor — tenta o próximo
+    }
+    if (res.status === 404) throw new CadastroLookupError("CNPJ não encontrado.");
+    if (!res.ok) {
+      lastStatus = res.status;
+      continue; // 403/429/5xx — tenta o próximo
+    }
+    const d = (await res.json().catch(() => null)) as BrasilApiCnpjResponse | null;
+    if (d && d.razao_social) return mapBrasilApiShape(d, digits);
+    lastStatus = res.status;
+  }
+
+  throw new CadastroLookupError(
+    lastStatus
+      ? `Serviço de consulta de CNPJ indisponível no momento (HTTP ${lastStatus}). Tente novamente em instantes ou preencha manualmente.`
+      : "Não foi possível consultar o CNPJ agora. Tente novamente em instantes ou preencha manualmente."
+  );
 }

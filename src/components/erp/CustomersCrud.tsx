@@ -441,11 +441,11 @@ export function CustomersCrud({ initialCustomers, tabelasPreco }: CustomersCrudP
             Nome fantasia
             <input value={form.nomeFantasia} onChange={(e) => updateField("nomeFantasia", e.target.value)} />
           </label>
-          <label>
+          <label className="full">
             CNPJ / CPF
             <span style={{ display: "flex", gap: 6 }}>
-              <input value={form.documento} onChange={(e) => updateField("documento", e.target.value)} style={{ flex: 1 }} />
-              <button type="button" className="btn-erp light sm" onClick={preencherPorCnpj} disabled={buscandoCnpj}>
+              <input value={form.documento} onChange={(e) => updateField("documento", e.target.value)} placeholder="Informe o CNPJ e clique em Buscar" style={{ flex: 1 }} />
+              <button type="button" className="btn-erp light sm" onClick={preencherPorCnpj} disabled={buscandoCnpj} style={{ flexShrink: 0, whiteSpace: "nowrap" }}>
                 {buscandoCnpj ? "Buscando…" : "Buscar CNPJ"}
               </button>
             </span>
@@ -530,7 +530,7 @@ export function CustomersCrud({ initialCustomers, tabelasPreco }: CustomersCrudP
                   CEP
                   <span style={{ display: "flex", gap: 6 }}>
                     <input value={e.cep} onChange={(ev) => updateEndereco(i, "cep", ev.target.value)} onBlur={() => preencherEnderecoPorCep(i)} style={{ flex: 1 }} />
-                    <button type="button" className="btn-erp light sm" onClick={() => preencherEnderecoPorCep(i)} disabled={buscandoCep}>
+                    <button type="button" className="btn-erp light sm" onClick={() => preencherEnderecoPorCep(i)} disabled={buscandoCep} style={{ flexShrink: 0, whiteSpace: "nowrap" }}>
                       {buscandoCep ? "…" : "Buscar"}
                     </button>
                   </span>
