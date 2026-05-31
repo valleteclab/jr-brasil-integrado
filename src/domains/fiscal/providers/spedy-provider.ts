@@ -10,7 +10,8 @@ import type {
   EmitResult,
   FiscalProvider,
   ProviderContext,
-  ProviderEmitter
+  ProviderEmitter,
+  TestConnectionResult
 } from "./types";
 import { friendlyFiscalMessage } from "../fiscal-messages";
 
@@ -1007,5 +1008,17 @@ export class SpedyFiscalProvider implements FiscalProvider {
       }
     }
     return { status: "PROCESSANDO", providerRef: idOrKey, motivo: "Nota não localizada na Spedy para consulta de status." };
+  }
+
+  /** Ping autenticado: lista empresas (1 registro). Falha de auth ⇒ token inválido. */
+  async testConnection(ctx: ProviderContext): Promise<TestConnectionResult> {
+    const res = await this.request<unknown>(ctx, "GET", "/companies?page=1&pageSize=1");
+    if (res.ok) {
+      return { ok: true, message: `Conexão com a Spedy (${ctx.ambiente.toLowerCase()}) autenticada com sucesso.` };
+    }
+    if (res.status === 401 || res.status === 403) {
+      return { ok: false, message: "Chave de API (X-Api-Key) recusada pela Spedy (HTTP 401/403). Verifique a credencial." };
+    }
+    return { ok: false, message: res.errorMessage ?? `Falha ao testar conexão com a Spedy (HTTP ${res.status}).` };
   }
 }

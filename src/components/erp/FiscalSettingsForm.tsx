@@ -34,6 +34,22 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
   const [certBusy, setCertBusy] = useState(false);
   const [certMsg, setCertMsg] = useState("");
   const [certErr, setCertErr] = useState("");
+  const [testBusy, setTestBusy] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+  async function testarConexao() {
+    setTestBusy(true);
+    setTestResult(null);
+    try {
+      const res = await fetch("/api/erp/fiscal/configuracao/testar", { method: "POST" });
+      const data = (await res.json()) as { ok?: boolean; message?: string; error?: string };
+      setTestResult({ ok: Boolean(data.ok), message: data.message || data.error || "Sem resposta do provedor." });
+    } catch {
+      setTestResult({ ok: false, message: "Não foi possível contatar o provedor." });
+    } finally {
+      setTestBusy(false);
+    }
+  }
 
   async function enviarCertificado() {
     setCertErr("");
@@ -196,6 +212,18 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
               <input value={cscToken} onChange={(e) => setCscToken(e.target.value)} placeholder={config.hasCscToken ? "Manter token atual" : "Informe o CSC"} />
             </label>
           </div>
+          <div className="erp-toolbar" style={{ borderBottom: "none", paddingBottom: 0, marginTop: 8, gap: 12, alignItems: "center" }}>
+            <Button type="button" variant="light" onClick={testarConexao} disabled={testBusy}>
+              {testBusy ? "Testando…" : "Testar conexão"}
+            </Button>
+            <span className="muted">Testa a credencial já salva. Salve antes de testar uma credencial nova.</span>
+          </div>
+          {testResult && (
+            <div className={`alert ${testResult.ok ? "success" : "danger"}`}>
+              <strong>{testResult.ok ? "Conexão OK" : "Falha na conexão"}</strong>
+              <span>{testResult.message}</span>
+            </div>
+          )}
         </div>
       )}
 

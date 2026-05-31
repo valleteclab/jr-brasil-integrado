@@ -7,7 +7,8 @@ import type {
   EmitInput,
   EmitResult,
   FiscalProvider,
-  ProviderContext
+  ProviderContext,
+  TestConnectionResult
 } from "./types";
 
 /**
@@ -527,6 +528,20 @@ export class FocusNfeProvider implements FiscalProvider {
       return { status: "ERRO", motivo: res.errorMessage ?? "Falha ao registrar carta de correção na Focus NFe." };
     }
     return { status: "AUTORIZADO", protocolo: res.data?.numero_protocolo || undefined };
+  }
+
+  /**
+   * Ping autenticado: consulta uma ref inexistente. 401/403 ⇒ token inválido;
+   * qualquer outra resposta (incl. 404) ⇒ as credenciais autenticaram.
+   */
+  async testConnection(ctx: ProviderContext): Promise<TestConnectionResult> {
+    const { baseUrl } = this.resolveConfig(ctx); // valida token presente (lança se faltar)
+    const res = await this.request<FocusInvoiceResponse>(ctx, "GET", `/nfe/ping-conexao-${Date.now()}`);
+    if (res.status === 401 || res.status === 403) {
+      return { ok: false, message: "Token recusado pela Focus NFe (HTTP 401/403). Verifique a chave de API." };
+    }
+    const ambiente = baseUrl.includes("homologacao") ? "homologação" : "produção";
+    return { ok: true, message: `Conexão com a Focus NFe (${ambiente}) autenticada com sucesso.` };
   }
 
   /** Consulta o status de um documento pela `ref` (providerRef). Tenta os três recursos. */
