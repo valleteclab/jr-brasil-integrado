@@ -102,6 +102,18 @@ function isSimplesRegime(regime: RegimeTributario): boolean {
   return regime === "SIMPLES_NACIONAL" || regime === "MEI" || regime === "SIMPLES_EXCESSO_SUBLIMITE";
 }
 
+/**
+ * opSimpNac (DPS NFS-e nacional) — indicador de optante do Simples Nacional do prestador:
+ *  1 = Não optante · 2 = Optante MEI · 3 = Optante ME/EPP (demais do Simples).
+ * Quando optante (2 ou 3), a alíquota do ISSQN NÃO é informada na DPS — é parametrizada
+ * pelo Sistema Nacional NFS-e (informar pAliq nesse caso causa rejeição/denegação).
+ */
+function opSimpNac(regime: RegimeTributario): number {
+  if (regime === "MEI") return 2;
+  if (regime === "SIMPLES_NACIONAL" || regime === "SIMPLES_EXCESSO_SUBLIMITE") return 3;
+  return 1;
+}
+
 /** CRT (Código de Regime Tributário) da NF-e: 1=Simples, 2=Simples excesso, 3=Normal/Presumido. */
 function crtFocus(regime: RegimeTributario): number {
   if (regime === "SIMPLES_NACIONAL" || regime === "MEI") return 1;
@@ -573,6 +585,13 @@ export class AcbrFiscalProvider implements FiscalProvider {
     // Determina provedor (nacional para municípios PadraoNacional). Best-effort, cai para "padrao".
     const provedor = await this.resolveNfseProvider(ctx, input.emitter.codigoMunicipioIbge);
 
+    // Optante do Simples Nacional do prestador (1=não optante, 2=MEI, 3=ME/EPP).
+    const indSimpNac = opSimpNac(input.emitter.regime);
+    // Quando o município de incidência está ATIVO no Sistema Nacional NFS-e (provedor "nacional"),
+    // a alíquota do ISSQN é parametrizada pelo próprio sistema e NÃO pode ser informada na DPS —
+    // isso vale para qualquer regime (Simples ou não). Informar pAliq nesse caso é denegado.
+    const informarAliquota = provedor !== "nacional";
+
     const toma: Record<string, unknown> = { xNome: dest.nome };
     if (doc.length === 14) toma.CNPJ = doc;
     else if (doc.length === 11) toma.CPF = doc;
@@ -616,8 +635,11 @@ export class AcbrFiscalProvider implements FiscalProvider {
           trib: {
             tribMun: {
               tribISSQN: 1, // 1 = operação tributável
-              pAliq: aliquotaIss,
-              vISSQN: input.totals.valorIss || undefined,
+              // opSimpNac: 1=não optante, 2=MEI, 3=ME/EPP. Optante no Padrão Nacional não informa pAliq/vISSQN.
+              opSimpNac: indSimpNac,
+              ...(informarAliquota
+                ? { pAliq: aliquotaIss, vISSQN: input.totals.valorIss || undefined }
+                : {}),
               tpRetISSQN: ret?.issRetido ? 1 : 2
             },
             ...(tribFed ? { tribFed } : {}),
