@@ -678,19 +678,44 @@ export class AcbrFiscalProvider implements FiscalProvider {
       return { status: "REJEITADO", motivo: mensagem || `Cancelamento da NFS-e não confirmado (situação ${situacao}).` };
     }
 
-    // NF-e/NFC-e: a ACBr devolve um objeto de EVENTO. Cancelamento homologado pela SEFAZ:
-    // código 135 (evento registrado e vinculado) ou 155 (registrado fora do prazo).
+    // NF-e/NFC-e: o cancelamento é um EVENTO processado de forma ASSÍNCRONA pela SEFAZ.
+    // O POST pode voltar "pendente/processando" sem código final — então confirmamos
+    // consultando o evento (GET .../cancelamento) e o próprio DF-e até ter resposta da SEFAZ.
+    // Só marcamos AUTORIZADO com 135 (evento registrado/vinculado) ou 155 (registrado fora do prazo).
     const resource = ACBR_RESOURCE[input.modelo];
-    const res = await this.request<AcbrCancelResponse>(ctx, "POST", `/${resource}/${ref}/cancelamento`, {
+    const post = await this.request<AcbrCancelResponse>(ctx, "POST", `/${resource}/${ref}/cancelamento`, {
       justificativa: input.justificativa
     });
-    if (!res.ok) return { status: "ERRO", motivo: res.errorMessage ?? "Falha ao cancelar na ACBr." };
-    const codigo = res.data?.codigo_status;
-    const protocolo = res.data?.numero_protocolo || undefined;
-    if (codigo === 135 || codigo === 155) {
-      return { status: "AUTORIZADO", protocolo };
+    if (!post.ok) return { status: "ERRO", motivo: post.errorMessage ?? "Falha ao cancelar na ACBr." };
+
+    const homologado = (codigo: number | undefined) => codigo === 135 || codigo === 155;
+    const finalDoEvento = (s: string | undefined) =>
+      ["registrado", "rejeitado", "erro"].includes((s ?? "").toLowerCase());
+
+    let evento = post.data;
+    // Enquanto o evento não tiver desfecho final, consulta o status do cancelamento.
+    for (let i = 0; i < 5 && !homologado(evento?.codigo_status) && !finalDoEvento(evento?.status); i++) {
+      await delay(1500);
+      const check = await this.request<AcbrCancelResponse>(ctx, "GET", `/${resource}/${ref}/cancelamento`);
+      if (check.ok && check.data) evento = check.data;
     }
-    return { status: "REJEITADO", motivo: res.data?.motivo_status ?? `Cancelamento não homologado (código ${codigo ?? "?"}).` };
+
+    const protocolo = evento?.numero_protocolo || undefined;
+    if (homologado(evento?.codigo_status)) {
+      return { status: "AUTORIZADO", protocolo, status_sefaz: evento?.codigo_status ?? null };
+    }
+
+    // Fallback: confirma pelo próprio documento (status do DF-e vira "cancelado" quando homologa).
+    const dfe = await this.request<AcbrDfeResponse>(ctx, "GET", `/${resource}/${ref}`);
+    if (dfe.ok && mapDfeStatus(dfe.data?.status) === "CANCELADA") {
+      return { status: "AUTORIZADO", protocolo, status_sefaz: evento?.codigo_status ?? null };
+    }
+
+    // Sem confirmação da SEFAZ: NÃO marca como cancelada (evita divergência com o portal).
+    const motivo = evento?.motivo_status
+      ? `Cancelamento não confirmado pela SEFAZ (código ${evento?.codigo_status ?? "?"}): ${evento.motivo_status}`
+      : `Cancelamento ainda não homologado pela SEFAZ (situação "${evento?.status ?? "pendente"}"). Tente "Atualizar status" em instantes.`;
+    return { status: "REJEITADO", motivo, status_sefaz: evento?.codigo_status ?? null };
   }
 
   async correct(input: CorrectionInput, ctx: ProviderContext): Promise<CorrectionResult> {
