@@ -57,6 +57,16 @@ const FINALIDADES: Array<{ id: Finalidade; label: string }> = [
 
 const FORMAS_PAGAMENTO = ["Dinheiro", "Pix", "Cartão de débito", "Cartão de crédito", "Boleto", "Transferência", "Sem pagamento"];
 
+// Modalidade do frete (tag modFrete da SEFAZ).
+const FRETE_MODALIDADES: Array<{ id: number; label: string }> = [
+  { id: 9, label: "Sem transporte" },
+  { id: 0, label: "Por conta do emitente (CIF)" },
+  { id: 1, label: "Por conta do destinatário (FOB)" },
+  { id: 2, label: "Por conta de terceiros" },
+  { id: 3, label: "Próprio — conta do emitente" },
+  { id: 4, label: "Próprio — conta do destinatário" }
+];
+
 const UFS = [
   "AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "MG", "PA", "PB",
   "PR", "PE", "PI", "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO"
@@ -187,6 +197,7 @@ export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormDat
 
   // Totais editáveis (apenas NF-e/NFC-e)
   const [frete, setFrete] = useState(initial?.frete ?? 0);
+  const [modalidadeFrete, setModalidadeFrete] = useState(9); // 9 = sem ocorrência de transporte
   const [descontoGlobal, setDescontoGlobal] = useState(initial?.desconto ?? 0);
 
   const [obs, setObs] = useState(initial?.observacoes ?? "");
@@ -361,6 +372,7 @@ export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormDat
           condicaoPagamento: condicaoPagamento.trim() || undefined,
           observacoes: obs.trim() || undefined,
           frete: Number(frete) || 0,
+          modalidadeFrete,
           desconto: Number(descontoGlobal) || 0,
           baixarEstoque,
           itens: itens.map((it) => ({
@@ -758,10 +770,18 @@ export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormDat
                 <span>R$ <input className="pct-input" style={{ width: 90 }} type="number" min={0} step="any" value={descontoGlobal} onChange={(e) => setDescontoGlobal(Math.max(0, Number(e.target.value) || 0))} aria-label="Desconto global" /></span>
               </div>
               {isProduto && (
-                <div className="atend-total-row">
-                  <span>Frete</span>
-                  <span>R$ <input className="pct-input" style={{ width: 90 }} type="number" min={0} step="any" value={frete} onChange={(e) => setFrete(Math.max(0, Number(e.target.value) || 0))} aria-label="Frete" /></span>
-                </div>
+                <>
+                  <div className="atend-total-row">
+                    <span>Frete</span>
+                    <span>R$ <input className="pct-input" style={{ width: 90 }} type="number" min={0} step="any" value={frete} onChange={(e) => setFrete(Math.max(0, Number(e.target.value) || 0))} aria-label="Frete" /></span>
+                  </div>
+                  <div className="atend-total-row">
+                    <span>Modalidade do frete</span>
+                    <select value={modalidadeFrete} onChange={(e) => setModalidadeFrete(Number(e.target.value))} aria-label="Modalidade do frete" style={{ maxWidth: 200 }}>
+                      {FRETE_MODALIDADES.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+                    </select>
+                  </div>
+                </>
               )}
               <div className="atend-total-row grand"><span>Total</span><strong>{brl(total)}</strong></div>
             </div>

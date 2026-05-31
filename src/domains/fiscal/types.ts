@@ -91,6 +91,14 @@ export type NormalizedFiscalDocument = {
   pagamentos?: Array<{ forma: string; valor: number }> | null;
   informacoesComplementares: string | null;
   valorFrete: number;
+  /**
+   * Modalidade do frete (tag modFrete da SEFAZ):
+   * 0=Contratação por conta do emitente (CIF) · 1=por conta do destinatário (FOB) ·
+   * 2=por conta de terceiros · 3=transporte próprio por conta do emitente ·
+   * 4=transporte próprio por conta do destinatário · 9=sem transporte.
+   * Quando ausente, o provedor deriva: 9 se não há frete, senão 0.
+   */
+  modalidadeFrete?: number | null;
   valorSeguro: number;
   valorDesconto: number;
   outrasDespesas: number;
