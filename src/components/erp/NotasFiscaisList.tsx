@@ -112,6 +112,14 @@ export function NotasFiscaisList({ notas }: Props) {
               <tr key={nota.id}>
                 <td>
                   <Link className="mono bold" href={`/erp/fiscal/${nota.id}`}>{nota.modeloLabel} {nota.numero}</Link>
+                  {nota.finalidadeLabel && (
+                    <span
+                      className="pill warn"
+                      style={{ marginLeft: 6, fontSize: 10, padding: "1px 7px", verticalAlign: "middle" }}
+                    >
+                      {nota.finalidadeLabel}
+                    </span>
+                  )}
                   <span className="sublabel">Série {nota.serie} · {nota.emitidaEm}</span>
                 </td>
                 <td>

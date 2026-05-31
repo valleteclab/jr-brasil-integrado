@@ -1,4 +1,4 @@
-import type { ModeloFiscal, StatusNotaFiscal } from "@prisma/client";
+import type { FinalidadeNfe, ModeloFiscal, StatusNotaFiscal } from "@prisma/client";
 import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
 import { prisma } from "@/lib/db/prisma";
 import { formatBrl } from "@/lib/formatters/currency";
@@ -7,6 +7,9 @@ export type NotaFiscalSummary = {
   id: string;
   modelo: ModeloFiscal;
   modeloLabel: string;
+  finalidade: FinalidadeNfe;
+  /** Rótulo da finalidade quando não for Normal (Devolução/Complementar/Ajuste); senão null. */
+  finalidadeLabel: string | null;
   numero: string;
   serie: string;
   status: StatusNotaFiscal;
@@ -44,6 +47,18 @@ const MODELO_LABEL: Record<ModeloFiscal, string> = {
   NFSE: "NFS-e"
 };
 
+const FINALIDADE_LABEL: Record<FinalidadeNfe, string> = {
+  NORMAL: "Normal",
+  COMPLEMENTAR: "Complementar",
+  AJUSTE: "Ajuste",
+  DEVOLUCAO: "Devolução"
+};
+
+/** Rótulo de finalidade para exibir na UI — null quando Normal (não vira tag). */
+function finalidadeLabel(finalidade: FinalidadeNfe): string | null {
+  return finalidade === "NORMAL" ? null : FINALIDADE_LABEL[finalidade];
+}
+
 export async function listNotasFiscais(): Promise<NotaFiscalSummary[]> {
   if (!process.env.DATABASE_URL) {
     throw new Error("DATABASE_URL não configurada para listar notas fiscais.");
@@ -62,6 +77,8 @@ export async function listNotasFiscais(): Promise<NotaFiscalSummary[]> {
       id: nota.id,
       modelo: nota.modelo,
       modeloLabel: MODELO_LABEL[nota.modelo],
+      finalidade: nota.finalidade,
+      finalidadeLabel: finalidadeLabel(nota.finalidade),
       numero: nota.numero ?? "-",
       serie: nota.serie ?? "-",
       status: nota.status,
@@ -80,7 +97,8 @@ export async function listNotasFiscais(): Promise<NotaFiscalSummary[]> {
       canDownload: Boolean(nota.providerRef) && (nota.status === "AUTORIZADA" || nota.status === "CANCELADA"),
       // Clonar reaproveita a tela de emissão (produto e serviço).
       canClone: true,
-      canDevolver: nota.modelo === "NFE" && nota.status === "AUTORIZADA" && Boolean(nota.chaveAcesso)
+      // Não se gera devolução de uma devolução (nem de complementar/ajuste).
+      canDevolver: nota.modelo === "NFE" && nota.status === "AUTORIZADA" && Boolean(nota.chaveAcesso) && nota.finalidade === "NORMAL"
     };
   });
 }
@@ -126,6 +144,8 @@ export type NotaFiscalEventoDetalhe = {
 export type NotaFiscalDetalhe = {
   id: string;
   modeloLabel: string;
+  finalidade: FinalidadeNfe;
+  finalidadeLabel: string | null;
   numero: string;
   serie: string;
   status: StatusNotaFiscal;
@@ -134,6 +154,8 @@ export type NotaFiscalDetalhe = {
   ambiente: string;
   naturezaOperacao: string;
   chaveAcesso: string;
+  /** NF-e de devolução: chave da nota original referenciada. */
+  chaveReferenciada: string;
   protocolo: string;
   motivo: string;
   destinatario: string;
@@ -179,6 +201,8 @@ export async function getNotaFiscalDetalhe(id: string): Promise<NotaFiscalDetalh
   return {
     id: nota.id,
     modeloLabel: MODELO_LABEL[nota.modelo],
+    finalidade: nota.finalidade,
+    finalidadeLabel: finalidadeLabel(nota.finalidade),
     numero: nota.numero ?? "-",
     serie: nota.serie ?? "-",
     status: nota.status,
@@ -187,6 +211,7 @@ export async function getNotaFiscalDetalhe(id: string): Promise<NotaFiscalDetalh
     ambiente: nota.ambiente === "PRODUCAO" ? "Produção" : "Homologação",
     naturezaOperacao: nota.naturezaOperacao ?? "—",
     chaveAcesso: nota.chaveAcesso ?? "",
+    chaveReferenciada: nota.chaveReferenciada ?? "",
     protocolo: nota.protocolo ?? "",
     motivo: nota.motivo ?? "",
     destinatario: nota.destinatarioNome ?? "—",
@@ -227,7 +252,7 @@ export async function getNotaFiscalDetalhe(id: string): Promise<NotaFiscalDetalh
     canDownload: Boolean(nota.providerRef) && (nota.status === "AUTORIZADA" || nota.status === "CANCELADA"),
     canSync: Boolean(nota.providerRef) && (nota.status === "PROCESSANDO" || nota.status === "AUTORIZADA"),
     canClone: true,
-    canDevolver: nota.modelo === "NFE" && nota.status === "AUTORIZADA" && Boolean(nota.chaveAcesso)
+    canDevolver: nota.modelo === "NFE" && nota.status === "AUTORIZADA" && Boolean(nota.chaveAcesso) && nota.finalidade === "NORMAL"
   };
 }
 

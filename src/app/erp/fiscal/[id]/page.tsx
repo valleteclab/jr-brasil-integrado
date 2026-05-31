@@ -14,7 +14,7 @@ export default async function NotaFiscalDetalhePage({ params }: { params: { id: 
     <>
       <PageHeader
         eyebrow="Financeiro & Fiscal"
-        title={`${nota.modeloLabel} ${nota.numero}`}
+        title={`${nota.modeloLabel} ${nota.numero}${nota.finalidadeLabel ? ` · ${nota.finalidadeLabel}` : ""}`}
         action={<Link className="btn-erp light sm" href="/erp/fiscal">← Voltar</Link>}
       >
         <p>Série {nota.serie} · {nota.ambiente} · emitida em {nota.emitidaEm}</p>
@@ -27,6 +27,7 @@ export default async function NotaFiscalDetalhePage({ params }: { params: { id: 
         </div>
         <div className="erp-form">
           <label>Chave de acesso<input value={nota.chaveAcesso || "—"} readOnly /></label>
+          {nota.chaveReferenciada && <label>Nota referenciada (devolução)<input value={nota.chaveReferenciada} readOnly /></label>}
           <label>Protocolo<input value={nota.protocolo || "—"} readOnly /></label>
           <label>Autorizada em<input value={nota.autorizadaEm} readOnly /></label>
           {nota.canceladaEm !== "—" && <label>Cancelada em<input value={nota.canceladaEm} readOnly /></label>}
