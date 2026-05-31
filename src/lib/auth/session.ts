@@ -84,8 +84,9 @@ export async function getSession(): Promise<SessionUser | null> {
   });
   if (!vinculo) return null;
 
+  // A existência de uma Permissao{modulo, acao:"acessar"} concede o módulo.
   const modulos = vinculo.perfil.permissoes
-    .filter((p) => p.permitido && p.acao === "acessar")
+    .filter((p) => p.acao === "acessar")
     .map((p) => p.modulo as ModuloKey);
 
   return {

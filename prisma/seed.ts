@@ -49,7 +49,7 @@ async function seedPerfisEAdmin(tenantId: string, empresaId: string) {
     // Recria as permissões (acao = "acessar") do perfil de forma idempotente.
     await prisma.permissao.deleteMany({ where: { perfilId: perfil.id } });
     await prisma.permissao.createMany({
-      data: modulos.map((modulo) => ({ perfilId: perfil.id, modulo, acao: "acessar", permitido: true }))
+      data: modulos.map((modulo) => ({ tenantId, perfilId: perfil.id, modulo, acao: "acessar" }))
     });
   }
 
@@ -67,7 +67,7 @@ async function seedPerfisEAdmin(tenantId: string, empresaId: string) {
     create: { tenantId, empresaId, usuarioId: admin.id, perfilId: superAdminId, ativo: true }
   });
 
-  console.log(`\n👤 Admin: ${ADMIN_EMAIL}\n🔑 Senha: ${ADMIN_SENHA}\n(troque após o primeiro login)\n`);
+  console.log(`\n[seed] Admin: ${ADMIN_EMAIL} | Senha: ${ADMIN_SENHA} (troque apos o primeiro login)\n`);
 }
 
 async function main() {
