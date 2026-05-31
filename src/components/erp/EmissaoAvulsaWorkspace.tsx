@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { EmissaoFormData } from "@/lib/services/fiscal-emit";
+import { useCadastroLookup } from "./useCadastroLookup";
 
 type DocTipo = "NFE" | "NFCE" | "NFSE";
 type Finalidade = "NORMAL" | "COMPLEMENTAR" | "AJUSTE" | "DEVOLUCAO";
