@@ -659,6 +659,9 @@ export class AcbrFiscalProvider implements FiscalProvider {
 
   /** Consulta os metadados da cidade para decidir provedor NFS-e (nacional vs padrão). */
   private async resolveNfseProvider(ctx: ProviderContext, codigoIbge: string | null): Promise<"nacional" | "padrao"> {
+    // Override explícito da configuração tem prioridade sobre a auto-detecção.
+    if (ctx.nfseAmbienteNacional === true) return "nacional";
+    if (ctx.nfseAmbienteNacional === false) return "padrao";
     if (!codigoIbge) return "padrao";
     try {
       const res = await this.request<{ provedor?: string }>(ctx, "GET", `/nfse/cidades/${encodeURIComponent(codigoIbge)}`);
