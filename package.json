@@ -10,7 +10,8 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
-    "mcp:stdio": "tsx scripts/mcp-stdio.ts"
+    "mcp:stdio": "tsx scripts/mcp-stdio.ts",
+    "reset-senha": "tsx scripts/reset-senha.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
