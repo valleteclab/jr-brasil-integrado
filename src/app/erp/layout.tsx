@@ -12,7 +12,7 @@ export default async function ErpLayout({ children }: Readonly<{ children: React
 
   const context = await getErpShellContext();
   return (
-    <ErpShell context={context} modulos={session.modulos} plataformaAdmin={session.plataformaAdmin}>
+    <ErpShell context={context} modulos={session.modulos}>
       {children}
     </ErpShell>
   );
