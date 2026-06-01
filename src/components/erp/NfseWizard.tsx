@@ -133,7 +133,7 @@ export function NfseWizard({ data }: { data: EmissaoFormData }) {
     [baseRetencaoEfetiva, retIr, retCsll, retInss, retPis, retCofins]
   );
   const issRetidoValor = issRetido && !exigibilidadeSuspensa ? valorIss : 0;
-  const valorLiquido = Math.max(valorServico - descontoIncondicionado - descontoCondicionado - issRetidoValor - totalFederalRetido, 0);
+  const valorLiquido = Math.max(valorServico - descontoIncondicionado - descontoCondicionado - totalFederalRetido, 0);
 
   function stepError(s: number): string {
     if (s === 0) {

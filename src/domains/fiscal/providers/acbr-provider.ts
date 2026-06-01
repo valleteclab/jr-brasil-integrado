@@ -583,8 +583,8 @@ export class AcbrFiscalProvider implements FiscalProvider {
     const itemLc116 = servicoTax?.itemListaServico ?? "";
     const ret = input.document.retencoes ?? null;
     const descricao =
-      input.document.informacoesComplementares?.trim() ||
       input.document.itens.map((i) => i.descricao).join("; ") ||
+      input.document.informacoesComplementares?.trim() ||
       input.document.naturezaOperacao;
 
     // Determina provedor (nacional para municípios PadraoNacional). Best-effort, cai para "padrao".
@@ -642,7 +642,7 @@ export class AcbrFiscalProvider implements FiscalProvider {
               ...(informarAliquota
                 ? { pAliq: aliquotaIss, vISSQN: input.totals.valorIss || undefined }
                 : {}),
-              tpRetISSQN: ret?.issRetido ? 1 : 2
+              tpRetISSQN: ret?.issRetido ? 2 : 1
             },
             ...(tribFed ? { tribFed } : {}),
             // Total de tributos (obrigatório no DPS): federal/estadual/municipal.
