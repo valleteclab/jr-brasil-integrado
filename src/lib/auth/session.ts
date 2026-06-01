@@ -3,6 +3,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import type { ModuloKey } from "@/lib/auth/modules";
+import { TODOS_MODULOS, isAdminPerfil } from "@/lib/auth/modules";
 import { SESSION_COOKIE } from "@/lib/auth/cookie";
 
 export { SESSION_COOKIE };
@@ -84,10 +85,14 @@ export async function getSession(): Promise<SessionUser | null> {
   });
   if (!vinculo) return null;
 
-  // A existência de uma Permissao{modulo, acao:"acessar"} concede o módulo.
-  const modulos = vinculo.perfil.permissoes
-    .filter((p) => p.acao === "acessar")
-    .map((p) => p.modulo as ModuloKey);
+  // Perfis administrativos (SUPER_ADMIN/COMPANY_ADMIN/TENANT_ADMIN) têm acesso total,
+  // independentemente das permissões gravadas. Demais perfis: a existência de uma
+  // Permissao{modulo, acao:"acessar"} concede o módulo.
+  const modulos = isAdminPerfil(vinculo.perfil.nome)
+    ? [...TODOS_MODULOS]
+    : (vinculo.perfil.permissoes
+        .filter((p) => p.acao === "acessar")
+        .map((p) => p.modulo as ModuloKey));
 
   return {
     usuarioId: sessao.usuarioId,

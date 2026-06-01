@@ -13,9 +13,9 @@ function hashPasswordSeed(senha: string): string {
 // Catálogo de módulos (espelha src/lib/auth/modules.ts).
 const TODOS_MODULOS = [
   "dashboard", "atendimento", "caixa", "vendas", "orcamentos", "os", "compras",
-  "estoque", "inventarios", "produtos", "clientes", "fornecedores", "colaboradores",
-  "regras-tributarias", "financeiro", "fluxo-caixa", "fiscal", "relatorios",
-  "assistente", "configuracoes"
+  "entradas-fiscais", "estoque", "inventarios", "produtos", "clientes", "fornecedores",
+  "colaboradores", "regras-tributarias", "financeiro", "fluxo-caixa", "fiscal",
+  "relatorios", "assistente", "configuracoes"
 ] as const;
 
 const PERFIS_PADRAO: Array<{ nome: string; descricao: string; modulos: readonly string[] | "*" }> = [
