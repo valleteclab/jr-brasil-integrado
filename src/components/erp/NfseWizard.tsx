@@ -53,7 +53,12 @@ function statusTone(status: string): string {
 
 export function NfseWizard({ data }: { data: EmissaoFormData }) {
   const router = useRouter();
-  const hoje = new Date().toISOString().slice(0, 10);
+  const hoje = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(new Date());
 
   const [step, setStep] = useState(0);
   const [saving, setSaving] = useState(false);
