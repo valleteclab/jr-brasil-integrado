@@ -632,3 +632,228 @@ export async function listClienteOptions(): Promise<ClienteOption[]> {
   const tenants = await prisma.tenant.findMany({ select: { id: true, nome: true }, orderBy: { nome: "asc" } });
   return tenants.map((t) => ({ id: t.id, nome: t.nome }));
 }
+
+// ---------------------------------------------------------------------------
+// Gestão global de usuários
+// ---------------------------------------------------------------------------
+
+export type UsuarioVinculoInfo = {
+  clienteId: string;
+  clienteNome: string;
+  empresaNome: string | null;
+  perfilNome: string;
+  ativo: boolean;
+};
+
+export type UsuarioRow = {
+  id: string;
+  nome: string;
+  email: string;
+  status: "ATIVO" | "INATIVO";
+  plataformaAdmin: boolean;
+  ultimoAcessoEm: string | null;
+  criadoEm: string;
+  vinculos: UsuarioVinculoInfo[];
+};
+
+export async function listUsuarios(): Promise<UsuarioRow[]> {
+  await requirePlatformAdmin();
+  assertDb();
+
+  const usuarios = await prisma.usuario.findMany({
+    orderBy: [{ plataformaAdmin: "desc" }, { nome: "asc" }],
+    include: {
+      vinculos: {
+        include: {
+          tenant: { select: { id: true, nome: true } },
+          empresa: { select: { nomeFantasia: true, razaoSocial: true } },
+          perfil: { select: { nome: true } }
+        }
+      }
+    }
+  });
+
+  return usuarios.map((u) => ({
+    id: u.id,
+    nome: u.nome,
+    email: u.email,
+    status: u.status,
+    plataformaAdmin: u.plataformaAdmin,
+    ultimoAcessoEm: u.ultimoAcessoEm?.toISOString() ?? null,
+    criadoEm: u.criadoEm.toISOString(),
+    vinculos: u.vinculos.map((v) => ({
+      clienteId: v.tenant.id,
+      clienteNome: v.tenant.nome,
+      empresaNome: v.empresa?.nomeFantasia || v.empresa?.razaoSocial || null,
+      perfilNome: v.perfil.nome,
+      ativo: v.ativo
+    }))
+  }));
+}
+
+/** Estrutura (empresas + perfis) de cada cliente, para montar o formulário de novo usuário. */
+export type EstruturaCliente = {
+  id: string;
+  nome: string;
+  empresas: { id: string; nome: string }[];
+  perfis: { id: string; nome: string }[];
+};
+
+export async function listEstruturaClientes(): Promise<EstruturaCliente[]> {
+  await requirePlatformAdmin();
+  assertDb();
+
+  const tenants = await prisma.tenant.findMany({
+    orderBy: { nome: "asc" },
+    include: {
+      empresas: { select: { id: true, razaoSocial: true, nomeFantasia: true }, orderBy: [{ matriz: "desc" }, { razaoSocial: "asc" }] },
+      perfis: { select: { id: true, nome: true }, orderBy: { nome: "asc" } }
+    }
+  });
+
+  return tenants.map((t) => ({
+    id: t.id,
+    nome: t.nome,
+    empresas: t.empresas.map((e) => ({ id: e.id, nome: e.nomeFantasia || e.razaoSocial })),
+    perfis: t.perfis.map((p) => ({ id: p.id, nome: p.nome }))
+  }));
+}
+
+export type CriarUsuarioInput = {
+  nome: string;
+  email: string;
+  senha?: string;
+  tipo: "CLIENTE" | "PLATAFORMA";
+  tenantId?: string;
+  empresaId?: string;
+  perfilId?: string;
+};
+
+export type CriarUsuarioResult = {
+  usuarioId: string;
+  email: string;
+  senha: string;
+  plataformaAdmin: boolean;
+};
+
+export async function criarUsuario(input: CriarUsuarioInput): Promise<CriarUsuarioResult> {
+  const admin = await requirePlatformAdmin();
+  assertDb();
+
+  const nome = input.nome?.trim();
+  const email = input.email?.trim().toLowerCase();
+  if (!nome || !email) throw new PlatformAdminError("Informe nome e e-mail.");
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new PlatformAdminError("E-mail inválido.");
+
+  const jaExiste = await prisma.usuario.findUnique({ where: { email } });
+  if (jaExiste) throw new PlatformAdminError(`Já existe um usuário com o e-mail ${email}.`);
+
+  const senha = input.senha?.trim() || gerarSenhaTemporaria();
+  if (senha.length < 8) throw new PlatformAdminError("A senha deve ter ao menos 8 caracteres.");
+
+  // Dono da plataforma: conta separada, sem vínculo a cliente.
+  if (input.tipo === "PLATAFORMA") {
+    const usuario = await prisma.usuario.create({
+      data: { nome, email, senhaHash: hashPassword(senha), status: "ATIVO", plataformaAdmin: true }
+    });
+    return { usuarioId: usuario.id, email, senha, plataformaAdmin: true };
+  }
+
+  // Usuário de cliente: exige tenant + empresa + perfil coerentes.
+  const { tenantId, empresaId, perfilId } = input;
+  if (!tenantId || !empresaId || !perfilId) {
+    throw new PlatformAdminError("Para usuário de cliente, selecione cliente, empresa e perfil.");
+  }
+  const [empresa, perfil] = await Promise.all([
+    prisma.empresa.findUnique({ where: { id: empresaId }, select: { tenantId: true } }),
+    prisma.perfil.findUnique({ where: { id: perfilId }, select: { tenantId: true } })
+  ]);
+  if (!empresa || empresa.tenantId !== tenantId) throw new PlatformAdminError("Empresa não pertence ao cliente selecionado.");
+  if (!perfil || perfil.tenantId !== tenantId) throw new PlatformAdminError("Perfil não pertence ao cliente selecionado.");
+
+  const usuario = await prisma.$transaction(async (tx) => {
+    const u = await tx.usuario.create({
+      data: { nome, email, senhaHash: hashPassword(senha), status: "ATIVO", plataformaAdmin: false }
+    });
+    await tx.usuarioVinculo.create({
+      data: { tenantId, empresaId, usuarioId: u.id, perfilId, ativo: true }
+    });
+    await tx.auditoria.create({
+      data: {
+        tenantId,
+        empresaId,
+        usuarioId: admin.usuarioId,
+        entidade: "Usuario",
+        entidadeId: u.id,
+        acao: "plataforma.criar_usuario",
+        payload: { email, perfilId }
+      }
+    });
+    return u;
+  });
+
+  return { usuarioId: usuario.id, email, senha, plataformaAdmin: false };
+}
+
+export type AtualizarUsuarioInput = {
+  nome?: string;
+  email?: string;
+  status?: "ATIVO" | "INATIVO";
+  plataformaAdmin?: boolean;
+};
+
+export async function atualizarUsuario(usuarioId: string, input: AtualizarUsuarioInput) {
+  const admin = await requirePlatformAdmin();
+  assertDb();
+
+  const usuario = await prisma.usuario.findUnique({ where: { id: usuarioId } });
+  if (!usuario) throw new PlatformAdminError("Usuário não encontrado.");
+
+  const data: { nome?: string; email?: string; status?: "ATIVO" | "INATIVO"; plataformaAdmin?: boolean } = {};
+
+  if (input.nome !== undefined) {
+    const nome = input.nome.trim();
+    if (!nome) throw new PlatformAdminError("O nome não pode ficar vazio.");
+    data.nome = nome;
+  }
+  if (input.email !== undefined) {
+    const email = input.email.trim().toLowerCase();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new PlatformAdminError("E-mail inválido.");
+    if (email !== usuario.email) {
+      const dono = await prisma.usuario.findUnique({ where: { email } });
+      if (dono && dono.id !== usuarioId) throw new PlatformAdminError(`Já existe um usuário com o e-mail ${email}.`);
+      data.email = email;
+    }
+  }
+  if (input.status !== undefined) data.status = input.status;
+  if (input.plataformaAdmin !== undefined) data.plataformaAdmin = input.plataformaAdmin;
+
+  const atualizado = await prisma.usuario.update({ where: { id: usuarioId }, data });
+
+  // Inativar ou trocar e-mail encerra as sessões ativas do usuário.
+  if (data.status === "INATIVO" || data.email) {
+    await prisma.sessao.deleteMany({ where: { usuarioId } }).catch(() => undefined);
+  }
+
+  // Auditoria no tenant do primeiro vínculo (quando houver).
+  const vinculo = await prisma.usuarioVinculo.findFirst({ where: { usuarioId }, orderBy: { criadoEm: "asc" } });
+  if (vinculo) {
+    await audit({
+      tenantId: vinculo.tenantId,
+      empresaId: vinculo.empresaId,
+      usuarioId: admin.usuarioId,
+      entidade: "Usuario",
+      entidadeId: usuarioId,
+      acao: "plataforma.atualizar_usuario",
+      payload: { ...data }
+    });
+  }
+
+  return {
+    id: atualizado.id,
+    nome: atualizado.nome,
+    email: atualizado.email,
+    status: atualizado.status,
+    plataformaAdmin: atualizado.plataformaAdmin
+  };
+}
