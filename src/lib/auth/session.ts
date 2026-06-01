@@ -20,6 +20,8 @@ export type SessionUser = {
   scope: TenantScope;
   perfilNome: string;
   modulos: ModuloKey[];
+  /** Dono do SaaS: acesso ao painel da plataforma (/admin), acima do tenant. */
+  plataformaAdmin: boolean;
 };
 
 /** Cria a sessão no banco e grava o cookie httpOnly. Use só em route handler/action. */
@@ -73,6 +75,20 @@ export async function getSession(): Promise<SessionUser | null> {
   });
   if (!sessao || sessao.expiraEm < new Date() || sessao.usuario.status !== "ATIVO") return null;
 
+  const plataformaAdmin = sessao.usuario.plataformaAdmin;
+
+  // Enforcement de bloqueio do cliente (dono do SaaS): se o tenant estiver inativo
+  // ou a empresa não estiver ATIVA, a sessão é negada. O dono da plataforma passa,
+  // para nunca se trancar para fora ao bloquear o próprio tenant.
+  if (!plataformaAdmin) {
+    const [tenant, empresa] = await Promise.all([
+      prisma.tenant.findUnique({ where: { id: sessao.tenantId }, select: { ativo: true } }),
+      prisma.empresa.findUnique({ where: { id: sessao.empresaId }, select: { status: true } })
+    ]);
+    if (!tenant?.ativo) return null;
+    if (!empresa || empresa.status !== "ATIVA") return null;
+  }
+
   // Vínculo ativo do usuário nesta empresa (define o perfil/permissões).
   const vinculo = await prisma.usuarioVinculo.findFirst({
     where: {
@@ -100,7 +116,8 @@ export async function getSession(): Promise<SessionUser | null> {
     email: sessao.usuario.email,
     scope: { tenantId: sessao.tenantId, empresaId: sessao.empresaId },
     perfilNome: vinculo.perfil.nome,
-    modulos
+    modulos,
+    plataformaAdmin
   };
 }
 
@@ -124,3 +141,17 @@ export async function requireModulo(modulo: ModuloKey): Promise<SessionUser> {
 }
 
 export class ForbiddenError extends Error {}
+
+/**
+ * Exige que o usuário autenticado seja dono da plataforma (super admin global do
+ * SaaS). Usado para proteger o painel /admin e suas APIs. Lança SessionError (sem
+ * sessão) ou ForbiddenError (logado, mas sem acesso de plataforma).
+ */
+export async function requirePlatformAdmin(): Promise<SessionUser> {
+  const session = await getSession();
+  if (!session) throw new SessionError("Sessão expirada ou inexistente. Faça login.");
+  if (!session.plataformaAdmin) {
+    throw new ForbiddenError("Acesso restrito ao dono da plataforma.");
+  }
+  return session;
+}

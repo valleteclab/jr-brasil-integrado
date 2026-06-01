@@ -72,14 +72,14 @@ const groups: ErpNavGroup[] = [
   }
 ];
 
-type ErpShellProps = { children: ReactNode; context: ErpShellContext; modulos: string[] };
+type ErpShellProps = { children: ReactNode; context: ErpShellContext; modulos: string[]; plataformaAdmin?: boolean };
 
 function isActive(pathname: string, href: string) {
   if (href === "/erp") return pathname === href;
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-export function ErpShell({ children, context, modulos }: ErpShellProps) {
+export function ErpShell({ children, context, modulos, plataformaAdmin }: ErpShellProps) {
   const pathname = usePathname();
   const router = useRouter();
   const producao = context.ambiente === "PRODUCAO";
@@ -130,6 +130,16 @@ export function ErpShell({ children, context, modulos }: ErpShellProps) {
             </div>
           ))}
         </div>
+        {plataformaAdmin && (
+          <Link
+            className="erp-side-item"
+            style={{ margin: "0 8px 8px", border: "1px solid rgba(255,255,255,.08)" }}
+            href="/admin"
+          >
+            <span className="ic" aria-hidden="true">★</span>
+            <span>Painel da Plataforma</span>
+          </Link>
+        )}
         <div className="erp-side-foot">
           <div className="avatar-sm">{context.usuarioIniciais}</div>
           <div style={{ flex: 1, minWidth: 0 }}>

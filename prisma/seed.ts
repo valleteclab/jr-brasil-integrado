@@ -55,8 +55,8 @@ async function seedPerfisEAdmin(tenantId: string, empresaId: string) {
 
   const admin = await prisma.usuario.upsert({
     where: { email: ADMIN_EMAIL },
-    update: { status: "ATIVO" },
-    create: { nome: "Administrador", email: ADMIN_EMAIL, senhaHash: hashPasswordSeed(ADMIN_SENHA), status: "ATIVO" }
+    update: { status: "ATIVO", plataformaAdmin: true },
+    create: { nome: "Administrador", email: ADMIN_EMAIL, senhaHash: hashPasswordSeed(ADMIN_SENHA), status: "ATIVO", plataformaAdmin: true }
   });
   // Garante a senha (caso o usuário já existisse sem a senha correta).
   await prisma.usuario.update({ where: { id: admin.id }, data: { senhaHash: hashPasswordSeed(ADMIN_SENHA) } });
