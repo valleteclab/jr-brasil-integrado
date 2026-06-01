@@ -19,7 +19,7 @@ const TODOS_MODULOS = [
 ] as const;
 
 const PERFIS_PADRAO: Array<{ nome: string; descricao: string; modulos: readonly string[] | "*" }> = [
-  { nome: "SUPER_ADMIN", descricao: "Acesso total à plataforma.", modulos: "*" },
+  { nome: "SUPER_ADMIN", descricao: "Acesso total ao sistema do cliente.", modulos: "*" },
   { nome: "COMPANY_ADMIN", descricao: "Administra a empresa (todos os módulos).", modulos: "*" },
   { nome: "SALES", descricao: "Vendas, atendimento, caixa e orçamentos.", modulos: ["dashboard", "atendimento", "caixa", "vendas", "orcamentos", "os", "clientes", "produtos", "assistente"] },
   { nome: "STOCK", descricao: "Estoque, inventários e produtos.", modulos: ["dashboard", "estoque", "inventarios", "produtos", "compras"] },

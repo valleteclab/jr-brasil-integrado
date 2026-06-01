@@ -2,7 +2,7 @@ import { hashPassword } from "@/lib/security/password";
 import { prisma } from "@/lib/db/prisma";
 import { requirePlatformAdmin } from "@/lib/auth/session";
 import { formatBrl } from "@/lib/formatters/currency";
-import { PERFIS_PADRAO, TODOS_MODULOS, type ModuloKey } from "@/lib/auth/modules";
+import { PERFIS_PADRAO, TODOS_MODULOS, isAdminPerfil, type ModuloKey } from "@/lib/auth/modules";
 
 /**
  * Camada de serviço do PAINEL DA PLATAFORMA (dono do SaaS).
@@ -1058,4 +1058,109 @@ export async function removerVinculo(vinculoId: string) {
   });
 
   return { id: vinculoId };
+}
+
+// ---------------------------------------------------------------------------
+// Perfis e permissões (RBAC por módulo) de um cliente
+// ---------------------------------------------------------------------------
+
+export type PerfilClienteRow = {
+  id: string;
+  nome: string;
+  descricao: string | null;
+  isAdmin: boolean;
+  modulos: string[];
+};
+
+export async function listPerfisCliente(tenantId: string): Promise<PerfilClienteRow[]> {
+  await requirePlatformAdmin();
+  assertDb();
+
+  const perfis = await prisma.perfil.findMany({
+    where: { tenantId },
+    orderBy: { nome: "asc" },
+    include: { permissoes: { where: { acao: "acessar" }, select: { modulo: true } } }
+  });
+
+  return perfis.map((p) => ({
+    id: p.id,
+    nome: p.nome,
+    descricao: p.descricao,
+    isAdmin: isAdminPerfil(p.nome),
+    modulos: p.permissoes.map((perm) => perm.modulo)
+  }));
+}
+
+export async function criarPerfilCliente(
+  tenantId: string,
+  input: { nome: string; descricao?: string; modulos: string[] }
+) {
+  const admin = await requirePlatformAdmin();
+  assertDb();
+
+  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { id: true } });
+  if (!tenant) throw new PlatformAdminError("Cliente não encontrado.");
+
+  const nome = input.nome?.trim();
+  if (!nome) throw new PlatformAdminError("Informe o nome do perfil.");
+
+  const jaExiste = await prisma.perfil.findUnique({ where: { tenantId_nome: { tenantId, nome } } });
+  if (jaExiste) throw new PlatformAdminError(`Já existe um perfil "${nome}" neste cliente.`);
+
+  const modulos = (input.modulos ?? []).filter((m) => (TODOS_MODULOS as string[]).includes(m));
+
+  const perfil = await prisma.$transaction(async (tx) => {
+    const p = await tx.perfil.create({
+      data: {
+        tenantId,
+        nome,
+        descricao: input.descricao?.trim() || null,
+        permissoes: { create: modulos.map((modulo) => ({ tenantId, modulo, acao: "acessar" })) }
+      }
+    });
+    await tx.auditoria.create({
+      data: {
+        tenantId,
+        usuarioId: admin.usuarioId,
+        entidade: "Perfil",
+        entidadeId: p.id,
+        acao: "plataforma.criar_perfil",
+        payload: { nome, modulos }
+      }
+    });
+    return p;
+  });
+
+  return { id: perfil.id };
+}
+
+export async function atualizarPerfilModulos(perfilId: string, modulos: string[]) {
+  const admin = await requirePlatformAdmin();
+  assertDb();
+
+  const perfil = await prisma.perfil.findUnique({ where: { id: perfilId } });
+  if (!perfil) throw new PlatformAdminError("Perfil não encontrado.");
+
+  const validos = (modulos ?? []).filter((m) => (TODOS_MODULOS as string[]).includes(m));
+
+  await prisma.$transaction(async (tx) => {
+    await tx.permissao.deleteMany({ where: { perfilId, acao: "acessar" } });
+    if (validos.length > 0) {
+      await tx.permissao.createMany({
+        data: validos.map((modulo) => ({ tenantId: perfil.tenantId, perfilId, modulo, acao: "acessar" }))
+      });
+    }
+    await tx.auditoria.create({
+      data: {
+        tenantId: perfil.tenantId,
+        usuarioId: admin.usuarioId,
+        entidade: "Perfil",
+        entidadeId: perfilId,
+        acao: "plataforma.atualizar_permissoes",
+        payload: { modulos: validos }
+      }
+    });
+  });
+
+  return { id: perfilId, modulos: validos };
 }
