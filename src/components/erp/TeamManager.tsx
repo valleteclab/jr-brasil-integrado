@@ -2,42 +2,20 @@
 
 import { useMemo, useState } from "react";
 import type { ColaboradorSummary, PerfilSummary } from "@/lib/services/team";
+import { MODULOS as CATALOGO_MODULOS, type ModuloKey } from "@/lib/auth/modules";
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-const MODULOS = [
-  "usuarios",
-  "empresas",
-  "produtos",
-  "clientes",
-  "pedidos",
-  "estoque",
-  "financeiro",
-  "fiscal"
-] as const;
+// Catálogo de módulos do RBAC (mesma fonte do menu/gate). O acesso é por MÓDULO
+// (ação "acessar"): se o módulo está marcado, o perfil enxerga aquela área.
+const MODULOS = CATALOGO_MODULOS.map((m) => m.key);
+const MODULO_LABELS: Record<ModuloKey, string> = Object.fromEntries(
+  CATALOGO_MODULOS.map((m) => [m.key, m.label])
+) as Record<ModuloKey, string>;
 
-const ACOES = ["visualizar", "gerenciar"] as const;
-
-type Modulo = typeof MODULOS[number];
-type Acao = typeof ACOES[number];
-
-const MODULO_LABELS: Record<Modulo, string> = {
-  usuarios: "Usuários",
-  empresas: "Empresas",
-  produtos: "Produtos",
-  clientes: "Clientes",
-  pedidos: "Pedidos",
-  estoque: "Estoque",
-  financeiro: "Financeiro",
-  fiscal: "Fiscal"
-};
-
-const ACAO_LABELS: Record<Acao, string> = {
-  visualizar: "Visualizar",
-  gerenciar: "Gerenciar"
-};
+type Modulo = ModuloKey;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -54,7 +32,8 @@ type InviteForm = {
 type PerfilForm = {
   nome: string;
   descricao: string;
-  permissoes: Record<Modulo, Set<Acao>>;
+  /** Módulos que o perfil pode acessar. */
+  modulos: Set<Modulo>;
 };
 
 type TeamManagerProps = {
@@ -66,12 +45,8 @@ type TeamManagerProps = {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function emptyPermissoes(): Record<Modulo, Set<Acao>> {
-  return Object.fromEntries(MODULOS.map((m) => [m, new Set<Acao>()])) as Record<Modulo, Set<Acao>>;
-}
-
 function emptyPerfilForm(): PerfilForm {
-  return { nome: "", descricao: "", permissoes: emptyPermissoes() };
+  return { nome: "", descricao: "", modulos: new Set<Modulo>() };
 }
 
 function emptyInviteForm(): InviteForm {
@@ -95,6 +70,7 @@ export function TeamManager({ initialColaboradores, initialPerfis }: TeamManager
 
   // Perfil drawer
   const [perfilOpen, setPerfilOpen] = useState(false);
+  const [editingPerfilId, setEditingPerfilId] = useState<string | null>(null);
   const [perfilForm, setPerfilForm] = useState<PerfilForm>(emptyPerfilForm());
   const [perfilError, setPerfilError] = useState("");
   const [perfilSaving, setPerfilSaving] = useState(false);
@@ -173,70 +149,87 @@ export function TeamManager({ initialColaboradores, initialPerfis }: TeamManager
   // ---------------------------------------------------------------------------
 
   function openPerfil() {
+    setEditingPerfilId(null);
     setPerfilForm(emptyPerfilForm());
+    setPerfilError("");
+    setPerfilOpen(true);
+  }
+
+  function openEditPerfil(p: PerfilSummary) {
+    const modulos = new Set<Modulo>(
+      p.permissoes.filter((pm) => pm.acao === "acessar").map((pm) => pm.modulo as Modulo)
+    );
+    setEditingPerfilId(p.id);
+    setPerfilForm({ nome: p.nome, descricao: p.descricao ?? "", modulos });
     setPerfilError("");
     setPerfilOpen(true);
   }
 
   function closePerfil() {
     setPerfilOpen(false);
+    setEditingPerfilId(null);
     setPerfilError("");
   }
 
-  function togglePermissao(modulo: Modulo, acao: Acao) {
+  function toggleModulo(modulo: Modulo) {
     setPerfilForm((prev) => {
-      const current = new Set(prev.permissoes[modulo]);
-      if (current.has(acao)) {
-        current.delete(acao);
-      } else {
-        current.add(acao);
-        // "gerenciar" implica "visualizar"
-        if (acao === "gerenciar") current.add("visualizar");
-      }
-      return { ...prev, permissoes: { ...prev.permissoes, [modulo]: current } };
+      const next = new Set(prev.modulos);
+      if (next.has(modulo)) next.delete(modulo);
+      else next.add(modulo);
+      return { ...prev, modulos: next };
     });
   }
 
-  function toggleModuloAll(modulo: Modulo) {
+  function toggleTodosModulos() {
     setPerfilForm((prev) => {
-      const current = prev.permissoes[modulo];
-      const hasAll = ACOES.every((a) => current.has(a));
-      const next = new Set<Acao>(hasAll ? [] : ACOES);
-      return { ...prev, permissoes: { ...prev.permissoes, [modulo]: next } };
+      const todos = prev.modulos.size === MODULOS.length;
+      return { ...prev, modulos: todos ? new Set<Modulo>() : new Set<Modulo>(MODULOS) };
     });
   }
 
   async function savePerfil() {
     if (!perfilForm.nome.trim()) { setPerfilError("Nome do perfil é obrigatório."); return; }
+    if (perfilForm.modulos.size === 0) { setPerfilError("Selecione ao menos um módulo."); return; }
 
-    const permissoes = MODULOS.flatMap((m) =>
-      Array.from(perfilForm.permissoes[m]).map((a) => ({ modulo: m, acao: a }))
-    );
+    // RBAC por módulo: uma permissão (modulo, acao "acessar") por módulo marcado.
+    const permissoes = Array.from(perfilForm.modulos).map((m) => ({ modulo: m, acao: "acessar" }));
 
     setPerfilSaving(true);
     setPerfilError("");
 
     try {
-      const response = await fetch("/api/erp/perfis", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nome: perfilForm.nome.trim(), descricao: perfilForm.descricao.trim() || null, permissoes })
-      });
-      const data = await response.json() as { id?: string; error?: string };
-
-      if (!response.ok) throw new Error(data.error ?? "Não foi possível criar o perfil.");
-
-      const novo: PerfilSummary = {
-        id: data.id ?? `local-${Date.now()}`,
-        nome: perfilForm.nome.trim(),
-        descricao: perfilForm.descricao.trim() || null,
-        totalPermissoes: permissoes.length,
-        permissoes
-      };
-      setPerfis((prev) => [...prev, novo]);
+      if (editingPerfilId) {
+        // Edição: atualiza apenas os módulos de acesso do perfil existente.
+        const response = await fetch(`/api/erp/perfis/${editingPerfilId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ modulos: Array.from(perfilForm.modulos) })
+        });
+        const data = await response.json() as { error?: string };
+        if (!response.ok) throw new Error(data.error ?? "Não foi possível atualizar o perfil.");
+        setPerfis((prev) =>
+          prev.map((p) => p.id === editingPerfilId ? { ...p, totalPermissoes: permissoes.length, permissoes } : p)
+        );
+      } else {
+        const response = await fetch("/api/erp/perfis", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ nome: perfilForm.nome.trim(), descricao: perfilForm.descricao.trim() || null, permissoes })
+        });
+        const data = await response.json() as { id?: string; error?: string };
+        if (!response.ok) throw new Error(data.error ?? "Não foi possível criar o perfil.");
+        const novo: PerfilSummary = {
+          id: data.id ?? `local-${Date.now()}`,
+          nome: perfilForm.nome.trim(),
+          descricao: perfilForm.descricao.trim() || null,
+          totalPermissoes: permissoes.length,
+          permissoes
+        };
+        setPerfis((prev) => [...prev, novo]);
+      }
       closePerfil();
     } catch (err) {
-      setPerfilError(err instanceof Error ? err.message : "Erro ao criar perfil.");
+      setPerfilError(err instanceof Error ? err.message : "Erro ao salvar o perfil.");
     } finally {
       setPerfilSaving(false);
     }
@@ -392,32 +385,41 @@ export function TeamManager({ initialColaboradores, initialPerfis }: TeamManager
                 <tr>
                   <th>Perfil</th>
                   <th>Descrição</th>
-                  <th className="num">Permissões</th>
-                  <th>Módulos com acesso</th>
+                  <th className="num">Módulos</th>
+                  <th>Acesso aos módulos</th>
+                  <th className="actions">Ações</th>
                 </tr>
               </thead>
               <tbody>
                 {perfis.map((p) => {
-                  const modulos = Array.from(new Set(p.permissoes.map((pm) => pm.modulo)));
+                  const modulos = Array.from(new Set(p.permissoes.filter((pm) => pm.acao === "acessar").map((pm) => pm.modulo)));
+                  const admin = ["SUPER_ADMIN", "COMPANY_ADMIN", "TENANT_ADMIN"].includes(p.nome.toUpperCase());
                   return (
                     <tr key={p.id}>
                       <td><div style={{ fontWeight: 600, fontSize: 13 }}>{p.nome}</div></td>
                       <td>{p.descricao ?? <span className="sublabel">—</span>}</td>
-                      <td className="num">{p.totalPermissoes}</td>
+                      <td className="num">{admin ? "Todos" : modulos.length}</td>
                       <td>
-                        <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
-                          {modulos.map((m) => (
-                            <span key={m} className="pill mute" style={{ fontSize: 10 }}>{m}</span>
-                          ))}
-                          {!modulos.length && <span className="sublabel">Sem permissões</span>}
-                        </div>
+                        {admin ? (
+                          <span className="pill success" style={{ fontSize: 10 }}>Acesso total</span>
+                        ) : (
+                          <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
+                            {modulos.map((m) => (
+                              <span key={m} className="pill mute" style={{ fontSize: 10 }}>{MODULO_LABELS[m as ModuloKey] ?? m}</span>
+                            ))}
+                            {!modulos.length && <span className="sublabel">Sem acesso</span>}
+                          </div>
+                        )}
+                      </td>
+                      <td className="actions">
+                        <button type="button" className="btn-erp ghost xs" onClick={() => openEditPerfil(p)}>Editar</button>
                       </td>
                     </tr>
                   );
                 })}
                 {!perfis.length && (
                   <tr>
-                    <td colSpan={4}>
+                    <td colSpan={5}>
                       <div className="empty-st">
                         <h4>Nenhum perfil criado</h4>
                         <p>Crie o primeiro perfil de acesso.</p>
@@ -491,11 +493,11 @@ export function TeamManager({ initialColaboradores, initialPerfis }: TeamManager
       {perfilOpen && (
         <>
           <div className="drawer-bd" onClick={closePerfil} />
-          <aside className="drawer" aria-label="Novo perfil">
+          <aside className="drawer" aria-label={editingPerfilId ? "Editar perfil" : "Novo perfil"}>
             <div className="drawer-head">
               <div>
-                <h2>Novo perfil de acesso</h2>
-                <p className="erp-page-sub">Defina o nome e selecione as permissões por módulo.</p>
+                <h2>{editingPerfilId ? "Editar perfil de acesso" : "Novo perfil de acesso"}</h2>
+                <p className="erp-page-sub">Marque os módulos que este perfil pode acessar.</p>
               </div>
               <button type="button" className="btn-erp ghost sm" onClick={closePerfil}>Fechar</button>
             </div>
@@ -506,61 +508,45 @@ export function TeamManager({ initialColaboradores, initialPerfis }: TeamManager
                   <input
                     value={perfilForm.nome}
                     placeholder="Ex.: Vendedor, Financeiro, Administrador..."
+                    disabled={Boolean(editingPerfilId)}
                     onChange={(e) => setPerfilForm((prev) => ({ ...prev, nome: e.target.value }))}
                   />
                 </label>
-                <label className="full">
-                  Descrição
-                  <input
-                    value={perfilForm.descricao}
-                    onChange={(e) => setPerfilForm((prev) => ({ ...prev, descricao: e.target.value }))}
-                  />
-                </label>
+                {!editingPerfilId && (
+                  <label className="full">
+                    Descrição
+                    <input
+                      value={perfilForm.descricao}
+                      onChange={(e) => setPerfilForm((prev) => ({ ...prev, descricao: e.target.value }))}
+                    />
+                  </label>
+                )}
               </div>
 
               <div style={{ padding: "4px 20px 12px" }}>
-                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".6px", textTransform: "uppercase", color: "var(--erp-slate)", marginBottom: 8 }}>Permissões por módulo</div>
-                <div className="erp-table-wrap solo">
-                  <table className="erp-table">
-                    <thead>
-                      <tr>
-                        <th>Módulo</th>
-                        {ACOES.map((a) => (
-                          <th key={a} className="num">{ACAO_LABELS[a]}</th>
-                        ))}
-                        <th className="num">Todos</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {MODULOS.map((m) => {
-                        const perms = perfilForm.permissoes[m];
-                        const hasAll = ACOES.every((a) => perms.has(a));
-                        return (
-                          <tr key={m}>
-                            <td><strong>{MODULO_LABELS[m]}</strong></td>
-                            {ACOES.map((a) => (
-                              <td key={a} className="num">
-                                <input
-                                  type="checkbox"
-                                  checked={perms.has(a)}
-                                  onChange={() => togglePermissao(m, a)}
-                                  aria-label={`${MODULO_LABELS[m]} - ${ACAO_LABELS[a]}`}
-                                />
-                              </td>
-                            ))}
-                            <td className="num">
-                              <input
-                                type="checkbox"
-                                checked={hasAll}
-                                onChange={() => toggleModuloAll(m)}
-                                aria-label={`Todos em ${MODULO_LABELS[m]}`}
-                              />
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".6px", textTransform: "uppercase", color: "var(--erp-slate)" }}>Módulos que o perfil acessa</div>
+                  <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, cursor: "pointer" }}>
+                    <input
+                      type="checkbox"
+                      checked={perfilForm.modulos.size === MODULOS.length}
+                      onChange={toggleTodosModulos}
+                    />
+                    Selecionar todos
+                  </label>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                  {MODULOS.map((m) => (
+                    <label key={m} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", border: `1px solid ${perfilForm.modulos.has(m) ? "var(--erp-yellow, #ffc107)" : "var(--erp-line, #e2e8f0)"}`, borderRadius: 6, cursor: "pointer", fontSize: 12.5 }}>
+                      <input
+                        type="checkbox"
+                        checked={perfilForm.modulos.has(m)}
+                        onChange={() => toggleModulo(m)}
+                        aria-label={MODULO_LABELS[m]}
+                      />
+                      {MODULO_LABELS[m]}
+                    </label>
+                  ))}
                 </div>
               </div>
 
@@ -569,7 +555,7 @@ export function TeamManager({ initialColaboradores, initialPerfis }: TeamManager
             <div className="drawer-foot">
               <button type="button" className="btn-erp ghost sm" onClick={closePerfil}>Cancelar</button>
               <button type="button" className="btn-erp primary sm" disabled={perfilSaving} onClick={savePerfil}>
-                {perfilSaving ? "Salvando..." : "Criar perfil"}
+                {perfilSaving ? "Salvando..." : editingPerfilId ? "Salvar alterações" : "Criar perfil"}
               </button>
             </div>
           </aside>

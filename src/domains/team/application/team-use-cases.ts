@@ -74,6 +74,37 @@ export async function createPerfil(scope: TenantScope, input: CreatePerfilInput)
   });
 }
 
+/**
+ * Atualiza os módulos de acesso de um perfil (RBAC por módulo): substitui todas as
+ * permissões "acessar" pelas informadas. Escopado por tenant. Perfis administrativos
+ * (SUPER_ADMIN/COMPANY_ADMIN) têm acesso total no código, mas as permissões podem ser
+ * editadas mesmo assim sem efeito de bloqueio.
+ */
+export async function updatePerfilModulos(scope: TenantScope, perfilId: string, modulos: string[]) {
+  return prisma.$transaction(async (tx) => {
+    const perfil = await tx.perfil.findFirst({ where: { id: perfilId, tenantId: scope.tenantId } });
+    if (!perfil) throw new TeamValidationError("Perfil não encontrado.");
+
+    // Remove as permissões de acesso atuais e recria pelas selecionadas.
+    await tx.permissao.deleteMany({ where: { perfilId, acao: "acessar" } });
+    if (modulos.length > 0) {
+      await tx.permissao.createMany({
+        data: modulos.map((modulo) => ({ tenantId: scope.tenantId, perfilId, modulo, acao: "acessar" }))
+      });
+    }
+
+    await createAuditLog(tx, {
+      scope,
+      entidade: "Perfil",
+      entidadeId: perfilId,
+      acao: "ATUALIZAR_PERMISSOES",
+      payload: { modulos }
+    });
+
+    return { id: perfilId, modulos };
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Colaborador / UsuarioVinculo
 // ---------------------------------------------------------------------------
