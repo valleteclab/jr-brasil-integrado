@@ -377,6 +377,7 @@ export async function emitFiscalDocument(
       where: { id: created.id },
       data: {
         status: emitResult.status,
+        ...(emitResult.numero ? { numero: emitResult.numero } : {}),
         chaveAcesso: emitResult.chaveAcesso ?? null,
         protocolo: emitResult.protocolo ?? null,
         reciboLote: emitResult.reciboLote ?? null,

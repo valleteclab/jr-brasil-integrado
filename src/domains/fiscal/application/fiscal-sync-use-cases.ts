@@ -46,6 +46,7 @@ export async function syncNotaFiscalStatus(scope: TenantScope, notaId: string) {
       where: { id: nota.id },
       data: {
         status: result.status,
+        ...(result.numero ? { numero: result.numero } : {}),
         ...(result.chaveAcesso ? { chaveAcesso: result.chaveAcesso } : {}),
         ...(result.protocolo ? { protocolo: result.protocolo } : {}),
         ...(result.xmlUrl ? { xmlUrl: result.xmlUrl } : {}),

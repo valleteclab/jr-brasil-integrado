@@ -47,6 +47,7 @@ export type EmitInput = {
 
 export type EmitResult = {
   status: StatusNotaFiscal;
+  numero?: string;
   chaveAcesso?: string;
   protocolo?: string;
   reciboLote?: string;

@@ -431,6 +431,7 @@ export class AcbrFiscalProvider implements FiscalProvider {
     const motivo = data?.mensagens?.map((m) => m.descricao).filter(Boolean).join("; ") || data?.error?.message || undefined;
     return {
       status: mapNfseStatus(data?.status),
+      numero: data?.numero || undefined,
       providerRef: id,
       protocolo: data?.codigo_verificacao || undefined,
       xmlUrl: id ? `${baseUrl}/nfse/${id}/xml` : undefined,
