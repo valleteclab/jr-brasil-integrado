@@ -1,11 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Card } from "@/components/shared/Card";
 import { Button } from "@/components/shared/Button";
 import { StatusBadge } from "@/components/shared/StatusBadge";
-import { ResetarSenhaButton } from "@/components/admin/ResetarSenhaButton";
 
 type VinculoInfo = { clienteId: string; clienteNome: string; empresaNome: string | null; perfilNome: string; ativo: boolean };
 type Usuario = {
@@ -43,7 +43,6 @@ export function UsuariosManager({ usuarios, estrutura }: Props) {
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState("");
   const [criado, setCriado] = useState<{ email: string; senha: string } | null>(null);
-  const [editandoId, setEditandoId] = useState<string | null>(null);
 
   const clienteSel = useMemo(() => estrutura.find((c) => c.id === form.tenantId), [estrutura, form.tenantId]);
 
@@ -209,109 +208,25 @@ export function UsuariosManager({ usuarios, estrutura }: Props) {
                 </tr>
               )}
               {usuarios.map((u) => (
-                <UsuarioLinha
-                  key={u.id}
-                  usuario={u}
-                  emEdicao={editandoId === u.id}
-                  onEditar={() => setEditandoId(u.id)}
-                  onCancelar={() => setEditandoId(null)}
-                  onSalvo={() => {
-                    setEditandoId(null);
-                    router.refresh();
-                  }}
-                />
+                <tr key={u.id}>
+                  <td>
+                    <Link href={`/admin/usuarios/${u.id}`} className="bold">{u.nome}</Link>
+                    {u.plataformaAdmin && <span className="sublabel">Dono da plataforma</span>}
+                  </td>
+                  <td className="mono">{u.email}</td>
+                  <td>{resumoVinculos(u)}</td>
+                  <td><StatusBadge tone={u.status === "ATIVO" ? "success" : "mute"}>{u.status}</StatusBadge></td>
+                  <td>{formatarData(u.ultimoAcessoEm)}</td>
+                  <td className="actions">
+                    <Link href={`/admin/usuarios/${u.id}`} className="btn-erp ghost sm">Gerenciar</Link>
+                  </td>
+                </tr>
               ))}
             </tbody>
           </table>
         </div>
       </Card>
     </>
-  );
-}
-
-function UsuarioLinha({
-  usuario,
-  emEdicao,
-  onEditar,
-  onCancelar,
-  onSalvo
-}: {
-  usuario: Usuario;
-  emEdicao: boolean;
-  onEditar: () => void;
-  onCancelar: () => void;
-  onSalvo: () => void;
-}) {
-  const [nome, setNome] = useState(usuario.nome);
-  const [email, setEmail] = useState(usuario.email);
-  const [status, setStatus] = useState<"ATIVO" | "INATIVO">(usuario.status);
-  const [busy, setBusy] = useState(false);
-  const [erro, setErro] = useState("");
-
-  async function salvar() {
-    setBusy(true);
-    setErro("");
-    try {
-      const res = await fetch(`/api/admin/usuarios/${usuario.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nome, email, status })
-      });
-      const data = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) throw new Error(data.error || "Não foi possível salvar.");
-      onSalvo();
-    } catch (e) {
-      setErro(e instanceof Error ? e.message : "Não foi possível salvar.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  if (emEdicao) {
-    return (
-      <tr>
-        <td><input value={nome} onChange={(e) => setNome(e.target.value)} style={{ width: "100%" }} /></td>
-        <td><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} style={{ width: "100%" }} /></td>
-        <td>{resumoVinculos(usuario)}</td>
-        <td>
-          <select value={status} onChange={(e) => setStatus(e.target.value as "ATIVO" | "INATIVO")}>
-            <option value="ATIVO">ATIVO</option>
-            <option value="INATIVO">INATIVO</option>
-          </select>
-        </td>
-        <td>{formatarData(usuario.ultimoAcessoEm)}</td>
-        <td className="actions">
-          <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-start" }}>
-            <div style={{ display: "flex", gap: 6 }}>
-              <button type="button" className="btn-erp primary sm" onClick={salvar} disabled={busy}>
-                {busy ? "Salvando…" : "Salvar"}
-              </button>
-              <button type="button" className="btn-erp ghost sm" onClick={onCancelar} disabled={busy}>Cancelar</button>
-            </div>
-            {erro && <span style={{ color: "var(--erp-danger)", fontSize: 11 }}>{erro}</span>}
-          </div>
-        </td>
-      </tr>
-    );
-  }
-
-  return (
-    <tr>
-      <td>
-        <strong>{usuario.nome}</strong>
-        {usuario.plataformaAdmin && <span className="sublabel">Dono da plataforma</span>}
-      </td>
-      <td className="mono">{usuario.email}</td>
-      <td>{resumoVinculos(usuario)}</td>
-      <td><StatusBadge tone={usuario.status === "ATIVO" ? "success" : "mute"}>{usuario.status}</StatusBadge></td>
-      <td>{formatarData(usuario.ultimoAcessoEm)}</td>
-      <td className="actions">
-        <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-start" }}>
-          <button type="button" className="btn-erp ghost sm" onClick={onEditar}>Editar</button>
-          {!usuario.plataformaAdmin && <ResetarSenhaButton usuarioId={usuario.id} />}
-        </div>
-      </td>
-    </tr>
   );
 }
 

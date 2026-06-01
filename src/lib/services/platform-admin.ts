@@ -468,9 +468,6 @@ export async function resetarSenhaUsuario(usuarioId: string, novaSenha?: string)
 
   const usuario = await prisma.usuario.findUnique({ where: { id: usuarioId } });
   if (!usuario) throw new PlatformAdminError("Usuário não encontrado.");
-  if (usuario.plataformaAdmin) {
-    throw new PlatformAdminError("Não é permitido resetar a senha de um dono da plataforma por aqui.");
-  }
 
   const senhaInicial = novaSenha?.trim() || gerarSenhaTemporaria();
   if (senhaInicial.length < 8) throw new PlatformAdminError("A senha deve ter ao menos 8 caracteres.");
@@ -825,8 +822,18 @@ export async function atualizarUsuario(usuarioId: string, input: AtualizarUsuari
       data.email = email;
     }
   }
-  if (input.status !== undefined) data.status = input.status;
-  if (input.plataformaAdmin !== undefined) data.plataformaAdmin = input.plataformaAdmin;
+  if (input.status !== undefined) {
+    if (input.status === "INATIVO" && usuarioId === admin.usuarioId) {
+      throw new PlatformAdminError("Você não pode inativar a própria conta.");
+    }
+    data.status = input.status;
+  }
+  if (input.plataformaAdmin !== undefined) {
+    if (input.plataformaAdmin === false && usuarioId === admin.usuarioId) {
+      throw new PlatformAdminError("Você não pode remover o próprio acesso de dono da plataforma.");
+    }
+    data.plataformaAdmin = input.plataformaAdmin;
+  }
 
   const atualizado = await prisma.usuario.update({ where: { id: usuarioId }, data });
 
@@ -856,4 +863,199 @@ export async function atualizarUsuario(usuarioId: string, input: AtualizarUsuari
     status: atualizado.status,
     plataformaAdmin: atualizado.plataformaAdmin
   };
+}
+
+// ---------------------------------------------------------------------------
+// Detalhe do usuário + gestão de vínculos (cliente / empresa / perfil)
+// ---------------------------------------------------------------------------
+
+export type UsuarioVinculoRow = {
+  id: string;
+  clienteId: string;
+  clienteNome: string;
+  empresaId: string | null;
+  empresaNome: string | null;
+  perfilId: string;
+  perfilNome: string;
+  ativo: boolean;
+};
+
+export type UsuarioDetail = {
+  id: string;
+  nome: string;
+  email: string;
+  status: "ATIVO" | "INATIVO";
+  plataformaAdmin: boolean;
+  ultimoAcessoEm: string | null;
+  criadoEm: string;
+  vinculos: UsuarioVinculoRow[];
+};
+
+export async function getUsuarioDetail(usuarioId: string): Promise<UsuarioDetail | null> {
+  await requirePlatformAdmin();
+  assertDb();
+
+  const u = await prisma.usuario.findUnique({
+    where: { id: usuarioId },
+    include: {
+      vinculos: {
+        orderBy: { criadoEm: "asc" },
+        include: {
+          tenant: { select: { id: true, nome: true } },
+          empresa: { select: { id: true, nomeFantasia: true, razaoSocial: true } },
+          perfil: { select: { id: true, nome: true } }
+        }
+      }
+    }
+  });
+  if (!u) return null;
+
+  return {
+    id: u.id,
+    nome: u.nome,
+    email: u.email,
+    status: u.status,
+    plataformaAdmin: u.plataformaAdmin,
+    ultimoAcessoEm: u.ultimoAcessoEm?.toISOString() ?? null,
+    criadoEm: u.criadoEm.toISOString(),
+    vinculos: u.vinculos.map((v) => ({
+      id: v.id,
+      clienteId: v.tenant.id,
+      clienteNome: v.tenant.nome,
+      empresaId: v.empresa?.id ?? null,
+      empresaNome: v.empresa?.nomeFantasia || v.empresa?.razaoSocial || null,
+      perfilId: v.perfil.id,
+      perfilNome: v.perfil.nome,
+      ativo: v.ativo
+    }))
+  };
+}
+
+/** Encerra todas as sessões do usuário (após mudança de acesso/senha/vínculo). */
+async function encerrarSessoes(usuarioId: string) {
+  await prisma.sessao.deleteMany({ where: { usuarioId } }).catch(() => undefined);
+}
+
+export async function adicionarVinculo(
+  usuarioId: string,
+  input: { tenantId: string; empresaId: string; perfilId: string }
+) {
+  const admin = await requirePlatformAdmin();
+  assertDb();
+
+  const usuario = await prisma.usuario.findUnique({ where: { id: usuarioId } });
+  if (!usuario) throw new PlatformAdminError("Usuário não encontrado.");
+
+  const { tenantId, empresaId, perfilId } = input;
+  if (!tenantId || !empresaId || !perfilId) {
+    throw new PlatformAdminError("Selecione cliente, empresa e perfil.");
+  }
+
+  const [empresa, perfil] = await Promise.all([
+    prisma.empresa.findUnique({ where: { id: empresaId }, select: { tenantId: true } }),
+    prisma.perfil.findUnique({ where: { id: perfilId }, select: { tenantId: true } })
+  ]);
+  if (!empresa || empresa.tenantId !== tenantId) throw new PlatformAdminError("Empresa não pertence ao cliente selecionado.");
+  if (!perfil || perfil.tenantId !== tenantId) throw new PlatformAdminError("Perfil não pertence ao cliente selecionado.");
+
+  const jaExiste = await prisma.usuarioVinculo.findFirst({ where: { tenantId, empresaId, usuarioId, perfilId } });
+  if (jaExiste) throw new PlatformAdminError("Esse vínculo (cliente/empresa/perfil) já existe para o usuário.");
+
+  const vinculo = await prisma.usuarioVinculo.create({
+    data: { tenantId, empresaId, usuarioId, perfilId, ativo: true }
+  });
+  await encerrarSessoes(usuarioId);
+  await audit({
+    tenantId,
+    empresaId,
+    usuarioId: admin.usuarioId,
+    entidade: "UsuarioVinculo",
+    entidadeId: vinculo.id,
+    acao: "plataforma.adicionar_vinculo",
+    payload: { usuarioId, perfilId }
+  });
+
+  return { id: vinculo.id };
+}
+
+export async function alterarPerfilVinculo(vinculoId: string, perfilId: string) {
+  const admin = await requirePlatformAdmin();
+  assertDb();
+
+  const vinculo = await prisma.usuarioVinculo.findUnique({ where: { id: vinculoId } });
+  if (!vinculo) throw new PlatformAdminError("Vínculo não encontrado.");
+
+  const perfil = await prisma.perfil.findUnique({ where: { id: perfilId }, select: { tenantId: true } });
+  if (!perfil || perfil.tenantId !== vinculo.tenantId) {
+    throw new PlatformAdminError("Perfil não pertence ao cliente do vínculo.");
+  }
+
+  const conflito = await prisma.usuarioVinculo.findFirst({
+    where: {
+      tenantId: vinculo.tenantId,
+      empresaId: vinculo.empresaId,
+      usuarioId: vinculo.usuarioId,
+      perfilId,
+      id: { not: vinculoId }
+    }
+  });
+  if (conflito) throw new PlatformAdminError("O usuário já possui esse perfil nesta empresa.");
+
+  await prisma.usuarioVinculo.update({ where: { id: vinculoId }, data: { perfilId } });
+  await encerrarSessoes(vinculo.usuarioId);
+  await audit({
+    tenantId: vinculo.tenantId,
+    empresaId: vinculo.empresaId,
+    usuarioId: admin.usuarioId,
+    entidade: "UsuarioVinculo",
+    entidadeId: vinculoId,
+    acao: "plataforma.alterar_perfil_vinculo",
+    payload: { usuarioId: vinculo.usuarioId, perfilId }
+  });
+
+  return { id: vinculoId, perfilId };
+}
+
+export async function definirVinculoAtivo(vinculoId: string, ativo: boolean) {
+  const admin = await requirePlatformAdmin();
+  assertDb();
+
+  const vinculo = await prisma.usuarioVinculo.findUnique({ where: { id: vinculoId } });
+  if (!vinculo) throw new PlatformAdminError("Vínculo não encontrado.");
+
+  await prisma.usuarioVinculo.update({ where: { id: vinculoId }, data: { ativo } });
+  if (!ativo) await encerrarSessoes(vinculo.usuarioId);
+  await audit({
+    tenantId: vinculo.tenantId,
+    empresaId: vinculo.empresaId,
+    usuarioId: admin.usuarioId,
+    entidade: "UsuarioVinculo",
+    entidadeId: vinculoId,
+    acao: ativo ? "plataforma.ativar_vinculo" : "plataforma.desativar_vinculo",
+    payload: { usuarioId: vinculo.usuarioId }
+  });
+
+  return { id: vinculoId, ativo };
+}
+
+export async function removerVinculo(vinculoId: string) {
+  const admin = await requirePlatformAdmin();
+  assertDb();
+
+  const vinculo = await prisma.usuarioVinculo.findUnique({ where: { id: vinculoId } });
+  if (!vinculo) throw new PlatformAdminError("Vínculo não encontrado.");
+
+  await prisma.usuarioVinculo.delete({ where: { id: vinculoId } });
+  await encerrarSessoes(vinculo.usuarioId);
+  await audit({
+    tenantId: vinculo.tenantId,
+    empresaId: vinculo.empresaId,
+    usuarioId: admin.usuarioId,
+    entidade: "UsuarioVinculo",
+    entidadeId: vinculoId,
+    acao: "plataforma.remover_vinculo",
+    payload: { usuarioId: vinculo.usuarioId }
+  });
+
+  return { id: vinculoId };
 }
