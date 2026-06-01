@@ -174,6 +174,7 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
           codigoMunicipioIbge: config.codigoMunicipioIbge,
           codigoServicoLc116Padrao: config.codigoServicoLc116Padrao,
           spedyModoEmissao: config.spedyModoEmissao,
+          nfseAmbienteNacional: config.nfseAmbienteNacional,
           certificadoInfo: config.certificadoInfo,
           active: config.active,
           notes: config.notes
