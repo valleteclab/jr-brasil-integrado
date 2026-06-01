@@ -136,6 +136,7 @@ export function ErpShell({ children, context, modulos }: ErpShellProps) {
             <div className="nm">{context.usuarioNome}</div>
             <div className="role">{context.usuarioPerfil}</div>
           </div>
+          <Link className="btn-erp ghost icon-only" style={{ borderColor: "rgba(255,255,255,.08)", background: "transparent", color: "#cbd5e1" }} href="/erp/conta/senha" aria-label="Trocar senha" title="Trocar senha">🔑</Link>
           <button type="button" className="btn-erp ghost icon-only" style={{ borderColor: "rgba(255,255,255,.08)", background: "transparent", color: "#cbd5e1" }} onClick={sair} aria-label="Sair" title="Sair">⏻</button>
         </div>
       </aside>
