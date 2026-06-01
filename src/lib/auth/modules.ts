@@ -12,6 +12,7 @@ export type ModuloKey =
   | "orcamentos"
   | "os"
   | "compras"
+  | "entradas-fiscais"
   | "estoque"
   | "inventarios"
   | "produtos"
@@ -34,6 +35,7 @@ export const MODULOS: Array<{ key: ModuloKey; label: string }> = [
   { key: "orcamentos", label: "Orçamentos" },
   { key: "os", label: "Ordens de Serviço" },
   { key: "compras", label: "Compras" },
+  { key: "entradas-fiscais", label: "Notas de entrada" },
   { key: "estoque", label: "Estoque" },
   { key: "inventarios", label: "Inventários" },
   { key: "produtos", label: "Produtos" },
@@ -50,6 +52,13 @@ export const MODULOS: Array<{ key: ModuloKey; label: string }> = [
 ];
 
 export const TODOS_MODULOS: ModuloKey[] = MODULOS.map((m) => m.key);
+
+/** Perfis administrativos que têm acesso total, independentemente das permissões gravadas. */
+export const PERFIS_ADMIN = ["SUPER_ADMIN", "COMPANY_ADMIN", "TENANT_ADMIN"];
+
+export function isAdminPerfil(perfilNome: string): boolean {
+  return PERFIS_ADMIN.includes((perfilNome ?? "").toUpperCase());
+}
 
 /** Perfis padrão (SECURITY_MULTI_TENANCY.md) e os módulos que cada um acessa. */
 export const PERFIS_PADRAO: Array<{ nome: string; descricao: string; modulos: ModuloKey[] | "*" }> = [
