@@ -150,6 +150,52 @@ export type DreSimplificado = {
   margemBrutoCompetencia: string;
 };
 
+export type AccountingPackageReport = {
+  competencia: string;
+  inicio: string;
+  fim: string;
+  resumo: {
+    notasSaida: number;
+    valorSaidas: string;
+    entradasFiscais: number;
+    valorEntradas: string;
+    contasReceber: string;
+    contasPagar: string;
+    valorEstoque: string;
+    pendencias: number;
+  };
+  fiscalSaidas: Array<{
+    modelo: string;
+    numero: string;
+    serie: string;
+    status: string;
+    destinatario: string;
+    documento: string;
+    emissao: string;
+    total: string;
+    tributos: string;
+    retencoes: string;
+  }>;
+  fiscalEntradas: Array<{
+    modelo: string;
+    numero: string;
+    serie: string;
+    status: string;
+    fornecedor: string;
+    chaveAcesso: string;
+    emissao: string;
+    recebimento: string;
+    total: string;
+    cfopPrincipal: string;
+  }>;
+  financeiro: {
+    receber: Array<{ documento: string; cliente: string; vencimento: string; status: string; valor: string; valorPago: string }>;
+    pagar: Array<{ documento: string; fornecedor: string; vencimento: string; status: string; valor: string; valorPago: string }>;
+  };
+  estoque: Array<{ tipo: string; produto: string; documento: string; data: string; quantidade: string; custoTotal: string }>;
+  checklist: Array<{ status: "ok" | "warn"; item: string; detalhe: string }>;
+};
+
 // ─── Sales Report ─────────────────────────────────────────────────────────────
 
 export async function salesReport(periodoDias = 30, scopeArg?: TenantScope): Promise<SalesReport> {
@@ -608,3 +654,187 @@ export async function dreSimplificado(periodoDias = 30, scopeArg?: TenantScope):
     margemBrutoCompetencia: `${pctComp.toFixed(1)}%`
   };
 }
+
+function monthRange(mes?: number, ano?: number): { inicio: Date; fim: Date; competencia: string } {
+  const hoje = new Date();
+  const y = ano && ano > 1900 ? ano : hoje.getFullYear();
+  const m = mes && mes >= 1 && mes <= 12 ? mes - 1 : hoje.getMonth();
+  const inicio = new Date(y, m, 1, 0, 0, 0, 0);
+  const fim = new Date(y, m + 1, 0, 23, 59, 59, 999);
+  const competencia = inicio.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+  return { inicio, fim, competencia };
+}
+
+function sumMoney<T>(rows: T[], pick: (row: T) => unknown): number {
+  return round2(rows.reduce((acc, row) => acc + Number(pick(row) ?? 0), 0));
+}
+
+export async function accountingPackageReport(
+  params?: { mes?: number; ano?: number },
+  scopeArg?: TenantScope
+): Promise<AccountingPackageReport> {
+  const scope = scopeArg ?? (await getDevelopmentTenantScope());
+  const base = scopedByTenantCompany(scope);
+  const { inicio, fim, competencia } = monthRange(params?.mes, params?.ano);
+
+  const [notas, entradas, receber, pagar, movimentos, saldos] = await Promise.all([
+    prisma.notaFiscal.findMany({
+      where: { ...base, emitidaEm: { gte: inicio, lte: fim } },
+      orderBy: { emitidaEm: "asc" },
+      select: {
+        modelo: true,
+        numero: true,
+        serie: true,
+        status: true,
+        destinatarioNome: true,
+        destinatarioDocumento: true,
+        emitidaEm: true,
+        total: true,
+        valorTotalTributos: true,
+        valorRetidoTotal: true,
+        xmlUrl: true,
+        danfeUrl: true
+      }
+    }),
+    prisma.entradaFiscal.findMany({
+      where: { ...base, OR: [{ emitidaEm: { gte: inicio, lte: fim } }, { recebidaEm: { gte: inicio, lte: fim } }] },
+      orderBy: [{ emitidaEm: "asc" }, { recebidaEm: "asc" }],
+      select: {
+        modelo: true,
+        numero: true,
+        serie: true,
+        status: true,
+        chaveAcesso: true,
+        emitidaEm: true,
+        recebidaEm: true,
+        totalNota: true,
+        cfopPrincipal: true,
+        fornecedor: { select: { razaoSocial: true, nomeFantasia: true } }
+      }
+    }),
+    prisma.contaReceber.findMany({
+      where: { ...base, vencimento: { gte: inicio, lte: fim } },
+      orderBy: { vencimento: "asc" },
+      select: {
+        numeroDocumento: true,
+        descricao: true,
+        vencimento: true,
+        status: true,
+        valor: true,
+        valorPago: true,
+        cliente: { select: { razaoSocial: true, nomeFantasia: true } }
+      }
+    }),
+    prisma.contaPagar.findMany({
+      where: { ...base, vencimento: { gte: inicio, lte: fim } },
+      orderBy: { vencimento: "asc" },
+      select: {
+        numeroDocumento: true,
+        descricao: true,
+        vencimento: true,
+        status: true,
+        valor: true,
+        valorPago: true,
+        fornecedor: { select: { razaoSocial: true, nomeFantasia: true } }
+      }
+    }),
+    prisma.estoqueMovimento.findMany({
+      where: { ...base, criadoEm: { gte: inicio, lte: fim } },
+      orderBy: { criadoEm: "asc" },
+      select: {
+        tipo: true,
+        documentoTipo: true,
+        documentoId: true,
+        criadoEm: true,
+        quantidade: true,
+        custoTotal: true,
+        produto: { select: { sku: true, nome: true } }
+      }
+    }),
+    prisma.estoqueSaldo.findMany({
+      where: { ...base },
+      select: { quantidade: true, produto: { select: { custoMedio: true } } }
+    })
+  ]);
+
+  const pendencias = [
+    { item: "Notas fiscais rejeitadas/erro/processando", count: notas.filter((n) => ["REJEITADA", "ERRO", "PROCESSANDO"].includes(n.status)).length },
+    { item: "Notas autorizadas sem XML/PDF", count: notas.filter((n) => n.status === "AUTORIZADA" && !n.xmlUrl && !n.danfeUrl).length },
+    { item: "Entradas fiscais aguardando confer?ncia", count: entradas.filter((e) => String(e.status) === "AGUARDANDO_CONFERENCIA").length },
+    { item: "Contas a receber vencidas", count: receber.filter((r) => r.status === "VENCIDO").length },
+    { item: "Contas a pagar vencidas", count: pagar.filter((p) => p.status === "VENCIDO").length }
+  ];
+  const valorEstoqueNum = round2(saldos.reduce((acc, s) => acc + Number(s.quantidade) * Number(s.produto.custoMedio), 0));
+
+  return {
+    competencia,
+    inicio: fmtDate(inicio),
+    fim: fmtDate(fim),
+    resumo: {
+      notasSaida: notas.length,
+      valorSaidas: formatBrl(sumMoney(notas, (n) => n.total)),
+      entradasFiscais: entradas.length,
+      valorEntradas: formatBrl(sumMoney(entradas, (e) => e.totalNota)),
+      contasReceber: formatBrl(sumMoney(receber, (r) => r.valor)),
+      contasPagar: formatBrl(sumMoney(pagar, (p) => p.valor)),
+      valorEstoque: formatBrl(valorEstoqueNum),
+      pendencias: pendencias.reduce((acc, p) => acc + p.count, 0)
+    },
+    fiscalSaidas: notas.map((n) => ({
+      modelo: n.modelo,
+      numero: n.numero ?? "",
+      serie: n.serie ?? "",
+      status: n.status,
+      destinatario: n.destinatarioNome ?? "",
+      documento: n.destinatarioDocumento ?? "",
+      emissao: n.emitidaEm ? fmtDate(n.emitidaEm) : "",
+      total: formatBrl(Number(n.total)),
+      tributos: formatBrl(Number(n.valorTotalTributos)),
+      retencoes: formatBrl(Number(n.valorRetidoTotal))
+    })),
+    fiscalEntradas: entradas.map((e) => ({
+      modelo: e.modelo ?? "",
+      numero: e.numero ?? "",
+      serie: e.serie ?? "",
+      status: String(e.status),
+      fornecedor: e.fornecedor?.razaoSocial || e.fornecedor?.nomeFantasia || "",
+      chaveAcesso: e.chaveAcesso ?? "",
+      emissao: e.emitidaEm ? fmtDate(e.emitidaEm) : "",
+      recebimento: e.recebidaEm ? fmtDate(e.recebidaEm) : "",
+      total: formatBrl(Number(e.totalNota)),
+      cfopPrincipal: e.cfopPrincipal ?? ""
+    })),
+    financeiro: {
+      receber: receber.map((r) => ({
+        documento: r.numeroDocumento ?? r.descricao,
+        cliente: r.cliente.razaoSocial || r.cliente.nomeFantasia || "",
+        vencimento: fmtDate(r.vencimento),
+        status: r.status,
+        valor: formatBrl(Number(r.valor)),
+        valorPago: formatBrl(Number(r.valorPago))
+      })),
+      pagar: pagar.map((p) => ({
+        documento: p.numeroDocumento ?? p.descricao,
+        fornecedor: p.fornecedor?.razaoSocial || p.fornecedor?.nomeFantasia || "",
+        vencimento: fmtDate(p.vencimento),
+        status: p.status,
+        valor: formatBrl(Number(p.valor)),
+        valorPago: formatBrl(Number(p.valorPago))
+      }))
+    },
+    estoque: movimentos.map((m) => ({
+      tipo: m.tipo,
+      produto: `${m.produto.sku} - ${m.produto.nome}`,
+      documento: [m.documentoTipo, m.documentoId].filter(Boolean).join(" "),
+      data: fmtDate(m.criadoEm),
+      quantidade: Number(m.quantidade).toLocaleString("pt-BR"),
+      custoTotal: formatBrl(Number(m.custoTotal ?? 0))
+    })),
+    checklist: pendencias.map((p) => ({
+      status: p.count === 0 ? "ok" : "warn",
+      item: p.item,
+      detalhe: p.count === 0 ? "Sem pend?ncias" : `${p.count} ocorr?ncia(s)`
+    }))
+  };
+}
+

@@ -3,16 +3,17 @@
 import { useState } from "react";
 import { KpiCard } from "@/components/shared/KpiCard";
 import { StatusBadge } from "@/components/shared/StatusBadge";
-import type { SalesReport, StockReport, FinanceReport, FiscalReport, DreSimplificado } from "@/lib/services/reports";
+import type { AccountingPackageReport, SalesReport, StockReport, FinanceReport, FiscalReport, DreSimplificado } from "@/lib/services/reports";
 
-type Tab = "vendas" | "estoque" | "financeiro" | "fiscal" | "dre";
+type Tab = "vendas" | "estoque" | "financeiro" | "fiscal" | "dre" | "contabil";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "vendas", label: "Vendas" },
   { id: "estoque", label: "Estoque" },
   { id: "financeiro", label: "Financeiro" },
   { id: "fiscal", label: "Fiscal" },
-  { id: "dre", label: "DRE" }
+  { id: "dre", label: "DRE" },
+  { id: "contabil", label: "Pacote cont?bil" }
 ];
 
 type Props = {
@@ -21,6 +22,8 @@ type Props = {
   finance: FinanceReport;
   fiscal: FiscalReport;
   dre: DreSimplificado;
+  accounting: AccountingPackageReport;
+  accountingParams: { mes?: number; ano?: number };
 };
 
 // ─── Aba Vendas ───────────────────────────────────────────────────────────────
@@ -508,9 +511,90 @@ function AbaDre({ data }: { data: DreSimplificado }) {
   );
 }
 
+// ─── Aba Pacote Contábil ──────────────────────────────────────────────────────
+
+function exportHref(kind: "html" | "csv", params: { mes?: number; ano?: number }): string {
+  const qs = new URLSearchParams();
+  if (params.mes) qs.set("mes", String(params.mes));
+  if (params.ano) qs.set("ano", String(params.ano));
+  const query = qs.toString();
+  return `/api/erp/relatorios/pacote-contabil/${kind}${query ? `?${query}` : ""}`;
+}
+
+function SimpleTable({ title, rows, limit = 8 }: { title: string; rows: Record<string, unknown>[]; limit?: number }) {
+  const visible = rows.slice(0, limit);
+  const headers = visible[0] ? Object.keys(visible[0]) : [];
+  return (
+    <section className="erp-card" style={{ marginTop: "1rem" }}>
+      <div className="erp-card-head"><h3>{title}</h3></div>
+      {visible.length === 0 ? (
+        <div className="empty-st"><span>Sem dados no período.</span></div>
+      ) : (
+        <div className="erp-table-wrap">
+          <table className="erp-table">
+            <thead><tr>{headers.map((header) => <th key={header}>{header}</th>)}</tr></thead>
+            <tbody>
+              {visible.map((row, index) => (
+                <tr key={index}>{headers.map((header) => <td key={header}>{String(row[header] ?? "")}</td>)}</tr>
+              ))}
+            </tbody>
+          </table>
+          {rows.length > limit && <p style={{ marginTop: "0.5rem", color: "var(--text-2)" }}>Mostrando {limit} de {rows.length}. Exporte CSV/HTML para ver tudo.</p>}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function AbaContabil({ data, params }: { data: AccountingPackageReport; params: { mes?: number; ano?: number } }) {
+  return (
+    <div>
+      <div className="alert warn" style={{ marginBottom: "1rem" }}>
+        <strong>Pacote contábil mensal — {data.competencia || "competência atual"}.</strong>{" "}
+        Base gerencial para conferência com a contabilidade. SPED/obrigações oficiais exigem validação do contador.
+      </div>
+
+      <form action="/erp/relatorios" style={{ display: "flex", gap: "0.75rem", alignItems: "end", marginBottom: "1rem" }}>
+        <label>Mês<br /><input name="mes" type="number" min="1" max="12" defaultValue={params.mes ?? new Date().getMonth() + 1} /></label>
+        <label>Ano<br /><input name="ano" type="number" min="2000" max="2100" defaultValue={params.ano ?? new Date().getFullYear()} /></label>
+        <button className="btn" type="submit">Filtrar</button>
+        <a className="btn light" href={exportHref("html", params)} target="_blank" rel="noreferrer">HTML / PDF</a>
+        <a className="btn light" href={exportHref("csv", params)}>CSV</a>
+      </form>
+
+      <div className="kpi-row">
+        <KpiCard label="Notas de saída" value={String(data.resumo.notasSaida)} tone="info" />
+        <KpiCard label="Valor saídas" value={data.resumo.valorSaidas} tone="success" />
+        <KpiCard label="Entradas fiscais" value={String(data.resumo.entradasFiscais)} tone="default" />
+        <KpiCard label="Valor entradas" value={data.resumo.valorEntradas} tone="info" />
+        <KpiCard label="Contas a receber" value={data.resumo.contasReceber} tone="success" />
+        <KpiCard label="Contas a pagar" value={data.resumo.contasPagar} tone="warn" />
+        <KpiCard label="Estoque a custo" value={data.resumo.valorEstoque} tone="default" />
+        <KpiCard label="Pendências" value={String(data.resumo.pendencias)} tone={data.resumo.pendencias > 0 ? "warn" : "success"} />
+      </div>
+
+      <section className="erp-card" style={{ marginTop: "1.5rem" }}>
+        <div className="erp-card-head"><h3>Checklist de fechamento</h3></div>
+        <div className="erp-table-wrap">
+          <table className="erp-table">
+            <thead><tr><th>Status</th><th>Item</th><th>Detalhe</th></tr></thead>
+            <tbody>{data.checklist.map((item) => <tr key={item.item}><td><StatusBadge tone={item.status === "ok" ? "success" : "warn"}>{item.status === "ok" ? "OK" : "Atenção"}</StatusBadge></td><td>{item.item}</td><td>{item.detalhe}</td></tr>)}</tbody>
+          </table>
+        </div>
+      </section>
+
+      <SimpleTable title="Fiscal - Saídas" rows={data.fiscalSaidas} />
+      <SimpleTable title="Fiscal - Entradas" rows={data.fiscalEntradas} />
+      <SimpleTable title="Financeiro - Contas a receber" rows={data.financeiro.receber} />
+      <SimpleTable title="Financeiro - Contas a pagar" rows={data.financeiro.pagar} />
+      <SimpleTable title="Estoque - Movimentos" rows={data.estoque} />
+    </div>
+  );
+}
+
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-export function ReportsView({ sales, stock, finance, fiscal, dre }: Props) {
+export function ReportsView({ sales, stock, finance, fiscal, dre, accounting, accountingParams }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>("vendas");
 
   return (
@@ -535,6 +619,7 @@ export function ReportsView({ sales, stock, finance, fiscal, dre }: Props) {
       {activeTab === "financeiro" && <AbaFinanceiro data={finance} />}
       {activeTab === "fiscal" && <AbaFiscal data={fiscal} />}
       {activeTab === "dre" && <AbaDre data={dre} />}
+      {activeTab === "contabil" && <AbaContabil data={accounting} params={accountingParams} />}
     </div>
   );
 }
