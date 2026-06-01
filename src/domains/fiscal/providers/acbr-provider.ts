@@ -687,7 +687,8 @@ export class AcbrFiscalProvider implements FiscalProvider {
     // prefeituras processam de forma assíncrona, então confirmamos consultando a situação.
     if (input.modelo === "NFSE") {
       const res = await this.request<AcbrNfseResponse>(ctx, "POST", `/nfse/${ref}/cancelamento`, {
-        justificativa: input.justificativa
+        CodCancelamento: 1,
+        MotCancelamento: input.justificativa
       });
       if (!res.ok) return { status: "ERRO", motivo: res.errorMessage ?? "Falha ao cancelar a NFS-e na ACBr." };
       if (mapNfseStatus(res.data?.status) === "CANCELADA") {
