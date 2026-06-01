@@ -174,6 +174,7 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
           codigoMunicipioIbge: config.codigoMunicipioIbge,
           codigoServicoLc116Padrao: config.codigoServicoLc116Padrao,
           spedyModoEmissao: config.spedyModoEmissao,
+          nfseAmbienteNacional: config.nfseAmbienteNacional,
           certificadoInfo: config.certificadoInfo,
           active: config.active,
           notes: config.notes
@@ -370,6 +371,17 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
               {LC116_LIST.map((item) => (
                 <option key={item.code} value={item.code}>{item.code} — {item.description}</option>
               ))}
+            </select>
+          </label>
+          <label>
+            Ambiente da NFS-e (município)
+            <select
+              value={config.nfseAmbienteNacional === null ? "auto" : config.nfseAmbienteNacional ? "nacional" : "padrao"}
+              onChange={(e) => update("nfseAmbienteNacional", e.target.value === "auto" ? null : e.target.value === "nacional")}
+            >
+              <option value="auto">Detectar automaticamente</option>
+              <option value="nacional">Ambiente Nacional — alíquota definida pelo sistema (não informar)</option>
+              <option value="padrao">Padrão do município — informar alíquota</option>
             </select>
           </label>
           <label>

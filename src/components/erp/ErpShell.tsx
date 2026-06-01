@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import type { ErpShellBadges, ErpShellContext } from "@/lib/services/erp-shell";
+import { moduloFromPath } from "@/lib/auth/modules";
 
 type ErpNavItem = {
   label: string;
@@ -71,16 +72,32 @@ const groups: ErpNavGroup[] = [
   }
 ];
 
-type ErpShellProps = { children: ReactNode; context: ErpShellContext };
+type ErpShellProps = { children: ReactNode; context: ErpShellContext; modulos: string[] };
 
 function isActive(pathname: string, href: string) {
   if (href === "/erp") return pathname === href;
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-export function ErpShell({ children, context }: ErpShellProps) {
+export function ErpShell({ children, context, modulos }: ErpShellProps) {
   const pathname = usePathname();
+  const router = useRouter();
   const producao = context.ambiente === "PRODUCAO";
+
+  // Gate por módulo: item visível se o módulo do href estiver liberado ao perfil.
+  const podeVer = (href: string) => {
+    const modulo = moduloFromPath(href);
+    return modulo ? modulos.includes(modulo) : true;
+  };
+  const gruposVisiveis = groups
+    .map((g) => ({ ...g, items: g.items.filter((i) => podeVer(i.href)) }))
+    .filter((g) => g.items.length > 0);
+
+  async function sair() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    router.replace("/login");
+    router.refresh();
+  }
 
   return (
     <div className="erp-app">
@@ -93,7 +110,7 @@ export function ErpShell({ children, context }: ErpShellProps) {
           </div>
         </div>
         <div className="erp-side-nav">
-          {groups.map((g) => (
+          {gruposVisiveis.map((g) => (
             <div className="erp-side-group" key={g.group}>
               <div className="erp-side-group-h">{g.group}</div>
               {g.items.map((item) => {
@@ -119,7 +136,7 @@ export function ErpShell({ children, context }: ErpShellProps) {
             <div className="nm">{context.usuarioNome}</div>
             <div className="role">{context.usuarioPerfil}</div>
           </div>
-          <Link className="btn-erp ghost icon-only" style={{ borderColor: "rgba(255,255,255,.08)", background: "transparent", color: "#cbd5e1" }} href="/erp/configuracoes/fiscal" aria-label="Configurações">⚙</Link>
+          <button type="button" className="btn-erp ghost icon-only" style={{ borderColor: "rgba(255,255,255,.08)", background: "transparent", color: "#cbd5e1" }} onClick={sair} aria-label="Sair" title="Sair">⏻</button>
         </div>
       </aside>
 

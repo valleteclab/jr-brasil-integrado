@@ -1,6 +1,74 @@
 ﻿import { PrismaClient } from "@prisma/client";
+import { randomBytes, scryptSync } from "node:crypto";
 
 const prisma = new PrismaClient();
+
+// Hash scrypt no MESMO formato de src/lib/security/password.ts ("salt:hash").
+function hashPasswordSeed(senha: string): string {
+  const salt = randomBytes(16).toString("hex");
+  const hash = scryptSync(senha, salt, 64).toString("hex");
+  return `${salt}:${hash}`;
+}
+
+// Catálogo de módulos (espelha src/lib/auth/modules.ts).
+const TODOS_MODULOS = [
+  "dashboard", "atendimento", "caixa", "vendas", "orcamentos", "os", "compras",
+  "estoque", "inventarios", "produtos", "clientes", "fornecedores", "colaboradores",
+  "regras-tributarias", "financeiro", "fluxo-caixa", "fiscal", "relatorios",
+  "assistente", "configuracoes"
+] as const;
+
+const PERFIS_PADRAO: Array<{ nome: string; descricao: string; modulos: readonly string[] | "*" }> = [
+  { nome: "SUPER_ADMIN", descricao: "Acesso total à plataforma.", modulos: "*" },
+  { nome: "COMPANY_ADMIN", descricao: "Administra a empresa (todos os módulos).", modulos: "*" },
+  { nome: "SALES", descricao: "Vendas, atendimento, caixa e orçamentos.", modulos: ["dashboard", "atendimento", "caixa", "vendas", "orcamentos", "os", "clientes", "produtos", "assistente"] },
+  { nome: "STOCK", descricao: "Estoque, inventários e produtos.", modulos: ["dashboard", "estoque", "inventarios", "produtos", "compras"] },
+  { nome: "PURCHASE", descricao: "Compras e fornecedores.", modulos: ["dashboard", "compras", "fornecedores", "produtos", "estoque"] },
+  { nome: "WORKSHOP", descricao: "Oficina: ordens de serviço.", modulos: ["dashboard", "os", "clientes", "produtos", "estoque"] },
+  { nome: "FINANCE", descricao: "Financeiro, fluxo de caixa e relatórios.", modulos: ["dashboard", "financeiro", "fluxo-caixa", "relatorios", "assistente"] },
+  { nome: "FISCAL", descricao: "Notas fiscais, regras tributárias e configuração fiscal.", modulos: ["dashboard", "fiscal", "regras-tributarias", "configuracoes"] }
+];
+
+const ADMIN_EMAIL = "admin@jrbrasilpecas.com.br";
+// Senha temporária forte do admin. Pode ser sobrescrita por ADMIN_INITIAL_PASSWORD.
+// IMPORTANTE: troque após o primeiro login.
+const ADMIN_SENHA = process.env.ADMIN_INITIAL_PASSWORD ?? "Jr#Brasil@2026!Adm7qZ";
+
+/** Cria/atualiza os perfis padrão (com permissões por módulo) e o admin SUPER_ADMIN. */
+async function seedPerfisEAdmin(tenantId: string, empresaId: string) {
+  let superAdminId = "";
+  for (const def of PERFIS_PADRAO) {
+    const perfil = await prisma.perfil.upsert({
+      where: { tenantId_nome: { tenantId, nome: def.nome } },
+      update: { descricao: def.descricao },
+      create: { tenantId, nome: def.nome, descricao: def.descricao }
+    });
+    if (def.nome === "SUPER_ADMIN") superAdminId = perfil.id;
+
+    const modulos = def.modulos === "*" ? [...TODOS_MODULOS] : def.modulos;
+    // Recria as permissões (acao = "acessar") do perfil de forma idempotente.
+    await prisma.permissao.deleteMany({ where: { perfilId: perfil.id } });
+    await prisma.permissao.createMany({
+      data: modulos.map((modulo) => ({ tenantId, perfilId: perfil.id, modulo, acao: "acessar" }))
+    });
+  }
+
+  const admin = await prisma.usuario.upsert({
+    where: { email: ADMIN_EMAIL },
+    update: { status: "ATIVO" },
+    create: { nome: "Administrador", email: ADMIN_EMAIL, senhaHash: hashPasswordSeed(ADMIN_SENHA), status: "ATIVO" }
+  });
+  // Garante a senha (caso o usuário já existisse sem a senha correta).
+  await prisma.usuario.update({ where: { id: admin.id }, data: { senhaHash: hashPasswordSeed(ADMIN_SENHA) } });
+
+  await prisma.usuarioVinculo.upsert({
+    where: { tenantId_empresaId_usuarioId_perfilId: { tenantId, empresaId, usuarioId: admin.id, perfilId: superAdminId } },
+    update: { ativo: true },
+    create: { tenantId, empresaId, usuarioId: admin.id, perfilId: superAdminId, ativo: true }
+  });
+
+  console.log(`\n[seed] Admin: ${ADMIN_EMAIL} | Senha: ${ADMIN_SENHA} (troque apos o primeiro login)\n`);
+}
 
 async function main() {
   const tenant = await prisma.tenant.upsert({
@@ -98,74 +166,8 @@ async function main() {
     }
   }
 
-  const perfilAdmin = await prisma.perfil.upsert({
-    where: { tenantId_nome: { tenantId: tenant.id, nome: "SUPER_ADMIN" } },
-    update: {},
-    create: {
-      tenantId: tenant.id,
-      nome: "SUPER_ADMIN",
-      descricao: "Acesso total ao tenant JR Brasil"
-    }
-  });
-
-  const permissoes = [
-    ["usuarios", "gerenciar"],
-    ["empresas", "gerenciar"],
-    ["produtos", "gerenciar"],
-    ["clientes", "gerenciar"],
-    ["pedidos", "gerenciar"],
-    ["estoque", "gerenciar"],
-    ["financeiro", "gerenciar"],
-    ["fiscal", "gerenciar"]
-  ];
-
-  for (const [modulo, acao] of permissoes) {
-    await prisma.permissao.upsert({
-      where: {
-        tenantId_modulo_acao_perfilId: {
-          tenantId: tenant.id,
-          modulo,
-          acao,
-          perfilId: perfilAdmin.id
-        }
-      },
-      update: {},
-      create: {
-        tenantId: tenant.id,
-        perfilId: perfilAdmin.id,
-        modulo,
-        acao
-      }
-    });
-  }
-
-  const usuarioAdmin = await prisma.usuario.upsert({
-    where: { email: "admin@jrbrasilpecas.com.br" },
-    update: {},
-    create: {
-      nome: "Administrador JR Brasil",
-      email: "admin@jrbrasilpecas.com.br",
-      senhaHash: "change-me"
-    }
-  });
-
-  await prisma.usuarioVinculo.upsert({
-    where: {
-      tenantId_empresaId_usuarioId_perfilId: {
-        tenantId: tenant.id,
-        empresaId: empresa.id,
-        usuarioId: usuarioAdmin.id,
-        perfilId: perfilAdmin.id
-      }
-    },
-    update: {},
-    create: {
-      tenantId: tenant.id,
-      empresaId: empresa.id,
-      usuarioId: usuarioAdmin.id,
-      perfilId: perfilAdmin.id
-    }
-  });
+  // Perfis padrão (RBAC por módulo) + usuário administrador SUPER_ADMIN.
+  await seedPerfisEAdmin(tenant.id, empresa.id);
 
   const categoria = await prisma.produtoCategoria.upsert({
     where: { tenantId_empresaId_slug: { tenantId: tenant.id, empresaId: empresa.id, slug: "pecas-agricolas" } },

@@ -29,6 +29,8 @@ export type ProviderContext = {
   cscToken: string | null;
   /** Spedy: "COMPLETO" (padrao) ou "SIMPLIFICADO" (/orders). */
   emissionMode?: string | null;
+  /** NFS-e: override do ambiente do município — true=nacional, false=padrão, null/undefined=auto. */
+  nfseAmbienteNacional?: boolean | null;
 };
 
 export type EmitInput = {

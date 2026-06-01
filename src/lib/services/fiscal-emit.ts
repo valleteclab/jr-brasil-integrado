@@ -29,6 +29,8 @@ export type EmissaoFormData = {
   produtos: EmissaoProduto[];
   lc116: Array<{ code: string; description: string }>;
   emitterUf: string | null;
+  /** NFS-e: override do ambiente do município (true=nacional, false=padrão, null=auto). */
+  nfseAmbienteNacional: boolean | null;
 };
 
 /** Dados para os formulários de emissão avulsa (NF-e/NFC-e/NFS-e). */
@@ -57,8 +59,14 @@ export async function getEmissaoFormData(): Promise<EmissaoFormData> {
     prisma.empresa.findUnique({ where: { id: scope.empresaId }, select: { enderecoUf: true } })
   ]);
 
+  const cfgFiscal = await prisma.configuracaoFiscal.findUnique({
+    where: { empresaId: scope.empresaId },
+    select: { nfseAmbienteNacional: true }
+  });
+
   return {
     emitterUf: empresa?.enderecoUf ?? null,
+    nfseAmbienteNacional: cfgFiscal?.nfseAmbienteNacional ?? null,
     lc116: LC116_LIST,
     clientes: clientes.map((c) => {
       const endereco = c.enderecos[0];
