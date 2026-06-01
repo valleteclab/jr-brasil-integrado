@@ -334,6 +334,7 @@ model Usuario {
   email        String           @unique
   senhaHash    String
   status       StatusUsuario    @default(ATIVO)
+  plataformaAdmin Boolean        @default(false)
   vinculos     UsuarioVinculo[]
   auditorias   Auditoria[]
   sessoes      Sessao[]

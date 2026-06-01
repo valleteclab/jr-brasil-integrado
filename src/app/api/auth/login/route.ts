@@ -27,6 +27,21 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Usuário sem empresa/perfil ativo. Procure o administrador." }, { status: 403 });
     }
 
+    // Enforcement de bloqueio do cliente: tenant inativo ou empresa não-ATIVA impedem o
+    // login (exceto o dono da plataforma, que administra os bloqueios). Espelha getSession.
+    if (!usuario.plataformaAdmin) {
+      const [tenant, empresa] = await Promise.all([
+        prisma.tenant.findUnique({ where: { id: vinculo.tenantId }, select: { ativo: true } }),
+        prisma.empresa.findUnique({ where: { id: vinculo.empresaId }, select: { status: true } })
+      ]);
+      if (!tenant?.ativo || !empresa || empresa.status !== "ATIVA") {
+        return NextResponse.json(
+          { error: "Acesso suspenso. Procure o suporte da plataforma." },
+          { status: 403 }
+        );
+      }
+    }
+
     await createSession(
       usuario.id,
       { tenantId: vinculo.tenantId, empresaId: vinculo.empresaId },

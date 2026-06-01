@@ -1,0 +1,634 @@
+import { hashPassword } from "@/lib/security/password";
+import { prisma } from "@/lib/db/prisma";
+import { requirePlatformAdmin } from "@/lib/auth/session";
+import { formatBrl } from "@/lib/formatters/currency";
+import { PERFIS_PADRAO, TODOS_MODULOS, type ModuloKey } from "@/lib/auth/modules";
+
+/**
+ * Camada de serviço do PAINEL DA PLATAFORMA (dono do SaaS).
+ *
+ * Diferente do restante do ERP, este módulo NÃO é escopado por tenant: o dono da
+ * plataforma enxerga todos os clientes. Toda função pública exige `requirePlatformAdmin()`
+ * (lança se o usuário não for dono da plataforma) e registra auditoria das ações sensíveis.
+ *
+ * Aqui um "cliente" do SaaS = um Tenant (conta contratante), que contém uma ou mais
+ * empresas (CNPJs). Bloquear o tenant trava o login de todos os usuários do cliente.
+ */
+
+export class PlatformAdminError extends Error {}
+
+function assertDb() {
+  if (!process.env.DATABASE_URL) {
+    throw new PlatformAdminError("DATABASE_URL não configurada. Configure o banco de dados.");
+  }
+}
+
+/** Registra uma ação do painel da plataforma na auditoria do tenant alvo. */
+async function audit(input: {
+  tenantId: string;
+  empresaId?: string | null;
+  usuarioId: string;
+  entidade: string;
+  entidadeId: string;
+  acao: string;
+  payload?: Record<string, unknown>;
+}) {
+  await prisma.auditoria
+    .create({
+      data: {
+        tenantId: input.tenantId,
+        empresaId: input.empresaId ?? null,
+        usuarioId: input.usuarioId,
+        entidade: input.entidade,
+        entidadeId: input.entidadeId,
+        acao: input.acao,
+        payload: (input.payload ?? {}) as object
+      }
+    })
+    .catch(() => undefined);
+}
+
+// ---------------------------------------------------------------------------
+// Métricas
+// ---------------------------------------------------------------------------
+
+export type PlatformMetrics = {
+  totalTenants: number;
+  tenantsAtivos: number;
+  tenantsBloqueados: number;
+  totalEmpresas: number;
+  empresasAtivas: number;
+  empresasBloqueadas: number;
+  totalUsuarios: number;
+  usuariosAtivos: number;
+  notasAutorizadas30d: number;
+  notasComProblema: number;
+};
+
+export async function getPlatformMetrics(): Promise<PlatformMetrics> {
+  await requirePlatformAdmin();
+  assertDb();
+
+  const trintaDiasAtras = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+  const [
+    totalTenants,
+    tenantsAtivos,
+    totalEmpresas,
+    empresasAtivas,
+    empresasBloqueadas,
+    totalUsuarios,
+    usuariosAtivos,
+    notasAutorizadas30d,
+    notasComProblema
+  ] = await Promise.all([
+    prisma.tenant.count(),
+    prisma.tenant.count({ where: { ativo: true } }),
+    prisma.empresa.count(),
+    prisma.empresa.count({ where: { status: "ATIVA" } }),
+    prisma.empresa.count({ where: { status: "BLOQUEADA" } }),
+    prisma.usuario.count(),
+    prisma.usuario.count({ where: { status: "ATIVO" } }),
+    prisma.notaFiscal.count({ where: { status: "AUTORIZADA", criadoEm: { gte: trintaDiasAtras } } }),
+    prisma.notaFiscal.count({ where: { status: { in: ["REJEITADA", "DENEGADA", "ERRO"] } } })
+  ]);
+
+  return {
+    totalTenants,
+    tenantsAtivos,
+    tenantsBloqueados: totalTenants - tenantsAtivos,
+    totalEmpresas,
+    empresasAtivas,
+    empresasBloqueadas,
+    totalUsuarios,
+    usuariosAtivos,
+    notasAutorizadas30d,
+    notasComProblema
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Listagem / detalhe de clientes (tenants)
+// ---------------------------------------------------------------------------
+
+export type ClienteSummary = {
+  id: string;
+  nome: string;
+  slug: string;
+  ativo: boolean;
+  statusLabel: string;
+  statusTone: "success" | "danger";
+  totalEmpresas: number;
+  empresasBloqueadas: number;
+  totalUsuarios: number;
+  ultimoAcessoEm: string | null;
+  criadoEm: string;
+};
+
+export async function listClientes(): Promise<ClienteSummary[]> {
+  await requirePlatformAdmin();
+  assertDb();
+
+  const tenants = await prisma.tenant.findMany({
+    orderBy: { criadoEm: "desc" },
+    include: {
+      empresas: { select: { status: true } },
+      _count: { select: { empresas: true, vinculos: true } }
+    }
+  });
+
+  // Último acesso por tenant: o maior ultimoAcessoEm entre os usuários vinculados.
+  const ultimoAcessoPorTenant = new Map<string, Date | null>();
+  for (const t of tenants) {
+    const vinc = await prisma.usuarioVinculo.findMany({
+      where: { tenantId: t.id },
+      select: { usuario: { select: { ultimoAcessoEm: true } } }
+    });
+    const datas = vinc
+      .map((v) => v.usuario.ultimoAcessoEm)
+      .filter((d): d is Date => Boolean(d))
+      .sort((a, b) => b.getTime() - a.getTime());
+    ultimoAcessoPorTenant.set(t.id, datas[0] ?? null);
+  }
+
+  return tenants.map((t) => ({
+    id: t.id,
+    nome: t.nome,
+    slug: t.slug,
+    ativo: t.ativo,
+    statusLabel: t.ativo ? "Ativo" : "Bloqueado",
+    statusTone: t.ativo ? ("success" as const) : ("danger" as const),
+    totalEmpresas: t._count.empresas,
+    empresasBloqueadas: t.empresas.filter((e) => e.status === "BLOQUEADA").length,
+    totalUsuarios: t._count.vinculos,
+    ultimoAcessoEm: ultimoAcessoPorTenant.get(t.id)?.toISOString() ?? null,
+    criadoEm: t.criadoEm.toISOString()
+  }));
+}
+
+export type ClienteDetail = {
+  id: string;
+  nome: string;
+  slug: string;
+  ativo: boolean;
+  criadoEm: string;
+  empresas: {
+    id: string;
+    razaoSocial: string;
+    nomeFantasia: string | null;
+    cnpj: string;
+    status: string;
+    statusLabel: string;
+    statusTone: "success" | "warn" | "danger" | "mute";
+    matriz: boolean;
+    cidade: string | null;
+    uf: string | null;
+  }[];
+  usuarios: {
+    id: string;
+    nome: string;
+    email: string;
+    status: string;
+    ativo: boolean;
+    perfis: string[];
+    plataformaAdmin: boolean;
+    ultimoAcessoEm: string | null;
+  }[];
+};
+
+function empresaStatusLabel(status: string): string {
+  const labels: Record<string, string> = { ATIVA: "Ativa", INATIVA: "Inativa", BLOQUEADA: "Bloqueada" };
+  return labels[status] ?? status;
+}
+
+function empresaStatusTone(status: string): "success" | "warn" | "danger" | "mute" {
+  if (status === "ATIVA") return "success";
+  if (status === "BLOQUEADA") return "danger";
+  if (status === "INATIVA") return "mute";
+  return "warn";
+}
+
+export async function getClienteDetail(tenantId: string): Promise<ClienteDetail | null> {
+  await requirePlatformAdmin();
+  assertDb();
+
+  const tenant = await prisma.tenant.findUnique({
+    where: { id: tenantId },
+    include: {
+      empresas: { orderBy: [{ matriz: "desc" }, { razaoSocial: "asc" }] },
+      vinculos: {
+        include: {
+          usuario: { select: { id: true, nome: true, email: true, status: true, plataformaAdmin: true, ultimoAcessoEm: true } },
+          perfil: { select: { nome: true } }
+        }
+      }
+    }
+  });
+  if (!tenant) return null;
+
+  // Agrupa vínculos por usuário (um usuário pode ter vários perfis no tenant).
+  const usuariosMap = new Map<string, ClienteDetail["usuarios"][number]>();
+  for (const v of tenant.vinculos) {
+    const u = v.usuario;
+    const existing = usuariosMap.get(u.id);
+    if (existing) {
+      if (!existing.perfis.includes(v.perfil.nome)) existing.perfis.push(v.perfil.nome);
+      if (v.ativo) existing.ativo = true;
+    } else {
+      usuariosMap.set(u.id, {
+        id: u.id,
+        nome: u.nome,
+        email: u.email,
+        status: u.status,
+        ativo: v.ativo,
+        perfis: [v.perfil.nome],
+        plataformaAdmin: u.plataformaAdmin,
+        ultimoAcessoEm: u.ultimoAcessoEm?.toISOString() ?? null
+      });
+    }
+  }
+
+  return {
+    id: tenant.id,
+    nome: tenant.nome,
+    slug: tenant.slug,
+    ativo: tenant.ativo,
+    criadoEm: tenant.criadoEm.toISOString(),
+    empresas: tenant.empresas.map((e) => ({
+      id: e.id,
+      razaoSocial: e.razaoSocial,
+      nomeFantasia: e.nomeFantasia,
+      cnpj: e.cnpj,
+      status: e.status,
+      statusLabel: empresaStatusLabel(e.status),
+      statusTone: empresaStatusTone(e.status),
+      matriz: e.matriz,
+      cidade: e.enderecoCidade,
+      uf: e.enderecoUf
+    })),
+    usuarios: Array.from(usuariosMap.values()).sort((a, b) => a.nome.localeCompare(b.nome))
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Liberar / bloquear cliente
+// ---------------------------------------------------------------------------
+
+export async function setTenantAtivo(tenantId: string, ativo: boolean) {
+  const admin = await requirePlatformAdmin();
+  assertDb();
+
+  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+  if (!tenant) throw new PlatformAdminError("Cliente não encontrado.");
+
+  const atualizado = await prisma.tenant.update({ where: { id: tenantId }, data: { ativo } });
+
+  // Ao bloquear o tenant, encerra as sessões ativas de todos os seus usuários
+  // (exceto donos da plataforma), travando o acesso imediatamente.
+  if (!ativo) {
+    await prisma.sessao
+      .deleteMany({ where: { tenantId, usuario: { plataformaAdmin: false } } })
+      .catch(() => undefined);
+  }
+
+  await audit({
+    tenantId,
+    usuarioId: admin.usuarioId,
+    entidade: "Tenant",
+    entidadeId: tenantId,
+    acao: ativo ? "plataforma.liberar_cliente" : "plataforma.bloquear_cliente",
+    payload: { ativoAnterior: tenant.ativo, ativoNovo: ativo }
+  });
+
+  return { id: atualizado.id, ativo: atualizado.ativo };
+}
+
+export async function setEmpresaStatus(empresaId: string, status: "ATIVA" | "INATIVA" | "BLOQUEADA") {
+  const admin = await requirePlatformAdmin();
+  assertDb();
+
+  const empresa = await prisma.empresa.findUnique({ where: { id: empresaId } });
+  if (!empresa) throw new PlatformAdminError("Empresa não encontrada.");
+
+  const atualizada = await prisma.empresa.update({ where: { id: empresaId }, data: { status } });
+
+  if (status !== "ATIVA") {
+    await prisma.sessao
+      .deleteMany({ where: { empresaId, usuario: { plataformaAdmin: false } } })
+      .catch(() => undefined);
+  }
+
+  await audit({
+    tenantId: empresa.tenantId,
+    empresaId,
+    usuarioId: admin.usuarioId,
+    entidade: "Empresa",
+    entidadeId: empresaId,
+    acao: "plataforma.alterar_status_empresa",
+    payload: { statusAnterior: empresa.status, statusNovo: status }
+  });
+
+  return { id: atualizada.id, status: atualizada.status };
+}
+
+// ---------------------------------------------------------------------------
+// Provisionar novo cliente
+// ---------------------------------------------------------------------------
+
+export type CriarClienteInput = {
+  nomeCliente: string;
+  slug?: string;
+  razaoSocial: string;
+  nomeFantasia?: string;
+  cnpj: string;
+  adminNome: string;
+  adminEmail: string;
+  senhaInicial?: string;
+};
+
+export type CriarClienteResult = {
+  tenantId: string;
+  empresaId: string;
+  usuarioId: string;
+  adminEmail: string;
+  senhaInicial: string;
+};
+
+function slugify(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "")
+    .slice(0, 40);
+}
+
+/** Senha temporária forte (legível) para o primeiro acesso do admin do cliente. */
+function gerarSenhaTemporaria(): string {
+  const base = Math.random().toString(36).slice(2, 8);
+  const num = Math.floor(1000 + Math.random() * 9000);
+  return `Jr-${base}-${num}`;
+}
+
+export async function criarCliente(input: CriarClienteInput): Promise<CriarClienteResult> {
+  const admin = await requirePlatformAdmin();
+  assertDb();
+
+  const nomeCliente = input.nomeCliente?.trim();
+  const razaoSocial = input.razaoSocial?.trim();
+  const cnpj = input.cnpj?.trim();
+  const adminNome = input.adminNome?.trim();
+  const adminEmail = input.adminEmail?.trim().toLowerCase();
+
+  if (!nomeCliente || !razaoSocial || !cnpj || !adminNome || !adminEmail) {
+    throw new PlatformAdminError("Preencha nome do cliente, razão social, CNPJ, nome e e-mail do administrador.");
+  }
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(adminEmail)) {
+    throw new PlatformAdminError("E-mail do administrador inválido.");
+  }
+
+  const slugBase = slugify(input.slug?.trim() || nomeCliente);
+  if (!slugBase) throw new PlatformAdminError("Não foi possível gerar um identificador (slug) para o cliente.");
+
+  const emailExistente = await prisma.usuario.findUnique({ where: { email: adminEmail } });
+  if (emailExistente) throw new PlatformAdminError(`Já existe um usuário com o e-mail ${adminEmail}.`);
+
+  // Garante slug único (sufixa -2, -3, ... se necessário).
+  let slug = slugBase;
+  for (let i = 2; await prisma.tenant.findUnique({ where: { slug } }); i++) {
+    slug = `${slugBase}-${i}`;
+  }
+
+  const senhaInicial = input.senhaInicial?.trim() || gerarSenhaTemporaria();
+  if (senhaInicial.length < 8) throw new PlatformAdminError("A senha inicial deve ter ao menos 8 caracteres.");
+
+  const result = await prisma.$transaction(async (tx) => {
+    const tenant = await tx.tenant.create({ data: { nome: nomeCliente, slug } });
+
+    const empresa = await tx.empresa.create({
+      data: {
+        tenantId: tenant.id,
+        razaoSocial,
+        nomeFantasia: input.nomeFantasia?.trim() || null,
+        cnpj,
+        matriz: true,
+        status: "ATIVA"
+      }
+    });
+
+    // Perfis padrão (RBAC por módulo) do novo tenant.
+    let superAdminPerfilId = "";
+    for (const def of PERFIS_PADRAO) {
+      const perfil = await tx.perfil.create({
+        data: { tenantId: tenant.id, nome: def.nome, descricao: def.descricao }
+      });
+      if (def.nome === "SUPER_ADMIN") superAdminPerfilId = perfil.id;
+      const modulos: ModuloKey[] = def.modulos === "*" ? [...TODOS_MODULOS] : def.modulos;
+      await tx.permissao.createMany({
+        data: modulos.map((modulo) => ({ tenantId: tenant.id, perfilId: perfil.id, modulo, acao: "acessar" }))
+      });
+    }
+
+    const usuario = await tx.usuario.create({
+      data: { nome: adminNome, email: adminEmail, senhaHash: hashPassword(senhaInicial), status: "ATIVO" }
+    });
+
+    await tx.usuarioVinculo.create({
+      data: { tenantId: tenant.id, empresaId: empresa.id, usuarioId: usuario.id, perfilId: superAdminPerfilId, ativo: true }
+    });
+
+    await tx.auditoria.create({
+      data: {
+        tenantId: tenant.id,
+        empresaId: empresa.id,
+        usuarioId: admin.usuarioId,
+        entidade: "Tenant",
+        entidadeId: tenant.id,
+        acao: "plataforma.criar_cliente",
+        payload: { slug, razaoSocial, cnpj, adminEmail }
+      }
+    });
+
+    return { tenantId: tenant.id, empresaId: empresa.id, usuarioId: usuario.id };
+  });
+
+  return { ...result, adminEmail, senhaInicial };
+}
+
+// ---------------------------------------------------------------------------
+// Resetar senha de usuário de um cliente
+// ---------------------------------------------------------------------------
+
+export type ResetarSenhaResult = { usuarioId: string; email: string; senhaInicial: string };
+
+export async function resetarSenhaUsuario(usuarioId: string, novaSenha?: string): Promise<ResetarSenhaResult> {
+  const admin = await requirePlatformAdmin();
+  assertDb();
+
+  const usuario = await prisma.usuario.findUnique({ where: { id: usuarioId } });
+  if (!usuario) throw new PlatformAdminError("Usuário não encontrado.");
+  if (usuario.plataformaAdmin) {
+    throw new PlatformAdminError("Não é permitido resetar a senha de um dono da plataforma por aqui.");
+  }
+
+  const senhaInicial = novaSenha?.trim() || gerarSenhaTemporaria();
+  if (senhaInicial.length < 8) throw new PlatformAdminError("A senha deve ter ao menos 8 caracteres.");
+
+  await prisma.usuario.update({
+    where: { id: usuarioId },
+    data: { senhaHash: hashPassword(senhaInicial), status: "ATIVO" }
+  });
+  // Encerra sessões existentes do usuário (a senha mudou).
+  await prisma.sessao.deleteMany({ where: { usuarioId } }).catch(() => undefined);
+
+  // Auditoria no tenant do primeiro vínculo do usuário (quando houver).
+  const vinculo = await prisma.usuarioVinculo.findFirst({ where: { usuarioId }, orderBy: { criadoEm: "asc" } });
+  if (vinculo) {
+    await audit({
+      tenantId: vinculo.tenantId,
+      empresaId: vinculo.empresaId,
+      usuarioId: admin.usuarioId,
+      entidade: "Usuario",
+      entidadeId: usuarioId,
+      acao: "plataforma.resetar_senha",
+      payload: { email: usuario.email }
+    });
+  }
+
+  return { usuarioId, email: usuario.email, senhaInicial };
+}
+
+// ---------------------------------------------------------------------------
+// Monitoramento de emissões fiscais (NF-e / NFC-e / NFS-e) de todos os clientes
+// ---------------------------------------------------------------------------
+
+export type EmissaoFiscalFiltro = {
+  status?: string;
+  modelo?: string;
+  tenantId?: string;
+  busca?: string;
+  limite?: number;
+};
+
+export type EmissaoFiscalRow = {
+  id: string;
+  tenantId: string;
+  tenantNome: string;
+  empresaId: string;
+  empresaNome: string;
+  modelo: string;
+  numero: string | null;
+  serie: string | null;
+  status: string;
+  statusLabel: string;
+  statusTone: "success" | "warn" | "danger" | "info" | "mute";
+  ambiente: string;
+  provedor: string;
+  destinatario: string | null;
+  valorTotal: string;
+  motivo: string | null;
+  emitidaEm: string | null;
+  criadoEm: string;
+};
+
+export type EmissoesFiscaisResultado = {
+  itens: EmissaoFiscalRow[];
+  resumo: { autorizadas: number; processando: number; comProblema: number; canceladas: number; total: number };
+};
+
+const NOTA_STATUS_LABEL: Record<string, string> = {
+  RASCUNHO: "Rascunho",
+  PROCESSANDO: "Processando",
+  AUTORIZADA: "Autorizada",
+  CANCELADA: "Cancelada",
+  REJEITADA: "Rejeitada",
+  DENEGADA: "Denegada",
+  ERRO: "Erro"
+};
+
+function notaStatusTone(status: string): EmissaoFiscalRow["statusTone"] {
+  if (status === "AUTORIZADA") return "success";
+  if (status === "PROCESSANDO") return "info";
+  if (status === "CANCELADA") return "warn";
+  if (status === "REJEITADA" || status === "DENEGADA" || status === "ERRO") return "danger";
+  return "mute";
+}
+
+const STATUS_VALIDOS = ["RASCUNHO", "PROCESSANDO", "AUTORIZADA", "CANCELADA", "REJEITADA", "DENEGADA", "ERRO"];
+const MODELOS_VALIDOS = ["NFE", "NFCE", "NFSE"];
+
+export async function listEmissoesFiscais(filtro: EmissaoFiscalFiltro = {}): Promise<EmissoesFiscaisResultado> {
+  await requirePlatformAdmin();
+  assertDb();
+
+  const where: Record<string, unknown> = {};
+  if (filtro.status && STATUS_VALIDOS.includes(filtro.status)) where.status = filtro.status;
+  if (filtro.modelo && MODELOS_VALIDOS.includes(filtro.modelo)) where.modelo = filtro.modelo;
+  if (filtro.tenantId) where.tenantId = filtro.tenantId;
+  if (filtro.busca?.trim()) {
+    const q = filtro.busca.trim();
+    where.OR = [
+      { numero: { contains: q } },
+      { chaveAcesso: { contains: q } },
+      { destinatarioNome: { contains: q, mode: "insensitive" } },
+      { destinatarioDocumento: { contains: q } }
+    ];
+  }
+
+  const limite = Math.min(Math.max(filtro.limite ?? 100, 1), 500);
+
+  // Mapa de nome do tenant por empresa, para exibir o cliente sem N+1 por linha.
+  const [notas, tenants] = await Promise.all([
+    prisma.notaFiscal.findMany({
+      where,
+      orderBy: { criadoEm: "desc" },
+      take: limite,
+      include: { empresa: { select: { id: true, razaoSocial: true, nomeFantasia: true, tenantId: true } } }
+    }),
+    prisma.tenant.findMany({ select: { id: true, nome: true } })
+  ]);
+
+  const tenantNomePorId = new Map(tenants.map((t) => [t.id, t.nome]));
+
+  const itens: EmissaoFiscalRow[] = notas.map((n) => ({
+    id: n.id,
+    tenantId: n.tenantId,
+    tenantNome: tenantNomePorId.get(n.tenantId) ?? "—",
+    empresaId: n.empresaId,
+    empresaNome: n.empresa?.nomeFantasia || n.empresa?.razaoSocial || "—",
+    modelo: n.modelo,
+    numero: n.numero,
+    serie: n.serie,
+    status: n.status,
+    statusLabel: NOTA_STATUS_LABEL[n.status] ?? n.status,
+    statusTone: notaStatusTone(n.status),
+    ambiente: n.ambiente === "PRODUCAO" ? "Produção" : "Homologação",
+    provedor: n.provedor,
+    destinatario: n.destinatarioNome,
+    valorTotal: formatBrl(Number(n.total)),
+    motivo: n.motivo,
+    emitidaEm: n.emitidaEm?.toISOString() ?? null,
+    criadoEm: n.criadoEm.toISOString()
+  }));
+
+  // Resumo (sobre o conjunto filtrado, independentemente do limite de linhas).
+  const [autorizadas, processando, comProblema, canceladas, total] = await Promise.all([
+    prisma.notaFiscal.count({ where: { ...where, status: "AUTORIZADA" } }),
+    prisma.notaFiscal.count({ where: { ...where, status: "PROCESSANDO" } }),
+    prisma.notaFiscal.count({ where: { ...where, status: { in: ["REJEITADA", "DENEGADA", "ERRO"] } } }),
+    prisma.notaFiscal.count({ where: { ...where, status: "CANCELADA" } }),
+    prisma.notaFiscal.count({ where })
+  ]);
+
+  return { itens, resumo: { autorizadas, processando, comProblema, canceladas, total } };
+}
+
+export type ClienteOption = { id: string; nome: string };
+
+export async function listClienteOptions(): Promise<ClienteOption[]> {
+  await requirePlatformAdmin();
+  assertDb();
+  const tenants = await prisma.tenant.findMany({ select: { id: true, nome: true }, orderBy: { nome: "asc" } });
+  return tenants.map((t) => ({ id: t.id, nome: t.nome }));
+}
