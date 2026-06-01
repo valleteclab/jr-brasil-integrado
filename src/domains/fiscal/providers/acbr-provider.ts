@@ -98,6 +98,23 @@ function onlyDigits(value: string | null | undefined): string {
   return (value ?? "").replace(/\D/g, "");
 }
 
+function fiscalDateTimeSaoPaulo(date = new Date()): { dhEmi: string; dCompet: string } {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false
+  }).formatToParts(date);
+  const get = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? "";
+  const dCompet = `${get("year")}-${get("month")}-${get("day")}`;
+  const hour = get("hour") === "24" ? "00" : get("hour");
+  return { dhEmi: `${dCompet}T${hour}:${get("minute")}:${get("second")}-03:00`, dCompet };
+}
+
 function isSimplesRegime(regime: RegimeTributario): boolean {
   return regime === "SIMPLES_NACIONAL" || regime === "MEI" || regime === "SIMPLES_EXCESSO_SUBLIMITE";
 }
@@ -600,6 +617,7 @@ export class AcbrFiscalProvider implements FiscalProvider {
             ...(ret.csll ? { vRetCSLL: ret.csll.valor } : {})
           }
         : undefined;
+    const dataFiscal = fiscalDateTimeSaoPaulo();
 
     return {
       provedor,
@@ -607,8 +625,8 @@ export class AcbrFiscalProvider implements FiscalProvider {
       referencia: input.integrationId,
       infDPS: {
         tpAmb: ctx.ambiente === "PRODUCAO" ? 1 : 2,
-        dhEmi: new Date().toISOString(),
-        dCompet: new Date().toISOString().slice(0, 10),
+        dhEmi: dataFiscal.dhEmi,
+        dCompet: dataFiscal.dCompet,
         prest: { CNPJ: onlyDigits(input.emitter.cnpj) },
         toma,
         serv: {
