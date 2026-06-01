@@ -347,8 +347,10 @@ model Sessao {
   id         String   @id @default(cuid())
   usuarioId  String
   usuario    Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
-  tenantId   String
-  empresaId  String
+  // Escopo (tenant/empresa) da sessão. Nulo para o dono da plataforma, que não
+  // pertence a nenhum cliente e acessa apenas o painel /admin.
+  tenantId   String?
+  empresaId  String?
   tokenHash  String   @unique
   expiraEm   DateTime
   userAgent  String?
