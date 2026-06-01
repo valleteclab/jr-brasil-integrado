@@ -374,6 +374,17 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
             </select>
           </label>
           <label>
+            Ambiente da NFS-e (município)
+            <select
+              value={config.nfseAmbienteNacional === null ? "auto" : config.nfseAmbienteNacional ? "nacional" : "padrao"}
+              onChange={(e) => update("nfseAmbienteNacional", e.target.value === "auto" ? null : e.target.value === "nacional")}
+            >
+              <option value="auto">Detectar automaticamente</option>
+              <option value="nacional">Ambiente Nacional — alíquota definida pelo sistema (não informar)</option>
+              <option value="padrao">Padrão do município — informar alíquota</option>
+            </select>
+          </label>
+          <label>
             Certificado digital (referência)
             <input value={config.certificadoInfo} onChange={(e) => update("certificadoInfo", e.target.value)} placeholder="Apelido/validade do A1 (sem o arquivo)" />
           </label>

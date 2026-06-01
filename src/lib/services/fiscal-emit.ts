@@ -29,6 +29,8 @@ export type EmissaoFormData = {
   produtos: EmissaoProduto[];
   lc116: Array<{ code: string; description: string }>;
   emitterUf: string | null;
+  /** NFS-e: override do ambiente do município (true=nacional, false=padrão, null=auto). */
+  nfseAmbienteNacional: boolean | null;
 };
 
 /** Dados para os formulários de emissão avulsa (NF-e/NFC-e/NFS-e). */

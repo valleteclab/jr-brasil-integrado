@@ -142,7 +142,8 @@ export function NfseWizard({ data }: { data: EmissaoFormData }) {
     }
     if (s === 2) {
       if (valorServico <= 0) return "Informe o Valor do Serviço.";
-      if (tributavel && !exigibilidadeSuspensa && aliquotaIss <= 0) return "Informe a Alíquota do ISSQN.";
+      // Município no Ambiente Nacional: a alíquota é definida pelo sistema — não exigir.
+      if (data.nfseAmbienteNacional !== true && tributavel && !exigibilidadeSuspensa && aliquotaIss <= 0) return "Informe a Alíquota do ISSQN.";
     }
     return "";
   }
@@ -419,7 +420,7 @@ export function NfseWizard({ data }: { data: EmissaoFormData }) {
                 </>
               )}
               <label>Dedução / redução da BC (R$)<input type="number" min={0} step="any" value={deducaoBc} onChange={(e) => setDeducaoBc(Math.max(0, Number(e.target.value) || 0))} /></label>
-              <label>Alíquota do ISSQN %<input type="number" min={0} step="any" value={aliquotaIss} onChange={(e) => setAliquotaIss(Math.max(0, Number(e.target.value) || 0))} disabled={!tributavel || exigibilidadeSuspensa} /></label>
+              <label>Alíquota do ISSQN %<input type="number" min={0} step="any" value={aliquotaIss} onChange={(e) => setAliquotaIss(Math.max(0, Number(e.target.value) || 0))} disabled={!tributavel || exigibilidadeSuspensa || data.nfseAmbienteNacional === true} placeholder={data.nfseAmbienteNacional === true ? "Definida pelo sistema nacional" : undefined} /></label>
               {!exigibilidadeSuspensa && tributavel && (
                 <>
                   <label className="check-row">
