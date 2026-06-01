@@ -623,7 +623,7 @@ export class AcbrFiscalProvider implements FiscalProvider {
         tpAmb: ctx.ambiente === "PRODUCAO" ? 1 : 2,
         dhEmi: new Date().toISOString(),
         dCompet: new Date().toISOString().slice(0, 10),
-        prest: { CNPJ: onlyDigits(input.emitter.cnpj) },
+        prest: { CNPJ: onlyDigits(input.emitter.cnpj), opSimpNac: indSimpNac },
         toma,
         serv: {
           locPrest: { cLocPrestacao: input.emitter.codigoMunicipioIbge ?? undefined },
@@ -635,8 +635,6 @@ export class AcbrFiscalProvider implements FiscalProvider {
           trib: {
             tribMun: {
               tribISSQN: 1, // 1 = operação tributável
-              // opSimpNac: 1=não optante, 2=MEI, 3=ME/EPP. Optante no Padrão Nacional não informa pAliq/vISSQN.
-              opSimpNac: indSimpNac,
               ...(informarAliquota
                 ? { pAliq: aliquotaIss, vISSQN: input.totals.valorIss || undefined }
                 : {}),
