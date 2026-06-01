@@ -760,7 +760,7 @@ export async function accountingPackageReport(
   const pendencias = [
     { item: "Notas fiscais rejeitadas/erro/processando", count: notas.filter((n) => ["REJEITADA", "ERRO", "PROCESSANDO"].includes(n.status)).length },
     { item: "Notas autorizadas sem XML/PDF", count: notas.filter((n) => n.status === "AUTORIZADA" && !n.xmlUrl && !n.danfeUrl).length },
-    { item: "Entradas fiscais aguardando confer?ncia", count: entradas.filter((e) => String(e.status) === "AGUARDANDO_CONFERENCIA").length },
+    { item: "Entradas fiscais aguardando conferência", count: entradas.filter((e) => String(e.status) === "AGUARDANDO_CONFERENCIA").length },
     { item: "Contas a receber vencidas", count: receber.filter((r) => r.status === "VENCIDO").length },
     { item: "Contas a pagar vencidas", count: pagar.filter((p) => p.status === "VENCIDO").length }
   ];
@@ -833,7 +833,7 @@ export async function accountingPackageReport(
     checklist: pendencias.map((p) => ({
       status: p.count === 0 ? "ok" : "warn",
       item: p.item,
-      detalhe: p.count === 0 ? "Sem pend?ncias" : `${p.count} ocorr?ncia(s)`
+      detalhe: p.count === 0 ? "Sem pendências" : `${p.count} ocorrência(s)`
     }))
   };
 }
