@@ -5,8 +5,9 @@ import { StatusBadge } from "@/components/shared/StatusBadge";
 import { ClienteBloqueioButton } from "@/components/admin/ClienteBloqueioButton";
 import { EmpresaStatusActions } from "@/components/admin/EmpresaStatusActions";
 import { ResetarSenhaButton } from "@/components/admin/ResetarSenhaButton";
-import { getClienteDetail } from "@/lib/services/platform-admin";
-import type { ClienteDetail } from "@/lib/services/platform-admin";
+import { ClientePerfisManager } from "@/components/admin/ClientePerfisManager";
+import { getClienteDetail, listPerfisCliente } from "@/lib/services/platform-admin";
+import type { ClienteDetail, PerfilClienteRow } from "@/lib/services/platform-admin";
 
 export const dynamic = "force-dynamic";
 
@@ -17,10 +18,11 @@ function formatarData(iso: string | null): string {
 
 export default async function AdminClienteDetalhePage({ params }: { params: { id: string } }) {
   let cliente: ClienteDetail | null = null;
+  let perfis: PerfilClienteRow[] = [];
   let loadError = "";
 
   try {
-    cliente = await getClienteDetail(params.id);
+    [cliente, perfis] = await Promise.all([getClienteDetail(params.id), listPerfisCliente(params.id)]);
   } catch (error) {
     loadError = error instanceof Error ? error.message : "Não foi possível carregar o cliente.";
   }
@@ -129,6 +131,11 @@ export default async function AdminClienteDetalhePage({ params }: { params: { id
             </tbody>
           </table>
         </div>
+      </Card>
+
+      <Card>
+        <div className="erp-card-head"><h3>Perfis e permissões</h3></div>
+        <ClientePerfisManager tenantId={cliente.id} perfis={perfis} />
       </Card>
     </>
   );
