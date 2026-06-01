@@ -6,6 +6,7 @@ export const dynamic = "force-dynamic";
 
 export default async function LoginPage() {
   const session = await getSession();
-  if (session) redirect("/erp");
+  // Dono da plataforma (sem cliente) vai ao painel; demais ao ERP.
+  if (session) redirect(session.scope ? "/erp" : "/admin");
   return <LoginForm />;
 }

@@ -23,7 +23,15 @@ export async function POST(request: Request) {
       where: { usuarioId: usuario.id, ativo: true },
       orderBy: { criadoEm: "asc" }
     });
+
+    // Dono da plataforma sem vínculo a cliente: abre uma sessão de plataforma (sem
+    // escopo) e vai direto ao painel /admin. Não pertence a nenhum ERP de cliente.
     if (!vinculo || !vinculo.empresaId) {
+      if (usuario.plataformaAdmin) {
+        await createSession(usuario.id, null, request.headers.get("user-agent"));
+        await prisma.usuario.update({ where: { id: usuario.id }, data: { ultimoAcessoEm: new Date() } });
+        return NextResponse.json({ ok: true, redirect: "/admin" });
+      }
       return NextResponse.json({ error: "Usuário sem empresa/perfil ativo. Procure o administrador." }, { status: 403 });
     }
 
@@ -49,7 +57,7 @@ export async function POST(request: Request) {
     );
     await prisma.usuario.update({ where: { id: usuario.id }, data: { ultimoAcessoEm: new Date() } });
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, redirect: "/erp" });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro ao autenticar.";
     return NextResponse.json({ error: message }, { status: 500 });

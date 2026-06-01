@@ -9,6 +9,8 @@ export const dynamic = "force-dynamic";
 export default async function ErpLayout({ children }: Readonly<{ children: ReactNode }>) {
   const session = await getSession();
   if (!session) redirect("/login");
+  // Dono da plataforma não pertence a nenhum cliente: mandamos ao painel /admin.
+  if (!session.scope) redirect("/admin");
 
   const context = await getErpShellContext();
   return (
