@@ -13,7 +13,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "financeiro", label: "Financeiro" },
   { id: "fiscal", label: "Fiscal" },
   { id: "dre", label: "DRE" },
-  { id: "contabil", label: "Pacote cont?bil" }
+  { id: "contabil", label: "Pacote contábil" }
 ];
 
 type Props = {
@@ -513,7 +513,7 @@ function AbaDre({ data }: { data: DreSimplificado }) {
 
 // ─── Aba Pacote Contábil ──────────────────────────────────────────────────────
 
-function exportHref(kind: "html" | "csv", params: { mes?: number; ano?: number }): string {
+function exportHref(kind: "html" | "csv" | "xml", params: { mes?: number; ano?: number }): string {
   const qs = new URLSearchParams();
   if (params.mes) qs.set("mes", String(params.mes));
   if (params.ano) qs.set("ano", String(params.ano));
@@ -560,7 +560,13 @@ function AbaContabil({ data, params }: { data: AccountingPackageReport; params: 
         <button className="btn" type="submit">Filtrar</button>
         <a className="btn light" href={exportHref("html", params)} target="_blank" rel="noreferrer">HTML / PDF</a>
         <a className="btn light" href={exportHref("csv", params)}>CSV</a>
+        <a className="btn" href={exportHref("xml", params)}>Baixar XMLs (ZIP)</a>
       </form>
+
+      <p style={{ margin: "-0.25rem 0 1rem", color: "var(--text-2)", fontSize: "0.85rem" }}>
+        O ZIP traz os XMLs das notas de saída (NF-e, NFC-e e NFS-e) autorizadas/canceladas do mês,
+        nomeados pela chave de acesso, mais um <strong>indice.csv</strong> — pronto para o contador.
+      </p>
 
       <div className="kpi-row">
         <KpiCard label="Notas de saída" value={String(data.resumo.notasSaida)} tone="info" />
