@@ -59,8 +59,14 @@ export async function getEmissaoFormData(): Promise<EmissaoFormData> {
     prisma.empresa.findUnique({ where: { id: scope.empresaId }, select: { enderecoUf: true } })
   ]);
 
+  const cfgFiscal = await prisma.configuracaoFiscal.findUnique({
+    where: { empresaId: scope.empresaId },
+    select: { nfseAmbienteNacional: true }
+  });
+
   return {
     emitterUf: empresa?.enderecoUf ?? null,
+    nfseAmbienteNacional: cfgFiscal?.nfseAmbienteNacional ?? null,
     lc116: LC116_LIST,
     clientes: clientes.map((c) => {
       const endereco = c.enderecos[0];
