@@ -7,6 +7,7 @@ import { exitStock, getDefaultDeposito } from "@/domains/stock/application/stock
 import { buildDocumentFromPedido, buildNfseFromOrdemServico } from "@/domains/fiscal/document-builder";
 import { emitFiscalDocument } from "@/domains/fiscal/application/fiscal-emission-use-cases";
 import { isValidLc116 } from "@/domains/fiscal/lc116";
+import { sugerirPorLc116 } from "@/domains/fiscal/nbs";
 import type { TaxationTypeIss } from "@/domains/fiscal/types";
 import { computeRetencoes, issPorServico } from "@/domains/fiscal/nfse-tax";
 import type { RetencoesInput } from "@/domains/fiscal/nfse-tax";
@@ -96,6 +97,8 @@ export type ServiceInvoiceAvulsaInput = {
   formaPagamento?: string | null;
   /** Código LC 116 padrão do documento (usado quando o serviço não traz o próprio). */
   codigoServicoLc116?: string | null;
+  /** Código NBS padrão do documento (cNBS, 9 dígitos) — usado quando o serviço não traz o próprio. */
+  codigoNbs?: string | null;
   /** Alíquota de ISS informada (%) — sobrepõe a regra tributária. */
   aliquotaIss?: number | null;
   /** Deduções da base de cálculo do ISS (R$). */
@@ -104,7 +107,7 @@ export type ServiceInvoiceAvulsaInput = {
   baseCalculoIss?: number | null;
   /** Natureza/exigibilidade do ISS (padrão: tributado no município). */
   taxationType?: TaxationTypeIss | null;
-  servicos: Array<{ descricao: string; valor: number; codigoServicoLc116?: string | null }>;
+  servicos: Array<{ descricao: string; valor: number; codigoServicoLc116?: string | null; codigoNbs?: string | null; cClassTrib?: string | null }>;
   retencoes?: RetencoesInput | null;
   /** Reenvio: id de uma NFS-e anterior rejeitada/erro a reaproveitar. */
   retryNotaId?: string | null;
@@ -334,9 +337,10 @@ export async function emitServiceInvoiceAvulsa(scope: TenantScope, input: Servic
 
   const config = await prisma.configuracaoFiscal.findUnique({
     where: { empresaId: scope.empresaId },
-    select: { codigoServicoLc116Padrao: true }
+    select: { codigoServicoLc116Padrao: true, codigoNbsPadrao: true }
   });
   const fallback = docDefault ?? config?.codigoServicoLc116Padrao ?? null;
+  const nbsFallback = input.codigoNbs?.trim() || config?.codigoNbsPadrao || null;
 
   const valorServicos = round2(input.servicos.reduce((sum, s) => sum + (Number(s.valor) || 0), 0));
 
@@ -357,10 +361,15 @@ export async function emitServiceInvoiceAvulsa(scope: TenantScope, input: Servic
     if (codigo && !isValidLc116(codigo)) {
       throw new StandaloneEmissionError(`Código LC 116 inválido no serviço ${index + 1}.`);
     }
+    // Sugestão automática (tabela oficial): NBS e cClassTrib derivados do LC 116, quando o
+    // serviço não trouxer os próprios. O informado pelo usuário sempre tem prioridade.
+    const sug = sugerirPorLc116(codigo);
     return {
       descricao: s.descricao.trim(),
       valor: s.valor,
       itemListaServico: codigo,
+      codigoNbs: s.codigoNbs?.trim() || nbsFallback || sug?.nbsPadrao || null,
+      cClassTrib: s.cClassTrib?.trim() || sug?.classTribPadrao || null,
       aliquotaIss,
       baseIss: distribuirBaseIss ? round2(baseIssTotal * (s.valor / valorServicos)) : null
     };
