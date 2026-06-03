@@ -4,21 +4,27 @@ import { useMemo, useState } from "react";
 import { Button } from "@/components/shared/Button";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import type { FiscalEntrySummary } from "@/lib/services/fiscal-entries";
+import type { NfeDistributionSummary } from "@/lib/services/nfe-distribution";
 
 type FiscalEntriesListProps = {
   entries: FiscalEntrySummary[];
+  receivedDocuments: NfeDistributionSummary[];
 };
 
 type Tab = "compra" | "recebidas";
 
-export function FiscalEntriesList({ entries }: FiscalEntriesListProps) {
+export function FiscalEntriesList({ entries, receivedDocuments }: FiscalEntriesListProps) {
   const [rows, setRows] = useState(entries);
+  const [receivedRows, setReceivedRows] = useState(receivedDocuments);
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<Tab>("compra");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
   const [deleting, setDeleting] = useState(false);
   const [reversingId, setReversingId] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [importingId, setImportingId] = useState<string | null>(null);
 
   const filteredEntries = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -38,6 +44,26 @@ export function FiscalEntriesList({ entries }: FiscalEntriesListProps) {
       ].some((field) => field.toLowerCase().includes(normalizedQuery));
     });
   }, [query, rows]);
+
+  const filteredReceived = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+
+    return receivedRows.filter((doc) => {
+      if (!normalizedQuery) {
+        return true;
+      }
+
+      return [
+        doc.numero,
+        doc.serie,
+        doc.chaveAcesso,
+        doc.emitenteNome,
+        doc.emitenteDocumento,
+        doc.nsu,
+        doc.statusLabel
+      ].some((field) => field.toLowerCase().includes(normalizedQuery));
+    });
+  }, [query, receivedRows]);
 
   const registeredCount = rows.filter((entry) => entry.status === "Registrada").length;
   const filteredIds = filteredEntries.map((entry) => entry.id);
@@ -137,6 +163,78 @@ export function FiscalEntriesList({ entries }: FiscalEntriesListProps) {
     }
   }
 
+  async function syncDistribution(mode: "refresh" | "history" = "refresh") {
+    setSyncing(true);
+    setError("");
+    setMessage("");
+
+    try {
+      const response = await fetch("/api/erp/entradas-fiscais/distribuicao", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode })
+      });
+      const data = await response.json() as {
+        documents?: NfeDistributionSummary[];
+        returned?: number;
+        listed?: number;
+        motivoStatus?: string | null;
+        ultimoNsu?: string | null;
+        maxNsu?: string | null;
+        error?: string;
+      };
+
+      if (!response.ok) {
+        throw new Error(data.error || "Não foi possível buscar NF-e recebidas na ACBr.");
+      }
+
+      setReceivedRows(data.documents ?? []);
+      const nsuInfo = data.ultimoNsu ? ` Último NSU: ${data.ultimoNsu}${data.maxNsu ? ` / Máx: ${data.maxNsu}` : ""}.` : "";
+      setMessage(
+        data.motivoStatus
+          ? `ACBr: ${data.motivoStatus}.${nsuInfo}`
+          : mode === "history"
+            ? `Busca historica solicitada. ${data.returned ?? 0} documento(s) retornados e ${data.listed ?? 0} documento(s) listados.${nsuInfo}`
+            : `Base da ACBr sincronizada. ${data.listed ?? 0} documento(s) listados.${nsuInfo}`
+      );
+    } catch (syncError) {
+      setError(syncError instanceof Error ? syncError.message : "Não foi possível buscar NF-e recebidas na ACBr.");
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  async function importReceived(doc: NfeDistributionSummary) {
+    const confirmed = window.confirm(
+      `Enviar Ciência da Operação e importar o XML da NF-e ${doc.numero || doc.chaveAcesso}?\n\n` +
+      "Isso não movimenta estoque agora. A nota irá para conferência antes do lançamento."
+    );
+    if (!confirmed) return;
+
+    setImportingId(doc.id);
+    setError("");
+    setMessage("");
+
+    try {
+      const response = await fetch(`/api/erp/entradas-fiscais/distribuicao/${doc.id}/importar`, { method: "POST" });
+      const data = await response.json() as { entradaFiscalId?: string; error?: string };
+
+      if (!response.ok || !data.entradaFiscalId) {
+        throw new Error(data.error || "Não foi possível importar a NF-e recebida.");
+      }
+
+      window.location.href = `/erp/entradas-fiscais/nova?id=${data.entradaFiscalId}`;
+    } catch (importError) {
+      setError(importError instanceof Error ? importError.message : "Não foi possível importar a NF-e recebida.");
+      const refresh = await fetch("/api/erp/entradas-fiscais/distribuicao")
+        .then((r) => r.json())
+        .catch(() => null) as { documents?: NfeDistributionSummary[] } | null;
+      if (refresh?.documents) setReceivedRows(refresh.documents);
+    } finally {
+      setImportingId(null);
+    }
+  }
+
   return (
     <section className="fiscal-list-page">
       <div className="fiscal-list-actions">
@@ -152,18 +250,32 @@ export function FiscalEntriesList({ entries }: FiscalEntriesListProps) {
         <span className="fiscal-list-filter">Registradas: {registeredCount}</span>
         {selectedIds.length > 0 && <span className="fiscal-list-filter">{selectedIds.length} selecionada(s)</span>}
         <div className="toolbar-grow" />
-        <Button variant="light" type="button">Exportar</Button>
-        <Button
-          variant="light"
-          type="button"
-          disabled={deleting || !selectedIds.length}
-          onClick={() => deleteEntries(selectedIds)}
-        >
-          Excluir selecionadas
-        </Button>
-        <Button href="/erp/entradas-fiscais/nova">Nova entrada NF-e</Button>
+        {tab === "recebidas" ? (
+          <>
+            <Button variant="light" type="button" onClick={() => syncDistribution("history")} disabled={syncing}>
+              Buscar historico
+            </Button>
+            <Button type="button" onClick={() => syncDistribution("refresh")} disabled={syncing}>
+              {syncing ? "Sincronizando..." : "Sincronizar ACBr"}
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button variant="light" type="button">Exportar</Button>
+            <Button
+              variant="light"
+              type="button"
+              disabled={deleting || !selectedIds.length}
+              onClick={() => deleteEntries(selectedIds)}
+            >
+              Excluir selecionadas
+            </Button>
+            <Button href="/erp/entradas-fiscais/nova">Nova entrada NF-e</Button>
+          </>
+        )}
       </div>
 
+      {message && <div className="alert info fiscal-list-alert"><strong>OK</strong><span>{message}</span></div>}
       {error && <div className="alert danger fiscal-list-alert"><strong>Atenção</strong><span>{error}</span></div>}
 
       <div className="fiscal-list-tabs">
@@ -175,6 +287,76 @@ export function FiscalEntriesList({ entries }: FiscalEntriesListProps) {
         </button>
       </div>
 
+      {tab === "recebidas" ? (
+        <div className="erp-table-wrap fiscal-list-table">
+          <table className="erp-table">
+            <thead>
+              <tr>
+                <th>NF-e</th>
+                <th>NSU</th>
+                <th>Emissão</th>
+                <th>Emitente</th>
+                <th>Situação</th>
+                <th className="num">Valor</th>
+                <th className="actions">Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredReceived.map((doc) => (
+                <tr key={doc.id}>
+                  <td>
+                    <span className="mono bold">{doc.numero || "-"}</span>
+                    {doc.serie && <small className="block-muted">Série {doc.serie}</small>}
+                    {doc.chaveAcesso && <small className="block-muted">{doc.chaveAcesso}</small>}
+                  </td>
+                  <td>{doc.nsu || "-"}</td>
+                  <td>{doc.dataEmissao ? new Date(doc.dataEmissao).toLocaleDateString("pt-BR") : "-"}</td>
+                  <td>
+                    <strong>{doc.emitenteNome}</strong>
+                    {doc.emitenteDocumento && <small className="block-muted">{doc.emitenteDocumento}</small>}
+                  </td>
+                  <td>
+                    <StatusBadge tone={doc.statusTone}>{doc.statusLabel}</StatusBadge>
+                    {doc.resumo && <small className="block-muted">Resumo da NF-e</small>}
+                    {doc.ultimoErro && <small className="block-muted">{doc.ultimoErro}</small>}
+                  </td>
+                  <td className="num">{new Intl.NumberFormat("pt-BR", { currency: "BRL", style: "currency" }).format(doc.valor)}</td>
+                  <td className="actions">
+                    {doc.entradaFiscalId ? (
+                      <Button href={`/erp/entradas-fiscais/nova?id=${doc.entradaFiscalId}`} variant="light">Abrir entrada</Button>
+                    ) : (
+                      <Button type="button" variant="light" disabled={importingId === doc.id} onClick={() => importReceived(doc)}>
+                        {importingId === doc.id ? "Importando..." : "Dar ciência e importar XML"}
+                      </Button>
+                    )}
+                    {doc.canDownloadPdf && (
+                      <a className="btn-erp ghost xs" href={`/api/erp/entradas-fiscais/distribuicao/${doc.id}/pdf`} target="_blank" rel="noopener noreferrer">
+                        DANFE
+                      </a>
+                    )}
+                    {doc.canDownloadXml && (
+                      <a className="btn-erp ghost xs" href={`/api/erp/entradas-fiscais/distribuicao/${doc.id}/xml`}>
+                        XML
+                      </a>
+                    )}
+                  </td>
+                </tr>
+              ))}
+              {!filteredReceived.length && (
+                <tr>
+                  <td colSpan={7}>
+                    <div className="empty-st">Nenhuma NF-e recebida sincronizada. Use Sincronizar ACBr.</div>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+          <div className="erp-table-foot">
+            <span>{filteredReceived.length} documentos exibidos</span>
+            <strong>Total: {new Intl.NumberFormat("pt-BR", { currency: "BRL", style: "currency" }).format(filteredReceived.reduce((total, doc) => total + doc.valor, 0))}</strong>
+          </div>
+        </div>
+      ) : (
       <div className="erp-table-wrap fiscal-list-table">
         <table className="erp-table">
           <thead>
@@ -251,6 +433,7 @@ export function FiscalEntriesList({ entries }: FiscalEntriesListProps) {
           <strong>Total: {new Intl.NumberFormat("pt-BR", { currency: "BRL", style: "currency" }).format(filteredEntries.reduce((total, entry) => total + entry.totalNumber, 0))}</strong>
         </div>
       </div>
+      )}
     </section>
   );
 }

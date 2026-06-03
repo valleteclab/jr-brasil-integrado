@@ -12,6 +12,14 @@ export type PreVendaResumo = {
   total: number;
   qtdItens: number;
   criadoEm: string;
+  itens: Array<{
+    id: string;
+    produtoNome: string;
+    produtoSku: string;
+    quantidade: number;
+    precoUnitario: number;
+    total: number;
+  }>;
 };
 
 export type CaixaPageData = {
@@ -30,7 +38,12 @@ export async function getCaixaPageData(): Promise<CaixaPageData> {
     take: 100,
     include: {
       cliente: { select: { razaoSocial: true, nomeFantasia: true, documento: true } },
-      itens: { select: { id: true } }
+      itens: {
+        orderBy: { id: "asc" },
+        include: {
+          produto: { select: { nome: true, sku: true } }
+        }
+      }
     }
   });
 
@@ -42,7 +55,15 @@ export async function getCaixaPageData(): Promise<CaixaPageData> {
     temCliente: Boolean(p.clienteId),
     total: Number(p.total),
     qtdItens: p.itens.length,
-    criadoEm: p.criadoEm.toLocaleString("pt-BR")
+    criadoEm: p.criadoEm.toLocaleString("pt-BR"),
+    itens: p.itens.map((item) => ({
+      id: item.id,
+      produtoNome: item.produto.nome,
+      produtoSku: item.produto.sku,
+      quantidade: item.quantidade,
+      precoUnitario: Number(item.precoUnitario),
+      total: Number(item.total)
+    }))
   }));
 
   return {

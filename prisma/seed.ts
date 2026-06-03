@@ -30,6 +30,7 @@ const PERFIS_PADRAO: Array<{ nome: string; descricao: string; modulos: readonly 
 ];
 
 const ADMIN_EMAIL = "admin@jrbrasilpecas.com.br";
+const JR_BRASIL_CNPJ = "15130181000148";
 // Senha temporária forte do admin. Pode ser sobrescrita por ADMIN_INITIAL_PASSWORD.
 // IMPORTANTE: troque após o primeiro login.
 const ADMIN_SENHA = process.env.ADMIN_INITIAL_PASSWORD ?? "Jr#Brasil@2026!Adm7qZ";
@@ -128,11 +129,11 @@ async function main() {
     email: "fiscal@jrbrasilpecas.com.br"
   };
   const empresa = await prisma.empresa.upsert({
-    where: { tenantId_cnpj: { tenantId: tenant.id, cnpj: "00.000.000/0001-00" } },
+    where: { tenantId_cnpj: { tenantId: tenant.id, cnpj: JR_BRASIL_CNPJ } },
     update: empresaData,
     create: {
       tenantId: tenant.id,
-      cnpj: "00.000.000/0001-00",
+      cnpj: JR_BRASIL_CNPJ,
       matriz: true,
       ...empresaData
     }

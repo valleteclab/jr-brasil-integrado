@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { OrdemServicoDetail as OsDetail } from "@/lib/services/service-order";
 import type { OsFormData } from "@/lib/services/service-order";
 import { LC116_LIST } from "@/domains/fiscal/lc116";
@@ -20,6 +21,8 @@ const STATUS_OPTIONS: { value: StatusOrdemServico; label: string }[] = [
 ];
 
 export function OrdemServicoDetail({ os: initialOs, formData }: Props) {
+  const router = useRouter();
+  const lastAutoRefreshRef = useRef(0);
   const [os, setOs] = useState(initialOs);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -55,10 +58,33 @@ export function OrdemServicoDetail({ os: initialOs, formData }: Props) {
     return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
   }
 
-  async function reload() {
-    const res = await fetch(`/api/erp/os/${os.id}/detail`);
-    // For now just reload the full page to reflect changes
-    window.location.reload();
+  useEffect(() => {
+    setOs(initialOs);
+  }, [initialOs]);
+
+  useEffect(() => {
+    const refreshIfIdle = () => {
+      if (busy || document.hidden) return;
+      const now = Date.now();
+      if (now - lastAutoRefreshRef.current < 10000) return;
+      lastAutoRefreshRef.current = now;
+      router.refresh();
+    };
+
+    const intervalId = window.setInterval(refreshIfIdle, 10000);
+    window.addEventListener("focus", refreshIfIdle);
+    document.addEventListener("visibilitychange", refreshIfIdle);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", refreshIfIdle);
+      document.removeEventListener("visibilitychange", refreshIfIdle);
+    };
+  }, [busy, router]);
+
+  function refreshOs() {
+    lastAutoRefreshRef.current = Date.now();
+    router.refresh();
   }
 
   async function handleAddServico(e: React.FormEvent) {
@@ -77,7 +103,7 @@ export function OrdemServicoDetail({ os: initialOs, formData }: Props) {
       setHoras(1);
       setValorHora(0);
       setCodigoServLc116("");
-      window.location.reload();
+      refreshOs();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao adicionar serviço.");
     } finally {
@@ -97,7 +123,7 @@ export function OrdemServicoDetail({ os: initialOs, formData }: Props) {
       });
       const data = (await res.json()) as { error?: string };
       if (!res.ok) throw new Error(data.error ?? "Erro ao remover serviço.");
-      window.location.reload();
+      refreshOs();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao remover serviço.");
     } finally {
@@ -122,7 +148,7 @@ export function OrdemServicoDetail({ os: initialOs, formData }: Props) {
       setProdutoId("");
       setQuantidadePeca(1);
       setPrecoPeca(0);
-      window.location.reload();
+      refreshOs();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao adicionar peça.");
     } finally {
@@ -142,7 +168,7 @@ export function OrdemServicoDetail({ os: initialOs, formData }: Props) {
       });
       const data = (await res.json()) as { error?: string };
       if (!res.ok) throw new Error(data.error ?? "Erro ao remover peça.");
-      window.location.reload();
+      refreshOs();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao remover peça.");
     } finally {
@@ -162,7 +188,7 @@ export function OrdemServicoDetail({ os: initialOs, formData }: Props) {
       });
       const data = (await res.json()) as { error?: string; status?: string };
       if (!res.ok) throw new Error(data.error ?? "Erro ao atualizar status.");
-      window.location.reload();
+      refreshOs();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao atualizar status.");
     } finally {
@@ -200,7 +226,7 @@ export function OrdemServicoDetail({ os: initialOs, formData }: Props) {
       } else {
         window.alert("OS faturada com sucesso! Conta a receber criada.");
       }
-      window.location.reload();
+      refreshOs();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao faturar OS.");
     } finally {
