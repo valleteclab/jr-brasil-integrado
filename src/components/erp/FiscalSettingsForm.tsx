@@ -173,6 +173,7 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
           emitNfse: config.emitNfse,
           codigoMunicipioIbge: config.codigoMunicipioIbge,
           codigoServicoLc116Padrao: config.codigoServicoLc116Padrao,
+          codigoNbsPadrao: config.codigoNbsPadrao,
           spedyModoEmissao: config.spedyModoEmissao,
           nfseAmbienteNacional: config.nfseAmbienteNacional,
           certificadoInfo: config.certificadoInfo,
@@ -372,6 +373,15 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
                 <option key={item.code} value={item.code}>{item.code} — {item.description}</option>
               ))}
             </select>
+          </label>
+          <label className="full">
+            Código NBS padrão (NFS-e) — Nomenclatura Brasileira de Serviços, 9 dígitos
+            <input
+              value={config.codigoNbsPadrao}
+              onChange={(e) => update("codigoNbsPadrao", e.target.value.replace(/\D/g, "").slice(0, 9))}
+              placeholder="Ex.: 115029100"
+              inputMode="numeric"
+            />
           </label>
           <label>
             Ambiente da NFS-e (município)

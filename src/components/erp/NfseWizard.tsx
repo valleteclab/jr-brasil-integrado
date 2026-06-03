@@ -208,13 +208,14 @@ export function NfseWizard({ data }: { data: EmissaoFormData }) {
       const body = {
         receiver: buildReceiver(),
         codigoServicoLc116: codigoLc116,
+        codigoNbs: itemNbs.trim() || undefined,
         aliquotaIss: aliquotaIss > 0 ? aliquotaIss : undefined,
         deducoes: descontoIncondicionado + deducaoBc > 0 ? descontoIncondicionado + deducaoBc : undefined,
         taxationType,
         condicaoPagamento: condicaoPagamento.trim() || undefined,
         observacoes: obsPartes.join(" ") || undefined,
         dataCompetencia,
-        servicos: [{ descricao: descricao.trim(), valor: valorServico, codigoServicoLc116: codigoLc116 }],
+        servicos: [{ descricao: descricao.trim(), valor: valorServico, codigoServicoLc116: codigoLc116, codigoNbs: itemNbs.trim() || undefined }],
         retencoes: {
           issRetido: issRetido && !exigibilidadeSuspensa,
           baseRetencao: baseRetencao > 0 ? baseRetencao : undefined,
