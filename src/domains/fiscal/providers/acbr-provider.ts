@@ -583,10 +583,7 @@ export class AcbrFiscalProvider implements FiscalProvider {
     const aliquotaIss = servicoTax?.aliquotaIss ?? 0;
     const itemLc116 = servicoTax?.itemListaServico ?? "";
     // cNBS (Nomenclatura Brasileira de Serviços): exigido no cServ pela DPS nacional.
-    const servicoItem = input.document.itens.find((i) => i.servico && (i.codigoNbs || i.cClassTribServico));
-    const cNbs = onlyDigits(servicoItem?.codigoNbs);
-    // cClassTrib (classificação tributária IBS/CBS, 6 dígitos) — Reforma Tributária.
-    const cClassTrib = (servicoItem?.cClassTribServico ?? "").trim();
+    const cNbs = onlyDigits(input.document.itens.find((i) => i.servico && i.codigoNbs)?.codigoNbs);
     const ret = input.document.retencoes ?? null;
     const descricao =
       input.document.itens.map((i) => i.descricao).join("; ") ||
@@ -638,10 +635,12 @@ export class AcbrFiscalProvider implements FiscalProvider {
         serv: {
           locPrest: { cLocPrestacao: input.emitter.codigoMunicipioIbge ?? undefined },
           // cTribNac (código nacional) derivado do item LC116; cNBS (9 dígitos) exigido pela DPS.
+          // OBS: o leiaute atual da ACBr (TCServ) NÃO aceita cClassTrib em cServ — o grupo
+          // IBS/CBS da Reforma Tributária ainda não é exigido (validação suspensa em 2026).
+          // Guardamos o cClassTrib no nosso banco e o enviaremos quando o grupo for liberado.
           cServ: {
             cTribNac: cTribNacFromLc116(itemLc116),
             ...(cNbs.length === 9 ? { cNBS: cNbs } : {}),
-            ...(/^\d{6}$/.test(cClassTrib) ? { cClassTrib } : {}),
             xDescServ: descricao
           }
         },
