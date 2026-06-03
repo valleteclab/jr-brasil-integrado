@@ -52,6 +52,8 @@ export type NormalizedFiscalItem = {
   itemListaServico: string | null;
   /** NFS-e: código NBS (Nomenclatura Brasileira de Serviços, 9 dígitos), exigido no cServ. */
   codigoNbs?: string | null;
+  /** NFS-e/Reforma Tributária: código de classificação tributária IBS/CBS (cClassTrib, 6 dígitos). */
+  cClassTribServico?: string | null;
   /** NFS-e: alíquota de ISS informada (%) que sobrepõe a regra tributária, quando definida. */
   aliquotaIssInformada?: number | null;
   /** NFS-e: base de cálculo do ISS informada (após deduções), quando diferente do valor do serviço. */

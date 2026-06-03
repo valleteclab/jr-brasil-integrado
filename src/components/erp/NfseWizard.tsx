@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { EmissaoFormData } from "@/lib/services/fiscal-emit";
+import { sugerirPorLc116 } from "@/domains/fiscal/nbs";
 
 /**
  * Wizard de emissão de NFS-e inspirado no Emissor Nacional (gov.br): passo a passo
@@ -85,7 +86,22 @@ export function NfseWizard({ data }: { data: EmissaoFormData }) {
   const [codigoLc116, setCodigoLc116] = useState("");
   const [descricao, setDescricao] = useState("");
   const [itemNbs, setItemNbs] = useState("");
+  const [cClassTrib, setCClassTrib] = useState("");
   const [codigoInterno, setCodigoInterno] = useState("");
+
+  // Sugestões de NBS e cClassTrib a partir do LC 116 escolhido (tabela oficial de correlação).
+  const sugestao = useMemo(() => sugerirPorLc116(codigoLc116), [codigoLc116]);
+
+  // Ao trocar o LC 116, pré-seleciona o NBS e o cClassTrib padrão da correlação (sem sobrescrever
+  // uma escolha que ainda esteja entre as opções sugeridas).
+  function aoTrocarLc116(novo: string) {
+    setCodigoLc116(novo);
+    const s = sugerirPorLc116(novo);
+    if (s) {
+      if (s.nbsPadrao && !s.nbs.some((n) => n.code === itemNbs.replace(/\D/g, ""))) setItemNbs(s.nbsPadrao);
+      if (s.classTribPadrao && !s.classTrib.some((c) => c.code === cClassTrib)) setCClassTrib(s.classTribPadrao);
+    }
+  }
 
   // Passo 3 — Valores
   const [valorServico, setValorServico] = useState(0);
@@ -200,7 +216,6 @@ export function NfseWizard({ data }: { data: EmissaoFormData }) {
       if (issRetido && !exigibilidadeSuspensa) {
         obsPartes.push(`ISSQN retido pelo ${issRetidoPor === "tomador" ? "tomador" : "intermediário"}.`);
       }
-      if (itemNbs.trim()) obsPartes.push(`Item NBS: ${itemNbs.trim()}.`);
       if (codigoInterno.trim()) obsPartes.push(`Código interno: ${codigoInterno.trim()}.`);
 
       const taxationType = exigibilidadeSuspensa ? suspensaoTipo : tipoOperacao;
@@ -208,14 +223,14 @@ export function NfseWizard({ data }: { data: EmissaoFormData }) {
       const body = {
         receiver: buildReceiver(),
         codigoServicoLc116: codigoLc116,
-        codigoNbs: itemNbs.trim() || undefined,
+        codigoNbs: itemNbs.replace(/\D/g, "") || undefined,
         aliquotaIss: aliquotaIss > 0 ? aliquotaIss : undefined,
         deducoes: descontoIncondicionado + deducaoBc > 0 ? descontoIncondicionado + deducaoBc : undefined,
         taxationType,
         condicaoPagamento: condicaoPagamento.trim() || undefined,
         observacoes: obsPartes.join(" ") || undefined,
         dataCompetencia,
-        servicos: [{ descricao: descricao.trim(), valor: valorServico, codigoServicoLc116: codigoLc116, codigoNbs: itemNbs.trim() || undefined }],
+        servicos: [{ descricao: descricao.trim(), valor: valorServico, codigoServicoLc116: codigoLc116, codigoNbs: itemNbs.replace(/\D/g, "") || undefined, cClassTrib: cClassTrib.trim() || undefined }],
         retencoes: {
           issRetido: issRetido && !exigibilidadeSuspensa,
           baseRetencao: baseRetencao > 0 ? baseRetencao : undefined,
@@ -366,7 +381,7 @@ export function NfseWizard({ data }: { data: EmissaoFormData }) {
           <div className="erp-form">
             <label className="full">
               Código de Tributação Nacional (LC 116)
-              <select value={codigoLc116} onChange={(e) => setCodigoLc116(e.target.value)}>
+              <select value={codigoLc116} onChange={(e) => aoTrocarLc116(e.target.value)}>
                 <option value="">Selecione…</option>
                 {data.lc116.map((l) => <option key={l.code} value={l.code}>{l.code} — {l.description}</option>)}
               </select>
@@ -383,7 +398,30 @@ export function NfseWizard({ data }: { data: EmissaoFormData }) {
               />
               <span style={{ fontSize: 11, color: "var(--erp-mute)", textAlign: "right" }}>{descricao.length}/2000</span>
             </label>
-            <label>Item da NBS (opcional)<input value={itemNbs} onChange={(e) => setItemNbs(e.target.value)} placeholder="Nomenclatura Brasileira de Serviços" /></label>
+            <label className="full">
+              Código NBS (Nomenclatura Brasileira de Serviços)
+              {sugestao && sugestao.nbs.length > 0 ? (
+                <select value={itemNbs.replace(/\D/g, "")} onChange={(e) => setItemNbs(e.target.value)}>
+                  <option value="">Selecione…</option>
+                  {sugestao.nbs.map((n) => <option key={n.code} value={n.code}>{n.code} — {n.description}</option>)}
+                </select>
+              ) : (
+                <input value={itemNbs} onChange={(e) => setItemNbs(e.target.value.replace(/\D/g, "").slice(0, 9))} placeholder="9 dígitos (selecione um LC 116 para sugerir)" inputMode="numeric" />
+              )}
+              {sugestao && <span style={{ fontSize: 11, color: "var(--erp-mute)" }}>Sugerido pela tabela oficial a partir do LC 116.</span>}
+            </label>
+            <label className="full">
+              Classificação tributária IBS/CBS (cClassTrib)
+              {sugestao && sugestao.classTrib.length > 0 ? (
+                <select value={cClassTrib} onChange={(e) => setCClassTrib(e.target.value)}>
+                  <option value="">Selecione…</option>
+                  {sugestao.classTrib.map((c) => <option key={c.code} value={c.code}>{c.code} — {c.nome}</option>)}
+                </select>
+              ) : (
+                <input value={cClassTrib} onChange={(e) => setCClassTrib(e.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="6 dígitos (selecione um LC 116 para sugerir)" inputMode="numeric" />
+              )}
+              <span style={{ fontSize: 11, color: "var(--erp-mute)" }}>Reforma Tributária. Em 2026 a validação é opcional; informe quando souber.</span>
+            </label>
             <label>Código interno do contribuinte (opcional)<input value={codigoInterno} onChange={(e) => setCodigoInterno(e.target.value)} /></label>
           </div>
         </div>

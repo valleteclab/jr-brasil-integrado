@@ -583,7 +583,10 @@ export class AcbrFiscalProvider implements FiscalProvider {
     const aliquotaIss = servicoTax?.aliquotaIss ?? 0;
     const itemLc116 = servicoTax?.itemListaServico ?? "";
     // cNBS (Nomenclatura Brasileira de Serviços): exigido no cServ pela DPS nacional.
-    const cNbs = onlyDigits(input.document.itens.find((i) => i.servico && i.codigoNbs)?.codigoNbs);
+    const servicoItem = input.document.itens.find((i) => i.servico && (i.codigoNbs || i.cClassTribServico));
+    const cNbs = onlyDigits(servicoItem?.codigoNbs);
+    // cClassTrib (classificação tributária IBS/CBS, 6 dígitos) — Reforma Tributária.
+    const cClassTrib = (servicoItem?.cClassTribServico ?? "").trim();
     const ret = input.document.retencoes ?? null;
     const descricao =
       input.document.itens.map((i) => i.descricao).join("; ") ||
@@ -638,6 +641,7 @@ export class AcbrFiscalProvider implements FiscalProvider {
           cServ: {
             cTribNac: cTribNacFromLc116(itemLc116),
             ...(cNbs.length === 9 ? { cNBS: cNbs } : {}),
+            ...(/^\d{6}$/.test(cClassTrib) ? { cClassTrib } : {}),
             xDescServ: descricao
           }
         },
