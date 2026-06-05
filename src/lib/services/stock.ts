@@ -10,6 +10,9 @@ export type StockBalance = {
   produtoId: string;
   sku: string;
   nome: string;
+  gtin: string | null;
+  codigoOriginal: string | null;
+  codigoFabricante: string | null;
   depositoId: string;
   depositoNome: string;
   quantidade: number;
@@ -171,6 +174,9 @@ export async function listStockBalances(): Promise<StockBalance[]> {
             id: true,
             sku: true,
             nome: true,
+            gtin: true,
+            codigoOriginal: true,
+            codigoFabricante: true,
             custoMedio: true,
             precoCusto: true
           }
@@ -194,6 +200,9 @@ export async function listStockBalances(): Promise<StockBalance[]> {
         produtoId: s.produto.id,
         sku: s.produto.sku,
         nome: s.produto.nome,
+        gtin: s.produto.gtin,
+        codigoOriginal: s.produto.codigoOriginal,
+        codigoFabricante: s.produto.codigoFabricante,
         depositoId: s.deposito.id,
         depositoNome: s.deposito.nome,
         quantidade: qtd,

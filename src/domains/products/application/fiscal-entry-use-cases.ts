@@ -1,11 +1,14 @@
 import { createHash } from "node:crypto";
-import type { Prisma } from "@prisma/client";
+import type { FinalidadeEntrada, Prisma, TipoTributo } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import { createAuditLog } from "@/lib/audit/audit-service";
 import { parseNfeXml } from "@/domains/products/xml/nfe-server-parser";
 import type { ParsedNfeItem } from "@/domains/products/xml/nfe-server-parser";
 import { callOpenRouter } from "@/domains/ai/openrouter-service";
+import { isSubstituicaoTributaria } from "@/domains/fiscal/cfop";
+import { cfopVendaPadrao, creditoPorFinalidade, isFinalidadeEntrada, resolveCfopEntrada } from "@/domains/fiscal/finalidade-entrada";
+import { resolveFinalidadeForItem } from "@/domains/fiscal/application/finalidade-regra-use-cases";
 
 const FISCAL_TRANSACTION_OPTIONS = {
   maxWait: 10000,
@@ -77,6 +80,10 @@ type FiscalEntryDraftSource = {
     marcaDefinida: string | null;
     confiancaVinculo: Prisma.Decimal | null;
     revisarVinculo: boolean;
+    finalidade: FinalidadeEntrada | null;
+    finalidadeOrigem: string | null;
+    cfopEntradaDerivado: string | null;
+    movimentaEstoque: boolean;
   }>;
 };
 
@@ -192,7 +199,11 @@ function buildFiscalEntryDraft(entrada: FiscalEntryDraftSource) {
       review: item.revisarVinculo,
       salePrice: item.precoVendaDefinido ? String(Number(item.precoVendaDefinido)).replace(".", ",") : "",
       minimumPrice: item.precoMinimoDefinido ? String(Number(item.precoMinimoDefinido)).replace(".", ",") : "",
-      brand: item.marcaDefinida ?? ""
+      brand: item.marcaDefinida ?? "",
+      finalidade: item.finalidade ?? undefined,
+      finalidadeOrigem: item.finalidadeOrigem ?? undefined,
+      cfopEntradaDerivado: item.cfopEntradaDerivado ?? undefined,
+      movimentaEstoque: item.movimentaEstoque
     }))
   };
 }
@@ -237,33 +248,41 @@ async function upsertProductFiscalFromEntryItem(
   tx: Prisma.TransactionClient,
   scope: TenantScope,
   produtoId: string,
-  item: { ncm: string | null; cest: string | null }
+  item: { ncm: string | null; cest: string | null; finalidade?: FinalidadeEntrada | null }
 ) {
   if (!item.ncm) {
     return;
   }
 
+  // Memoriza a finalidade no perfil fiscal do produto para que próximas entradas do mesmo
+  // item herdem a classificação automaticamente (camada de maior confiança na resolução).
   await tx.produtoFiscal.upsert({
     where: { produtoId },
     update: {
       ncm: item.ncm,
       cest: item.cest || null,
-      regraTributariaId: undefined
+      regraTributariaId: undefined,
+      ...(item.finalidade ? { finalidadePadrao: item.finalidade } : {})
     },
     create: {
       tenantId: scope.tenantId,
       empresaId: scope.empresaId,
       produtoId,
       ncm: item.ncm,
-      cest: item.cest || null
+      cest: item.cest || null,
+      finalidadePadrao: item.finalidade ?? null
     }
   });
 }
 
-async function resolveFornecedor(tx: Prisma.TransactionClient, scope: TenantScope, document?: string, name?: string) {
+async function resolveFornecedor(tx: Prisma.TransactionClient, scope: TenantScope, document?: string, name?: string, uf?: string) {
   if (!document) {
     return null;
   }
+
+  // Grava a UF do fornecedor (do XML): é ela vs a UF da empresa que define interno x interestadual
+  // ao derivar/recalcular o CFOP de entrada — de forma robusta, independente de overrides manuais.
+  const ufNorm = uf?.trim().toUpperCase() || undefined;
 
   return tx.fornecedor.upsert({
     where: {
@@ -275,14 +294,16 @@ async function resolveFornecedor(tx: Prisma.TransactionClient, scope: TenantScop
     },
     update: {
       razaoSocial: name || document,
-      nomeFantasia: name || undefined
+      nomeFantasia: name || undefined,
+      uf: ufNorm
     },
     create: {
       tenantId: scope.tenantId,
       empresaId: scope.empresaId,
       documento: document,
       razaoSocial: name || document,
-      nomeFantasia: name || undefined
+      nomeFantasia: name || undefined,
+      uf: ufNorm
     }
   });
 }
@@ -343,7 +364,16 @@ export async function importNfeXml(scope: TenantScope, xmlText: string) {
   const checksum = nfeChecksum(xmlText);
 
   return prisma.$transaction(async (tx) => {
-    const fornecedor = await resolveFornecedor(tx, scope, parsed.supplierDocument, parsed.supplierName);
+    const fornecedor = await resolveFornecedor(tx, scope, parsed.supplierDocument, parsed.supplierName, parsed.supplierUf);
+    // UF e regime da empresa: necessários para derivar CFOP de entrada (interno x interestadual)
+    // e o direito a crédito por finalidade. Fallbacks seguros se não configurados.
+    const empresa = await tx.empresa.findUnique({
+      where: { id: scope.empresaId },
+      select: { enderecoUf: true, regimeTributario: true }
+    });
+    const empresaUf = empresa?.enderecoUf?.trim().toUpperCase() || null;
+    const regime = empresa?.regimeTributario ?? "SIMPLES_NACIONAL";
+    const agora = new Date();
     const xmlImportacao = await tx.xmlImportacao.upsert({
       where: {
         tenantId_empresaId_checksum: {
@@ -454,6 +484,22 @@ export async function importNfeXml(scope: TenantScope, xmlText: string) {
 
     for (const item of parsed.items) {
       const match = await matchProduct(tx, scope, fornecedor?.id, item);
+
+      // Finalidade do item (memória do produto → regra De/Para → heurística) e seus efeitos:
+      // CFOP de entrada correto, se movimenta estoque e quais tributos são recuperáveis.
+      const finalidadeRes = await resolveFinalidadeForItem(
+        tx,
+        scope,
+        { ncm: item.ncm, cfopOrigem: item.cfop, descricao: item.description, produtoId: match.product?.id },
+        fornecedor?.id ?? null,
+        agora
+      );
+      const icms = item.taxes.find((tax) => tax.tax === "ICMS");
+      const st = isSubstituicaoTributaria({ cstIcms: icms?.cst ?? null, csosn: icms?.csosn ?? null });
+      const interestadual = Boolean(empresaUf && parsed.supplierUf && empresaUf !== parsed.supplierUf);
+      const cfopEntrada = resolveCfopEntrada(finalidadeRes.finalidade, { interestadual, st });
+      const movimentaEstoque = finalidadeRes.finalidade === "REVENDA" || finalidadeRes.finalidade === "INDUSTRIALIZACAO";
+
       const createdItem = await tx.entradaFiscalItem.create({
         data: {
           tenantId: scope.tenantId,
@@ -474,7 +520,12 @@ export async function importNfeXml(scope: TenantScope, xmlText: string) {
           valorDesconto: item.discountValue,
           produtoVinculadoAutomaticamente: Boolean(match.product),
           confiancaVinculo: match.confidence,
-          revisarVinculo: match.review
+          revisarVinculo: match.review,
+          finalidade: finalidadeRes.finalidade,
+          finalidadeSugerida: finalidadeRes.finalidade,
+          finalidadeOrigem: finalidadeRes.origem,
+          cfopEntradaDerivado: cfopEntrada,
+          movimentaEstoque
         }
       });
 
@@ -490,6 +541,7 @@ export async function importNfeXml(scope: TenantScope, xmlText: string) {
             baseCalculo: tax.base,
             aliquota: tax.rate,
             valor: tax.value,
+            recuperavel: creditoPorFinalidade(finalidadeRes.finalidade, regime, tax.tax).recuperavel,
             dadosOriginais: tax.raw as Prisma.InputJsonValue
           }))
         });
@@ -555,7 +607,11 @@ export async function importNfeXml(scope: TenantScope, xmlText: string) {
         matchedProductId: match.product?.id,
         action: match.product ? "update" : "create",
         confidence: match.confidence,
-        review: match.review
+        review: match.review,
+        finalidade: finalidadeRes.finalidade,
+        finalidadeOrigem: finalidadeRes.origem,
+        cfopEntradaDerivado: cfopEntrada,
+        movimentaEstoque
       });
     }
 
@@ -714,9 +770,16 @@ export async function processFiscalEntry(
     let updated = 0;
 
     for (const item of entrada.itens) {
+      const movimentaEstoque = item.movimentaEstoque;
       let produtoId = item.produtoId;
 
       if (!produtoId) {
+        // Uso/consumo e imobilizado sem produto vinculado não viram SKU nem estoque: entram
+        // apenas como obrigação financeira (ContaPagar, gerada adiante). CIAP do ativo é fase posterior.
+        if (!movimentaEstoque) {
+          continue;
+        }
+
         if (!item.precoVendaDefinido || Number(item.precoVendaDefinido) <= 0) {
           throw new Error(`Informe o preço de venda do novo SKU ${item.codigoFornecedor} antes de lançar a entrada fiscal.`);
         }
@@ -746,7 +809,7 @@ export async function processFiscalEntry(
             sku: item.codigoFornecedor.toUpperCase(),
             nome: item.descricaoFornecedor,
             descricao: `Criado pela entrada fiscal ${entrada.numero || entrada.id}.`,
-            tipo: "PRODUTO",
+            tipo: item.finalidade === "INDUSTRIALIZACAO" ? "INSUMO" : "PRODUTO",
             codigoOriginal: item.codigoFornecedor,
             gtin: item.gtin,
             categoriaId: categoria.id,
@@ -756,7 +819,8 @@ export async function processFiscalEntry(
             fatorConversaoCompra: 1,
             ncm: item.ncm,
             cest: item.cest,
-            cfop: item.cfop,
+            // CFOP de VENDA do produto conforme a finalidade (não o CFOP do fornecedor).
+            cfop: cfopVendaPadrao(item.finalidade),
             precoCusto: item.valorUnitario,
             ultimoCusto: item.valorUnitario,
             custoMedio: item.valorUnitario,
@@ -781,6 +845,13 @@ export async function processFiscalEntry(
         updated += 1;
       }
 
+      // Itens vinculados que não movimentam estoque (uso/consumo, imobilizado): apenas memorizam
+      // a finalidade no perfil fiscal e seguem — sem saldo, custo médio ou movimento de estoque.
+      if (!movimentaEstoque) {
+        await upsertProductFiscalFromEntryItem(tx, scope, produtoId, item);
+        continue;
+      }
+
       const product = await tx.produto.findFirst({
         where: {
           tenantId: scope.tenantId,
@@ -790,7 +861,8 @@ export async function processFiscalEntry(
         select: {
           id: true,
           precoCusto: true,
-          custoMedio: true
+          custoMedio: true,
+          cfop: true
         }
       });
 
@@ -851,6 +923,10 @@ export async function processFiscalEntry(
         ? ((previousQuantity * previousAverageCost) + (incomingQuantity * incomingCost)) / nextQuantity
         : incomingCost;
 
+      // CFOP de venda conforme a finalidade. Só preenche quando o produto ainda NÃO tem CFOP
+      // (não sobrescreve configuração que o contador já fez no produto existente).
+      const cfopVenda = cfopVendaPadrao(item.finalidade);
+      const definirCfop = cfopVenda && !product.cfop;
       await tx.produto.update({
         where: { id: produtoId },
         data: {
@@ -859,7 +935,7 @@ export async function processFiscalEntry(
           custoMedio: weightedAverageCost,
           ncm: item.ncm,
           cest: item.cest,
-          cfop: item.cfop
+          ...(definirCfop ? { cfop: cfopVenda } : {})
         }
       });
       await upsertProductFiscalFromEntryItem(tx, scope, produtoId, item);
@@ -1250,7 +1326,60 @@ type FiscalEntryItemLinkInput = {
   precoVenda?: number | null;
   precoMinimo?: number | null;
   marca?: string | null;
+  finalidade?: FinalidadeEntrada | null;
+  /** CFOP de entrada informado manualmente (casos especiais fora da matriz). Sobrepõe o automático. */
+  cfopEntrada?: string | null;
 };
+
+/**
+ * Aplica uma finalidade escolhida manualmente a um item: recalcula o CFOP de entrada e a flag
+ * de estoque, e reavalia o crédito recuperável de cada imposto conforme o regime da empresa.
+ * O eixo interno/interestadual é preservado do CFOP já derivado na importação. Um CFOP informado
+ * manualmente (cfopOverride, 4 dígitos) tem prioridade sobre a derivação — cobre casos especiais
+ * (devolução, remessa, importação) que não estão na matriz das 4 finalidades.
+ */
+async function applyFinalidadeManual(
+  tx: Prisma.TransactionClient,
+  scope: TenantScope,
+  item: { id: string; cfopEntradaDerivado: string | null; fornecedorId: string | null; impostos: Array<{ tributo: TipoTributo; cst: string | null; csosn: string | null }> },
+  finalidade: FinalidadeEntrada,
+  cfopOverride?: string | null
+) {
+  const empresa = await tx.empresa.findUnique({
+    where: { id: scope.empresaId },
+    select: { regimeTributario: true, enderecoUf: true }
+  });
+  const regime = empresa?.regimeTributario ?? "SIMPLES_NACIONAL";
+  const empresaUf = empresa?.enderecoUf?.trim().toUpperCase() || null;
+
+  // Eixo interno x interestadual pela UF do fornecedor vs empresa (robusto). Só cai no primeiro
+  // dígito do CFOP anterior se as UFs não estiverem disponíveis.
+  const fornecedor = item.fornecedorId
+    ? await tx.fornecedor.findUnique({ where: { id: item.fornecedorId }, select: { uf: true } })
+    : null;
+  const fornecedorUf = fornecedor?.uf?.trim().toUpperCase() || null;
+  const interestadual = empresaUf && fornecedorUf
+    ? fornecedorUf !== empresaUf
+    : (item.cfopEntradaDerivado ?? "").startsWith("2");
+
+  const icms = item.impostos.find((imp) => imp.tributo === "ICMS");
+  const st = isSubstituicaoTributaria({ cstIcms: icms?.cst ?? null, csosn: icms?.csosn ?? null });
+  const cfopManual = (cfopOverride ?? "").replace(/\D/g, "");
+  const cfopEntrada = cfopManual.length === 4 ? cfopManual : resolveCfopEntrada(finalidade, { interestadual, st });
+  const movimentaEstoque = finalidade === "REVENDA" || finalidade === "INDUSTRIALIZACAO";
+
+  await tx.entradaFiscalItem.update({
+    where: { id: item.id },
+    data: { finalidade, finalidadeOrigem: "MANUAL", cfopEntradaDerivado: cfopEntrada, movimentaEstoque }
+  });
+
+  for (const imp of item.impostos) {
+    await tx.entradaFiscalItemImposto.updateMany({
+      where: { tenantId: scope.tenantId, empresaId: scope.empresaId, entradaFiscalItemId: item.id, tributo: imp.tributo },
+      data: { recuperavel: creditoPorFinalidade(finalidade, regime, imp.tributo).recuperavel }
+    });
+  }
+}
 
 async function updateFiscalEntryItemLinkInTransaction(
   tx: Prisma.TransactionClient,
@@ -1265,7 +1394,8 @@ async function updateFiscalEntryItemLinkInTransaction(
         id: itemId
       },
       include: {
-        entradaFiscal: true
+        entradaFiscal: true,
+        impostos: true
       }
     });
 
@@ -1275,6 +1405,40 @@ async function updateFiscalEntryItemLinkInTransaction(
 
     if (item.entradaFiscal.status !== "AGUARDANDO_CONFERENCIA" && item.entradaFiscal.status !== "CONFERIDA") {
       throw new Error("Esta entrada fiscal não permite alteração de vínculo.");
+    }
+
+    // Finalidade escolhida pelo usuário (quando enviada) recalcula CFOP/estoque/crédito.
+    // Um CFOP informado manualmente sobrepõe o automático (casos especiais).
+    if (input.finalidade) {
+      await applyFinalidadeManual(tx, scope, { ...item, fornecedorId: item.entradaFiscal.fornecedorId }, input.finalidade, input.cfopEntrada);
+
+      // Uso/consumo e imobilizado não viram SKU nem exigem preço: lançam apenas a obrigação
+      // financeira. Se o usuário apontou um produto existente, mantém o vínculo (para histórico);
+      // senão fica sem produto. Encerra aqui, ignorando a exigência de preço do "criar SKU".
+      if (input.finalidade === "USO_CONSUMO" || input.finalidade === "IMOBILIZADO") {
+        const produtoId = !input.criarNovoSku && input.produtoId ? input.produtoId : null;
+        if (produtoId) {
+          const produto = await tx.produto.findFirst({
+            where: { tenantId: scope.tenantId, empresaId: scope.empresaId, id: produtoId, ativo: true },
+            select: { id: true }
+          });
+          if (!produto) {
+            throw new Error("Produto informado não pertence a esta empresa ou está inativo.");
+          }
+        }
+        return tx.entradaFiscalItem.update({
+          where: { id: item.id },
+          data: {
+            produtoId,
+            precoVendaDefinido: null,
+            precoMinimoDefinido: null,
+            marcaDefinida: null,
+            produtoVinculadoAutomaticamente: false,
+            confiancaVinculo: produtoId ? 100 : 0,
+            revisarVinculo: false
+          }
+        });
+      }
     }
 
     if (input.criarNovoSku) {
@@ -1468,4 +1632,75 @@ export async function suggestFiscalEntryLinksWithAi(scope: TenantScope, entradaF
     confianca: Number(suggestion.confianca) || 0,
     motivo: String(suggestion.motivo || "")
   }));
+}
+
+function extractFinalidadeArray(content: string) {
+  const first = content.indexOf("[");
+  const last = content.lastIndexOf("]");
+
+  if (first < 0 || last < first) {
+    throw new Error("A IA não retornou uma lista JSON válida.");
+  }
+
+  return JSON.parse(content.slice(first, last + 1)) as Array<{
+    itemId: string;
+    finalidade: string;
+    confianca: number;
+    motivo: string;
+  }>;
+}
+
+/**
+ * Sugere a finalidade (revenda, uso/consumo, imobilizado, industrialização) de cada item da
+ * entrada via IA, a partir da descrição/NCM/CFOP de origem. A escolha do usuário sempre prevalece;
+ * estas sugestões são aplicadas no wizard apenas para conferência.
+ */
+export async function suggestFiscalEntryFinalidadesWithAi(scope: TenantScope, entradaFiscalId: string) {
+  const entrada = await prisma.entradaFiscal.findFirst({
+    where: { tenantId: scope.tenantId, empresaId: scope.empresaId, id: entradaFiscalId },
+    include: { itens: true }
+  });
+
+  if (!entrada) {
+    throw new Error("Entrada fiscal não encontrada.");
+  }
+
+  const content = await callOpenRouter(scope, [
+    {
+      role: "system",
+      content: [
+        "Você é um assistente fiscal brasileiro que classifica a FINALIDADE de itens recebidos em NF-e de entrada.",
+        "As finalidades possíveis são exatamente: REVENDA (mercadoria para revender), USO_CONSUMO (material consumido na operação, como limpeza/escritório),",
+        "IMOBILIZADO (bem do ativo: máquinas, móveis, veículos, equipamentos) e INDUSTRIALIZACAO (insumo/matéria-prima para produção).",
+        "Responda somente com JSON válido, sem markdown."
+      ].join(" ")
+    },
+    {
+      role: "user",
+      content: JSON.stringify({
+        instrucoes: "Para cada item, retorne itemId, finalidade (um dos 4 valores), confianca de 0 a 100 e motivo curto.",
+        itensNfe: entrada.itens.map((item) => ({
+          itemId: item.id,
+          descricao: item.descricaoFornecedor,
+          ncm: item.ncm,
+          cfopOrigem: item.cfop,
+          unidade: item.unidade
+        })),
+        formato: [
+          { itemId: "id-do-item", finalidade: "REVENDA", confianca: 90, motivo: "descrição compatível com revenda" }
+        ]
+      })
+    }
+  ], { maxTokens: 1200, temperature: 0 });
+
+  const suggestions = extractFinalidadeArray(content);
+
+  return suggestions
+    .map((suggestion) => ({
+      itemId: String(suggestion.itemId),
+      finalidade: String(suggestion.finalidade || "").toUpperCase(),
+      confianca: Number(suggestion.confianca) || 0,
+      motivo: String(suggestion.motivo || "")
+    }))
+    .filter((suggestion) => isFinalidadeEntrada(suggestion.finalidade));
 }

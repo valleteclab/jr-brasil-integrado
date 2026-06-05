@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { correspondeBusca } from "@/lib/search/normalize";
 import type { SaleFormData } from "@/lib/services/sales";
 import { useCadastroLookup } from "./useCadastroLookup";
 
@@ -592,7 +593,7 @@ function ProdutoPickerMulti({ produtos, items, onAdd, onRemove, onClose }: {
   const [q, setQ] = useState("");
   const qtyById = new Map(items.map((it) => [it.produto.id, it.quantidade]));
   const list = produtos
-    .filter((p) => !q || p.sku.toLowerCase().includes(q.toLowerCase()) || p.nome.toLowerCase().includes(q.toLowerCase()))
+    .filter((p) => correspondeBusca(q, p.sku, p.nome, p.gtin, p.codigoOriginal, p.codigoFabricante))
     .slice(0, 50);
   const totalItens = items.reduce((s, it) => s + it.quantidade, 0);
   return (

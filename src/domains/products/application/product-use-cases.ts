@@ -220,6 +220,34 @@ async function upsertInitialStock(tx: Prisma.TransactionClient, scope: TenantSco
   return saldo;
 }
 
+/**
+ * Substitui as aplicações veiculares do produto (que veículo a peça serve). Estratégia
+ * delete-all + create-all, igual ao padrão das demais relações filhas. Vazio limpa todas.
+ */
+async function replaceProductAplicacoes(
+  tx: Prisma.TransactionClient,
+  scope: TenantScope,
+  productId: string,
+  aplicacoes: ValidatedProductInput["aplicacoes"]
+) {
+  await tx.produtoAplicacao.deleteMany({
+    where: { tenantId: scope.tenantId, empresaId: scope.empresaId, produtoId: productId }
+  });
+  if (aplicacoes.length) {
+    await tx.produtoAplicacao.createMany({
+      data: aplicacoes.map((a) => ({
+        tenantId: scope.tenantId,
+        empresaId: scope.empresaId,
+        produtoId: productId,
+        marca: a.marca,
+        modelo: a.modelo,
+        anoFaixa: a.anoFaixa,
+        observacoes: a.observacoes
+      }))
+    });
+  }
+}
+
 export async function createProduct(scope: TenantScope, payload: ProductPayload) {
   const input = validateProductPayload(payload);
 
@@ -249,6 +277,7 @@ export async function createProduct(scope: TenantScope, payload: ProductPayload)
 
     await upsertProductFiscal(tx, scope, product.id, input);
     await upsertInitialStock(tx, scope, product.id, deposito.id, input);
+    await replaceProductAplicacoes(tx, scope, product.id, input.aplicacoes);
     await createAuditLog(tx, {
       scope,
       entidade: "Produto",
@@ -296,6 +325,7 @@ export async function updateProduct(scope: TenantScope, productId: string, paylo
 
     await upsertProductFiscal(tx, scope, product.id, input);
     await upsertInitialStock(tx, scope, product.id, deposito.id, input);
+    await replaceProductAplicacoes(tx, scope, product.id, input.aplicacoes);
     await createAuditLog(tx, {
       scope,
       entidade: "Produto",

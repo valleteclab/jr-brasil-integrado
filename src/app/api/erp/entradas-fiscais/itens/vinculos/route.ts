@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { updateFiscalEntryItemLinks } from "@/domains/products/application/fiscal-entry-use-cases";
 import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
+import { isFinalidadeEntrada } from "@/domains/fiscal/finalidade-entrada";
 
 export async function PUT(request: Request) {
   try {
@@ -12,6 +13,8 @@ export async function PUT(request: Request) {
         precoVenda?: number | null;
         precoMinimo?: number | null;
         marca?: string | null;
+        finalidade?: string | null;
+        cfopEntrada?: string | null;
       }>;
     };
 
@@ -21,7 +24,9 @@ export async function PUT(request: Request) {
       criarNovoSku: Boolean(link.criarNovoSku),
       precoVenda: link.precoVenda,
       precoMinimo: link.precoMinimo,
-      marca: link.marca
+      marca: link.marca,
+      finalidade: isFinalidadeEntrada(link.finalidade) ? link.finalidade : null,
+      cfopEntrada: link.cfopEntrada ?? null
     })) ?? [];
 
     if (!links.length) {

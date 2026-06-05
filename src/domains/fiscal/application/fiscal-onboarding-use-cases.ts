@@ -1,4 +1,4 @@
-import type { AmbienteFiscal, ProvedorFiscal, RegimeTributario } from "@prisma/client";
+import type { AmbienteFiscal, ProvedorFiscal, RegimeTributario, TipoNegocio } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import { createAuditLog } from "@/lib/audit/audit-service";
@@ -13,6 +13,7 @@ export type FiscalOnboardingInput = {
   inscricaoEstadual?: string;
   inscricaoMunicipal?: string;
   regime: RegimeTributario;
+  tipoNegocio?: TipoNegocio;
   // Endereço fiscal
   enderecoLogradouro?: string;
   enderecoNumero?: string;
@@ -54,6 +55,7 @@ export type FiscalOnboardingData = {
     inscricaoEstadual: string;
     inscricaoMunicipal: string;
     regime: RegimeTributario;
+    tipoNegocio: TipoNegocio;
     enderecoLogradouro: string;
     enderecoNumero: string;
     enderecoComplemento: string;
@@ -107,6 +109,7 @@ export async function getFiscalOnboardingData(scope: TenantScope): Promise<Fisca
       inscricaoEstadual: empresa.inscricaoEstadual ?? "",
       inscricaoMunicipal: empresa.inscricaoMunicipal ?? "",
       regime: empresa.regimeTributario,
+      tipoNegocio: empresa.tipoNegocio,
       enderecoLogradouro: empresa.enderecoLogradouro ?? "",
       enderecoNumero: empresa.enderecoNumero ?? "",
       enderecoComplemento: empresa.enderecoComplemento ?? "",
@@ -170,6 +173,7 @@ export async function completeFiscalOnboarding(scope: TenantScope, input: Fiscal
       inscricaoEstadual: input.inscricaoEstadual?.trim() || null,
       inscricaoMunicipal: input.inscricaoMunicipal?.trim() || null,
       regimeTributario: input.regime,
+      ...(input.tipoNegocio ? { tipoNegocio: input.tipoNegocio } : {}),
       enderecoLogradouro: input.enderecoLogradouro?.trim() || null,
       enderecoNumero: input.enderecoNumero?.trim() || null,
       enderecoComplemento: input.enderecoComplemento?.trim() || null,

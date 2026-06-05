@@ -10,6 +10,7 @@ import type {
   ProviderContext,
   TestConnectionResult
 } from "./types";
+import { normalizeDocumento } from "@/lib/fiscal/documento";
 
 /**
  * Provedor fiscal Focus NFe (https://doc.focusnfe.com.br) para NF-e, NFC-e e NFS-e.
@@ -348,7 +349,7 @@ export class FocusNfeProvider implements FiscalProvider {
   /** Campos do destinatário (flat) para NF-e. */
   private destinatarioFields(input: EmitInput): Record<string, unknown> {
     const dest = input.document.destinatario;
-    const doc = onlyDigits(dest.documento);
+    const doc = normalizeDocumento(dest.documento);
     const end = dest.endereco;
     const fields: Record<string, unknown> = {
       nome_destinatario: dest.nome,
@@ -381,7 +382,7 @@ export class FocusNfeProvider implements FiscalProvider {
       data_emissao: new Date().toISOString(),
       tipo_documento: 1, // saída
       finalidade_emissao: finalidadeFocus(input.document.finalidade),
-      cnpj_emitente: onlyDigits(input.emitter.cnpj),
+      cnpj_emitente: normalizeDocumento(input.emitter.cnpj),
       regime_tributario_emitente: regimeFocus(input.emitter.regime),
       local_destino: localDestino,
       ...this.destinatarioFields(input),
@@ -402,14 +403,14 @@ export class FocusNfeProvider implements FiscalProvider {
       data_emissao: new Date().toISOString(),
       tipo_documento: 1,
       finalidade_emissao: finalidadeFocus(input.document.finalidade),
-      cnpj_emitente: onlyDigits(input.emitter.cnpj),
+      cnpj_emitente: normalizeDocumento(input.emitter.cnpj),
       regime_tributario_emitente: regimeFocus(input.emitter.regime),
       local_destino: 1, // NFC-e é sempre operação interna
       presenca_comprador: 1, // operação presencial
       consumidor_final: 1,
       modalidade_frete: 9, // sem frete
       // Destinatário é opcional na NFC-e; envia CPF/nome só quando informado.
-      ...(onlyDigits(input.document.destinatario.documento) ? this.destinatarioFields(input) : {}),
+      ...(normalizeDocumento(input.document.destinatario.documento) ? this.destinatarioFields(input) : {}),
       valor_desconto: input.document.valorDesconto || undefined,
       valor_total: input.total,
       valor_produtos: input.totals.valorProdutos,
@@ -427,7 +428,7 @@ export class FocusNfeProvider implements FiscalProvider {
   private buildNfseBody(input: EmitInput): Record<string, unknown> {
     const dest = input.document.destinatario;
     const end = dest.endereco;
-    const doc = onlyDigits(dest.documento);
+    const doc = normalizeDocumento(dest.documento);
     const simples = isSimplesRegime(input.emitter.regime);
 
     // Item de serviço de referência (ISS / item da lista LC116).

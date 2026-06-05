@@ -1,7 +1,7 @@
 import { PageHeader } from "@/components/shared/PageHeader";
 import { ReportsView } from "@/components/erp/ReportsView";
-import { accountingPackageReport, salesReport, stockReport, financeReport, fiscalReport, dreSimplificado } from "@/lib/services/reports";
-import type { AccountingPackageReport, SalesReport, StockReport, FinanceReport, FiscalReport, DreSimplificado } from "@/lib/services/reports";
+import { accountingPackageReport, apuracaoImpostosReport, salesReport, stockReport, financeReport, fiscalReport, dreSimplificado } from "@/lib/services/reports";
+import type { AccountingPackageReport, ApuracaoImpostosReport, SalesReport, StockReport, FinanceReport, FiscalReport, DreSimplificado } from "@/lib/services/reports";
 
 export const dynamic = "force-dynamic";
 
@@ -85,6 +85,22 @@ const EMPTY_ACCOUNTING: AccountingPackageReport = {
   checklist: []
 };
 
+const EMPTY_APURACAO: ApuracaoImpostosReport = {
+  competencia: "",
+  inicio: "",
+  fim: "",
+  regime: "",
+  aplicaCredito: false,
+  avisoRegime: null,
+  linhas: [],
+  totais: { creditos: "R$ 0,00", debitos: "R$ 0,00", saldo: "R$ 0,00", saldoNum: 0, aPagar: true },
+  retencoes: [],
+  totalRetido: "R$ 0,00",
+  entradasDetalhe: [],
+  saidasDetalhe: [],
+  retencoesDetalhe: []
+};
+
 export default async function RelatoriosPage({ searchParams }: { searchParams?: { mes?: string; ano?: string } }) {
   let sales: SalesReport = EMPTY_SALES;
   let stock: StockReport = EMPTY_STOCK;
@@ -92,6 +108,7 @@ export default async function RelatoriosPage({ searchParams }: { searchParams?: 
   let fiscal: FiscalReport = EMPTY_FISCAL;
   let dre: DreSimplificado = EMPTY_DRE;
   let accounting: AccountingPackageReport = EMPTY_ACCOUNTING;
+  let apuracao: ApuracaoImpostosReport = EMPTY_APURACAO;
   const errors: string[] = [];
   const mes = Number(searchParams?.mes);
   const ano = Number(searchParams?.ano);
@@ -101,13 +118,14 @@ export default async function RelatoriosPage({ searchParams }: { searchParams?: 
   };
 
   // Cada relatório isolado para não derrubar os demais
-  const [salesResult, stockResult, financeResult, fiscalResult, dreResult, accountingResult] = await Promise.allSettled([
+  const [salesResult, stockResult, financeResult, fiscalResult, dreResult, accountingResult, apuracaoResult] = await Promise.allSettled([
     salesReport(30),
     stockReport(),
     financeReport(),
     fiscalReport(),
     dreSimplificado(30),
-    accountingPackageReport(accountingParams)
+    accountingPackageReport(accountingParams),
+    apuracaoImpostosReport(accountingParams)
   ]);
 
   if (salesResult.status === "fulfilled") {
@@ -146,6 +164,12 @@ export default async function RelatoriosPage({ searchParams }: { searchParams?: 
     errors.push(`Pacote contábil: ${accountingResult.reason instanceof Error ? accountingResult.reason.message : "erro desconhecido"}`);
   }
 
+  if (apuracaoResult.status === "fulfilled") {
+    apuracao = apuracaoResult.value;
+  } else {
+    errors.push(`Apuração de impostos: ${apuracaoResult.reason instanceof Error ? apuracaoResult.reason.message : "erro desconhecido"}`);
+  }
+
   return (
     <>
       <PageHeader
@@ -171,6 +195,7 @@ export default async function RelatoriosPage({ searchParams }: { searchParams?: 
         fiscal={fiscal}
         dre={dre}
         accounting={accounting}
+        apuracao={apuracao}
         accountingParams={accountingParams}
       />
     </>

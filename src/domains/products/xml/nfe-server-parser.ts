@@ -40,6 +40,7 @@ export type ParsedNfe = {
   issuedAt?: Date;
   supplierDocument?: string;
   supplierName?: string;
+  supplierUf?: string;
   mainCfop?: string;
   totalProducts: number;
   totalInvoice: number;
@@ -165,6 +166,7 @@ export function parseNfeXml(xmlText: string): ParsedNfe {
     issuedAt: text(ide.dhEmi) ? new Date(text(ide.dhEmi)) : undefined,
     supplierDocument: text(emit.CNPJ) || text(emit.CPF) || undefined,
     supplierName: text(emit.xNome) || undefined,
+    supplierUf: text((emit.enderEmit as Record<string, unknown> | undefined)?.UF).toUpperCase() || undefined,
     mainCfop: parsedItems[0]?.cfop,
     totalProducts: numberValue(total.vProd),
     totalInvoice: numberValue(total.vNF),

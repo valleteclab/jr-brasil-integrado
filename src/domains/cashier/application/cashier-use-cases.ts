@@ -73,6 +73,74 @@ export async function abrirCaixa(
   });
 }
 
+/**
+ * Registra o recebimento de uma venda do PDV no caixa aberto: cria os PagamentoVenda (quando há
+ * pedido de produtos) e os movimentos de caixa (VENDA) por forma, com o troco descontado do
+ * dinheiro. Calcula e devolve o troco. Use após emitir as notas, com o total geral (produtos +
+ * serviços) que o cliente pagou.
+ */
+export async function registrarRecebimentoPdv(
+  scope: TenantScope,
+  input: {
+    pedidoVendaId: string | null;
+    descricao: string;
+    total: number;
+    pagamentos: Array<{ forma: string; valor: number }>;
+  }
+): Promise<{ troco: number; caixaId: string }> {
+  const caixa = await getCaixaAbertoOrThrow(scope);
+
+  const pagamentos = (input.pagamentos ?? []).filter((p) => Number(p.valor) > 0);
+  if (!pagamentos.length) throw new CaixaError("Informe ao menos uma forma de pagamento.");
+
+  const total = round2(input.total);
+  const somaPago = round2(pagamentos.reduce((s, p) => s + Number(p.valor), 0));
+  if (somaPago + 0.0001 < total) {
+    throw new CaixaError(`Pagamento insuficiente: total ${total.toFixed(2)}, recebido ${somaPago.toFixed(2)}.`);
+  }
+  const troco = round2(somaPago - total);
+
+  // Valores líquidos por forma (somam exatamente o total): o troco sai do dinheiro.
+  const brutoPorForma = new Map<string, number>();
+  for (const p of pagamentos) brutoPorForma.set(p.forma, (brutoPorForma.get(p.forma) ?? 0) + Number(p.valor));
+  const liquidoPorForma: Array<{ forma: string; valor: number }> = [];
+  for (const [forma, valor] of brutoPorForma) {
+    const liquido = forma === FORMA_DINHEIRO ? round2(valor - troco) : round2(valor);
+    if (liquido > 0) liquidoPorForma.push({ forma, valor: liquido });
+  }
+
+  await prisma.$transaction(async (tx) => {
+    if (input.pedidoVendaId) {
+      for (const p of pagamentos) {
+        await tx.pagamentoVenda.create({
+          data: {
+            ...scopedByTenantCompany(scope),
+            pedidoVendaId: input.pedidoVendaId,
+            forma: p.forma,
+            valor: round2(Number(p.valor)),
+            troco: p.forma === FORMA_DINHEIRO ? troco : 0
+          }
+        });
+      }
+    }
+    for (const m of liquidoPorForma) {
+      await tx.caixaMovimento.create({
+        data: {
+          ...scopedByTenantCompany(scope),
+          caixaId: caixa.id,
+          tipo: "VENDA",
+          formaPagamento: m.forma,
+          valor: m.valor,
+          pedidoVendaId: input.pedidoVendaId ?? undefined,
+          descricao: input.descricao
+        }
+      });
+    }
+  });
+
+  return { troco, caixaId: caixa.id };
+}
+
 /** Suprimento (entrada de dinheiro) ou Sangria (retirada). */
 export async function registrarMovimentoCaixa(
   scope: TenantScope,

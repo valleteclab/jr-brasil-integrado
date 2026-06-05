@@ -35,6 +35,8 @@ export type CnpjLookupResult = {
   endereco: LookupEndereco;
 };
 
+import { normalizeDocumento } from "@/lib/fiscal/documento";
+
 export class CadastroLookupError extends Error {}
 
 const onlyDigits = (v: string) => (v ?? "").replace(/\D/g, "");
@@ -146,12 +148,14 @@ function mapBrasilApiShape(d: BrasilApiCnpjResponse, digits: string): CnpjLookup
  * Só 404 significa "não encontrado"; demais falhas tentam o próximo provedor.
  */
 export async function lookupCnpj(cnpj: string): Promise<CnpjLookupResult> {
-  const digits = onlyDigits(cnpj);
-  if (digits.length !== 14) throw new CadastroLookupError("CNPJ deve ter 14 dígitos.");
+  // Preserva letras: o CNPJ pode ser alfanumérico (novo formato). As APIs públicas podem ainda
+  // não suportá-lo — nesse caso caem no fallback "preencha manualmente" mais abaixo.
+  const doc = normalizeDocumento(cnpj);
+  if (doc.length !== 14) throw new CadastroLookupError("CNPJ deve ter 14 caracteres.");
 
   const sources = [
-    `https://brasilapi.com.br/api/cnpj/v1/${digits}`,
-    `https://minhareceita.org/${digits}`
+    `https://brasilapi.com.br/api/cnpj/v1/${doc}`,
+    `https://minhareceita.org/${doc}`
   ];
 
   let lastStatus = 0;
@@ -168,7 +172,7 @@ export async function lookupCnpj(cnpj: string): Promise<CnpjLookupResult> {
       continue; // 403/429/5xx — tenta o próximo
     }
     const d = (await res.json().catch(() => null)) as BrasilApiCnpjResponse | null;
-    if (d && d.razao_social) return mapBrasilApiShape(d, digits);
+    if (d && d.razao_social) return mapBrasilApiShape(d, doc);
     lastStatus = res.status;
   }
 

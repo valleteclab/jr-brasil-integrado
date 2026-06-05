@@ -16,6 +16,9 @@ export type EmissaoProduto = {
   id: string;
   sku: string;
   nome: string;
+  gtin: string | null;
+  codigoOriginal: string | null;
+  codigoFabricante: string | null;
   preco: number;
   ncm: string | null;
   cfop: string | null;
@@ -85,6 +88,9 @@ export async function getEmissaoFormData(): Promise<EmissaoFormData> {
       id: p.id,
       sku: p.sku,
       nome: p.nome,
+      gtin: p.gtin,
+      codigoOriginal: p.codigoOriginal,
+      codigoFabricante: p.codigoFabricante,
       preco: Number(p.precoVenda),
       ncm: p.fiscal?.ncm ?? p.ncm,
       cfop: p.cfop,

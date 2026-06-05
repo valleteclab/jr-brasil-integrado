@@ -32,6 +32,8 @@ export type ValidatedProductInput = {
   allowNegativeStock: boolean;
   allowBackorder: boolean;
   ecommerceVisible: boolean;
+  /** Aplicação veicular (autopeças): em quais veículos a peça serve. */
+  aplicacoes: Array<{ marca: string | null; modelo: string | null; anoFaixa: string | null; observacoes: string | null }>;
 };
 
 export class ProductValidationError extends Error {
@@ -153,6 +155,24 @@ export function validateProductPayload(payload: ProductPayload): ValidatedProduc
     warehouse: text(payload, "warehouse", "Galpão LEM-1 · Estoque geral") || "Galpão LEM-1 · Estoque geral",
     allowNegativeStock: bool(payload, "allowNegativeStock"),
     allowBackorder: bool(payload, "allowBackorder"),
-    ecommerceVisible: bool(payload, "ecommerceVisible", true)
+    ecommerceVisible: bool(payload, "ecommerceVisible", true),
+    aplicacoes: parseAplicacoes(payload.aplicacoes)
   };
+}
+
+/** Normaliza as aplicações veiculares; descarta linhas totalmente vazias. */
+function parseAplicacoes(value: unknown): ValidatedProductInput["aplicacoes"] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((raw) => {
+      const a = (raw ?? {}) as Record<string, unknown>;
+      const limpar = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
+      return {
+        marca: limpar(a.marca),
+        modelo: limpar(a.modelo),
+        anoFaixa: limpar(a.anoFaixa),
+        observacoes: limpar(a.observacoes)
+      };
+    })
+    .filter((a) => a.marca || a.modelo || a.anoFaixa || a.observacoes);
 }

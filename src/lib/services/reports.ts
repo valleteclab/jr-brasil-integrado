@@ -196,6 +196,41 @@ export type AccountingPackageReport = {
   checklist: Array<{ status: "ok" | "warn"; item: string; detalhe: string }>;
 };
 
+export type LinhaApuracao = {
+  tributo: string;
+  debito: string;
+  credito: string;
+  saldo: string;
+  debitoNum: number;
+  creditoNum: number;
+  saldoNum: number;
+  situacao: "A pagar" | "Saldo credor" | "Zerado" | "Sem movimento" | "Informativo";
+};
+
+export type ApuracaoImpostosReport = {
+  competencia: string;
+  inicio: string;
+  fim: string;
+  regime: string;
+  aplicaCredito: boolean;
+  avisoRegime: string | null;
+  linhas: LinhaApuracao[];
+  totais: {
+    creditos: string;
+    debitos: string;
+    saldo: string;
+    saldoNum: number;
+    aPagar: boolean;
+  };
+  // Retenções na fonte sofridas nas notas de saída (já retidas/recolhidas pelo tomador —
+  // antecipações que a empresa não recolhe novamente). ISS retido não compõe o débito.
+  retencoes: Array<{ tributo: string; valor: string; valorNum: number }>;
+  totalRetido: string;
+  entradasDetalhe: Array<{ tributo: string; fornecedor: string; nota: string; emissao: string; valor: string }>;
+  saidasDetalhe: Array<{ modelo: string; numero: string; destinatario: string; emissao: string; icms: string; pis: string; cofins: string; ipi: string; iss: string }>;
+  retencoesDetalhe: Array<{ nota: string; destinatario: string; emissao: string; irrf: string; pis: string; cofins: string; csll: string; inss: string; iss: string; total: string }>;
+};
+
 // ─── Sales Report ─────────────────────────────────────────────────────────────
 
 export async function salesReport(periodoDias = 30, scopeArg?: TenantScope): Promise<SalesReport> {
@@ -835,6 +870,242 @@ export async function accountingPackageReport(
       item: p.item,
       detalhe: p.count === 0 ? "Sem pendências" : `${p.count} ocorrência(s)`
     }))
+  };
+}
+
+// ─── Apuração de impostos (crédito × débito) ────────────────────────────────────
+
+const REGIME_LABEL: Record<string, string> = {
+  SIMPLES_NACIONAL: "Simples Nacional",
+  SIMPLES_EXCESSO_SUBLIMITE: "Simples Nacional (excesso de sublimite)",
+  LUCRO_PRESUMIDO: "Lucro Presumido",
+  LUCRO_REAL: "Lucro Real",
+  MEI: "MEI"
+};
+
+// Regimes que não apropriam crédito de ICMS/PIS/COFINS na entrada (pagam de forma unificada).
+const REGIMES_SEM_CREDITO = ["SIMPLES_NACIONAL", "SIMPLES_EXCESSO_SUBLIMITE", "MEI"];
+
+function situacaoApuracao(debito: number, credito: number, saldo: number): LinhaApuracao["situacao"] {
+  if (debito === 0 && credito === 0) return "Sem movimento";
+  if (saldo > 0.004) return "A pagar";
+  if (saldo < -0.004) return "Saldo credor";
+  return "Zerado";
+}
+
+/**
+ * Apuração mensal de impostos: cruza o crédito das entradas (impostos recuperáveis de entradas
+ * processadas) com o débito das saídas (notas autorizadas), por tributo. O crédito já vem
+ * filtrado por `recuperavel`, que foi gravado conforme o regime na importação — então a soma
+ * reflete a regra (no Simples/MEI o crédito é naturalmente zero). ICMS-ST e ISS entram como
+ * linhas informativas (não compõem o saldo a pagar dos tributos apuráveis).
+ */
+export async function apuracaoImpostosReport(
+  params?: { mes?: number; ano?: number },
+  scopeArg?: TenantScope
+): Promise<ApuracaoImpostosReport> {
+  const scope = scopeArg ?? (await getDevelopmentTenantScope());
+  const base = scopedByTenantCompany(scope);
+  const { inicio, fim, competencia } = monthRange(params?.mes, params?.ano);
+
+  const empresa = await prisma.empresa.findUnique({
+    where: { id: scope.empresaId },
+    select: { regimeTributario: true }
+  });
+  const regimeKey = empresa?.regimeTributario ?? "SIMPLES_NACIONAL";
+  const aplicaCredito = !REGIMES_SEM_CREDITO.includes(regimeKey);
+  const avisoRegime = aplicaCredito
+    ? null
+    : `Empresa no ${REGIME_LABEL[regimeKey] ?? regimeKey}: o imposto é recolhido de forma unificada (DAS). Não há apropriação de crédito de ICMS/PIS/COFINS na entrada — os débitos abaixo são apenas informativos.`;
+
+  const [entradas, saidas] = await Promise.all([
+    prisma.entradaFiscal.findMany({
+      where: { ...base, status: "ESTOQUE_PROCESSADO", emitidaEm: { gte: inicio, lte: fim } },
+      orderBy: { emitidaEm: "asc" },
+      select: {
+        numero: true,
+        emitidaEm: true,
+        fornecedor: { select: { razaoSocial: true, nomeFantasia: true } },
+        itens: { select: { impostos: { select: { tributo: true, valor: true, recuperavel: true } } } }
+      }
+    }),
+    prisma.notaFiscal.findMany({
+      where: { ...base, status: "AUTORIZADA", emitidaEm: { gte: inicio, lte: fim } },
+      orderBy: { emitidaEm: "asc" },
+      select: {
+        modelo: true,
+        numero: true,
+        destinatarioNome: true,
+        emitidaEm: true,
+        valorIcms: true,
+        valorIcmsSt: true,
+        valorPis: true,
+        valorCofins: true,
+        valorIpi: true,
+        valorIss: true,
+        issRetido: true,
+        valorIrRetido: true,
+        valorPisRetido: true,
+        valorCofinsRetido: true,
+        valorCsllRetido: true,
+        valorInssRetido: true
+      }
+    })
+  ]);
+
+  // Créditos por tributo (somente recuperáveis e quando o regime permite).
+  const credito: Record<string, number> = { ICMS: 0, PIS: 0, COFINS: 0, IPI: 0 };
+  const entradasDetalhe: ApuracaoImpostosReport["entradasDetalhe"] = [];
+  for (const entrada of entradas) {
+    const fornecedor = entrada.fornecedor?.razaoSocial || entrada.fornecedor?.nomeFantasia || "—";
+    for (const item of entrada.itens) {
+      for (const imp of item.impostos) {
+        if (!imp.recuperavel || !aplicaCredito) continue;
+        if (!(imp.tributo in credito)) continue;
+        const valor = Number(imp.valor ?? 0);
+        credito[imp.tributo] = round2(credito[imp.tributo] + valor);
+        entradasDetalhe.push({
+          tributo: imp.tributo,
+          fornecedor,
+          nota: entrada.numero ?? "—",
+          emissao: entrada.emitidaEm ? fmtDate(entrada.emitidaEm) : "—",
+          valor: formatBrl(valor)
+        });
+      }
+    }
+  }
+
+  // Débitos por tributo (saídas autorizadas). O ISS retido na fonte NÃO é débito a recolher
+  // (quem recolhe é o tomador) — entra nas retenções, não no débito de ISS.
+  const debito = {
+    ICMS: sumMoney(saidas, (n) => n.valorIcms),
+    PIS: sumMoney(saidas, (n) => n.valorPis),
+    COFINS: sumMoney(saidas, (n) => n.valorCofins),
+    IPI: sumMoney(saidas, (n) => n.valorIpi),
+    ISS: sumMoney(saidas.filter((n) => !n.issRetido), (n) => n.valorIss),
+    ICMS_ST: sumMoney(saidas, (n) => n.valorIcmsSt)
+  };
+
+  // Retenções na fonte sofridas nas saídas (já recolhidas pelo tomador). ISS retido = valorIss
+  // das notas com issRetido. As federais são antecipações compensáveis na apuração da empresa.
+  const retido = {
+    IRRF: sumMoney(saidas, (n) => n.valorIrRetido),
+    PIS: sumMoney(saidas, (n) => n.valorPisRetido),
+    COFINS: sumMoney(saidas, (n) => n.valorCofinsRetido),
+    CSLL: sumMoney(saidas, (n) => n.valorCsllRetido),
+    INSS: sumMoney(saidas, (n) => n.valorInssRetido),
+    ISS: sumMoney(saidas.filter((n) => n.issRetido), (n) => n.valorIss)
+  };
+
+  const apuraveis: Array<{ tributo: string; debito: number; credito: number }> = [
+    { tributo: "ICMS", debito: debito.ICMS, credito: credito.ICMS },
+    { tributo: "PIS", debito: debito.PIS, credito: credito.PIS },
+    { tributo: "COFINS", debito: debito.COFINS, credito: credito.COFINS },
+    { tributo: "IPI", debito: debito.IPI, credito: credito.IPI }
+  ];
+
+  const linhas: LinhaApuracao[] = apuraveis.map(({ tributo, debito: d, credito: c }) => {
+    const saldo = round2(d - c);
+    return {
+      tributo,
+      debito: formatBrl(d),
+      credito: formatBrl(c),
+      saldo: formatBrl(Math.abs(saldo)),
+      debitoNum: d,
+      creditoNum: c,
+      saldoNum: saldo,
+      situacao: situacaoApuracao(d, c, saldo)
+    };
+  });
+
+  // Linhas informativas (não entram no saldo total).
+  const informativas: Array<{ tributo: string; valor: number }> = [
+    { tributo: "ISS a recolher (não retido)", valor: debito.ISS },
+    { tributo: "ICMS-ST (recolhido à parte)", valor: debito.ICMS_ST }
+  ];
+  for (const inf of informativas) {
+    if (inf.valor <= 0) continue;
+    linhas.push({
+      tributo: inf.tributo,
+      debito: formatBrl(inf.valor),
+      credito: formatBrl(0),
+      saldo: formatBrl(inf.valor),
+      debitoNum: inf.valor,
+      creditoNum: 0,
+      saldoNum: inf.valor,
+      situacao: "Informativo"
+    });
+  }
+
+  const totalCreditos = round2(apuraveis.reduce((acc, l) => acc + l.credito, 0));
+  const totalDebitos = round2(apuraveis.reduce((acc, l) => acc + l.debito, 0));
+  const saldoTotal = round2(totalDebitos - totalCreditos);
+
+  // Retenções por tributo (só as que tiveram valor no período).
+  const retencoes = [
+    { tributo: "IRRF", valor: retido.IRRF },
+    { tributo: "PIS retido", valor: retido.PIS },
+    { tributo: "COFINS retido", valor: retido.COFINS },
+    { tributo: "CSLL", valor: retido.CSLL },
+    { tributo: "INSS", valor: retido.INSS },
+    { tributo: "ISS retido", valor: retido.ISS }
+  ].filter((r) => r.valor > 0).map((r) => ({ tributo: r.tributo, valor: formatBrl(r.valor), valorNum: r.valor }));
+  const totalRetido = round2(retencoes.reduce((acc, r) => acc + r.valorNum, 0));
+
+  // Detalhe de retenções por nota (apenas notas que tiveram alguma retenção).
+  const retencoesDetalhe = saidas
+    .map((n) => {
+      const issRet = n.issRetido ? Number(n.valorIss ?? 0) : 0;
+      const total = round2(
+        Number(n.valorIrRetido ?? 0) + Number(n.valorPisRetido ?? 0) + Number(n.valorCofinsRetido ?? 0) +
+        Number(n.valorCsllRetido ?? 0) + Number(n.valorInssRetido ?? 0) + issRet
+      );
+      return { n, issRet, total };
+    })
+    .filter((x) => x.total > 0)
+    .map(({ n, issRet, total }) => ({
+      nota: `${n.modelo} ${n.numero ?? "—"}`,
+      destinatario: n.destinatarioNome ?? "—",
+      emissao: n.emitidaEm ? fmtDate(n.emitidaEm) : "—",
+      irrf: formatBrl(Number(n.valorIrRetido ?? 0)),
+      pis: formatBrl(Number(n.valorPisRetido ?? 0)),
+      cofins: formatBrl(Number(n.valorCofinsRetido ?? 0)),
+      csll: formatBrl(Number(n.valorCsllRetido ?? 0)),
+      inss: formatBrl(Number(n.valorInssRetido ?? 0)),
+      iss: formatBrl(issRet),
+      total: formatBrl(total)
+    }));
+
+  return {
+    competencia,
+    inicio: fmtDate(inicio),
+    fim: fmtDate(fim),
+    regime: REGIME_LABEL[regimeKey] ?? regimeKey,
+    aplicaCredito,
+    avisoRegime,
+    linhas,
+    totais: {
+      creditos: formatBrl(totalCreditos),
+      debitos: formatBrl(totalDebitos),
+      saldo: formatBrl(Math.abs(saldoTotal)),
+      saldoNum: saldoTotal,
+      aPagar: saldoTotal >= 0
+    },
+    retencoes,
+    totalRetido: formatBrl(totalRetido),
+    entradasDetalhe,
+    saidasDetalhe: saidas.map((n) => ({
+      modelo: n.modelo,
+      numero: n.numero ?? "—",
+      destinatario: n.destinatarioNome ?? "—",
+      emissao: n.emitidaEm ? fmtDate(n.emitidaEm) : "—",
+      icms: formatBrl(Number(n.valorIcms ?? 0)),
+      pis: formatBrl(Number(n.valorPis ?? 0)),
+      cofins: formatBrl(Number(n.valorCofins ?? 0)),
+      ipi: formatBrl(Number(n.valorIpi ?? 0)),
+      iss: formatBrl(Number(n.valorIss ?? 0))
+    })),
+    retencoesDetalhe
   };
 }
 

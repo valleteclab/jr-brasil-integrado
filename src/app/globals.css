@@ -1599,6 +1599,31 @@ p {
   width: 100%;
 }
 
+.cfop-entrada-field {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.cfop-entrada-field span {
+  color: var(--erp-muted, #667085);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.cfop-entrada-field input {
+  background: #fff;
+  border: 1px solid var(--erp-line);
+  border-radius: 5px;
+  color: var(--erp-ink);
+  font: inherit;
+  font-size: 12px;
+  height: 28px;
+  padding: 0 8px;
+  width: 72px;
+}
+
 .new-sku-box {
   background: rgba(255, 193, 7, .1);
   border: 1px solid rgba(224, 168, 0, .35);
@@ -2240,3 +2265,79 @@ label.checkbox input {
 .stat-pill:hover { background: var(--erp-line); }
 .stat-pill.active { background: var(--erp-ink); color: #fff; }
 .stat-pill .num { color: inherit; opacity: .7; margin-left: 4px; }
+
+/* ─── PDV full screen ──────────────────────────────────────────────────────── */
+.pdv-root { position: fixed; inset: 0; z-index: 50; }
+.pdv { display: flex; flex-direction: column; height: 100vh; background: #f1f5f9; color: #172033; font-family: inherit; }
+.pdv-top { display: flex; align-items: center; gap: 16px; padding: 12px 18px; background: #0f172a; color: #fff; }
+.pdv-brand { font-size: 20px; font-weight: 700; white-space: nowrap; }
+.pdv-busca { flex: 1; height: 46px; border: none; border-radius: 10px; padding: 0 16px; font-size: 18px; }
+.pdv-sair { color: #cbd5e1; text-decoration: none; padding: 8px 14px; border: 1px solid #334155; border-radius: 8px; }
+.pdv-sair:hover { background: #1e293b; color: #fff; }
+.pdv-body { flex: 1; display: grid; grid-template-columns: 1fr 420px; gap: 0; overflow: hidden; }
+.pdv-catalogo { display: flex; flex-direction: column; overflow: hidden; padding: 16px; }
+.pdv-abas { display: flex; gap: 8px; margin-bottom: 12px; }
+.pdv-abas button { padding: 8px 18px; border: 1px solid #cbd5e1; background: #fff; border-radius: 8px; font-size: 15px; cursor: pointer; }
+.pdv-abas button.active { background: #2563eb; color: #fff; border-color: #2563eb; }
+.pdv-grid { flex: 1; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; align-content: start; }
+.pdv-card { display: flex; flex-direction: column; gap: 4px; text-align: left; padding: 14px; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; cursor: pointer; min-height: 96px; }
+.pdv-card:hover { border-color: #2563eb; box-shadow: 0 2px 8px rgba(37,99,235,.12); }
+.pdv-card.servico { background: #f5f3ff; }
+.pdv-card strong { font-size: 15px; line-height: 1.2; }
+.pdv-card small { color: #64748b; font-size: 12px; }
+.pdv-card .pdv-preco { margin-top: auto; font-size: 18px; font-weight: 700; color: #0f766e; }
+.pdv-vazio { color: #94a3b8; padding: 24px; text-align: center; }
+.pdv-carrinho { background: #fff; border-left: 1px solid #e2e8f0; display: flex; flex-direction: column; overflow: hidden; }
+.pdv-carrinho h2 { margin: 0; padding: 16px 18px; border-bottom: 1px solid #e2e8f0; font-size: 17px; }
+.pdv-itens { flex: 1; overflow-y: auto; padding: 8px 12px; }
+.pdv-item { display: grid; grid-template-columns: 1fr auto auto auto; align-items: center; gap: 8px; padding: 8px 4px; border-bottom: 1px solid #f1f5f9; }
+.pdv-item-nome strong { display: block; font-size: 14px; }
+.pdv-item-nome small { color: #64748b; font-size: 11px; }
+.pdv-item-qtd { display: flex; align-items: center; gap: 6px; }
+.pdv-item-qtd button { width: 28px; height: 28px; border: 1px solid #cbd5e1; background: #f8fafc; border-radius: 6px; font-size: 16px; cursor: pointer; }
+.pdv-item-total { font-weight: 600; min-width: 70px; text-align: right; }
+.pdv-item-x { border: none; background: none; color: #ef4444; font-size: 18px; cursor: pointer; }
+.pdv-fechamento { border-top: 2px solid #e2e8f0; padding: 14px 18px; display: flex; flex-direction: column; gap: 12px; }
+.pdv-cliente { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: #475569; }
+.pdv-cliente .req { color: #b45309; }
+.pdv-cliente select, .pdv-modelo button { height: 40px; border-radius: 8px; }
+.pdv-cliente select { border: 1px solid #cbd5e1; padding: 0 10px; font-size: 14px; }
+.pdv-modelo { display: flex; gap: 8px; }
+.pdv-modelo button { flex: 1; border: 1px solid #cbd5e1; background: #fff; cursor: pointer; font-size: 14px; }
+.pdv-modelo button.active { background: #0f172a; color: #fff; border-color: #0f172a; }
+.pdv-total { display: flex; justify-content: space-between; align-items: baseline; font-size: 16px; }
+.pdv-total strong { font-size: 28px; color: #0f766e; }
+.pdv-resultado { display: flex; flex-direction: column; gap: 6px; }
+.pdv-acoes { display: flex; gap: 10px; }
+.pdv-limpar { flex: 0 0 90px; height: 54px; border: 1px solid #cbd5e1; background: #fff; border-radius: 10px; font-size: 15px; cursor: pointer; }
+.pdv-finalizar { flex: 1; height: 54px; border: none; background: #16a34a; color: #fff; border-radius: 10px; font-size: 18px; font-weight: 700; cursor: pointer; }
+.pdv-finalizar:disabled { background: #94a3b8; cursor: not-allowed; }
+
+/* ─── PDV: turno, pagamento e modais ───────────────────────────────────────── */
+.pdv-caixa-info { color: #cbd5e1; font-size: 13px; white-space: nowrap; }
+.pdv-mini { width: 40px; height: 40px; border: 1px solid #334155; background: #1e293b; border-radius: 8px; font-size: 18px; cursor: pointer; }
+.pdv-mini:hover { background: #334155; }
+.pdv-atalhos { padding: 8px 4px 0; color: #94a3b8; font-size: 12px; }
+.pdv-abrir { flex: 1; display: flex; align-items: center; justify-content: center; }
+.pdv-abrir-card { background: #fff; border-radius: 14px; padding: 28px; width: 360px; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 8px 30px rgba(0,0,0,.12); }
+.pdv-abrir-card h2 { margin: 0; }
+.pdv-abrir-card label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: #475569; }
+.pdv-abrir-card input { height: 42px; border: 1px solid #cbd5e1; border-radius: 8px; padding: 0 12px; font-size: 16px; }
+.pdv-modal-bg { position: fixed; inset: 0; background: rgba(15,23,42,.55); display: flex; align-items: center; justify-content: center; z-index: 60; }
+.pdv-modal { background: #fff; border-radius: 14px; padding: 24px; width: 440px; max-width: 92vw; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 10px 40px rgba(0,0,0,.25); }
+.pdv-modal h2 { margin: 0 0 4px; }
+.pdv-pag-linha { display: flex; gap: 8px; align-items: center; }
+.pdv-pag-linha select { flex: 1; height: 44px; border: 1px solid #cbd5e1; border-radius: 8px; padding: 0 10px; font-size: 15px; }
+.pdv-pag-linha input { width: 130px; height: 44px; border: 1px solid #cbd5e1; border-radius: 8px; padding: 0 10px; font-size: 18px; text-align: right; }
+.pdv-add-forma { align-self: flex-start; border: 1px dashed #94a3b8; background: #f8fafc; border-radius: 8px; padding: 8px 12px; cursor: pointer; font-size: 14px; }
+.pdv-pag-resumo { display: flex; justify-content: space-between; gap: 12px; border-top: 1px solid #e2e8f0; padding-top: 12px; }
+.pdv-pag-resumo > div { display: flex; flex-direction: column; }
+.pdv-pag-resumo strong { font-size: 22px; }
+.pdv-pag-resumo .falta strong { color: #dc2626; }
+.pdv-pag-resumo .troco strong { color: #16a34a; }
+.pdv-troco { font-size: 16px; }
+.pdv-troco strong { font-size: 20px; }
+
+/* PDV/Cadastro: tabela de aplicação veicular */
+.produto-aplicacoes .erp-table td { padding: 6px; }
+.produto-aplicacoes .erp-table input { width: 100%; border: 1px solid var(--erp-line); border-radius: 6px; height: 34px; padding: 0 8px; font: inherit; }

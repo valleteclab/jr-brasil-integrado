@@ -3,9 +3,9 @@
 import { useState } from "react";
 import { KpiCard } from "@/components/shared/KpiCard";
 import { StatusBadge } from "@/components/shared/StatusBadge";
-import type { AccountingPackageReport, SalesReport, StockReport, FinanceReport, FiscalReport, DreSimplificado } from "@/lib/services/reports";
+import type { AccountingPackageReport, ApuracaoImpostosReport, SalesReport, StockReport, FinanceReport, FiscalReport, DreSimplificado } from "@/lib/services/reports";
 
-type Tab = "vendas" | "estoque" | "financeiro" | "fiscal" | "dre" | "contabil";
+type Tab = "vendas" | "estoque" | "financeiro" | "fiscal" | "dre" | "contabil" | "apuracao";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "vendas", label: "Vendas" },
@@ -13,7 +13,8 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "financeiro", label: "Financeiro" },
   { id: "fiscal", label: "Fiscal" },
   { id: "dre", label: "DRE" },
-  { id: "contabil", label: "Pacote contábil" }
+  { id: "contabil", label: "Pacote contábil" },
+  { id: "apuracao", label: "Apuração de impostos" }
 ];
 
 type Props = {
@@ -23,6 +24,7 @@ type Props = {
   fiscal: FiscalReport;
   dre: DreSimplificado;
   accounting: AccountingPackageReport;
+  apuracao: ApuracaoImpostosReport;
   accountingParams: { mes?: number; ano?: number };
 };
 
@@ -598,9 +600,104 @@ function AbaContabil({ data, params }: { data: AccountingPackageReport; params: 
   );
 }
 
+// ─── Aba Apuração de impostos ───────────────────────────────────────────────────
+
+function apuracaoHref(kind: "html" | "csv", params: { mes?: number; ano?: number }): string {
+  const qs = new URLSearchParams();
+  if (params.mes) qs.set("mes", String(params.mes));
+  if (params.ano) qs.set("ano", String(params.ano));
+  const query = qs.toString();
+  return `/api/erp/relatorios/apuracao/${kind}${query ? `?${query}` : ""}`;
+}
+
+function AbaApuracao({ data, params }: { data: ApuracaoImpostosReport; params: { mes?: number; ano?: number } }) {
+  const saldoLabel = data.totais.aPagar ? "Total a pagar" : "Saldo credor";
+  return (
+    <div>
+      <div className="alert info" style={{ marginBottom: "1rem" }}>
+        <strong>Apuração de impostos — {data.competencia || "competência atual"} · {data.regime}.</strong>{" "}
+        Crédito das entradas processadas × débito das saídas autorizadas no período. Base gerencial;
+        a apuração oficial (SPED/EFD) exige validação do contador.
+      </div>
+
+      {data.avisoRegime && (
+        <div className="alert warn" style={{ marginBottom: "1rem" }}>{data.avisoRegime}</div>
+      )}
+
+      <form action="/erp/relatorios" style={{ display: "flex", gap: "0.75rem", alignItems: "end", marginBottom: "1rem" }}>
+        <label>Mês<br /><input name="mes" type="number" min="1" max="12" defaultValue={params.mes ?? new Date().getMonth() + 1} /></label>
+        <label>Ano<br /><input name="ano" type="number" min="2000" max="2100" defaultValue={params.ano ?? new Date().getFullYear()} /></label>
+        <button className="btn" type="submit">Filtrar</button>
+        <a className="btn light" href={apuracaoHref("html", params)} target="_blank" rel="noreferrer">HTML / PDF</a>
+        <a className="btn light" href={apuracaoHref("csv", params)}>CSV</a>
+      </form>
+
+      <div className="kpi-row">
+        <KpiCard label="Crédito (entradas)" value={data.totais.creditos} tone="success" />
+        <KpiCard label="Débito (saídas)" value={data.totais.debitos} tone="warn" />
+        <KpiCard label={saldoLabel} value={data.totais.saldo} tone={data.totais.aPagar ? "warn" : "success"} />
+        <KpiCard label="Retido na fonte" value={data.totalRetido} tone="info" />
+      </div>
+
+      <section className="erp-card" style={{ marginTop: "1.5rem" }}>
+        <div className="erp-card-head"><h3>Apuração por tributo</h3></div>
+        <div className="erp-table-wrap">
+          <table className="erp-table">
+            <thead><tr><th>Tributo</th><th className="num">Débito</th><th className="num">Crédito</th><th className="num">Saldo</th><th>Situação</th></tr></thead>
+            <tbody>
+              {data.linhas.length === 0 ? (
+                <tr><td colSpan={5} className="block-muted">Sem movimento no período.</td></tr>
+              ) : (
+                data.linhas.map((linha) => (
+                  <tr key={linha.tributo}>
+                    <td><strong>{linha.tributo}</strong></td>
+                    <td className="num">{linha.debito}</td>
+                    <td className="num">{linha.credito}</td>
+                    <td className="num">{linha.saldo}</td>
+                    <td>
+                      <StatusBadge tone={linha.situacao === "A pagar" ? "warn" : linha.situacao === "Saldo credor" ? "success" : "mute"}>
+                        {linha.situacao}
+                      </StatusBadge>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {data.retencoes.length > 0 && (
+        <section className="erp-card" style={{ marginTop: "1.5rem" }}>
+          <div className="erp-card-head"><h3>Retenções na fonte (saídas)</h3></div>
+          <p className="block-muted" style={{ margin: "0 1rem" }}>
+            Valores já retidos e recolhidos pelo tomador — a empresa não recolhe novamente. O ISS retido
+            sai do débito; as retenções federais (IRRF, PIS, COFINS, CSLL, INSS) são antecipações compensáveis.
+          </p>
+          <div className="erp-table-wrap">
+            <table className="erp-table">
+              <thead><tr><th>Tributo retido</th><th className="num">Valor</th></tr></thead>
+              <tbody>
+                {data.retencoes.map((r) => (
+                  <tr key={r.tributo}><td><strong>{r.tributo}</strong></td><td className="num">{r.valor}</td></tr>
+                ))}
+                <tr><td><strong>Total retido</strong></td><td className="num"><strong>{data.totalRetido}</strong></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      <SimpleTable title="Créditos detalhados (entradas)" rows={data.entradasDetalhe} />
+      <SimpleTable title="Débitos detalhados (saídas)" rows={data.saidasDetalhe} />
+      <SimpleTable title="Retenções por nota" rows={data.retencoesDetalhe} />
+    </div>
+  );
+}
+
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-export function ReportsView({ sales, stock, finance, fiscal, dre, accounting, accountingParams }: Props) {
+export function ReportsView({ sales, stock, finance, fiscal, dre, accounting, apuracao, accountingParams }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>("vendas");
 
   return (
@@ -626,6 +723,7 @@ export function ReportsView({ sales, stock, finance, fiscal, dre, accounting, ac
       {activeTab === "fiscal" && <AbaFiscal data={fiscal} />}
       {activeTab === "dre" && <AbaDre data={dre} />}
       {activeTab === "contabil" && <AbaContabil data={accounting} params={accountingParams} />}
+      {activeTab === "apuracao" && <AbaApuracao data={apuracao} params={accountingParams} />}
     </div>
   );
 }

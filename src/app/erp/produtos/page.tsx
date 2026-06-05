@@ -3,6 +3,8 @@ import { PageHeader } from "@/components/shared/PageHeader";
 import { listErpProductSummaries, listProductTaxRuleOptions } from "@/lib/services/products";
 import type { ErpProductSummary, ProductTaxRuleOption } from "@/lib/services/products";
 import { listDepositos } from "@/lib/services/stock";
+import { getEmpresaPerfil } from "@/domains/company/application/company-use-cases";
+import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
 
 export const dynamic = "force-dynamic";
 
@@ -21,12 +23,14 @@ export default async function ErpProductsPage() {
   let products: ErpProductSummary[] = [];
   let taxRules: ProductTaxRuleOption[] = [];
   let warehouses: string[] = [];
+  let segmento = "GERAL";
   let loadError = "";
 
   try {
     products = await listErpProductSummaries();
     taxRules = await listProductTaxRuleOptions();
     warehouses = (await listDepositos()).map((deposito) => deposito.nome);
+    segmento = (await getEmpresaPerfil(await getDevelopmentTenantScope())).segmento;
   } catch (error) {
     loadError = error instanceof Error ? error.message : "Não foi possível carregar produtos.";
   }
@@ -47,7 +51,7 @@ export default async function ErpProductsPage() {
           <span>{loadError}</span>
         </div>
       )}
-      <ProductCrud initialProducts={products} taxRules={taxRules} warehouses={warehouses} />
+      <ProductCrud initialProducts={products} taxRules={taxRules} warehouses={warehouses} segmento={segmento} />
     </>
   );
 }

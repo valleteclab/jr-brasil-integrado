@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import { scopedByTenantCompany } from "@/lib/auth/dev-session";
 import { createAuditLog } from "@/lib/audit/audit-service";
+import { isValidDocumento, normalizeDocumento } from "@/lib/fiscal/documento";
 
 export class SupplierValidationError extends Error {
   constructor(message: string) {
@@ -24,7 +25,8 @@ export type CreateSupplierInput = {
 export type UpdateSupplierInput = Partial<CreateSupplierInput>;
 
 export async function createSupplier(scope: TenantScope, input: CreateSupplierInput) {
-  const documento = input.documento.replace(/\D/g, "");
+  // Preserva letras (CNPJ alfanumérico); só remove máscara e normaliza para maiúsculas.
+  const documento = normalizeDocumento(input.documento);
 
   if (!input.razaoSocial?.trim()) {
     throw new SupplierValidationError("Razão social é obrigatória.");
@@ -32,6 +34,10 @@ export async function createSupplier(scope: TenantScope, input: CreateSupplierIn
 
   if (!documento) {
     throw new SupplierValidationError("CNPJ/CPF é obrigatório.");
+  }
+
+  if (!isValidDocumento(documento)) {
+    throw new SupplierValidationError("CNPJ/CPF inválido. Confira o número e os dígitos verificadores.");
   }
 
   return prisma.$transaction(async (tx) => {
@@ -86,7 +92,11 @@ export async function updateSupplier(scope: TenantScope, id: string, input: Upda
       throw new SupplierValidationError("Fornecedor não encontrado.");
     }
 
-    const documento = input.documento ? input.documento.replace(/\D/g, "") : undefined;
+    const documento = input.documento ? normalizeDocumento(input.documento) : undefined;
+
+    if (documento !== undefined && !isValidDocumento(documento)) {
+      throw new SupplierValidationError("CNPJ/CPF inválido. Confira o número e os dígitos verificadores.");
+    }
 
     if (documento && documento !== fornecedor.documento) {
       const existing = await tx.fornecedor.findFirst({

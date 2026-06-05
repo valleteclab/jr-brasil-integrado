@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import type { SupplierSummary } from "@/lib/services/purchasing";
 import { useCadastroLookup } from "./useCadastroLookup";
+import { formatDocumento, normalizeDocumento } from "@/lib/fiscal/documento";
 
 type Props = {
   initialSuppliers: SupplierSummary[];
@@ -132,7 +133,7 @@ export function SuppliersCrud({ initialSuppliers }: Props) {
                   ...s,
                   razaoSocial: form.razaoSocial,
                   nomeFantasia: form.nomeFantasia,
-                  documento: form.documento.replace(/\D/g, ""),
+                  documento: normalizeDocumento(form.documento),
                   email: form.email,
                   telefone: form.telefone,
                   cidade: form.cidade,
@@ -238,7 +239,7 @@ export function SuppliersCrud({ initialSuppliers }: Props) {
                     <strong>{s.razaoSocial}</strong>
                     {s.nomeFantasia && <small className="block-muted">{s.nomeFantasia}</small>}
                   </td>
-                  <td className="mono">{s.documento}</td>
+                  <td className="mono">{formatDocumento(s.documento)}</td>
                   <td>
                     {s.email && <span className="block-muted">{s.email}</span>}
                     {s.telefone && <small className="block-muted">{s.telefone}</small>}
@@ -313,8 +314,9 @@ export function SuppliersCrud({ initialSuppliers }: Props) {
                   <span style={{ display: "flex", gap: 6 }}>
                     <input
                       value={form.documento}
-                      onChange={(e) => update("documento", e.target.value)}
-                      placeholder="Somente números"
+                      onChange={(e) => update("documento", e.target.value.toUpperCase())}
+                      placeholder="CNPJ (aceita letras) ou CPF"
+                      maxLength={18}
                       style={{ flex: 1 }}
                     />
                     <button type="button" className="btn-erp light sm" onClick={preencherPorCnpj} disabled={buscandoCnpj} style={{ flexShrink: 0, whiteSpace: "nowrap" }}>

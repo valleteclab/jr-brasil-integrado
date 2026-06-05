@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { StockBalance, StockMovement, InventorySummary, DepositoOption, ProdutoOption } from "@/lib/services/stock";
+import { correspondeBusca } from "@/lib/search/normalize";
 
 type PillTone = "success" | "warn" | "danger" | "info" | "violet" | "mute";
 
@@ -291,13 +292,8 @@ function BalancesTab({
   const [flash, setFlash] = useState("");
 
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return balances;
-    return balances.filter((b) =>
-      b.sku.toLowerCase().includes(q) ||
-      b.nome.toLowerCase().includes(q) ||
-      b.depositoNome.toLowerCase().includes(q)
-    );
+    if (!query.trim()) return balances;
+    return balances.filter((b) => correspondeBusca(query, b.sku, b.nome, b.depositoNome, b.gtin, b.codigoOriginal, b.codigoFabricante));
   }, [balances, query]);
 
   function handleSuccess(msg: string) {

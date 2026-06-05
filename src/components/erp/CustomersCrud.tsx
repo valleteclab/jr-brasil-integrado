@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import type { CustomerDetail, CustomerDetailedSummary, TabelaPrecoOption } from "@/lib/services/customers-admin";
 import { useCadastroLookup } from "./useCadastroLookup";
+import { formatDocumento } from "@/lib/fiscal/documento";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -480,7 +481,7 @@ export function CustomersCrud({ initialCustomers, tabelasPreco }: CustomersCrudP
           <label className="full">
             CNPJ / CPF
             <span style={{ display: "flex", gap: 6 }}>
-              <input value={form.documento} onChange={(e) => updateField("documento", e.target.value)} placeholder="Informe o CNPJ e clique em Buscar" style={{ flex: 1 }} />
+              <input value={form.documento} onChange={(e) => updateField("documento", e.target.value.toUpperCase())} placeholder="CNPJ (aceita letras) ou CPF" maxLength={18} style={{ flex: 1 }} />
               <button type="button" className="btn-erp light sm" onClick={preencherPorCnpj} disabled={buscandoCnpj} style={{ flexShrink: 0, whiteSpace: "nowrap" }}>
                 {buscandoCnpj ? "Buscando…" : "Buscar CNPJ"}
               </button>
@@ -719,7 +720,7 @@ export function CustomersCrud({ initialCustomers, tabelasPreco }: CustomersCrudP
                     <div style={{ fontWeight: 600, fontSize: 13 }}>{c.nomeFantasia ?? c.razaoSocial}</div>
                     {c.nomeFantasia && <span className="sublabel">{c.razaoSocial}</span>}
                   </td>
-                  <td className="mono">{c.documento}</td>
+                  <td className="mono">{formatDocumento(c.documento)}</td>
                   <td>{c.segmento ?? <span className="sublabel">—</span>}</td>
                   <td>{c.contatosPrincipal ?? <span className="sublabel">—</span>}</td>
                   <td className="num">{c.limiteCredito}</td>

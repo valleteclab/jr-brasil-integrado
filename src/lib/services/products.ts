@@ -53,6 +53,8 @@ export type ErpProductSummary = {
   purchaseConversion?: string;
   storeTitle?: string;
   storeDescription?: string;
+  /** Aplicação veicular (autopeças): em quais veículos a peça serve. */
+  aplicacoes?: Array<{ marca: string; modelo: string; anoFaixa: string; observacoes: string }>;
 };
 
 export type ProductTaxRuleOption = {
@@ -205,7 +207,8 @@ export async function listErpProductSummaries(): Promise<ErpProductSummary[]> {
           include: {
             regraTributaria: true
           }
-        }
+        },
+        aplicacoes: true
       },
       orderBy: [{ criadoEm: "asc" }, { nome: "asc" }]
     });
@@ -259,7 +262,13 @@ export async function listErpProductSummaries(): Promise<ErpProductSummary[]> {
         purchaseUnit: product.unidadeCompra,
         purchaseConversion: String(Number(product.fatorConversaoCompra)),
         storeTitle: product.nome,
-        storeDescription: product.descricaoComercial ?? ""
+        storeDescription: product.descricaoComercial ?? "",
+        aplicacoes: product.aplicacoes.map((a) => ({
+          marca: a.marca ?? "",
+          modelo: a.modelo ?? "",
+          anoFaixa: a.anoFaixa ?? "",
+          observacoes: a.observacoes ?? ""
+        }))
       };
     });
   } catch (error) {

@@ -210,6 +210,15 @@ enum TipoOperacaoFiscal {
   RETORNO
 }
 
+// Finalidade/destinação de um item recebido em NF-e de entrada. Determina o CFOP de
+// entrada, o direito a crédito (ICMS/PIS/COFINS) e se o item movimenta estoque.
+enum FinalidadeEntrada {
+  REVENDA          // Mercadoria para revenda (entra no estoque, credita)
+  USO_CONSUMO      // Material de uso/consumo (despesa; ICMS sem crédito até 2033)
+  IMOBILIZADO      // Bem do ativo imobilizado (crédito de ICMS via CIAP 48 parcelas)
+  INDUSTRIALIZACAO // Insumo/matéria-prima para produção (entra como INSUMO, credita)
+}
+
 enum ProvedorIa {
   OPENROUTER
 }
@@ -300,11 +309,30 @@ model Empresa {
   telefone           String?
   email              String?
   regimeTributario   RegimeTributario  @default(SIMPLES_NACIONAL)
+  tipoNegocio        TipoNegocio       @default(AMBOS)
+  segmento           SegmentoEmpresa   @default(GERAL)
   criadoEm           DateTime           @default(now())
   atualizadoEm       DateTime           @updatedAt
 
   @@unique([tenantId, cnpj])
   @@index([tenantId])
+}
+
+// Tipo de negócio da empresa (cliente do ERP). Define o modo de PDV recomendado e quais
+// módulos do menu são relevantes. VENDA = só mercadoria; SERVICO = só serviço; AMBOS = os dois.
+enum TipoNegocio {
+  VENDA
+  SERVICO
+  AMBOS
+}
+
+// Ramo da empresa. Ativa recursos específicos do catálogo sem poluir os demais segmentos —
+// ex.: AUTOPECAS habilita a aplicação veicular ("que veículo a peça serve") no cadastro.
+enum SegmentoEmpresa {
+  GERAL
+  AUTOPECAS
+  MATERIAL_CONSTRUCAO
+  MERCADO
 }
 
 model ConfiguracaoIa {
@@ -671,6 +699,7 @@ model ProdutoFiscal {
   origem                String?
   exTipi                String?
   codigoBeneficioFiscal String?
+  finalidadePadrao      FinalidadeEntrada?
   observacoes           String?
   criadoEm              DateTime @default(now())
   atualizadoEm          DateTime @updatedAt
@@ -1184,6 +1213,11 @@ model EntradaFiscalItem {
   produtoVinculadoAutomaticamente Boolean                    @default(false)
   confiancaVinculo                Decimal?                   @db.Decimal(8, 4)
   revisarVinculo                  Boolean                    @default(true)
+  finalidade                      FinalidadeEntrada?
+  finalidadeSugerida              FinalidadeEntrada?
+  finalidadeOrigem                String?
+  cfopEntradaDerivado             String?
+  movimentaEstoque                Boolean                    @default(true)
   impostos                        EntradaFiscalItemImposto[]
   criadoEm                        DateTime                   @default(now())
   atualizadoEm                    DateTime                   @updatedAt
@@ -1250,6 +1284,30 @@ model RegraTributaria {
   @@index([tenantId, empresaId, tributo, operacao])
   @@index([tenantId, empresaId, ncm, ufDestino])
   @@index([tenantId, empresaId, vigenciaInicio, vigenciaFim])
+}
+
+// Regra De/Para que sugere a finalidade de um item ao importar a NF-e de entrada,
+// a partir do NCM / CFOP de origem do fornecedor / fornecedor específico.
+// empresaId null = regra global do tenant. Matriz de CFOP/crédito fica em código
+// (src/domains/fiscal/finalidade-entrada.ts); aqui guarda-se só o mapeamento.
+model RegraFinalidadeEntrada {
+  id             String            @id @default(cuid())
+  tenantId       String
+  empresaId      String?
+  nome           String
+  finalidade     FinalidadeEntrada
+  ncm            String?
+  cfopOrigem     String?
+  fornecedorId   String?
+  prioridade     Int               @default(100)
+  ativo          Boolean           @default(true)
+  vigenciaInicio DateTime          @default(now())
+  vigenciaFim    DateTime?
+  criadoEm       DateTime          @default(now())
+  atualizadoEm   DateTime          @updatedAt
+
+  @@index([tenantId, empresaId, ncm])
+  @@index([tenantId, empresaId, ativo])
 }
 
 model ContaPagar {

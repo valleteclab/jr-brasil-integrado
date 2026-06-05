@@ -20,6 +20,7 @@ export type ModuloKey =
   | "fornecedores"
   | "colaboradores"
   | "regras-tributarias"
+  | "regras-finalidade"
   | "financeiro"
   | "fluxo-caixa"
   | "fiscal"
@@ -43,6 +44,7 @@ export const MODULOS: Array<{ key: ModuloKey; label: string }> = [
   { key: "fornecedores", label: "Fornecedores" },
   { key: "colaboradores", label: "Colaboradores" },
   { key: "regras-tributarias", label: "Regras tributárias" },
+  { key: "regras-finalidade", label: "Regras de finalidade" },
   { key: "financeiro", label: "Financeiro" },
   { key: "fluxo-caixa", label: "Fluxo de caixa" },
   { key: "fiscal", label: "Notas fiscais" },
@@ -92,7 +94,7 @@ export const PERFIS_PADRAO: Array<{ nome: string; descricao: string; modulos: Mo
   {
     nome: "FISCAL",
     descricao: "Notas fiscais, regras tributárias e configuração fiscal.",
-    modulos: ["dashboard", "fiscal", "regras-tributarias", "configuracoes"]
+    modulos: ["dashboard", "fiscal", "regras-tributarias", "regras-finalidade", "configuracoes"]
   }
 ];
 
@@ -108,4 +110,23 @@ export function moduloFromPath(path: string): ModuloKey | null {
 /** Expande "*" para a lista completa de módulos. */
 export function expandModulos(modulos: ModuloKey[] | "*"): ModuloKey[] {
   return modulos === "*" ? [...TODOS_MODULOS] : modulos;
+}
+
+export type TipoNegocio = "VENDA" | "SERVICO" | "AMBOS";
+
+// Módulos que NÃO se aplicam a cada tipo de negócio (escondidos do menu). Transversais
+// (dashboard, clientes, financeiro, fluxo-caixa, fiscal, relatorios, assistente, configuracoes)
+// nunca são escondidos. É um filtro de MENU — o acesso real continua governado pelo perfil/RBAC.
+const MODULOS_OCULTOS_POR_TIPO: Record<TipoNegocio, ModuloKey[]> = {
+  // Só mercadoria: esconde ordens de serviço.
+  VENDA: ["os"],
+  // Só serviço: esconde a cadeia de mercadoria/estoque.
+  SERVICO: ["compras", "entradas-fiscais", "estoque", "inventarios", "fornecedores", "regras-finalidade"],
+  // Vende e presta serviço: mostra tudo.
+  AMBOS: []
+};
+
+/** Indica se um módulo deve aparecer no menu para o tipo de negócio da empresa. */
+export function moduloVisivelNoTipoNegocio(modulo: ModuloKey, tipoNegocio: TipoNegocio): boolean {
+  return !MODULOS_OCULTOS_POR_TIPO[tipoNegocio]?.includes(modulo);
 }

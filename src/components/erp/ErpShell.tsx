@@ -4,7 +4,13 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import type { ErpShellBadges, ErpShellContext } from "@/lib/services/erp-shell";
-import { moduloFromPath } from "@/lib/auth/modules";
+import { moduloFromPath, moduloVisivelNoTipoNegocio } from "@/lib/auth/modules";
+
+const TIPO_NEGOCIO_LABEL: Record<string, string> = {
+  VENDA: "Vendas",
+  SERVICO: "Serviços",
+  AMBOS: "Vendas & Serviços"
+};
 
 type ErpNavItem = {
   label: string;
@@ -22,7 +28,8 @@ const groups: ErpNavGroup[] = [
     group: "Operação",
     items: [
       { label: "Dashboard", href: "/erp", icon: "▦" },
-      { label: "Novo atendimento", href: "/erp/atendimento", icon: "＋", accent: true },
+      { label: "PDV (tela cheia)", href: "/pdv", icon: "🛒", accent: true },
+      { label: "Novo atendimento", href: "/erp/atendimento", icon: "＋" },
       { label: "Caixa", href: "/erp/caixa", icon: "🧮" },
       { label: "Vendas", href: "/erp/vendas", icon: "🏪", badgeKey: "vendas" },
       { label: "Orçamentos", href: "/erp/orcamentos", icon: "📄", badgeKey: "orcamentos" },
@@ -52,7 +59,8 @@ const groups: ErpNavGroup[] = [
       { label: "Contas a pagar/receber", href: "/erp/financeiro", icon: "＄", badgeKey: "financeiro", danger: true },
       { label: "Fluxo de caixa", href: "/erp/fluxo-caixa", icon: "📈" },
       { label: "NF-e emitidas", href: "/erp/fiscal", icon: "🧾" },
-      { label: "Regras tributárias", href: "/erp/regras-tributarias", icon: "⚖" }
+      { label: "Regras tributárias", href: "/erp/regras-tributarias", icon: "⚖" },
+      { label: "Regras de finalidade", href: "/erp/regras-finalidade", icon: "🏷" }
     ]
   },
   {
@@ -65,6 +73,7 @@ const groups: ErpNavGroup[] = [
   {
     group: "Configurações",
     items: [
+      { label: "Dados da empresa", href: "/erp/configuracoes/empresa", icon: "🏢" },
       { label: "Emissão fiscal", href: "/erp/configuracoes/fiscal", icon: "⚙" },
       { label: "IA do ERP", href: "/erp/configuracoes/ia", icon: "✦" },
       { label: "WhatsApp", href: "/erp/configuracoes/whatsapp", icon: "💬" }
@@ -84,10 +93,12 @@ export function ErpShell({ children, context, modulos }: ErpShellProps) {
   const router = useRouter();
   const producao = context.ambiente === "PRODUCAO";
 
-  // Gate por módulo: item visível se o módulo do href estiver liberado ao perfil.
+  // Gate por módulo: item visível se o módulo do href estiver liberado ao perfil E for
+  // relevante para o tipo de negócio da empresa (esconde o que ela não usa).
   const podeVer = (href: string) => {
     const modulo = moduloFromPath(href);
-    return modulo ? modulos.includes(modulo) : true;
+    if (!modulo) return true;
+    return modulos.includes(modulo) && moduloVisivelNoTipoNegocio(modulo, context.tipoNegocio);
   };
   const gruposVisiveis = groups
     .map((g) => ({ ...g, items: g.items.filter((i) => podeVer(i.href)) }))
@@ -106,7 +117,7 @@ export function ErpShell({ children, context, modulos }: ErpShellProps) {
           <div className="mark">JR</div>
           <div>
             <b>{context.empresaNome}</b>
-            <span>Peças & Serviços</span>
+            <span>{TIPO_NEGOCIO_LABEL[context.tipoNegocio] ?? "ERP"}</span>
           </div>
         </div>
         <div className="erp-side-nav">

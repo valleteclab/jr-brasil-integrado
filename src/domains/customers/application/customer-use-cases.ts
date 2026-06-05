@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import { scopedByTenantCompany } from "@/lib/auth/dev-session";
 import { createAuditLog } from "@/lib/audit/audit-service";
+import { isValidDocumento, normalizeDocumento } from "@/lib/fiscal/documento";
 
 export class CustomerValidationError extends Error {
   constructor(message: string) {
@@ -55,14 +56,19 @@ export async function createCustomer(scope: TenantScope, input: CreateCustomerIn
   if (!input.documento?.trim()) {
     throw new CustomerValidationError("Documento (CPF/CNPJ) é obrigatório.");
   }
+  // Preserva letras (CNPJ alfanumérico); valida formato e dígitos verificadores.
+  const documento = normalizeDocumento(input.documento);
+  if (!isValidDocumento(documento)) {
+    throw new CustomerValidationError("CPF/CNPJ inválido. Confira o número e os dígitos verificadores.");
+  }
 
   return prisma.$transaction(async (tx) => {
     const existing = await tx.cliente.findUnique({
-      where: { tenantId_documento: { tenantId: scope.tenantId, documento: input.documento } }
+      where: { tenantId_documento: { tenantId: scope.tenantId, documento } }
     });
 
     if (existing) {
-      throw new CustomerValidationError(`Já existe um cliente com o documento ${input.documento}.`);
+      throw new CustomerValidationError(`Já existe um cliente com o documento ${documento}.`);
     }
 
     const cliente = await tx.cliente.create({
@@ -70,7 +76,7 @@ export async function createCustomer(scope: TenantScope, input: CreateCustomerIn
         ...scopedByTenantCompany(scope),
         razaoSocial: input.razaoSocial.trim(),
         nomeFantasia: input.nomeFantasia?.trim() ?? null,
-        documento: input.documento.trim(),
+        documento,
         inscricaoEstadual: input.inscricaoEstadual?.trim() ?? null,
         segmento: input.segmento?.trim() ?? null,
         limiteCredito: input.limiteCredito ?? 0,
@@ -128,12 +134,17 @@ export async function updateCustomer(scope: TenantScope, id: string, input: Upda
       throw new CustomerValidationError("Cliente não encontrado.");
     }
 
-    if (input.documento && input.documento !== cliente.documento) {
+    const documento = input.documento !== undefined ? normalizeDocumento(input.documento) : undefined;
+    if (documento !== undefined && !isValidDocumento(documento)) {
+      throw new CustomerValidationError("CPF/CNPJ inválido. Confira o número e os dígitos verificadores.");
+    }
+
+    if (documento && documento !== cliente.documento) {
       const existing = await tx.cliente.findUnique({
-        where: { tenantId_documento: { tenantId: scope.tenantId, documento: input.documento } }
+        where: { tenantId_documento: { tenantId: scope.tenantId, documento } }
       });
       if (existing && existing.id !== id) {
-        throw new CustomerValidationError(`Já existe outro cliente com o documento ${input.documento}.`);
+        throw new CustomerValidationError(`Já existe outro cliente com o documento ${documento}.`);
       }
     }
 
@@ -142,7 +153,7 @@ export async function updateCustomer(scope: TenantScope, id: string, input: Upda
       data: {
         razaoSocial: input.razaoSocial?.trim() ?? cliente.razaoSocial,
         nomeFantasia: input.nomeFantasia !== undefined ? (input.nomeFantasia?.trim() ?? null) : cliente.nomeFantasia,
-        documento: input.documento?.trim() ?? cliente.documento,
+        documento: documento ?? cliente.documento,
         inscricaoEstadual: input.inscricaoEstadual !== undefined ? (input.inscricaoEstadual?.trim() ?? null) : cliente.inscricaoEstadual,
         segmento: input.segmento !== undefined ? (input.segmento?.trim() ?? null) : cliente.segmento,
         limiteCredito: input.limiteCredito !== undefined ? input.limiteCredito : cliente.limiteCredito,

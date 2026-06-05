@@ -1,5 +1,6 @@
 import { getDevelopmentTenantScope, scopedByTenantCompany } from "@/lib/auth/dev-session";
 import { prisma } from "@/lib/db/prisma";
+import type { TipoNegocio } from "@/lib/auth/modules";
 
 export type ErpShellBadges = {
   vendas: number;
@@ -16,6 +17,7 @@ export type ErpShellContext = {
   usuarioIniciais: string;
   usuarioPerfil: string;
   ambiente: "PRODUCAO" | "HOMOLOGACAO";
+  tipoNegocio: TipoNegocio;
   badges: ErpShellBadges;
 };
 
@@ -32,6 +34,7 @@ const SHELL_FALLBACK: ErpShellContext = {
   usuarioIniciais: "OP",
   usuarioPerfil: "Sem vínculo",
   ambiente: "HOMOLOGACAO",
+  tipoNegocio: "AMBOS",
   badges: { vendas: 0, orcamentos: 0, os: 0, compras: 0, estoque: 0, financeiro: 0 }
 };
 
@@ -60,7 +63,7 @@ export async function getErpShellContext(): Promise<ErpShellContext> {
     ] = await Promise.all([
       prisma.empresa.findUnique({
         where: { id: scope.empresaId },
-        select: { razaoSocial: true, nomeFantasia: true }
+        select: { razaoSocial: true, nomeFantasia: true, tipoNegocio: true }
       }),
       prisma.usuarioVinculo.findFirst({
         where: { ...base, ativo: true },
@@ -115,6 +118,7 @@ export async function getErpShellContext(): Promise<ErpShellContext> {
       usuarioIniciais: iniciais(usuarioNome),
       usuarioPerfil: vinculo?.perfil.nome ?? SHELL_FALLBACK.usuarioPerfil,
       ambiente: configFiscal?.ativo && configFiscal.ambiente === "PRODUCAO" ? "PRODUCAO" : "HOMOLOGACAO",
+      tipoNegocio: empresa?.tipoNegocio ?? "AMBOS",
       badges: {
         vendas,
         orcamentos,

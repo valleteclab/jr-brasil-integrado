@@ -57,7 +57,7 @@ export type SaleDetail = SaleSummary & {
 
 export type SaleFormData = {
   clientes: Array<{ id: string; label: string; documento: string | null }>;
-  produtos: Array<{ id: string; sku: string; nome: string; preco: number; disponivel: number }>;
+  produtos: Array<{ id: string; sku: string; nome: string; gtin: string | null; codigoOriginal: string | null; codigoFabricante: string | null; preco: number; disponivel: number }>;
 };
 
 function statusLabel(status: StatusPedido): string {
@@ -236,6 +236,9 @@ export async function listSaleFormData(): Promise<SaleFormData> {
           id: true,
           sku: true,
           nome: true,
+          gtin: true,
+          codigoOriginal: true,
+          codigoFabricante: true,
           precoVenda: true,
           saldosEstoque: {
             select: { quantidade: true, reservado: true }
@@ -260,6 +263,9 @@ export async function listSaleFormData(): Promise<SaleFormData> {
           id: p.id,
           sku: p.sku,
           nome: p.nome,
+          gtin: p.gtin,
+          codigoOriginal: p.codigoOriginal,
+          codigoFabricante: p.codigoFabricante,
           preco: Number(p.precoVenda),
           disponivel
         };

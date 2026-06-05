@@ -26,7 +26,68 @@ type FiscalDraftItem = {
   salePrice?: string;
   minimumPrice?: string;
   brand?: string;
+  finalidade?: FinalidadeEntrada;
+  finalidadeOrigem?: string;
+  cfopEntradaDerivado?: string;
+  movimentaEstoque?: boolean;
 };
+
+type FinalidadeEntrada = "REVENDA" | "USO_CONSUMO" | "IMOBILIZADO" | "INDUSTRIALIZACAO";
+
+const FINALIDADE_OPCOES: Array<{ value: FinalidadeEntrada; label: string }> = [
+  { value: "REVENDA", label: "Revenda" },
+  { value: "USO_CONSUMO", label: "Uso e consumo" },
+  { value: "IMOBILIZADO", label: "Imobilizado" },
+  { value: "INDUSTRIALIZACAO", label: "Industrialização" }
+];
+
+const FINALIDADE_ORIGEM_LABEL: Record<string, string> = {
+  PRODUTO_FISCAL: "memória do produto",
+  DEPARA: "regra De/Para",
+  HEURISTICA: "heurística",
+  MANUAL: "manual",
+  IA: "IA"
+};
+
+// CFOP de entrada por finalidade (espelha src/domains/fiscal/finalidade-entrada.ts) para
+// recalcular o CFOP exibido ao trocar a finalidade no cliente. O eixo interno/interestadual
+// é preservado do CFOP já derivado no servidor.
+const CFOP_ENTRADA_CLIENT: Record<FinalidadeEntrada, { semSt: [string, string]; comSt: [string, string] }> = {
+  REVENDA: { semSt: ["1102", "2102"], comSt: ["1403", "2403"] },
+  INDUSTRIALIZACAO: { semSt: ["1101", "2101"], comSt: ["1401", "2401"] },
+  USO_CONSUMO: { semSt: ["1556", "2556"], comSt: ["1407", "2407"] },
+  IMOBILIZADO: { semSt: ["1551", "2551"], comSt: ["1406", "2406"] }
+};
+
+function recalcCfopEntrada(finalidade: FinalidadeEntrada, cfopAtual: string | undefined): string {
+  const interestadual = (cfopAtual ?? "").startsWith("2");
+  const comSt = ["1403", "2403", "1401", "2401", "1407", "2407", "1406", "2406"].includes(cfopAtual ?? "");
+  const par = comSt ? CFOP_ENTRADA_CLIENT[finalidade].comSt : CFOP_ENTRADA_CLIENT[finalidade].semSt;
+  return par[interestadual ? 1 : 0];
+}
+
+// CFOPs de entrada especiais (fora da matriz das 4 finalidades), oferecidos como atalho no campo
+// editável. 1xxx = mesmo estado, 2xxx = outro estado, 3xxx = exterior (importação).
+const CFOP_ENTRADA_ESPECIAIS: Array<{ code: string; label: string }> = [
+  { code: "1202", label: "Devolução de venda (mesmo estado)" },
+  { code: "2202", label: "Devolução de venda (outro estado)" },
+  { code: "1411", label: "Devolução de venda com ST (mesmo estado)" },
+  { code: "2411", label: "Devolução de venda com ST (outro estado)" },
+  { code: "1915", label: "Entrada para conserto/reparo (mesmo estado)" },
+  { code: "2915", label: "Entrada para conserto/reparo (outro estado)" },
+  { code: "1916", label: "Retorno de conserto/reparo (mesmo estado)" },
+  { code: "2916", label: "Retorno de conserto/reparo (outro estado)" },
+  { code: "1152", label: "Transferência de mercadoria (mesmo estado)" },
+  { code: "2152", label: "Transferência de mercadoria (outro estado)" },
+  { code: "1910", label: "Entrada de bonificação/brinde/doação (mesmo estado)" },
+  { code: "2910", label: "Entrada de bonificação/brinde/doação (outro estado)" },
+  { code: "1949", label: "Outra entrada não especificada (mesmo estado)" },
+  { code: "2949", label: "Outra entrada não especificada (outro estado)" },
+  { code: "3102", label: "Importação do exterior para revenda" },
+  { code: "3101", label: "Importação do exterior para industrialização" },
+  { code: "3551", label: "Importação do exterior para o ativo imobilizado" },
+  { code: "3556", label: "Importação do exterior para uso e consumo" }
+];
 
 type FiscalDraft = {
   id: string;
@@ -114,6 +175,7 @@ export function FiscalEntryWizard({ initialDraft = null, products }: FiscalEntry
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [suggesting, setSuggesting] = useState(false);
+  const [suggestingFinalidade, setSuggestingFinalidade] = useState(false);
   const [installments, setInstallments] = useState<Installment[]>(initialDraft ? installmentsFromDraft(initialDraft) : []);
 
   const productsById = useMemo(() => new Map(products.map((product) => [product.id, product])), [products]);
@@ -178,7 +240,10 @@ export function FiscalEntryWizard({ initialDraft = null, products }: FiscalEntry
       return;
     }
 
-    const missingPrice = draft.items.find((item) => item.action === "create" && decimalInputToNumber(item.salePrice) <= 0);
+    // Uso/consumo e imobilizado não viram SKU; só itens que movimentam estoque exigem preço.
+    const missingPrice = draft.items.find(
+      (item) => item.action === "create" && item.movimentaEstoque !== false && decimalInputToNumber(item.salePrice) <= 0
+    );
 
     if (missingPrice) {
       setError(`Informe o preço de venda do novo SKU ${missingPrice.importedProduct.sku}.`);
@@ -197,7 +262,9 @@ export function FiscalEntryWizard({ initialDraft = null, products }: FiscalEntry
             criarNovoSku: item.action === "create",
             precoVenda: item.action === "create" ? decimalInputToNumber(item.salePrice) : null,
             precoMinimo: item.action === "create" ? decimalInputToNumber(item.minimumPrice) : null,
-            marca: item.action === "create" ? item.brand?.trim() || null : null
+            marca: item.action === "create" ? item.brand?.trim() || null : null,
+            finalidade: item.finalidade ?? null,
+            cfopEntrada: item.cfopEntradaDerivado ?? null
           }))
         }),
         headers: { "Content-Type": "application/json" },
@@ -267,6 +334,59 @@ export function FiscalEntryWizard({ initialDraft = null, products }: FiscalEntry
       setError(aiError instanceof Error ? aiError.message : "Não foi possível sugerir vínculos com IA.");
     } finally {
       setSuggesting(false);
+    }
+  }
+
+  async function suggestFinalidades() {
+    if (!draft) {
+      return;
+    }
+
+    setSuggestingFinalidade(true);
+    setError("");
+    setMessage("");
+
+    try {
+      const response = await fetch(`/api/erp/entradas-fiscais/${draft.id}/ia/finalidades`, { method: "POST" });
+      const data = await response.json() as {
+        suggestions?: Array<{ itemId: string; finalidade: FinalidadeEntrada; confianca: number; motivo: string }>;
+        error?: string;
+      };
+
+      if (!response.ok) {
+        throw new Error(data.error || "Não foi possível sugerir finalidades com IA.");
+      }
+
+      const suggestions = data.suggestions ?? [];
+      setDraft((current) => {
+        if (!current) {
+          return current;
+        }
+
+        return {
+          ...current,
+          items: current.items.map((item) => {
+            const suggestion = suggestions.find((entry) => entry.itemId === item.id);
+
+            if (!suggestion) {
+              return item;
+            }
+
+            return {
+              ...item,
+              finalidade: suggestion.finalidade,
+              finalidadeOrigem: "IA",
+              cfopEntradaDerivado: recalcCfopEntrada(suggestion.finalidade, item.cfopEntradaDerivado),
+              movimentaEstoque: suggestion.finalidade === "REVENDA" || suggestion.finalidade === "INDUSTRIALIZACAO"
+            };
+          })
+        };
+      });
+      setMessage("Sugestões de finalidade aplicadas para conferência.");
+    } catch (aiError) {
+      setError(aiError instanceof Error ? aiError.message : "Não foi possível sugerir finalidades com IA.");
+    } finally {
+      setSuggestingFinalidade(false);
     }
   }
 
@@ -376,9 +496,14 @@ export function FiscalEntryWizard({ initialDraft = null, products }: FiscalEntry
               <h3>Itens da NF</h3>
               <p>Para cada item, vincule a um produto cadastrado ou deixe marcado para criar um novo SKU no lançamento.</p>
             </div>
-            <Button type="button" variant="light" onClick={suggestLinks} disabled={suggesting}>
-              {suggesting ? "Consultando IA..." : "Sugerir vínculos com IA"}
-            </Button>
+            <div className="fiscal-step-actions">
+              <Button type="button" variant="light" onClick={suggestFinalidades} disabled={suggestingFinalidade}>
+                {suggestingFinalidade ? "Consultando IA..." : "Sugerir finalidades com IA"}
+              </Button>
+              <Button type="button" variant="light" onClick={suggestLinks} disabled={suggesting}>
+                {suggesting ? "Consultando IA..." : "Sugerir vínculos com IA"}
+              </Button>
+            </div>
           </div>
 
           <div className="erp-table-wrap fiscal-entry-table">
@@ -390,6 +515,7 @@ export function FiscalEntryWizard({ initialDraft = null, products }: FiscalEntry
                   <th className="num">Qtd.</th>
                   <th className="num">Custo</th>
                   <th className="num">Total</th>
+                  <th>Finalidade</th>
                   <th>Vínculo no estoque</th>
                 </tr>
               </thead>
@@ -404,6 +530,39 @@ export function FiscalEntryWizard({ initialDraft = null, products }: FiscalEntry
                     <td className="num">{item.importedProduct.availableStock}</td>
                     <td className="num">{item.importedProduct.costValue}</td>
                     <td className="num">{formatBrl(currencyToNumber(item.importedProduct.costValue) * item.importedProduct.availableStock)}</td>
+                    <td>
+                      <select
+                        value={item.finalidade ?? "REVENDA"}
+                        onChange={(event) => {
+                          const finalidade = event.target.value as FinalidadeEntrada;
+                          updateItem(item.id, {
+                            finalidade,
+                            finalidadeOrigem: "MANUAL",
+                            cfopEntradaDerivado: recalcCfopEntrada(finalidade, item.cfopEntradaDerivado),
+                            movimentaEstoque: finalidade === "REVENDA" || finalidade === "INDUSTRIALIZACAO"
+                          });
+                        }}
+                      >
+                        {FINALIDADE_OPCOES.map((opcao) => (
+                          <option key={opcao.value} value={opcao.value}>{opcao.label}</option>
+                        ))}
+                      </select>
+                      <label className="cfop-entrada-field">
+                        <span>CFOP entrada</span>
+                        <input
+                          list="cfop-entrada-especiais"
+                          value={item.cfopEntradaDerivado ?? ""}
+                          maxLength={4}
+                          inputMode="numeric"
+                          placeholder="0000"
+                          onChange={(event) => updateItem(item.id, { cfopEntradaDerivado: event.target.value.replace(/\D/g, "").slice(0, 4) })}
+                        />
+                      </label>
+                      <small className="block-muted">
+                        {item.finalidadeOrigem ? `${FINALIDADE_ORIGEM_LABEL[item.finalidadeOrigem] ?? item.finalidadeOrigem}` : ""}
+                        {item.movimentaEstoque === false ? " · não movimenta estoque" : ""}
+                      </small>
+                    </td>
                     <td>
                       <div className="fiscal-link-actions">
                         <button className={item.action === "update" ? "active" : ""} type="button" onClick={() => updateItem(item.id, { action: "update" })}>
@@ -423,6 +582,11 @@ export function FiscalEntryWizard({ initialDraft = null, products }: FiscalEntry
                             <option key={product.id} value={product.id}>{product.sku} · {product.name}</option>
                           ))}
                         </select>
+                      ) : item.movimentaEstoque === false ? (
+                        <div className="new-sku-box">
+                          {item.finalidade === "IMOBILIZADO" ? "Bem do ativo imobilizado" : "Material de uso e consumo"}: lançado
+                          como despesa/ativo, <strong>sem criar SKU nem movimentar estoque</strong>. A obrigação financeira é gerada normalmente.
+                        </div>
                       ) : (
                         <div className="new-sku-box">
                           Novo SKU será criado: <strong>{item.importedProduct.sku}</strong>
@@ -464,6 +628,15 @@ export function FiscalEntryWizard({ initialDraft = null, products }: FiscalEntry
               <strong>Valor dos itens: {formatBrl(totalItems)}</strong>
             </div>
           </div>
+          <datalist id="cfop-entrada-especiais">
+            {CFOP_ENTRADA_ESPECIAIS.map((cfop) => (
+              <option key={cfop.code} value={cfop.code}>{cfop.code} · {cfop.label}</option>
+            ))}
+          </datalist>
+          <p className="block-muted" style={{ marginTop: "0.5rem" }}>
+            O CFOP de entrada é sugerido pela finalidade. Para casos especiais (devolução, remessa, importação),
+            digite o CFOP correto no campo ou escolha um da lista.
+          </p>
         </div>
       )}
 

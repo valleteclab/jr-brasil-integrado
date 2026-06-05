@@ -106,6 +106,7 @@ export function FiscalOnboardingWizard({ initialData }: { initialData: FiscalOnb
           inscricaoEstadual: form.inscricaoEstadual,
           inscricaoMunicipal: form.inscricaoMunicipal,
           regime: form.regime,
+          tipoNegocio: form.tipoNegocio,
           enderecoLogradouro: form.enderecoLogradouro,
           enderecoNumero: form.enderecoNumero,
           enderecoComplemento: form.enderecoComplemento,
@@ -209,6 +210,14 @@ export function FiscalOnboardingWizard({ initialData }: { initialData: FiscalOnb
               {REGIMES.map((r) => (
                 <option key={r.value} value={r.value}>{r.label}</option>
               ))}
+            </select>
+          </label>
+          <label>
+            Tipo de negócio*
+            <select value={form.tipoNegocio} onChange={(e) => update("tipoNegocio", e.target.value as FormState["tipoNegocio"])}>
+              <option value="VENDA">Vendas (peças / material)</option>
+              <option value="SERVICO">Serviços</option>
+              <option value="AMBOS">Vendas & Serviços</option>
             </select>
           </label>
           <label>

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
+import { correspondeBusca } from "@/lib/search/normalize";
 import type { ErpProductSummary, ProductTaxRuleOption } from "@/lib/services/products";
 
 function Pill({ tone, children }: { tone: BadgeTone; children: React.ReactNode }) {
@@ -59,7 +60,10 @@ type ProductRecord = ErpProductSummary & {
   allowQuote: boolean;
   seoSlug: string;
   applications: string;
+  aplicacoes: AplicacaoVeicular[];
 };
+
+type AplicacaoVeicular = { marca: string; modelo: string; anoFaixa: string; observacoes: string };
 
 type ProductFormState = {
   id?: string;
@@ -72,11 +76,13 @@ type ProductCrudProps = {
   initialProducts: ErpProductSummary[];
   taxRules: ProductTaxRuleOption[];
   warehouses: string[];
+  /** Ramo da empresa — habilita recursos específicos (AUTOPECAS → aplicação veicular). */
+  segmento?: string;
 };
 
 type BadgeTone = "success" | "warn" | "danger" | "info" | "violet" | "mute";
 type StockFilter = "todos" | "critico" | "zerado";
-type ProductTab = "geral" | "fiscal" | "precos" | "estoque" | "compras" | "loja";
+type ProductTab = "geral" | "fiscal" | "precos" | "estoque" | "compras" | "loja" | "aplicacoes";
 
 const PAGE_SIZE = 20;
 
@@ -157,7 +163,8 @@ const emptyForm: ProductFormState = {
   allowOnlineSale: true,
   allowQuote: true,
   seoSlug: "",
-  applications: ""
+  applications: "",
+  aplicacoes: []
 };
 
 function formatBrl(value: number) {
@@ -246,7 +253,8 @@ function enrichProduct(product: ErpProductSummary): ProductRecord {
     allowOnlineSale: true,
     allowQuote: true,
     seoSlug: product.sku.toLowerCase(),
-    applications: ""
+    applications: "",
+    aplicacoes: product.aplicacoes ?? []
   };
 }
 
@@ -283,7 +291,8 @@ function toProduct(form: ProductFormState): ProductRecord {
   };
 }
 
-export function ProductCrud({ initialProducts, taxRules, warehouses }: ProductCrudProps) {
+export function ProductCrud({ initialProducts, taxRules, warehouses, segmento }: ProductCrudProps) {
+  const isAutopecas = segmento === "AUTOPECAS";
   const defaultWarehouse = warehouses[0] ?? "";
   const initialRecords = useMemo(() => initialProducts.map(enrichProduct), [initialProducts]);
   const xmlInputRef = useRef<HTMLInputElement>(null);
@@ -331,17 +340,15 @@ export function ProductCrud({ initialProducts, taxRules, warehouses }: ProductCr
   }, [products]);
 
   const filteredProducts = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
-
     return products
-      .filter((product) => {
-        if (!normalizedQuery) {
-          return true;
-        }
-
-        return [product.sku, product.name, product.brand, product.category, product.originalCode]
-          .some((field) => field.toLowerCase().includes(normalizedQuery));
-      })
+      .filter((product) =>
+        correspondeBusca(
+          query,
+          product.sku, product.name, product.brand, product.category, product.originalCode, product.barcode, product.supplierCode,
+          // Aplicação veicular: permite achar a peça pelo veículo ("gol", "palio 2010"...).
+          ...(product.aplicacoes ?? []).map((a) => `${a.marca} ${a.modelo} ${a.anoFaixa} ${a.observacoes}`)
+        )
+      )
       .filter((product) => {
         if (stockFilter === "todos") {
           return true;
@@ -376,6 +383,17 @@ export function ProductCrud({ initialProducts, taxRules, warehouses }: ProductCr
 
   function updateField<Key extends keyof ProductFormState>(key: Key, value: ProductFormState[Key]) {
     setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  // Aplicação veicular (autopeças): lista editável de "que veículo a peça serve".
+  function addAplicacao() {
+    setForm((cur) => ({ ...cur, aplicacoes: [...cur.aplicacoes, { marca: "", modelo: "", anoFaixa: "", observacoes: "" }] }));
+  }
+  function updateAplicacao(index: number, patch: Partial<AplicacaoVeicular>) {
+    setForm((cur) => ({ ...cur, aplicacoes: cur.aplicacoes.map((a, i) => (i === index ? { ...a, ...patch } : a)) }));
+  }
+  function removeAplicacao(index: number) {
+    setForm((cur) => ({ ...cur, aplicacoes: cur.aplicacoes.filter((_, i) => i !== index) }));
   }
 
   function closeDrawer() {
@@ -815,6 +833,36 @@ export function ProductCrud({ initialProducts, taxRules, warehouses }: ProductCr
       );
     }
 
+    if (activeTab === "aplicacoes") {
+      return (
+        <div className="produto-aplicacoes">
+          <p className="block-muted">
+            Em quais veículos esta peça serve. Aparece na busca (o balconista acha pelo carro) e na ficha do produto.
+          </p>
+          <div className="erp-table-wrap">
+            <table className="erp-table">
+              <thead><tr><th>Montadora</th><th>Modelo</th><th>Anos</th><th>Observação</th><th></th></tr></thead>
+              <tbody>
+                {form.aplicacoes.length === 0 && (
+                  <tr><td colSpan={5} className="block-muted">Nenhuma aplicação. Clique em “Adicionar veículo”.</td></tr>
+                )}
+                {form.aplicacoes.map((a, i) => (
+                  <tr key={i}>
+                    <td><input value={a.marca} onChange={(e) => updateAplicacao(i, { marca: e.target.value })} placeholder="Ex.: VW" /></td>
+                    <td><input value={a.modelo} onChange={(e) => updateAplicacao(i, { modelo: e.target.value })} placeholder="Ex.: Gol" /></td>
+                    <td><input value={a.anoFaixa} onChange={(e) => updateAplicacao(i, { anoFaixa: e.target.value })} placeholder="Ex.: 2008-2014" /></td>
+                    <td><input value={a.observacoes} onChange={(e) => updateAplicacao(i, { observacoes: e.target.value })} placeholder="Ex.: motor 1.0" /></td>
+                    <td><button type="button" className="btn-erp light sm" onClick={() => removeAplicacao(i)}>Remover</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <button type="button" className="btn-erp light sm" style={{ marginTop: 10 }} onClick={addAplicacao}>+ Adicionar veículo</button>
+        </div>
+      );
+    }
+
     return (
       <div className="erp-form">
         <label className="full">
@@ -1117,7 +1165,8 @@ export function ProductCrud({ initialProducts, taxRules, warehouses }: ProductCr
                 ["precos", "Preços e custos"],
                 ["estoque", "Estoque"],
                 ["compras", "Compras"],
-                ["loja", "Loja B2B"]
+                ["loja", "Loja B2B"],
+                ...(isAutopecas ? [["aplicacoes", "Aplicação veicular"]] : [])
               ].map(([tab, label]) => (
                 <button
                   className={activeTab === tab ? "active" : ""}

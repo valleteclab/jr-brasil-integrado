@@ -10,6 +10,7 @@ import type {
   ProviderContext,
   TestConnectionResult
 } from "./types";
+import { normalizeDocumento } from "@/lib/fiscal/documento";
 
 /**
  * Provedor fiscal ACBr API (https://dev.acbr.api.br) para NF-e, NFC-e e NFS-e.
@@ -526,7 +527,7 @@ export class AcbrFiscalProvider implements FiscalProvider {
           // Referência à NF-e original (obrigatória na devolução): grupo NFref/refNFe.
           ...(refChave.length === 44 ? { NFref: [{ refNFe: refChave }] } : {})
         },
-        emit: { CNPJ: onlyDigits(input.emitter.cnpj), CRT: crtFocus(input.emitter.regime) },
+        emit: { CNPJ: normalizeDocumento(input.emitter.cnpj), CRT: crtFocus(input.emitter.regime) },
         dest: this.buildDest(input, isNfce),
         // Grupo de Autorização de download do XML, exigido por algumas UFs (ex.: BA).
         ...(UF_AUTXML_CNPJ[ufEmit] ? { autXML: [{ CNPJ: UF_AUTXML_CNPJ[ufEmit] }] } : {}),
@@ -551,7 +552,7 @@ export class AcbrFiscalProvider implements FiscalProvider {
 
   private buildDest(input: EmitInput, isNfce: boolean): Record<string, unknown> | undefined {
     const dest = input.document.destinatario;
-    const doc = onlyDigits(dest.documento);
+    const doc = normalizeDocumento(dest.documento);
     // NFC-e: destinatário é opcional; só envia se houver CPF/CNPJ informado.
     if (isNfce && !doc) return undefined;
 
@@ -577,7 +578,7 @@ export class AcbrFiscalProvider implements FiscalProvider {
 
   private async buildNfseBody(input: EmitInput, ctx: ProviderContext): Promise<Record<string, unknown>> {
     const dest = input.document.destinatario;
-    const doc = onlyDigits(dest.documento);
+    const doc = normalizeDocumento(dest.documento);
     const end = dest.endereco;
     const servicoTax = input.computed.find((c) => c.taxes.aliquotaIss > 0 || c.taxes.itemListaServico != null)?.taxes;
     const aliquotaIss = servicoTax?.aliquotaIss ?? 0;
@@ -630,7 +631,7 @@ export class AcbrFiscalProvider implements FiscalProvider {
         tpAmb: ctx.ambiente === "PRODUCAO" ? 1 : 2,
         dhEmi: dataFiscal.dhEmi,
         dCompet: dataFiscal.dCompet,
-        prest: { CNPJ: onlyDigits(input.emitter.cnpj) },
+        prest: { CNPJ: normalizeDocumento(input.emitter.cnpj) },
         toma,
         serv: {
           locPrest: { cLocPrestacao: input.emitter.codigoMunicipioIbge ?? undefined },
@@ -833,7 +834,7 @@ export async function updateAcbrNfceCsc(
   csc: string
 ): Promise<{ ok: boolean; message: string }> {
   const provider = new AcbrFiscalProvider();
-  const documento = onlyDigits(cnpj);
+  const documento = normalizeDocumento(cnpj);
   const res = await (provider as unknown as {
     request: <T>(c: ProviderContext, m: string, p: string, b?: unknown) => Promise<{ ok: boolean; status: number; data: T | undefined; errorMessage: string | null }>;
   }).request(ctx, "PUT", `/empresas/${documento}`, {
@@ -858,7 +859,7 @@ export async function uploadAcbrLogotipo(
   filename: string
 ): Promise<{ ok: boolean; message: string }> {
   const provider = new AcbrFiscalProvider();
-  const documento = onlyDigits(cnpj);
+  const documento = normalizeDocumento(cnpj);
   const access = provider as unknown as {
     resolveConfig: (c: ProviderContext) => { baseUrl: string };
     getAccessToken: (c: ProviderContext) => Promise<string>;
@@ -894,7 +895,7 @@ export async function deleteAcbrLogotipo(
   cnpj: string
 ): Promise<{ ok: boolean; message: string }> {
   const provider = new AcbrFiscalProvider();
-  const documento = onlyDigits(cnpj);
+  const documento = normalizeDocumento(cnpj);
   const res = await (provider as unknown as {
     request: <T>(c: ProviderContext, m: string, p: string, b?: unknown) => Promise<{ ok: boolean; status: number; data: T | undefined; errorMessage: string | null }>;
   }).request(ctx, "DELETE", `/empresas/${documento}/logotipo`);
@@ -917,7 +918,7 @@ export async function uploadAcbrCertificate(
   password: string
 ): Promise<{ ok: boolean; message: string }> {
   const provider = new AcbrFiscalProvider();
-  const documento = onlyDigits(cnpj);
+  const documento = normalizeDocumento(cnpj);
   // Acesso ao request privado de forma controlada (mesmo módulo do provider).
   const res = await (provider as unknown as {
     request: <T>(c: ProviderContext, m: string, p: string, b?: unknown) => Promise<{ ok: boolean; status: number; data: T | undefined; errorMessage: string | null }>;
