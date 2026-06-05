@@ -2,15 +2,23 @@ import { FiscalEntriesList } from "@/components/erp/FiscalEntriesList";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { listFiscalEntrySummaries } from "@/lib/services/fiscal-entries";
 import type { FiscalEntrySummary } from "@/lib/services/fiscal-entries";
+import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
+import { listNfeDistributionDocuments } from "@/lib/services/nfe-distribution";
+import type { NfeDistributionSummary } from "@/lib/services/nfe-distribution";
 
 export const dynamic = "force-dynamic";
 
 export default async function FiscalEntriesPage() {
   let entries: FiscalEntrySummary[] = [];
+  let receivedDocuments: NfeDistributionSummary[] = [];
   let loadError = "";
 
   try {
-    entries = await listFiscalEntrySummaries();
+    const scope = await getDevelopmentTenantScope();
+    [entries, receivedDocuments] = await Promise.all([
+      listFiscalEntrySummaries(),
+      listNfeDistributionDocuments(scope)
+    ]);
   } catch (error) {
     loadError = error instanceof Error ? error.message : "Não foi possível carregar notas fiscais de entrada.";
   }
@@ -26,7 +34,7 @@ export default async function FiscalEntriesPage() {
           <span>{loadError}</span>
         </div>
       )}
-      <FiscalEntriesList entries={entries} />
+      <FiscalEntriesList entries={entries} receivedDocuments={receivedDocuments} />
     </>
   );
 }

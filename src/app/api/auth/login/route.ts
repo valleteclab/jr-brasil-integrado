@@ -23,8 +23,31 @@ export async function POST(request: Request) {
       where: { usuarioId: usuario.id, ativo: true },
       orderBy: { criadoEm: "asc" }
     });
+
+    // Dono da plataforma sem vínculo a cliente: abre uma sessão de plataforma (sem
+    // escopo) e vai direto ao painel /admin. Não pertence a nenhum ERP de cliente.
     if (!vinculo || !vinculo.empresaId) {
+      if (usuario.plataformaAdmin) {
+        await createSession(usuario.id, null, request.headers.get("user-agent"));
+        await prisma.usuario.update({ where: { id: usuario.id }, data: { ultimoAcessoEm: new Date() } });
+        return NextResponse.json({ ok: true, redirect: "/admin" });
+      }
       return NextResponse.json({ error: "Usuário sem empresa/perfil ativo. Procure o administrador." }, { status: 403 });
+    }
+
+    // Enforcement de bloqueio do cliente: tenant inativo ou empresa não-ATIVA impedem o
+    // login (exceto o dono da plataforma, que administra os bloqueios). Espelha getSession.
+    if (!usuario.plataformaAdmin) {
+      const [tenant, empresa] = await Promise.all([
+        prisma.tenant.findUnique({ where: { id: vinculo.tenantId }, select: { ativo: true } }),
+        prisma.empresa.findUnique({ where: { id: vinculo.empresaId }, select: { status: true } })
+      ]);
+      if (!tenant?.ativo || !empresa || empresa.status !== "ATIVA") {
+        return NextResponse.json(
+          { error: "Acesso suspenso. Procure o suporte da plataforma." },
+          { status: 403 }
+        );
+      }
     }
 
     await createSession(
@@ -34,7 +57,7 @@ export async function POST(request: Request) {
     );
     await prisma.usuario.update({ where: { id: usuario.id }, data: { ultimoAcessoEm: new Date() } });
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, redirect: "/erp" });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro ao autenticar.";
     return NextResponse.json({ error: message }, { status: 500 });

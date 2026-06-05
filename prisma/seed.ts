@@ -19,7 +19,7 @@ const TODOS_MODULOS = [
 ] as const;
 
 const PERFIS_PADRAO: Array<{ nome: string; descricao: string; modulos: readonly string[] | "*" }> = [
-  { nome: "SUPER_ADMIN", descricao: "Acesso total à plataforma.", modulos: "*" },
+  { nome: "SUPER_ADMIN", descricao: "Acesso total ao sistema do cliente.", modulos: "*" },
   { nome: "COMPANY_ADMIN", descricao: "Administra a empresa (todos os módulos).", modulos: "*" },
   { nome: "SALES", descricao: "Vendas, atendimento, caixa e orçamentos.", modulos: ["dashboard", "atendimento", "caixa", "vendas", "orcamentos", "os", "clientes", "produtos", "assistente"] },
   { nome: "STOCK", descricao: "Estoque, inventários e produtos.", modulos: ["dashboard", "estoque", "inventarios", "produtos", "compras"] },
@@ -30,9 +30,39 @@ const PERFIS_PADRAO: Array<{ nome: string; descricao: string; modulos: readonly 
 ];
 
 const ADMIN_EMAIL = "admin@jrbrasilpecas.com.br";
+const JR_BRASIL_CNPJ = "15130181000148";
 // Senha temporária forte do admin. Pode ser sobrescrita por ADMIN_INITIAL_PASSWORD.
 // IMPORTANTE: troque após o primeiro login.
 const ADMIN_SENHA = process.env.ADMIN_INITIAL_PASSWORD ?? "Jr#Brasil@2026!Adm7qZ";
+
+// Dono da plataforma (SaaS): conta SEPARADA, sem vínculo a nenhum cliente. Acessa
+// apenas o painel /admin. Configurável por env; só é criada se PLATFORM_OWNER_EMAIL existir.
+const PLATFORM_OWNER_EMAIL = process.env.PLATFORM_OWNER_EMAIL?.trim().toLowerCase();
+const PLATFORM_OWNER_SENHA = process.env.PLATFORM_OWNER_PASSWORD ?? "Plat@2026!Dono9xK";
+
+/**
+ * Cria/atualiza o DONO DA PLATAFORMA como conta separada (plataformaAdmin, sem vínculo).
+ * Só roda se PLATFORM_OWNER_EMAIL estiver definido, para não criar contas surpresa.
+ */
+async function seedPlatformOwner() {
+  if (!PLATFORM_OWNER_EMAIL) {
+    console.log("\n[seed] PLATFORM_OWNER_EMAIL não definido — dono da plataforma não foi criado.");
+    console.log("[seed] Para criar: npm run admin-plataforma <email> [senha]\n");
+    return;
+  }
+  await prisma.usuario.upsert({
+    where: { email: PLATFORM_OWNER_EMAIL },
+    update: { status: "ATIVO", plataformaAdmin: true },
+    create: {
+      nome: "Dono da Plataforma",
+      email: PLATFORM_OWNER_EMAIL,
+      senhaHash: hashPasswordSeed(PLATFORM_OWNER_SENHA),
+      status: "ATIVO",
+      plataformaAdmin: true
+    }
+  });
+  console.log(`\n[seed] Dono da plataforma: ${PLATFORM_OWNER_EMAIL} | Senha: ${PLATFORM_OWNER_SENHA} (troque apos o primeiro login)\n`);
+}
 
 /** Cria/atualiza os perfis padrão (com permissões por módulo) e o admin SUPER_ADMIN. */
 async function seedPerfisEAdmin(tenantId: string, empresaId: string) {
@@ -53,10 +83,12 @@ async function seedPerfisEAdmin(tenantId: string, empresaId: string) {
     });
   }
 
+  // Admin do CLIENTE (tenant JR Brasil): é SUPER_ADMIN do cliente, NÃO dono da
+  // plataforma. plataformaAdmin:false explícito para desfazer conflação em re-seeds.
   const admin = await prisma.usuario.upsert({
     where: { email: ADMIN_EMAIL },
-    update: { status: "ATIVO" },
-    create: { nome: "Administrador", email: ADMIN_EMAIL, senhaHash: hashPasswordSeed(ADMIN_SENHA), status: "ATIVO" }
+    update: { status: "ATIVO", plataformaAdmin: false },
+    create: { nome: "Administrador", email: ADMIN_EMAIL, senhaHash: hashPasswordSeed(ADMIN_SENHA), status: "ATIVO", plataformaAdmin: false }
   });
   // Garante a senha (caso o usuário já existisse sem a senha correta).
   await prisma.usuario.update({ where: { id: admin.id }, data: { senhaHash: hashPasswordSeed(ADMIN_SENHA) } });
@@ -97,11 +129,11 @@ async function main() {
     email: "fiscal@jrbrasilpecas.com.br"
   };
   const empresa = await prisma.empresa.upsert({
-    where: { tenantId_cnpj: { tenantId: tenant.id, cnpj: "00.000.000/0001-00" } },
+    where: { tenantId_cnpj: { tenantId: tenant.id, cnpj: JR_BRASIL_CNPJ } },
     update: empresaData,
     create: {
       tenantId: tenant.id,
-      cnpj: "00.000.000/0001-00",
+      cnpj: JR_BRASIL_CNPJ,
       matriz: true,
       ...empresaData
     }
@@ -166,8 +198,11 @@ async function main() {
     }
   }
 
-  // Perfis padrão (RBAC por módulo) + usuário administrador SUPER_ADMIN.
+  // Perfis padrão (RBAC por módulo) + usuário administrador SUPER_ADMIN do cliente.
   await seedPerfisEAdmin(tenant.id, empresa.id);
+
+  // Dono da plataforma (conta separada, sem vínculo a cliente).
+  await seedPlatformOwner();
 
   const categoria = await prisma.produtoCategoria.upsert({
     where: { tenantId_empresaId_slug: { tenantId: tenant.id, empresaId: empresa.id, slug: "pecas-agricolas" } },

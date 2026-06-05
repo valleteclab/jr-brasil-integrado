@@ -1,25 +1,30 @@
 import { NextResponse } from "next/server";
-import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
-import { getEmpresaPerfil, updateEmpresaPerfil } from "@/domains/company/application/company-use-cases";
+import { requireModulo } from "@/lib/auth/session";
+import { getCompanySettings, saveCompanySettings, CompanySettingsError } from "@/lib/services/company-settings";
 
 export async function GET() {
   try {
-    const scope = await getDevelopmentTenantScope();
-    const perfil = await getEmpresaPerfil(scope);
-    return NextResponse.json(perfil);
+    const session = await requireModulo("configuracoes");
+    if (!session.scope) throw new CompanySettingsError("Sessão sem empresa selecionada.");
+
+    const settings = await getCompanySettings(session.scope);
+    return NextResponse.json(settings);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Não foi possível carregar os dados da empresa.";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
 
-export async function POST(request: Request) {
+export async function PUT(request: Request) {
   try {
-    const scope = await getDevelopmentTenantScope();
-    const perfil = await updateEmpresaPerfil(scope, await request.json());
-    return NextResponse.json(perfil);
+    const session = await requireModulo("configuracoes");
+    if (!session.scope) throw new CompanySettingsError("Sessão sem empresa selecionada.");
+
+    const settings = await saveCompanySettings(session.scope, await request.json(), session.usuarioId);
+    return NextResponse.json(settings);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Não foi possível salvar os dados da empresa.";
-    return NextResponse.json({ error: message }, { status: 400 });
+    const status = error instanceof CompanySettingsError ? 400 : 500;
+    return NextResponse.json({ error: message }, { status });
   }
 }

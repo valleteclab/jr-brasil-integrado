@@ -20,9 +20,9 @@ export function LoginForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, senha })
       });
-      const data = (await res.json()) as { ok?: boolean; error?: string };
+      const data = (await res.json()) as { ok?: boolean; error?: string; redirect?: string };
       if (!res.ok) throw new Error(data.error || "Não foi possível entrar.");
-      router.replace("/erp");
+      router.replace(data.redirect || "/erp");
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível entrar.");

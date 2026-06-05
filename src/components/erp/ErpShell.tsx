@@ -163,7 +163,7 @@ export function ErpShell({ children, context, modulos }: ErpShellProps) {
             <span className={`erp-env${producao ? "" : " homolog"}`}><span className="dot" />{producao ? "Produção" : "Homologação"}</span>
             <Link className="erp-top-btn" href="/loja">⤴ Ver loja</Link>
             <Link className="erp-top-btn" href="/erp/configuracoes/ia" aria-label="Notificações">🔔</Link>
-            <Link className="erp-top-btn" href="/erp/configuracoes/fiscal" aria-label="Configurações">⚙</Link>
+            <Link className="erp-top-btn" href="/erp/configuracoes/empresa" aria-label="Configurações">⚙</Link>
           </div>
         </header>
         <div className="erp-page">{children}</div>

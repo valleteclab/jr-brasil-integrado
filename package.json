@@ -11,7 +11,8 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
     "mcp:stdio": "tsx scripts/mcp-stdio.ts",
-    "reset-senha": "tsx scripts/reset-senha.ts"
+    "reset-senha": "tsx scripts/reset-senha.ts",
+    "admin-plataforma": "tsx scripts/conceder-admin-plataforma.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

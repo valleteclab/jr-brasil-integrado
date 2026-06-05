@@ -39,7 +39,7 @@ const ACBR_BASE_URL: Record<AmbienteFiscal, string> = {
 };
 
 const ACBR_AUTH_URL = "https://auth.acbr.api.br/realms/ACBrAPI/protocol/openid-connect/token";
-const ACBR_SCOPES = "empresa nfe nfce nfse conta";
+const ACBR_SCOPES = "empresa nfe nfce nfse conta distribuicao-nfe";
 
 /** Recurso REST por modelo. NFS-e usa o endpoint DPS (nacional). */
 const ACBR_RESOURCE = { NFE: "nfe", NFCE: "nfce", NFSE: "nfse" } as const;

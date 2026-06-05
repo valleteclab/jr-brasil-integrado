@@ -64,7 +64,7 @@ export function isAdminPerfil(perfilNome: string): boolean {
 
 /** Perfis padrão (SECURITY_MULTI_TENANCY.md) e os módulos que cada um acessa. */
 export const PERFIS_PADRAO: Array<{ nome: string; descricao: string; modulos: ModuloKey[] | "*" }> = [
-  { nome: "SUPER_ADMIN", descricao: "Acesso total à plataforma.", modulos: "*" },
+  { nome: "SUPER_ADMIN", descricao: "Acesso total ao sistema do cliente.", modulos: "*" },
   { nome: "COMPANY_ADMIN", descricao: "Administra a empresa (todos os módulos).", modulos: "*" },
   {
     nome: "SALES",

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { CaixaPageData, PreVendaResumo } from "@/lib/services/cashier";
 
@@ -21,6 +21,7 @@ const uid = () => Math.random().toString(36).slice(2, 9);
 
 export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
   const router = useRouter();
+  const lastAutoRefreshRef = useRef(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
@@ -32,9 +33,30 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
   const [pagamentos, setPagamentos] = useState<PagamentoLinha[]>([]);
   const [modelo, setModelo] = useState<"NFCE" | "NFE">("NFCE");
   const [query, setQuery] = useState("");
+  const [pedidoAbertoId, setPedidoAbertoId] = useState<string | null>(null);
   const [resultado, setResultado] = useState<{ pedidoNumero: string; troco: number; notaId: string | null; notaStatus: string | null; emitErro: string | null } | null>(null);
 
   const caixa = data.caixa;
+
+  useEffect(() => {
+    const refreshIfIdle = () => {
+      if (busy || sel || resultado || document.hidden) return;
+      const now = Date.now();
+      if (now - lastAutoRefreshRef.current < 8000) return;
+      lastAutoRefreshRef.current = now;
+      router.refresh();
+    };
+
+    const intervalId = window.setInterval(refreshIfIdle, 8000);
+    window.addEventListener("focus", refreshIfIdle);
+    document.addEventListener("visibilitychange", refreshIfIdle);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", refreshIfIdle);
+      document.removeEventListener("visibilitychange", refreshIfIdle);
+    };
+  }, [busy, router, resultado, sel]);
 
   const preVendasFiltradas = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -95,6 +117,7 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
       await post(`/api/erp/vendas/${p.id}/cancelar`, {});
       setInfo(`Pré-venda ${p.numero} cancelada e estoque liberado.`);
       if (sel?.id === p.id) setSel(null);
+      if (pedidoAbertoId === p.id) setPedidoAbertoId(null);
       router.refresh();
     } catch (e) { setError(e instanceof Error ? e.message : "Erro ao cancelar a pré-venda."); }
     finally { setBusy(false); }
@@ -102,6 +125,7 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
 
   function selecionar(p: PreVendaResumo) {
     setSel(p);
+    setPedidoAbertoId(p.id);
     setResultado(null);
     setError("");
     setModelo("NFCE");
@@ -191,18 +215,54 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
               <table className="erp-table">
                 <thead><tr><th>Pedido</th><th>Cliente</th><th className="num">Itens</th><th className="num">Total</th><th className="actions" /></tr></thead>
                 <tbody>
-                  {preVendasFiltradas.map((p) => (
-                    <tr key={p.id} className={sel?.id === p.id ? "row-active" : ""}>
+                  {preVendasFiltradas.map((p) => {
+                    const aberto = pedidoAbertoId === p.id;
+                    return (
+                    <Fragment key={p.id}>
+                    <tr className={sel?.id === p.id ? "row-active" : ""}>
                       <td><strong className="mono">{p.numero}</strong><span className="sublabel">{p.criadoEm}</span></td>
                       <td>{p.clienteNome ?? <span style={{ color: "var(--erp-mute)" }}>Consumidor não identificado</span>}{p.clienteDocumento && <span className="sublabel">{p.clienteDocumento}</span>}</td>
                       <td className="num">{p.qtdItens}</td>
                       <td className="num bold">{brl(p.total)}</td>
                       <td className="actions">
+                        <button type="button" className="btn-erp ghost xs" onClick={() => setPedidoAbertoId(aberto ? null : p.id)}>
+                          {aberto ? "Ocultar" : "Itens"}
+                        </button>
                         <button type="button" className="btn-erp primary xs" onClick={() => selecionar(p)}>Receber</button>
                         <button type="button" className="btn-erp danger xs" disabled={busy} onClick={() => cancelarPreVenda(p)}>Cancelar</button>
                       </td>
                     </tr>
-                  ))}
+                    {aberto && (
+                      <tr>
+                        <td colSpan={5} style={{ background: "var(--erp-soft)" }}>
+                          <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "8px 4px" }}>
+                            {p.itens.map((item) => (
+                              <div
+                                key={item.id}
+                                style={{
+                                  display: "grid",
+                                  gridTemplateColumns: "minmax(180px, 1fr) 70px 100px 100px",
+                                  gap: 10,
+                                  alignItems: "center",
+                                  fontSize: 13
+                                }}
+                              >
+                                <div>
+                                  <strong>{item.produtoNome}</strong>
+                                  <span className="sublabel">{item.produtoSku}</span>
+                                </div>
+                                <span style={{ textAlign: "right" }}>{item.quantidade} un</span>
+                                <span style={{ textAlign: "right" }}>{brl(item.precoUnitario)}</span>
+                                <strong style={{ textAlign: "right" }}>{brl(item.total)}</strong>
+                              </div>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
+                    );
+                  })}
                   {!preVendasFiltradas.length && (
                     <tr><td colSpan={5}><div className="empty-st"><h4>Nenhuma pré-venda</h4><p>As vendas enviadas do balcão aparecem aqui para pagamento.</p></div></td></tr>
                   )}
@@ -236,6 +296,17 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
               <div className="erp-card-head"><h3>Receber · {sel.numero}</h3></div>
               <div className="erp-card-body">
                 <div className="atend-total-row grand"><span>Total</span><strong>{brl(sel.total)}</strong></div>
+                <div style={{ borderBottom: "1px solid var(--erp-line)", marginBottom: 10, paddingBottom: 10 }}>
+                  {sel.itens.map((item) => (
+                    <div key={item.id} className="atend-total-row" style={{ alignItems: "flex-start", gap: 8 }}>
+                      <span>
+                        <strong>{item.quantidade}x</strong> {item.produtoNome}
+                        <span className="sublabel">{item.produtoSku} - {brl(item.precoUnitario)} un</span>
+                      </span>
+                      <b>{brl(item.total)}</b>
+                    </div>
+                  ))}
+                </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6, margin: "10px 0" }}>
                   {pagamentos.map((p) => (
                     <div key={p.uid} style={{ display: "flex", gap: 6, alignItems: "center" }}>

@@ -286,6 +286,7 @@ model Empresa {
   notasFiscais       NotaFiscal[]
   xmlImportacoes     XmlImportacao[]
   entradasFiscais    EntradaFiscal[]
+  distribuicoesNfe   DistribuicaoNfeDocumento[]
   regrasTributarias  RegraTributaria[]
   configuracoesIa    ConfiguracaoIa[]
   configuracaoFiscal ConfiguracaoFiscal?
@@ -362,6 +363,7 @@ model Usuario {
   email        String           @unique
   senhaHash    String
   status       StatusUsuario    @default(ATIVO)
+  plataformaAdmin Boolean        @default(false)
   vinculos     UsuarioVinculo[]
   auditorias   Auditoria[]
   sessoes      Sessao[]
@@ -374,8 +376,10 @@ model Sessao {
   id         String   @id @default(cuid())
   usuarioId  String
   usuario    Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
-  tenantId   String
-  empresaId  String
+  // Escopo (tenant/empresa) da sessão. Nulo para o dono da plataforma, que não
+  // pertence a nenhum cliente e acessa apenas o painel /admin.
+  tenantId   String?
+  empresaId  String?
   tokenHash  String   @unique
   expiraEm   DateTime
   userAgent  String?
@@ -1121,6 +1125,7 @@ model XmlImportacao {
   xmlOriginal       String?
   mensagemErro      String?
   entradasFiscais   EntradaFiscal[]
+  distribuicoesNfe  DistribuicaoNfeDocumento[]
   criadoEm          DateTime            @default(now())
   atualizadoEm      DateTime            @updatedAt
 
@@ -1159,12 +1164,53 @@ model EntradaFiscal {
   itens           EntradaFiscalItem[]
   parcelas        EntradaFiscalParcela[]
   contasPagar     ContaPagar[]
+  distribuicoesNfe DistribuicaoNfeDocumento[]
   criadoEm        DateTime            @default(now())
   atualizadoEm    DateTime            @updatedAt
 
   @@unique([tenantId, empresaId, chaveAcesso])
   @@index([tenantId, empresaId, status])
   @@index([tenantId, empresaId, fornecedorId])
+}
+
+model DistribuicaoNfeDocumento {
+  id                  String   @id @default(cuid())
+  tenantId            String
+  empresaId           String
+  empresa             Empresa  @relation(fields: [empresaId], references: [id])
+  acbrDocumentoId     String
+  acbrDistribuicaoId  String?
+  ambiente            AmbienteFiscal
+  nsu                 String?
+  schema              String?
+  tipoDocumento       String?
+  chaveAcesso         String?
+  resumo              Boolean?
+  tipoEvento          String?
+  numeroProtocolo     String?
+  tipoNfe             Int?
+  valorNfe            Decimal? @db.Decimal(14, 2)
+  dataEmissao         DateTime?
+  dataRecebimento     DateTime?
+  emitenteDocumento   String?
+  emitenteNome        String?
+  manifestacaoId      String?
+  manifestacaoStatus  String?
+  manifestacaoEvento  String?
+  manifestadoEm       DateTime?
+  entradaFiscalId     String?
+  entradaFiscal       EntradaFiscal? @relation(fields: [entradaFiscalId], references: [id])
+  xmlImportacaoId     String?
+  xmlImportacao       XmlImportacao? @relation(fields: [xmlImportacaoId], references: [id])
+  status              String   @default("LISTADO")
+  ultimoErro          String?
+  payload             Json?
+  criadoEm            DateTime @default(now())
+  atualizadoEm        DateTime @updatedAt
+
+  @@unique([tenantId, empresaId, acbrDocumentoId])
+  @@index([tenantId, empresaId, chaveAcesso])
+  @@index([tenantId, empresaId, status])
 }
 
 model EntradaFiscalParcela {
