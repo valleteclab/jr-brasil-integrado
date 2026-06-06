@@ -74,6 +74,8 @@ const groups: ErpNavGroup[] = [
     group: "Configurações",
     items: [
       { label: "Dados da empresa", href: "/erp/configuracoes/empresa", icon: "🏢" },
+      { label: "Contas financeiras", href: "/erp/configuracoes/contas-financeiras", icon: "🏦" },
+      { label: "Formas de pagamento", href: "/erp/configuracoes/formas-pagamento", icon: "💳" },
       { label: "Emissão fiscal", href: "/erp/configuracoes/fiscal", icon: "⚙" },
       { label: "IA do ERP", href: "/erp/configuracoes/ia", icon: "✦" },
       { label: "WhatsApp", href: "/erp/configuracoes/whatsapp", icon: "💬" }

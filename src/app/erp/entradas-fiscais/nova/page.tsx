@@ -2,6 +2,7 @@ import { FiscalEntryWizard } from "@/components/erp/FiscalEntryWizard";
 import { getFiscalEntryDraft } from "@/domains/products/application/fiscal-entry-use-cases";
 import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
 import { listProductPickerOptions } from "@/lib/services/products";
+import { listFormasPagamentoAtivas } from "@/domains/finance/application/payment-config-use-cases";
 
 export const dynamic = "force-dynamic";
 
@@ -12,14 +13,20 @@ type NewFiscalEntryPageProps = {
 };
 
 export default async function NewFiscalEntryPage({ searchParams }: NewFiscalEntryPageProps) {
-  // Carrega o seletor de produtos (enxuto) e o draft em paralelo — a tela só
-  // precisa de id/sku/nome para o matching, não do summary completo.
-  const [products, initialDraft] = await Promise.all([
+  const scope = await getDevelopmentTenantScope();
+  // Carrega o seletor de produtos (enxuto), as formas de pagamento cadastradas e o draft em
+  // paralelo — a tela só precisa de id/sku/nome dos produtos para o matching.
+  const [products, formasPagamento, initialDraft] = await Promise.all([
     listProductPickerOptions(),
-    searchParams?.id
-      ? getFiscalEntryDraft(await getDevelopmentTenantScope(), searchParams.id)
-      : Promise.resolve(null)
+    listFormasPagamentoAtivas(scope),
+    searchParams?.id ? getFiscalEntryDraft(scope, searchParams.id) : Promise.resolve(null)
   ]);
 
-  return <FiscalEntryWizard initialDraft={initialDraft} products={products} />;
+  return (
+    <FiscalEntryWizard
+      initialDraft={initialDraft}
+      products={products}
+      formasPagamento={formasPagamento.map((f) => ({ id: f.id, nome: f.nome }))}
+    />
+  );
 }

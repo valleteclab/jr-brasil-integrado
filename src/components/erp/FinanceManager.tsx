@@ -3,13 +3,39 @@
 import { useMemo, useState } from "react";
 import type { PayableSummary, ReceivableSummary, BankAccountSummary } from "@/lib/services/finance";
 
+type FormaPagamentoOption = { id: string; nome: string };
+
 type Props = {
   initialPayables: PayableSummary[];
   initialReceivables: ReceivableSummary[];
   bankAccounts: BankAccountSummary[];
+  formasPagamento?: FormaPagamentoOption[];
 };
 
 type Aba = "pagar" | "receber";
+
+// Lista fixa usada em contas a receber (recebimento) e como fallback quando não há cadastro.
+const FORMAS_FIXAS = [
+  { value: "DINHEIRO", label: "Dinheiro" },
+  { value: "PIX", label: "Pix" },
+  { value: "BOLETO", label: "Boleto" },
+  { value: "CARTAO_CREDITO", label: "Cartão de Crédito" },
+  { value: "CARTAO_DEBITO", label: "Cartão de Débito" },
+  { value: "TRANSFERENCIA", label: "Transferência" },
+  { value: "CHEQUE", label: "Cheque" }
+];
+
+/**
+ * Opções de forma de pagamento. Em CONTAS A PAGAR usa o cadastro da empresa (Configurações →
+ * Formas de pagamento), gravando o nome. Em contas a receber mantém a lista fixa — o cadastro é
+ * do lado de pagamentos, não de recebimentos.
+ */
+function PaymentMethodOptions({ tipo, formas }: { tipo: Aba; formas: FormaPagamentoOption[] }) {
+  if (tipo === "pagar" && formas.length) {
+    return <>{formas.map((f) => <option key={f.id} value={f.nome}>{f.nome}</option>)}</>;
+  }
+  return <>{FORMAS_FIXAS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</>;
+}
 
 // ─── Formulário de baixa ──────────────────────────────────────────────────────
 
@@ -19,11 +45,12 @@ type SettleFormProps = {
   descricao: string;
   saldoNumber: number;
   bankAccounts: BankAccountSummary[];
+  formasPagamento: FormaPagamentoOption[];
   onSuccess: (id: string, novoStatus: string) => void;
   onClose: () => void;
 };
 
-function SettleForm({ tipo, id, descricao, saldoNumber, bankAccounts, onSuccess, onClose }: SettleFormProps) {
+function SettleForm({ tipo, id, descricao, saldoNumber, bankAccounts, formasPagamento, onSuccess, onClose }: SettleFormProps) {
   const [valor, setValor] = useState(saldoNumber.toFixed(2));
   const [juros, setJuros] = useState("0.00");
   const [multa, setMulta] = useState("0.00");
@@ -142,13 +169,7 @@ function SettleForm({ tipo, id, descricao, saldoNumber, bankAccounts, onSuccess,
                 Forma de Pagamento
                 <select value={formaPagamento} onChange={(e) => setFormaPagamento(e.target.value)}>
                   <option value="">Selecione...</option>
-                  <option value="DINHEIRO">Dinheiro</option>
-                  <option value="PIX">Pix</option>
-                  <option value="BOLETO">Boleto</option>
-                  <option value="CARTAO_CREDITO">Cartão de Crédito</option>
-                  <option value="CARTAO_DEBITO">Cartão de Débito</option>
-                  <option value="TRANSFERENCIA">Transferência</option>
-                  <option value="CHEQUE">Cheque</option>
+                  <PaymentMethodOptions tipo={tipo} formas={formasPagamento} />
                 </select>
               </label>
               {bankAccounts.length > 0 && (
@@ -185,11 +206,12 @@ function SettleForm({ tipo, id, descricao, saldoNumber, bankAccounts, onSuccess,
 
 type NewAccountFormProps = {
   tipo: Aba;
+  formasPagamento: FormaPagamentoOption[];
   onSuccess: (item: PayableSummary | ReceivableSummary) => void;
   onClose: () => void;
 };
 
-function NewAccountForm({ tipo, onSuccess, onClose }: NewAccountFormProps) {
+function NewAccountForm({ tipo, formasPagamento, onSuccess, onClose }: NewAccountFormProps) {
   const [descricao, setDescricao] = useState("");
   const [valor, setValor] = useState("");
   const [vencimento, setVencimento] = useState(new Date().toISOString().substring(0, 10));
@@ -315,13 +337,7 @@ function NewAccountForm({ tipo, onSuccess, onClose }: NewAccountFormProps) {
                 Forma de Pagamento
                 <select value={formaPagamento} onChange={(e) => setFormaPagamento(e.target.value)}>
                   <option value="">Selecione...</option>
-                  <option value="DINHEIRO">Dinheiro</option>
-                  <option value="PIX">Pix</option>
-                  <option value="BOLETO">Boleto</option>
-                  <option value="CARTAO_CREDITO">Cartão de Crédito</option>
-                  <option value="CARTAO_DEBITO">Cartão de Débito</option>
-                  <option value="TRANSFERENCIA">Transferência</option>
-                  <option value="CHEQUE">Cheque</option>
+                  <PaymentMethodOptions tipo={tipo} formas={formasPagamento} />
                 </select>
               </label>
               <label className="full">
@@ -352,7 +368,7 @@ function NewAccountForm({ tipo, onSuccess, onClose }: NewAccountFormProps) {
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-export function FinanceManager({ initialPayables, initialReceivables, bankAccounts }: Props) {
+export function FinanceManager({ initialPayables, initialReceivables, bankAccounts, formasPagamento = [] }: Props) {
   const [aba, setAba] = useState<Aba>("pagar");
   const [payables, setPayables] = useState(initialPayables);
   const [receivables, setReceivables] = useState(initialReceivables);
@@ -539,6 +555,7 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
           descricao={settlingItem.descricao}
           saldoNumber={settlingItem.saldoNumber}
           bankAccounts={bankAccounts}
+          formasPagamento={formasPagamento}
           onSuccess={handleSettleSuccess}
           onClose={() => setSettlingId(null)}
         />
@@ -548,6 +565,7 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
       {showNewForm && (
         <NewAccountForm
           tipo={aba}
+          formasPagamento={formasPagamento}
           onSuccess={handleNewSuccess}
           onClose={() => setShowNewForm(false)}
         />

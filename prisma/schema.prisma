@@ -292,6 +292,7 @@ model Empresa {
   configuracaoFiscal ConfiguracaoFiscal?
   sequenciasFiscais  SequenciaFiscal[]
   contasBancarias    ContaBancaria[]
+  formasPagamento    FormaPagamento[]
   movimentosFinanceiros MovimentoFinanceiro[]
   inventarios        Inventario[]
   auditorias         Auditoria[]
@@ -1641,6 +1642,9 @@ model SequenciaFiscal {
   @@index([tenantId, empresaId])
 }
 
+// Conta financeira (carteira) de onde o dinheiro sai/entra: caixa, conta bancária ou cartão.
+// O campo `tipo` categoriza (CAIXA, CORRENTE, POUPANCA, CARTAO). Banco/agência/conta só se aplicam
+// a contas bancárias; cartões usam nome + tipo CARTAO.
 model ContaBancaria {
   id             String                @id @default(cuid())
   tenantId       String
@@ -1657,11 +1661,33 @@ model ContaBancaria {
   movimentos     MovimentoFinanceiro[]
   contasPagar    ContaPagar[]
   contasReceber  ContaReceber[]
+  formasPagamento FormaPagamento[]
   criadoEm       DateTime              @default(now())
   atualizadoEm   DateTime              @updatedAt
 
   @@unique([tenantId, empresaId, nome])
   @@index([tenantId, empresaId])
+}
+
+// Forma de pagamento cadastrável (como se paga): Dinheiro, Pix, Cartão de crédito/débito,
+// Boleto, Transferência, Cheque. Pode apontar para uma conta financeira (ContaBancaria) padrão,
+// usada para relatórios e, futuramente, para a liquidação financeira automática.
+model FormaPagamento {
+  id              String         @id @default(cuid())
+  tenantId        String
+  empresaId       String
+  empresa         Empresa        @relation(fields: [empresaId], references: [id])
+  nome            String
+  tipo            String         @default("OUTRO")
+  contaBancariaId String?
+  contaBancaria   ContaBancaria? @relation(fields: [contaBancariaId], references: [id])
+  ativo           Boolean        @default(true)
+  ordem           Int            @default(0)
+  criadoEm        DateTime       @default(now())
+  atualizadoEm    DateTime       @updatedAt
+
+  @@unique([tenantId, empresaId, nome])
+  @@index([tenantId, empresaId, ativo])
 }
 
 model MovimentoFinanceiro {

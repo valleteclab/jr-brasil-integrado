@@ -124,8 +124,11 @@ type Installment = {
   paymentMethod: string;
 };
 
+type FormaPagamentoOption = { id: string; nome: string };
+
 type FiscalEntryWizardProps = {
   products: ProductPickerOption[];
+  formasPagamento?: FormaPagamentoOption[];
   initialDraft?: FiscalDraft | null;
 };
 
@@ -167,7 +170,7 @@ function installmentsFromDraft(draft: FiscalDraft): Installment[] {
   }];
 }
 
-export function FiscalEntryWizard({ initialDraft = null, products }: FiscalEntryWizardProps) {
+export function FiscalEntryWizard({ initialDraft = null, products, formasPagamento = [] }: FiscalEntryWizardProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [step, setStep] = useState<WizardStep>(1);
   const [draft, setDraft] = useState<FiscalDraft | null>(initialDraft);
@@ -731,7 +734,18 @@ export function FiscalEntryWizard({ initialDraft = null, products }: FiscalEntry
                   <td>{installment.label}</td>
                   <td><input type="date" value={installment.dueDate} onChange={(event) => setInstallments((current) => current.map((row) => row.id === installment.id ? { ...row, dueDate: event.target.value } : row))} /></td>
                   <td className="num"><input value={installment.amount.toFixed(2)} onChange={(event) => setInstallments((current) => current.map((row) => row.id === installment.id ? { ...row, amount: Number(event.target.value.replace(",", ".")) || 0 } : row))} /></td>
-                  <td><select value={installment.paymentMethod} onChange={(event) => setInstallments((current) => current.map((row) => row.id === installment.id ? { ...row, paymentMethod: event.target.value } : row))}><option>Conforme XML</option><option>Boleto bancário</option><option>Pix</option><option>Cartão</option><option>Faturado</option><option>Informar</option></select></td>
+                  <td>
+                    <select value={installment.paymentMethod} onChange={(event) => setInstallments((current) => current.map((row) => row.id === installment.id ? { ...row, paymentMethod: event.target.value } : row))}>
+                      <option value="Conforme XML">Conforme XML</option>
+                      {formasPagamento.map((forma) => (
+                        <option key={forma.id} value={forma.nome}>{forma.nome}</option>
+                      ))}
+                      {/* Compatibilidade: mantém o valor atual mesmo que a forma não esteja cadastrada. */}
+                      {installment.paymentMethod && installment.paymentMethod !== "Conforme XML" && !formasPagamento.some((f) => f.nome === installment.paymentMethod) && (
+                        <option value={installment.paymentMethod}>{installment.paymentMethod}</option>
+                      )}
+                    </select>
+                  </td>
                 </tr>
               ))}
             </tbody>

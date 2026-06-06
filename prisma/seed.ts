@@ -174,6 +174,30 @@ async function main() {
     }
   });
 
+  // Conta caixa padrão (dinheiro em espécie).
+  await prisma.contaBancaria.upsert({
+    where: { tenantId_empresaId_nome: { tenantId: tenant.id, empresaId: empresa.id, nome: "Caixa" } },
+    update: {},
+    create: { tenantId: tenant.id, empresaId: empresa.id, nome: "Caixa", tipo: "CAIXA" }
+  });
+
+  // Formas de pagamento padrão (usadas no lançamento de notas, vendas e financeiro).
+  const formasPagamento = [
+    { nome: "Dinheiro", tipo: "DINHEIRO", ordem: 1 },
+    { nome: "Pix", tipo: "PIX", ordem: 2 },
+    { nome: "Boleto", tipo: "BOLETO", ordem: 3 },
+    { nome: "Cartão de crédito", tipo: "CARTAO_CREDITO", ordem: 4 },
+    { nome: "Cartão de débito", tipo: "CARTAO_DEBITO", ordem: 5 },
+    { nome: "Transferência", tipo: "TRANSFERENCIA", ordem: 6 }
+  ];
+  for (const forma of formasPagamento) {
+    await prisma.formaPagamento.upsert({
+      where: { tenantId_empresaId_nome: { tenantId: tenant.id, empresaId: empresa.id, nome: forma.nome } },
+      update: {},
+      create: { tenantId: tenant.id, empresaId: empresa.id, nome: forma.nome, tipo: forma.tipo, ordem: forma.ordem }
+    });
+  }
+
   const regrasTributarias = [
     { nome: "ICMS Simples - venda interna BA", tributo: "ICMS" as const, operacao: "VENDA" as const, ufDestino: "BA", csosn: "102", aliquota: 18 },
     { nome: "PIS - venda Simples", tributo: "PIS" as const, operacao: "VENDA" as const, cst: "49", aliquota: 0 },

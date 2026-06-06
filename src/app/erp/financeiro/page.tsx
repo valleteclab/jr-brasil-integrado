@@ -3,6 +3,8 @@ import { KpiCard } from "@/components/shared/KpiCard";
 import { FinanceManager } from "@/components/erp/FinanceManager";
 import { listPayables, listReceivables, listBankAccounts, getFinanceSummary } from "@/lib/services/finance";
 import type { PayableSummary, ReceivableSummary, BankAccountSummary, FinanceSummary } from "@/lib/services/finance";
+import { listFormasPagamentoAtivas } from "@/domains/finance/application/payment-config-use-cases";
+import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
 
 export const dynamic = "force-dynamic";
 
@@ -11,15 +13,23 @@ export default async function FinanceiroPage() {
   let receivables: ReceivableSummary[] = [];
   let bankAccounts: BankAccountSummary[] = [];
   let summary: FinanceSummary | null = null;
+  let formasPagamento: Array<{ id: string; nome: string }> = [];
   let loadError = "";
 
   try {
-    [payables, receivables, bankAccounts, summary] = await Promise.all([
+    const scope = await getDevelopmentTenantScope();
+    const [pay, rec, banks, sum, formas] = await Promise.all([
       listPayables(),
       listReceivables(),
       listBankAccounts(),
-      getFinanceSummary()
+      getFinanceSummary(),
+      listFormasPagamentoAtivas(scope)
     ]);
+    payables = pay;
+    receivables = rec;
+    bankAccounts = banks;
+    summary = sum;
+    formasPagamento = formas.map((f) => ({ id: f.id, nome: f.nome }));
   } catch (error) {
     loadError = error instanceof Error ? error.message : "Não foi possível carregar o módulo financeiro.";
   }
@@ -72,6 +82,7 @@ export default async function FinanceiroPage() {
           initialPayables={payables}
           initialReceivables={receivables}
           bankAccounts={bankAccounts}
+          formasPagamento={formasPagamento}
         />
       )}
     </>
