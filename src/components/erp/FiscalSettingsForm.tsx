@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/shared/Button";
 import type { FiscalConfigSummary } from "@/domains/fiscal/application/fiscal-config-use-cases";
 import { LC116_LIST } from "@/domains/fiscal/lc116";
+import { ajustarLogoFiscal } from "@/lib/images/logo-fiscal";
 
 const PROVIDERS = [
   { value: "MANUAL", label: "Interno / Homologação (funcional sem certificado)" },
@@ -38,6 +39,8 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
   const [certErr, setCertErr] = useState("");
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoBusy, setLogoBusy] = useState(false);
+  const [logoAjustando, setLogoAjustando] = useState(false);
+  const [logoInfo, setLogoInfo] = useState("");
   const [logoMsg, setLogoMsg] = useState("");
   const [logoErr, setLogoErr] = useState("");
   const [testBusy, setTestBusy] = useState(false);
@@ -84,14 +87,29 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
   const logoPreview = useMemo(() => (logoFile ? URL.createObjectURL(logoFile) : null), [logoFile]);
   useEffect(() => () => { if (logoPreview) URL.revokeObjectURL(logoPreview); }, [logoPreview]);
 
-  function selecionarLogo(file: File | null) {
+  async function selecionarLogo(file: File | null) {
     setLogoErr("");
     setLogoMsg("");
-    if (file) {
-      if (!["image/png", "image/jpeg"].includes(file.type)) { setLogoErr("Formato inválido. Envie PNG ou JPEG."); return; }
-      if (file.size > 200 * 1024) { setLogoErr("A logo deve ter no máximo 200 KB."); return; }
+    setLogoInfo("");
+    if (!file) {
+      setLogoFile(null);
+      return;
     }
-    setLogoFile(file);
+    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
+      setLogoErr("Formato inválido. Envie PNG, JPEG ou WebP.");
+      return;
+    }
+    // Ajuste automático: redimensiona, achata em fundo branco e comprime para o DANFE.
+    setLogoAjustando(true);
+    try {
+      const r = await ajustarLogoFiscal(file);
+      setLogoFile(r.file);
+      setLogoInfo(`Imagem ajustada automaticamente: ${r.largura}×${r.altura}px · ${(r.bytes / 1024).toFixed(0)} KB · ${r.tipo === "image/png" ? "PNG" : "JPEG"}`);
+    } catch (e) {
+      setLogoErr(e instanceof Error ? e.message : "Não foi possível ajustar a imagem.");
+    } finally {
+      setLogoAjustando(false);
+    }
   }
 
   async function enviarLogotipo() {
@@ -108,6 +126,7 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
       setLogoMsg(data.message || "Logo enviada com sucesso.");
       setConfig((c) => ({ ...c, logotipoInfo: logoFile.name }));
       setLogoFile(null);
+      setLogoInfo("");
     } catch (e) {
       setLogoErr(e instanceof Error ? e.message : "Não foi possível enviar a logo.");
     } finally {
@@ -461,15 +480,17 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
             </p>
             {logoErr && <div className="alert danger" style={{ marginBottom: 10 }}><span>{logoErr}</span></div>}
             {logoMsg && <div className="alert success" style={{ marginBottom: 10 }}><span>{logoMsg}</span></div>}
+            {logoInfo && <div className="alert info" style={{ marginBottom: 10 }}><span>{logoInfo}</span></div>}
             <div style={{ display: "flex", gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
               <div className="erp-form" style={{ gridTemplateColumns: "1fr", flex: 1, minWidth: 220 }}>
-                <label>Arquivo da logo (PNG/JPEG, até 200 KB)
-                  <input type="file" accept="image/png,image/jpeg" onChange={(e) => selecionarLogo(e.target.files?.[0] ?? null)} />
+                <label>Arquivo da logo (PNG, JPEG ou WebP)
+                  <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => selecionarLogo(e.target.files?.[0] ?? null)} disabled={logoAjustando} />
+                  <small className="block-muted">A imagem é ajustada automaticamente para o documento fiscal (redimensionada, fundo branco e comprimida abaixo de 200 KB).</small>
                 </label>
               </div>
               {logoPreview && (
                 <div style={{ textAlign: "center" }}>
-                  <div style={{ fontSize: 11, color: "var(--erp-mute)", marginBottom: 4 }}>Pré-visualização</div>
+                  <div style={{ fontSize: 11, color: "var(--erp-mute)", marginBottom: 4 }}>{logoAjustando ? "Ajustando…" : "Pré-visualização (já ajustada)"}</div>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={logoPreview} alt="Pré-visualização da logo" style={{ maxWidth: 160, maxHeight: 90, objectFit: "contain", border: "1px solid var(--erp-line)", borderRadius: 6, background: "#fff", padding: 4 }} />
                 </div>
@@ -482,8 +503,8 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
                 </button>
               )}
               <div className="grow" />
-              <button type="button" className="btn-erp primary sm" onClick={enviarLogotipo} disabled={logoBusy || !logoFile}>
-                {logoBusy ? "Enviando…" : "Enviar logo"}
+              <button type="button" className="btn-erp primary sm" onClick={enviarLogotipo} disabled={logoBusy || logoAjustando || !logoFile}>
+                {logoBusy ? "Enviando…" : logoAjustando ? "Ajustando…" : "Enviar logo"}
               </button>
             </div>
           </div>
