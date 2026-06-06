@@ -10,6 +10,7 @@ import type {
   ProviderContext,
   TestConnectionResult
 } from "./types";
+import { randomBytes } from "node:crypto";
 import { normalizeDocumento } from "@/lib/fiscal/documento";
 
 /**
@@ -867,15 +868,30 @@ export async function uploadAcbrLogotipo(
   const { baseUrl } = access.resolveConfig(ctx);
   const token = await access.getAccessToken(ctx);
 
-  const form = new FormData();
-  form.append("file", new Blob([new Uint8Array(buffer)], { type: mimeType }), filename);
+  // Monta o multipart manualmente com Content-Length explícito. O fetch/FormData nativos enviam
+  // o corpo em "chunked transfer-encoding", que o servidor .NET do ACBr rejeita (HTTP 400
+  // "EndOfInputReached" / "End of byte stream reader reached.").
+  const boundary = `----ERPLogo${randomBytes(12).toString("hex")}`;
+  const nomeArquivo = (filename || "logo").replace(/["\r\n]/g, "");
+  const head = Buffer.from(
+    `--${boundary}\r\n` +
+      `Content-Disposition: form-data; name="file"; filename="${nomeArquivo}"\r\n` +
+      `Content-Type: ${mimeType}\r\n\r\n`,
+    "utf8"
+  );
+  const tail = Buffer.from(`\r\n--${boundary}--\r\n`, "utf8");
+  const body = Buffer.concat([head, buffer, tail]);
 
   let res: Response;
   try {
     res = await fetch(`${baseUrl}/empresas/${documento}/logotipo`, {
       method: "PUT",
-      headers: { Authorization: `Bearer ${token}` },
-      body: form
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": `multipart/form-data; boundary=${boundary}`,
+        "Content-Length": String(body.length)
+      },
+      body: new Uint8Array(body)
     });
   } catch (err) {
     return { ok: false, message: `Falha ao enviar a logo à ACBr: ${err instanceof Error ? err.message : "erro de rede"}` };
