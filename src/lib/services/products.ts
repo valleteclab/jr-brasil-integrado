@@ -53,6 +53,8 @@ export type ErpProductSummary = {
   purchaseConversion?: string;
   storeTitle?: string;
   storeDescription?: string;
+  /** URL da imagem principal do produto (loja virtual). */
+  imageUrl?: string;
   /** Aplicação veicular (autopeças): em quais veículos a peça serve. */
   aplicacoes?: Array<{ marca: string; modelo: string; anoFaixa: string; observacoes: string }>;
 };
@@ -234,7 +236,8 @@ export async function listErpProductSummaries(): Promise<ErpProductSummary[]> {
             regraTributaria: true
           }
         },
-        aplicacoes: true
+        aplicacoes: true,
+        imagens: { orderBy: { ordem: "asc" }, take: 1 }
       },
       orderBy: [{ criadoEm: "asc" }, { nome: "asc" }]
     });
@@ -289,6 +292,7 @@ export async function listErpProductSummaries(): Promise<ErpProductSummary[]> {
         purchaseConversion: String(Number(product.fatorConversaoCompra)),
         storeTitle: product.nome,
         storeDescription: product.descricaoComercial ?? "",
+        imageUrl: product.imagens[0]?.url,
         aplicacoes: product.aplicacoes.map((a) => ({
           marca: a.marca ?? "",
           modelo: a.modelo ?? "",

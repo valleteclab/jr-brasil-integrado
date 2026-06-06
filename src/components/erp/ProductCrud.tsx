@@ -119,6 +119,7 @@ const emptyForm: ProductFormState = {
   availableStock: "0",
   minimumStock: "0",
   ecommerceVisible: true,
+  imageUrl: "",
   originalCode: "",
   barcode: "",
   unit: "UN",
@@ -300,6 +301,11 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, segmento }:
   const [form, setForm] = useState<ProductFormState>(emptyForm);
   const [error, setError] = useState("");
   const [importResult, setImportResult] = useState<XmlImportResult | null>(null);
+  const [cosmosBuscando, setCosmosBuscando] = useState(false);
+  const [cosmosMsg, setCosmosMsg] = useState("");
+  const [cosmosQuery, setCosmosQuery] = useState("");
+  const [cosmosBuscandoDesc, setCosmosBuscandoDesc] = useState(false);
+  const [cosmosResultados, setCosmosResultados] = useState<Array<{ gtin: string; descricao: string; ncm: string | null; cest: string | null; marca: string | null; thumbnail: string | null }>>([]);
   const [fiscalEntryDraft, setFiscalEntryDraft] = useState<FiscalEntryDraft | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<ProductTab>("geral");
@@ -383,6 +389,97 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, segmento }:
 
   function updateField<Key extends keyof ProductFormState>(key: Key, value: ProductFormState[Key]) {
     setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  // Busca o produto no Cosmos pelo código de barras e preenche os campos ainda vazios
+  // (descrição/marca) e os fiscais (NCM/CEST). Não sobrescreve o que o usuário já digitou.
+  async function buscarPorCodigoBarras() {
+    const gtin = form.barcode.replace(/\D/g, "");
+    setCosmosMsg("");
+    setError("");
+    if (gtin.length < 8) {
+      setError("Informe um código de barras (GTIN/EAN) válido para buscar.");
+      return;
+    }
+    setCosmosBuscando(true);
+    try {
+      const response = await fetch(`/api/erp/produtos/gtin/${gtin}`);
+      const data = await response.json() as { descricao?: string; ncm?: string | null; cest?: string | null; marca?: string | null; thumbnail?: string | null; error?: string };
+      if (!response.ok) throw new Error(data.error || "Não foi possível consultar o código de barras.");
+      setForm((current) => ({
+        ...current,
+        name: current.name.trim() || data.descricao || current.name,
+        brand: current.brand.trim() || data.marca || current.brand,
+        ncm: data.ncm || current.ncm,
+        cest: data.cest || current.cest,
+        imageUrl: data.thumbnail || current.imageUrl
+      }));
+      setCosmosMsg(`Encontrado: ${data.descricao || "produto"}${data.ncm ? ` · NCM ${data.ncm}` : ""}${data.thumbnail ? " · imagem incluída" : ""}. Revise antes de salvar.`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Não foi possível consultar o código de barras.");
+    } finally {
+      setCosmosBuscando(false);
+    }
+  }
+
+  // Busca no catálogo Cosmos por descrição (texto livre) e lista os resultados para escolher.
+  async function buscarNoCatalogo() {
+    const q = cosmosQuery.trim();
+    setCosmosMsg("");
+    setError("");
+    setCosmosResultados([]);
+    if (q.length < 3) {
+      setError("Informe ao menos 3 caracteres para buscar no catálogo.");
+      return;
+    }
+    setCosmosBuscandoDesc(true);
+    try {
+      const response = await fetch(`/api/erp/produtos/buscar-catalogo?q=${encodeURIComponent(q)}`);
+      const data = await response.json() as { produtos?: Array<{ gtin: string; descricao: string; ncm: string | null; cest: string | null; marca: string | null; thumbnail: string | null }>; error?: string };
+      if (!response.ok) throw new Error(data.error || "Não foi possível buscar no catálogo.");
+      setCosmosResultados(data.produtos ?? []);
+      if (!data.produtos?.length) setCosmosMsg("Nenhum produto encontrado no catálogo para esse termo.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Não foi possível buscar no catálogo.");
+    } finally {
+      setCosmosBuscandoDesc(false);
+    }
+  }
+
+  // Aplica um produto escolhido na lista de resultados ao formulário (o usuário selecionou).
+  // A listagem por descrição pode vir resumida; se houver GTIN, completa os dados fiscais
+  // (NCM/CEST) pela consulta detalhada por código de barras.
+  async function aplicarResultadoCatalogo(p: { gtin: string; descricao: string; ncm: string | null; cest: string | null; marca: string | null; thumbnail: string | null }) {
+    setForm((current) => ({
+      ...current,
+      barcode: p.gtin || current.barcode,
+      name: p.descricao || current.name,
+      brand: p.marca || current.brand,
+      ncm: p.ncm || current.ncm,
+      cest: p.cest || current.cest,
+      imageUrl: p.thumbnail || current.imageUrl
+    }));
+    setCosmosResultados([]);
+    setCosmosQuery("");
+    setCosmosMsg(`Aplicado: ${p.descricao}${p.thumbnail ? " (com imagem)" : ""}. Revise antes de salvar.`);
+
+    if (p.gtin && (!p.cest || !p.ncm || !p.thumbnail)) {
+      try {
+        const response = await fetch(`/api/erp/produtos/gtin/${p.gtin}`);
+        const data = await response.json() as { ncm?: string | null; cest?: string | null; marca?: string | null; thumbnail?: string | null };
+        if (response.ok) {
+          setForm((current) => ({
+            ...current,
+            ncm: data.ncm || current.ncm,
+            cest: data.cest || current.cest,
+            brand: current.brand || data.marca || current.brand,
+            imageUrl: current.imageUrl || data.thumbnail || ""
+          }));
+        }
+      } catch {
+        // Mantém o que veio da listagem se a consulta detalhada falhar.
+      }
+    }
   }
 
   // Aplicação veicular (autopeças): lista editável de "que veículo a peça serve".
@@ -595,6 +692,44 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, segmento }:
     if (activeTab === "geral") {
       return (
         <div className="erp-form">
+          <label className="full cosmos-search">
+            Buscar no catálogo Cosmos (por descrição ou código de barras)
+            <div style={{ display: "flex", gap: 6 }}>
+              <input
+                value={cosmosQuery}
+                onChange={(event) => setCosmosQuery(event.target.value)}
+                onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); buscarNoCatalogo(); } }}
+                placeholder="Ex: cimento cp2 50kg, tinta acrílica branca…"
+                style={{ flex: 1 }}
+              />
+              <button type="button" className="btn-erp ghost sm" onClick={buscarNoCatalogo} disabled={cosmosBuscandoDesc}>
+                {cosmosBuscandoDesc ? "..." : "🔎 Buscar"}
+              </button>
+            </div>
+            {cosmosResultados.length > 0 && (
+              <ul className="cosmos-results">
+                {cosmosResultados.map((p, idx) => (
+                  <li key={`${p.gtin}-${idx}`}>
+                    <button type="button" onClick={() => aplicarResultadoCatalogo(p)}>
+                      <strong>{p.descricao}</strong>
+                      <span>{[p.marca, p.ncm ? `NCM ${p.ncm}` : null, p.gtin].filter(Boolean).join(" · ")}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </label>
+          {form.imageUrl && (
+            <label className="full">
+              Imagem da loja (catálogo)
+              <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={form.imageUrl} alt={form.name} style={{ width: 60, height: 60, objectFit: "contain", border: "1px solid var(--erp-line)", borderRadius: 8, background: "#fff", flexShrink: 0 }} />
+                <input value={form.imageUrl} onChange={(event) => updateField("imageUrl", event.target.value)} style={{ flex: 1 }} />
+                <button type="button" className="btn-erp ghost xs" onClick={() => updateField("imageUrl", "")}>Remover</button>
+              </div>
+            </label>
+          )}
           <label>
             SKU interno
             <input value={form.sku} onChange={(event) => updateField("sku", event.target.value)} />
@@ -605,7 +740,12 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, segmento }:
           </label>
           <label>
             GTIN / EAN
-            <input value={form.barcode} onChange={(event) => updateField("barcode", event.target.value)} />
+            <div style={{ display: "flex", gap: 6 }}>
+              <input value={form.barcode} onChange={(event) => updateField("barcode", event.target.value)} style={{ flex: 1 }} />
+              <button type="button" className="btn-erp ghost sm" onClick={buscarPorCodigoBarras} disabled={cosmosBuscando} title="Buscar dados pelo código de barras (Cosmos)">
+                {cosmosBuscando ? "..." : "🔎 Buscar"}
+              </button>
+            </div>
           </label>
           <label className="full">
             Nome do produto
@@ -1180,6 +1320,7 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, segmento }:
             </nav>
             <div className="drawer-body">
               {renderTab()}
+              {cosmosMsg && <div className="alert info" style={{ margin: "8px 0 0" }}><strong>Cosmos</strong><span>{cosmosMsg}</span></div>}
               {error && <p className="form-error drawer-error">{error}</p>}
             </div>
             <footer className="drawer-foot">

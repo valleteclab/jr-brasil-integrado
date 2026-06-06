@@ -2342,6 +2342,33 @@ label.checkbox input {
 .produto-aplicacoes .erp-table td { padding: 6px; }
 .produto-aplicacoes .erp-table input { width: 100%; border: 1px solid var(--erp-line); border-radius: 6px; height: 34px; padding: 0 8px; font: inherit; }
 
+/* Cadastro de produto: resultados da busca no catálogo Cosmos */
+.cosmos-search .cosmos-results {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  border: 1px solid var(--erp-line);
+  border-radius: var(--erp-radius);
+  max-height: 260px;
+  overflow-y: auto;
+}
+.cosmos-search .cosmos-results li + li { border-top: 1px solid var(--erp-line); }
+.cosmos-search .cosmos-results button {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  padding: 8px 12px;
+  cursor: pointer;
+  font: inherit;
+}
+.cosmos-search .cosmos-results button:hover { background: var(--erp-side-active); }
+.cosmos-search .cosmos-results strong { font-size: 13px; color: var(--erp-ink); }
+.cosmos-search .cosmos-results span { font-size: 11.5px; color: var(--erp-mute); }
+
 /* Notas de entrada: aplicar finalidade a todos os itens de uma vez */
 .fiscal-bulk-finalidade {
   display: inline-flex;

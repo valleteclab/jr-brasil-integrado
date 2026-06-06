@@ -248,6 +248,28 @@ async function replaceProductAplicacoes(
   }
 }
 
+// Garante a imagem principal do produto (ex.: vinda do catálogo Cosmos) sem duplicar nem apagar
+// as imagens já existentes da galeria. Se a URL já está cadastrada, não faz nada.
+async function ensureProductImagem(
+  tx: Prisma.TransactionClient,
+  scope: TenantScope,
+  productId: string,
+  imageUrl?: string
+) {
+  const url = imageUrl?.trim();
+  if (!url) return;
+  const existe = await tx.produtoImagem.findFirst({
+    where: { tenantId: scope.tenantId, empresaId: scope.empresaId, produtoId: productId, url }
+  });
+  if (existe) return;
+  const total = await tx.produtoImagem.count({
+    where: { tenantId: scope.tenantId, empresaId: scope.empresaId, produtoId: productId }
+  });
+  await tx.produtoImagem.create({
+    data: { tenantId: scope.tenantId, empresaId: scope.empresaId, produtoId: productId, url, ordem: total }
+  });
+}
+
 export async function createProduct(scope: TenantScope, payload: ProductPayload) {
   const input = validateProductPayload(payload);
 
@@ -278,6 +300,7 @@ export async function createProduct(scope: TenantScope, payload: ProductPayload)
     await upsertProductFiscal(tx, scope, product.id, input);
     await upsertInitialStock(tx, scope, product.id, deposito.id, input);
     await replaceProductAplicacoes(tx, scope, product.id, input.aplicacoes);
+    await ensureProductImagem(tx, scope, product.id, input.imageUrl);
     await createAuditLog(tx, {
       scope,
       entidade: "Produto",
@@ -326,6 +349,7 @@ export async function updateProduct(scope: TenantScope, productId: string, paylo
     await upsertProductFiscal(tx, scope, product.id, input);
     await upsertInitialStock(tx, scope, product.id, deposito.id, input);
     await replaceProductAplicacoes(tx, scope, product.id, input.aplicacoes);
+    await ensureProductImagem(tx, scope, product.id, input.imageUrl);
     await createAuditLog(tx, {
       scope,
       entidade: "Produto",

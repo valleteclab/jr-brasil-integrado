@@ -250,6 +250,7 @@ model Tenant {
   perfis          Perfil[]
   auditorias      Auditoria[]
   configuracoesIa ConfiguracaoIa[]
+  configuracoesIntegracao ConfiguracaoIntegracao[]
   conversasAgente ConversaAgente[]
   chavesApiAgente ChaveApiAgente[]
   telefonesAgente AgenteTelefone[]
@@ -289,6 +290,7 @@ model Empresa {
   distribuicoesNfe   DistribuicaoNfeDocumento[]
   regrasTributarias  RegraTributaria[]
   configuracoesIa    ConfiguracaoIa[]
+  configuracoesIntegracao ConfiguracaoIntegracao[]
   configuracaoFiscal ConfiguracaoFiscal?
   sequenciasFiscais  SequenciaFiscal[]
   contasBancarias    ContaBancaria[]
@@ -353,6 +355,28 @@ model ConfiguracaoIa {
   ultimoErro         String?
   criadoEm           DateTime   @default(now())
   atualizadoEm       DateTime   @updatedAt
+
+  @@unique([tenantId, empresaId, provedor])
+  @@index([tenantId, empresaId])
+}
+
+// Credenciais de integrações externas por empresa (ex.: catálogo Cosmos/Bluesoft). A chave de
+// acesso é guardada criptografada (mesmo padrão da ConfiguracaoIa). Genérica para novos provedores.
+model ConfiguracaoIntegracao {
+  id                 String   @id @default(cuid())
+  tenantId           String
+  empresaId          String
+  tenant             Tenant   @relation(fields: [tenantId], references: [id])
+  empresa            Empresa  @relation(fields: [empresaId], references: [id])
+  provedor           String
+  ativo              Boolean  @default(false)
+  chaveCriptografada String
+  chaveFinal         String?
+  observacoes        String?
+  testadoEm          DateTime?
+  ultimoErro         String?
+  criadoEm           DateTime @default(now())
+  atualizadoEm       DateTime @updatedAt
 
   @@unique([tenantId, empresaId, provedor])
   @@index([tenantId, empresaId])

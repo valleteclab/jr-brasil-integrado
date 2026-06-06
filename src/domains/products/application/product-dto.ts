@@ -32,6 +32,8 @@ export type ValidatedProductInput = {
   allowNegativeStock: boolean;
   allowBackorder: boolean;
   ecommerceVisible: boolean;
+  /** URL da imagem principal do produto (ex.: catálogo Cosmos) para a loja virtual. */
+  imageUrl?: string;
   /** Aplicação veicular (autopeças): em quais veículos a peça serve. */
   aplicacoes: Array<{ marca: string | null; modelo: string | null; anoFaixa: string | null; observacoes: string | null }>;
 };
@@ -156,6 +158,7 @@ export function validateProductPayload(payload: ProductPayload): ValidatedProduc
     allowNegativeStock: bool(payload, "allowNegativeStock"),
     allowBackorder: bool(payload, "allowBackorder"),
     ecommerceVisible: bool(payload, "ecommerceVisible", true),
+    imageUrl: text(payload, "imageUrl").trim() || undefined,
     aplicacoes: parseAplicacoes(payload.aplicacoes)
   };
 }
