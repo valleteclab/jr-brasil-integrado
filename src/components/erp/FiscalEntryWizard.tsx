@@ -176,6 +176,10 @@ export function FiscalEntryWizard({ initialDraft = null, products }: FiscalEntry
   const [loading, setLoading] = useState(false);
   const [suggesting, setSuggesting] = useState(false);
   const [suggestingFinalidade, setSuggestingFinalidade] = useState(false);
+  const [finalidadeEmMassa, setFinalidadeEmMassa] = useState<FinalidadeEntrada>("REVENDA");
+  // Há alterações de vínculo/finalidade ainda não gravadas? Evita re-salvar os 50 itens toda vez
+  // que o usuário volta e avança sem mudar nada. Começa true: a primeira passagem sempre grava.
+  const [itemsDirty, setItemsDirty] = useState(true);
   const [installments, setInstallments] = useState<Installment[]>(initialDraft ? installmentsFromDraft(initialDraft) : []);
 
   const productsById = useMemo(() => new Map(products.map((product) => [product.id, product])), [products]);
@@ -223,6 +227,7 @@ export function FiscalEntryWizard({ initialDraft = null, products }: FiscalEntry
   }
 
   function updateItem(itemId: string, changes: Partial<FiscalDraftItem>) {
+    setItemsDirty(true);
     setDraft((current) => {
       if (!current) {
         return current;
@@ -233,6 +238,32 @@ export function FiscalEntryWizard({ initialDraft = null, products }: FiscalEntry
         items: current.items.map((item) => item.id === itemId ? { ...item, ...changes } : item)
       };
     });
+  }
+
+  // Aplica uma finalidade a TODOS os itens de uma vez (notas homogêneas — ex.: tudo uso e consumo).
+  // Espelha a edição por item: recalcula o CFOP de entrada e se movimenta estoque. Continua sendo
+  // possível ajustar item a item depois, e nada é gravado até confirmar o lançamento.
+  function applyFinalidadeToAll(finalidade: FinalidadeEntrada) {
+    setItemsDirty(true);
+    setDraft((current) => {
+      if (!current) {
+        return current;
+      }
+
+      return {
+        ...current,
+        items: current.items.map((item) => ({
+          ...item,
+          finalidade,
+          finalidadeOrigem: "MANUAL",
+          cfopEntradaDerivado: recalcCfopEntrada(finalidade, item.cfopEntradaDerivado),
+          movimentaEstoque: finalidade === "REVENDA" || finalidade === "INDUSTRIALIZACAO"
+        }))
+      };
+    });
+    const label = FINALIDADE_OPCOES.find((o) => o.value === finalidade)?.label ?? finalidade;
+    setError("");
+    setMessage(`Finalidade "${label}" aplicada a todos os itens. Revise antes de prosseguir.`);
   }
 
   async function persistLinks() {
@@ -276,6 +307,7 @@ export function FiscalEntryWizard({ initialDraft = null, products }: FiscalEntry
         throw new Error(data.error || "Não foi possível salvar o vínculo dos itens.");
       }
 
+      setItemsDirty(false);
       setStep(3);
     } catch (linkError) {
       setError(linkError instanceof Error ? linkError.message : "Não foi possível salvar o vínculo dos itens.");
@@ -305,6 +337,7 @@ export function FiscalEntryWizard({ initialDraft = null, products }: FiscalEntry
       }
 
       const suggestions = data.suggestions ?? [];
+      setItemsDirty(true);
       setDraft((current) => {
         if (!current) {
           return current;
@@ -358,6 +391,7 @@ export function FiscalEntryWizard({ initialDraft = null, products }: FiscalEntry
       }
 
       const suggestions = data.suggestions ?? [];
+      setItemsDirty(true);
       setDraft((current) => {
         if (!current) {
           return current;
@@ -439,8 +473,25 @@ export function FiscalEntryWizard({ initialDraft = null, products }: FiscalEntry
     }
   }
 
+  const busyMessage = step === 1
+    ? "Importando e lendo o XML da NF-e…"
+    : step === 2
+      ? "Salvando vínculos e classificação dos itens…"
+      : step === 4
+        ? "Lançando a nota e atualizando o estoque…"
+        : "Processando…";
+
   return (
-    <section className="fiscal-wizard">
+    <section className="fiscal-wizard" aria-busy={loading}>
+      {loading && (
+        <div className="fiscal-busy" role="alertdialog" aria-live="assertive" aria-label="Processando">
+          <div className="fiscal-busy-card">
+            <div className="fiscal-spinner" aria-hidden="true" />
+            <strong>{busyMessage}</strong>
+            <small>Pode levar alguns segundos em notas com muitos itens. Não feche esta janela.</small>
+          </div>
+        </div>
+      )}
       <header className="fiscal-wizard-head">
         <div>
           <span className="section-kicker">Nova entrada - NF-e</span>
@@ -497,6 +548,21 @@ export function FiscalEntryWizard({ initialDraft = null, products }: FiscalEntry
               <p>Para cada item, vincule a um produto cadastrado ou deixe marcado para criar um novo SKU no lançamento.</p>
             </div>
             <div className="fiscal-step-actions">
+              <div className="fiscal-bulk-finalidade" title="Define a mesma finalidade para todos os itens da nota">
+                <span>Finalidade de todos:</span>
+                <select
+                  aria-label="Finalidade para todos os itens"
+                  value={finalidadeEmMassa}
+                  onChange={(event) => setFinalidadeEmMassa(event.target.value as FinalidadeEntrada)}
+                >
+                  {FINALIDADE_OPCOES.map((opcao) => (
+                    <option key={opcao.value} value={opcao.value}>{opcao.label}</option>
+                  ))}
+                </select>
+                <Button type="button" variant="light" onClick={() => applyFinalidadeToAll(finalidadeEmMassa)}>
+                  Aplicar a todos
+                </Button>
+              </div>
               <Button type="button" variant="light" onClick={suggestFinalidades} disabled={suggestingFinalidade}>
                 {suggestingFinalidade ? "Consultando IA..." : "Sugerir finalidades com IA"}
               </Button>
@@ -710,7 +776,7 @@ export function FiscalEntryWizard({ initialDraft = null, products }: FiscalEntry
           <Button href="/erp/entradas-fiscais" variant="light">Cancelar</Button>
           {step > 1 && <Button type="button" variant="light" onClick={() => setStep((current) => Math.max(1, current - 1) as WizardStep)}>Voltar</Button>}
           {step === 1 && <Button type="button" disabled={!draft} onClick={() => setStep(2)}>Avançar</Button>}
-          {step === 2 && <Button type="button" onClick={persistLinks} disabled={loading}>{loading ? "Salvando vínculos..." : "Avançar"}</Button>}
+          {step === 2 && <Button type="button" onClick={() => itemsDirty ? persistLinks() : setStep(3)} disabled={loading}>{loading ? "Salvando vínculos..." : itemsDirty ? "Salvar e avançar" : "Avançar"}</Button>}
           {step === 3 && <Button type="button" onClick={() => setStep(4)}>Avançar</Button>}
           {step === 4 && <Button type="button" onClick={confirmEntry} disabled={loading}>{loading ? "Confirmando..." : "Confirmar lançamento"}</Button>}
         </div>
