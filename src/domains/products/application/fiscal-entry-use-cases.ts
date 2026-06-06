@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { FinalidadeEntrada, Prisma, TipoTributo } from "@prisma/client";
+import type { FinalidadeEntrada, Prisma, RegimeTributario, TipoTributo } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import { createAuditLog } from "@/lib/audit/audit-service";
@@ -1352,6 +1352,24 @@ type FiscalEntryItemLinkInput = {
   cfopEntrada?: string | null;
 };
 
+type LoadedEntryItem = Prisma.EntradaFiscalItemGetPayload<{ include: { entradaFiscal: true; impostos: true } }>;
+
+/**
+ * Cache reutilizado ao gravar vínculos de VÁRIOS itens da mesma nota numa única transação:
+ * a empresa (regime/UF) é uma só, as UFs de fornecedor se repetem, e os itens são pré-carregados
+ * de uma vez. Evita N consultas idênticas dentro da transação — principal causa de lentidão/timeout
+ * em notas com muitos itens.
+ *
+ * `impostoColeta` acumula os IDs dos impostos a marcar recuperável/não-recuperável; o chamador em
+ * lote aplica tudo em apenas 2 updateMany no fim (em vez de 1 por imposto por item).
+ */
+type LinkBatchContext = {
+  empresa?: { regimeTributario: RegimeTributario; enderecoUf: string | null } | null;
+  fornecedorUfCache?: Map<string, string | null>;
+  itemCache?: Map<string, LoadedEntryItem>;
+  impostoColeta?: { recuperaveis: string[]; naoRecuperaveis: string[] };
+};
+
 /**
  * Aplica uma finalidade escolhida manualmente a um item: recalcula o CFOP de entrada e a flag
  * de estoque, e reavalia o crédito recuperável de cada imposto conforme o regime da empresa.
@@ -1362,23 +1380,31 @@ type FiscalEntryItemLinkInput = {
 async function applyFinalidadeManual(
   tx: Prisma.TransactionClient,
   scope: TenantScope,
-  item: { id: string; cfopEntradaDerivado: string | null; fornecedorId: string | null; impostos: Array<{ tributo: TipoTributo; cst: string | null; csosn: string | null }> },
+  item: { id: string; cfopEntradaDerivado: string | null; fornecedorId: string | null; impostos: Array<{ id: string; tributo: TipoTributo; cst: string | null; csosn: string | null }> },
   finalidade: FinalidadeEntrada,
-  cfopOverride?: string | null
+  cfopOverride?: string | null,
+  ctx?: LinkBatchContext
 ) {
-  const empresa = await tx.empresa.findUnique({
-    where: { id: scope.empresaId },
-    select: { regimeTributario: true, enderecoUf: true }
-  });
+  // Empresa (regime/UF) e UF do fornecedor são iguais para todos os itens de uma mesma nota.
+  // Em lote, vêm do cache (ctx) para não refazer N queries idênticas dentro da transação.
+  const empresa = ctx?.empresa !== undefined
+    ? ctx.empresa
+    : await tx.empresa.findUnique({ where: { id: scope.empresaId }, select: { regimeTributario: true, enderecoUf: true } });
   const regime = empresa?.regimeTributario ?? "SIMPLES_NACIONAL";
   const empresaUf = empresa?.enderecoUf?.trim().toUpperCase() || null;
 
   // Eixo interno x interestadual pela UF do fornecedor vs empresa (robusto). Só cai no primeiro
   // dígito do CFOP anterior se as UFs não estiverem disponíveis.
-  const fornecedor = item.fornecedorId
-    ? await tx.fornecedor.findUnique({ where: { id: item.fornecedorId }, select: { uf: true } })
-    : null;
-  const fornecedorUf = fornecedor?.uf?.trim().toUpperCase() || null;
+  let fornecedorUf: string | null = null;
+  if (item.fornecedorId) {
+    if (ctx?.fornecedorUfCache?.has(item.fornecedorId)) {
+      fornecedorUf = ctx.fornecedorUfCache.get(item.fornecedorId) ?? null;
+    } else {
+      const fornecedor = await tx.fornecedor.findUnique({ where: { id: item.fornecedorId }, select: { uf: true } });
+      fornecedorUf = fornecedor?.uf?.trim().toUpperCase() || null;
+      ctx?.fornecedorUfCache?.set(item.fornecedorId, fornecedorUf);
+    }
+  }
   const interestadual = empresaUf && fornecedorUf
     ? fornecedorUf !== empresaUf
     : (item.cfopEntradaDerivado ?? "").startsWith("2");
@@ -1395,10 +1421,16 @@ async function applyFinalidadeManual(
   });
 
   for (const imp of item.impostos) {
-    await tx.entradaFiscalItemImposto.updateMany({
-      where: { tenantId: scope.tenantId, empresaId: scope.empresaId, entradaFiscalItemId: item.id, tributo: imp.tributo },
-      data: { recuperavel: creditoPorFinalidade(finalidade, regime, imp.tributo, { st }).recuperavel }
-    });
+    const recuperavel = creditoPorFinalidade(finalidade, regime, imp.tributo, { st }).recuperavel;
+    if (ctx?.impostoColeta) {
+      // Em lote: só acumula os IDs; o chamador grava tudo em 2 updateMany no fim.
+      (recuperavel ? ctx.impostoColeta.recuperaveis : ctx.impostoColeta.naoRecuperaveis).push(imp.id);
+    } else {
+      await tx.entradaFiscalItemImposto.updateMany({
+        where: { tenantId: scope.tenantId, empresaId: scope.empresaId, entradaFiscalItemId: item.id, tributo: imp.tributo },
+        data: { recuperavel }
+      });
+    }
   }
 }
 
@@ -1406,9 +1438,10 @@ async function updateFiscalEntryItemLinkInTransaction(
   tx: Prisma.TransactionClient,
   scope: TenantScope,
   itemId: string,
-  input: FiscalEntryItemLinkInput
+  input: FiscalEntryItemLinkInput,
+  ctx?: LinkBatchContext
 ) {
-    const item = await tx.entradaFiscalItem.findFirst({
+    const item = ctx?.itemCache?.get(itemId) ?? await tx.entradaFiscalItem.findFirst({
       where: {
         tenantId: scope.tenantId,
         empresaId: scope.empresaId,
@@ -1431,7 +1464,7 @@ async function updateFiscalEntryItemLinkInTransaction(
     // Finalidade escolhida pelo usuário (quando enviada) recalcula CFOP/estoque/crédito.
     // Um CFOP informado manualmente sobrepõe o automático (casos especiais).
     if (input.finalidade) {
-      await applyFinalidadeManual(tx, scope, { ...item, fornecedorId: item.entradaFiscal.fornecedorId }, input.finalidade, input.cfopEntrada);
+      await applyFinalidadeManual(tx, scope, { ...item, fornecedorId: item.entradaFiscal.fornecedorId }, input.finalidade, input.cfopEntrada, ctx);
 
       // Uso/consumo e imobilizado não viram SKU nem exigem preço: lançam apenas a obrigação
       // financeira. Se o usuário apontou um produto existente, mantém o vínculo (para histórico);
@@ -1545,14 +1578,49 @@ export async function updateFiscalEntryItemLinks(
   links: Array<FiscalEntryItemLinkInput & { itemId: string }>
 ) {
   return prisma.$transaction(async (tx) => {
-    const updated = [];
+    // Empresa (regime/UF) é uma só para toda a nota; UFs de fornecedor se repetem. Carrega uma
+    // vez e reaproveita por item (evita N consultas idênticas dentro da transação).
+    const empresa = await tx.empresa.findUnique({
+      where: { id: scope.empresaId },
+      select: { regimeTributario: true, enderecoUf: true }
+    });
 
+    // Pré-carrega TODOS os itens de uma vez (1 consulta em vez de N findFirst).
+    const itens = await tx.entradaFiscalItem.findMany({
+      where: { tenantId: scope.tenantId, empresaId: scope.empresaId, id: { in: links.map((l) => l.itemId) } },
+      include: { entradaFiscal: true, impostos: true }
+    });
+    const itemCache = new Map(itens.map((item) => [item.id, item]));
+
+    const ctx: LinkBatchContext = {
+      empresa,
+      fornecedorUfCache: new Map(),
+      itemCache,
+      impostoColeta: { recuperaveis: [], naoRecuperaveis: [] }
+    };
+
+    const updated = [];
     for (const link of links) {
-      updated.push(await updateFiscalEntryItemLinkInTransaction(tx, scope, link.itemId, link));
+      updated.push(await updateFiscalEntryItemLinkInTransaction(tx, scope, link.itemId, link, ctx));
+    }
+
+    // Aplica o crédito recuperável de TODOS os impostos em apenas 2 consultas (em vez de 1 por
+    // imposto por item: 150 → 2 numa nota de 50 itens).
+    if (ctx.impostoColeta!.recuperaveis.length) {
+      await tx.entradaFiscalItemImposto.updateMany({
+        where: { id: { in: ctx.impostoColeta!.recuperaveis } },
+        data: { recuperavel: true }
+      });
+    }
+    if (ctx.impostoColeta!.naoRecuperaveis.length) {
+      await tx.entradaFiscalItemImposto.updateMany({
+        where: { id: { in: ctx.impostoColeta!.naoRecuperaveis } },
+        data: { recuperavel: false }
+      });
     }
 
     return { updated: updated.length };
-  }, FISCAL_TRANSACTION_OPTIONS);
+  }, FISCAL_BATCH_TRANSACTION_OPTIONS);
 }
 
 function extractJsonArray(content: string) {
