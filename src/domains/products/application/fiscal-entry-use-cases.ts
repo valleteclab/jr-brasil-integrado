@@ -248,21 +248,23 @@ async function upsertProductFiscalFromEntryItem(
   tx: Prisma.TransactionClient,
   scope: TenantScope,
   produtoId: string,
-  item: { ncm: string | null; cest: string | null; finalidade?: FinalidadeEntrada | null }
+  item: { ncm: string | null; cest: string | null; finalidade?: FinalidadeEntrada | null; st?: boolean }
 ) {
   if (!item.ncm) {
     return;
   }
 
-  // Memoriza a finalidade no perfil fiscal do produto para que próximas entradas do mesmo
-  // item herdem a classificação automaticamente (camada de maior confiança na resolução).
+  // Memoriza a finalidade e a marca de ST no perfil fiscal do produto para que próximas entradas
+  // — e a emissão de venda — herdem a classificação automaticamente (camada de maior confiança).
+  // ST só é marcada (nunca desmarcada aqui): basta uma entrada substituída para o item ser ST.
   await tx.produtoFiscal.upsert({
     where: { produtoId },
     update: {
       ncm: item.ncm,
       cest: item.cest || null,
       regraTributariaId: undefined,
-      ...(item.finalidade ? { finalidadePadrao: item.finalidade } : {})
+      ...(item.finalidade ? { finalidadePadrao: item.finalidade } : {}),
+      ...(item.st ? { icmsSt: true } : {})
     },
     create: {
       tenantId: scope.tenantId,
@@ -270,7 +272,8 @@ async function upsertProductFiscalFromEntryItem(
       produtoId,
       ncm: item.ncm,
       cest: item.cest || null,
-      finalidadePadrao: item.finalidade ?? null
+      finalidadePadrao: item.finalidade ?? null,
+      icmsSt: item.st ?? false
     }
   });
 }
@@ -541,7 +544,7 @@ export async function importNfeXml(scope: TenantScope, xmlText: string) {
             baseCalculo: tax.base,
             aliquota: tax.rate,
             valor: tax.value,
-            recuperavel: creditoPorFinalidade(finalidadeRes.finalidade, regime, tax.tax).recuperavel,
+            recuperavel: creditoPorFinalidade(finalidadeRes.finalidade, regime, tax.tax, { st }).recuperavel,
             dadosOriginais: tax.raw as Prisma.InputJsonValue
           }))
         });
@@ -686,7 +689,7 @@ export async function processFiscalEntry(
         parcelas: {
           orderBy: { vencimento: "asc" }
         },
-        itens: true
+        itens: { include: { impostos: true } }
       }
     });
 
@@ -772,6 +775,11 @@ export async function processFiscalEntry(
     for (const item of entrada.itens) {
       const movimentaEstoque = item.movimentaEstoque;
       let produtoId = item.produtoId;
+      // Mercadoria substituída (ICMS-ST já recolhido): memorizada no produto para que a revenda
+      // saia sem ICMS próprio (CST 60 / CSOSN 500) e com CFOP de ST.
+      const icmsItem = item.impostos.find((imp) => imp.tributo === "ICMS");
+      const itemSt = isSubstituicaoTributaria({ cstIcms: icmsItem?.cst ?? null, csosn: icmsItem?.csosn ?? null });
+      const itemFiscal = { ncm: item.ncm, cest: item.cest, finalidade: item.finalidade, st: itemSt };
 
       if (!produtoId) {
         // Uso/consumo e imobilizado sem produto vinculado não viram SKU nem estoque: entram
@@ -820,7 +828,8 @@ export async function processFiscalEntry(
             ncm: item.ncm,
             cest: item.cest,
             // CFOP de VENDA do produto conforme a finalidade (não o CFOP do fornecedor).
-            cfop: cfopVendaPadrao(item.finalidade),
+            // ST fica null aqui para a emissão derivar 5405/6404.
+            cfop: cfopVendaPadrao(item.finalidade, { st: itemSt }),
             precoCusto: item.valorUnitario,
             ultimoCusto: item.valorUnitario,
             custoMedio: item.valorUnitario,
@@ -848,7 +857,7 @@ export async function processFiscalEntry(
       // Itens vinculados que não movimentam estoque (uso/consumo, imobilizado): apenas memorizam
       // a finalidade no perfil fiscal e seguem — sem saldo, custo médio ou movimento de estoque.
       if (!movimentaEstoque) {
-        await upsertProductFiscalFromEntryItem(tx, scope, produtoId, item);
+        await upsertProductFiscalFromEntryItem(tx, scope, produtoId, itemFiscal);
         continue;
       }
 
@@ -925,7 +934,7 @@ export async function processFiscalEntry(
 
       // CFOP de venda conforme a finalidade. Só preenche quando o produto ainda NÃO tem CFOP
       // (não sobrescreve configuração que o contador já fez no produto existente).
-      const cfopVenda = cfopVendaPadrao(item.finalidade);
+      const cfopVenda = cfopVendaPadrao(item.finalidade, { st: itemSt });
       const definirCfop = cfopVenda && !product.cfop;
       await tx.produto.update({
         where: { id: produtoId },
@@ -938,7 +947,7 @@ export async function processFiscalEntry(
           ...(definirCfop ? { cfop: cfopVenda } : {})
         }
       });
-      await upsertProductFiscalFromEntryItem(tx, scope, produtoId, item);
+      await upsertProductFiscalFromEntryItem(tx, scope, produtoId, itemFiscal);
 
       await tx.estoqueSaldo.upsert({
         where: {
@@ -1376,7 +1385,7 @@ async function applyFinalidadeManual(
   for (const imp of item.impostos) {
     await tx.entradaFiscalItemImposto.updateMany({
       where: { tenantId: scope.tenantId, empresaId: scope.empresaId, entradaFiscalItemId: item.id, tributo: imp.tributo },
-      data: { recuperavel: creditoPorFinalidade(finalidade, regime, imp.tributo).recuperavel }
+      data: { recuperavel: creditoPorFinalidade(finalidade, regime, imp.tributo, { st }).recuperavel }
     });
   }
 }

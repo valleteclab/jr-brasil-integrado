@@ -219,7 +219,7 @@ export async function emitProductInvoiceAvulsa(scope: TenantScope, input: Produc
           origem: item.origem ?? p.origem,
           unidade: item.unidade ?? p.unidade,
           fiscal: p.fiscal
-            ? { ncm: p.fiscal.ncm, cest: p.fiscal.cest, origem: p.fiscal.origem, regraTributariaId: p.fiscal.regraTributariaId }
+            ? { ncm: p.fiscal.ncm, cest: p.fiscal.cest, origem: p.fiscal.origem, regraTributariaId: p.fiscal.regraTributariaId, icmsSt: p.fiscal.icmsSt }
             : null
         },
         quantidade: item.quantidade,

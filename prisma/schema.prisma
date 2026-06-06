@@ -704,6 +704,10 @@ model ProdutoFiscal {
   exTipi                String?
   codigoBeneficioFiscal String?
   finalidadePadrao      FinalidadeEntrada?
+  // Mercadoria com ICMS já recolhido por substituição tributária (contribuinte substituído).
+  // Memorizado na entrada (NF-e com CST 60/CSOSN 500): na revenda a saída sai sem ICMS próprio
+  // (CST 60 / CSOSN 500) e com CFOP de ST (5405/6404), sem novo débito de ICMS.
+  icmsSt                Boolean  @default(false)
   observacoes           String?
   criadoEm              DateTime @default(now())
   atualizadoEm          DateTime @updatedAt

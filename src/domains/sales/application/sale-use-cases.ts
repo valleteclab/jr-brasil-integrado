@@ -261,7 +261,8 @@ export async function invoiceSale(scope: TenantScope, id: string, options?: { mo
               ncm: item.produto.fiscal.ncm,
               cest: item.produto.fiscal.cest,
               origem: item.produto.fiscal.origem,
-              regraTributariaId: item.produto.fiscal.regraTributariaId
+              regraTributariaId: item.produto.fiscal.regraTributariaId,
+              icmsSt: item.produto.fiscal.icmsSt
             }
           : null
       },

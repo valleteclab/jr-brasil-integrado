@@ -65,8 +65,16 @@ export function finalidadeMovimentaEstoque(finalidade: FinalidadeEntrada): boole
  * É o CFOP que o produto usará quando NÓS o vendermos — não o CFOP do fornecedor nem o de
  * entrada. Devolve o CFOP interno (5xxx); a emissão deriva interno/interestadual e ST no momento
  * da venda. Uso/consumo e imobilizado não são revendidos, então não têm CFOP de venda.
+ *
+ * Mercadoria substituída (ST): retorna null de propósito — não fixamos um CFOP no produto, para
+ * que a emissão derive 5405 (interno) / 6404 (interestadual) a partir do CST 60/CSOSN 500. Fixar
+ * 5102 aqui impediria essa derivação (CFOP explícito do produto prevalece na emissão).
  */
-export function cfopVendaPadrao(finalidade: FinalidadeEntrada | null | undefined): string | null {
+export function cfopVendaPadrao(
+  finalidade: FinalidadeEntrada | null | undefined,
+  ctx: { st?: boolean } = {}
+): string | null {
+  if (ctx.st) return null; // ST: a emissão deriva 5405/6404 pelo CST de substituído.
   if (finalidade === "REVENDA") return "5102"; // venda de mercadoria adquirida de terceiros
   if (finalidade === "INDUSTRIALIZACAO") return "5101"; // venda de produção do estabelecimento
   return null;
@@ -92,18 +100,34 @@ function pisCofinsCreditavel(regime: RegimeTributario): CreditoResultado {
   return { recuperavel: false, observacao: "PIS/COFINS cumulativos no Lucro Presumido — sem crédito." };
 }
 
+export type CreditoContexto = {
+  /** Mercadoria com ICMS retido por substituição tributária (CST 10/30/60/70 ou CSOSN 201/202/203/500). */
+  st?: boolean;
+};
+
 /**
  * Se o tributo de entrada é recuperável (gera crédito) conforme a finalidade do item e o
  * regime da empresa. Só decide para ICMS/PIS/COFINS; demais tributos retornam não-recuperável
  * (mantenha o que veio do XML para esses casos).
+ *
+ * Substituição tributária (ST): quando o ICMS da mercadoria já foi recolhido por ST, não há
+ * ICMS próprio a creditar na entrada — o imposto da cadeia foi pago de forma definitiva pelo
+ * substituto. Na revenda o item também sai sem débito de ICMS (CST 60 / CFOP x405), então a
+ * operação é neutra (não credita, não debita). Isso vale para qualquer regime de apuração.
  */
 export function creditoPorFinalidade(
   finalidade: FinalidadeEntrada,
   regime: RegimeTributario,
-  tributo: TipoTributo
+  tributo: TipoTributo,
+  ctx: CreditoContexto = {}
 ): CreditoResultado {
   if (tributo !== "ICMS" && tributo !== "PIS" && tributo !== "COFINS") return SEM_CREDITO;
   if (regimeSemCredito(regime)) return { recuperavel: false, observacao: "Regime do Simples/MEI não credita na entrada." };
+
+  // ICMS pago por ST não gera crédito (independe da finalidade e do regime).
+  if (tributo === "ICMS" && ctx.st) {
+    return { recuperavel: false, observacao: "ICMS pago por substituição tributária (ST) — sem crédito; na revenda também não há débito." };
+  }
 
   switch (finalidade) {
     case "REVENDA":

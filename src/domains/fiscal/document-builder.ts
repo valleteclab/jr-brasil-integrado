@@ -9,7 +9,7 @@ type ProdutoFiscalLike = {
   cfop: string | null;
   origem: string | null;
   unidade: string;
-  fiscal?: { ncm: string | null; cest: string | null; origem: string | null; regraTributariaId: string | null } | null;
+  fiscal?: { ncm: string | null; cest: string | null; origem: string | null; regraTributariaId: string | null; icmsSt?: boolean | null } | null;
 };
 
 type ClienteEnderecoLike = {
@@ -78,6 +78,7 @@ function itemFromProduto(
     desconto,
     origem: produto.fiscal?.origem ?? produto.origem ?? "0",
     regraTributariaId: produto.fiscal?.regraTributariaId ?? null,
+    icmsSt: produto.fiscal?.icmsSt ?? false,
     servico: false,
     itemListaServico: null
   };

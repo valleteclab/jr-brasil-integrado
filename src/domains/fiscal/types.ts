@@ -47,6 +47,9 @@ export type NormalizedFiscalItem = {
   desconto: number;
   origem: string | null;
   regraTributariaId: string | null;
+  /** Mercadoria com ICMS já recolhido por substituição tributária (contribuinte substituído):
+   *  a saída sai sem ICMS próprio (CST 60 / CSOSN 500) e com CFOP de ST (5405/6404). */
+  icmsSt?: boolean;
   /** Serviço (NFS-e) versus produto (NF-e/NFC-e). */
   servico: boolean;
   itemListaServico: string | null;

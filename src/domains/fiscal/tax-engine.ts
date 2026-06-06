@@ -171,6 +171,38 @@ export function computeItemTaxes(
   const aliquotaPis = num(pisRule?.aliquota);
   const aliquotaCofins = num(cofinsRule?.aliquota);
 
+  // Mercadoria substituída (ICMS-ST já recolhido na cadeia): a saída NÃO tem ICMS próprio nem
+  // novo ICMS-ST. Sai com CSOSN 500 (Simples) ou CST 60 (regime normal) — o que faz a emissão
+  // derivar o CFOP de ST (5405/6404). IPI/PIS/COFINS seguem o cálculo normal do regime.
+  if (item.icmsSt) {
+    const valorIpi = round2(base * (aliquotaIpi / 100));
+    const valorPis = round2(base * (aliquotaPis / 100));
+    const valorCofins = round2(base * (aliquotaCofins / 100));
+    return {
+      origem,
+      cstIcms: isSimples ? null : "60",
+      csosn: isSimples ? "500" : null,
+      baseIcms: 0,
+      aliquotaIcms: 0,
+      valorIcms: 0,
+      ...SEM_ST_FCP,
+      cstIpi: ipiRule?.cst ?? (ipiRule ? null : "53"),
+      aliquotaIpi,
+      valorIpi,
+      cstPis: pisRule?.cst ?? (isSimples ? "49" : "01"),
+      aliquotaPis,
+      valorPis,
+      cstCofins: cofinsRule?.cst ?? (isSimples ? "49" : "01"),
+      aliquotaCofins,
+      valorCofins,
+      itemListaServico: null,
+      aliquotaIss: 0,
+      valorIss: 0,
+      valorTributos: somaTributos([valorIpi, valorPis, valorCofins]),
+      cClassTrib: null
+    };
+  }
+
   // No Simples Nacional não há destaque de ICMS próprio na nota (recolhido no DAS): usa-se
   // CSOSN e valores zerados, ignorando regras de regime normal (CST) eventualmente cadastradas.
   if (isSimples) {

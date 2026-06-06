@@ -390,7 +390,7 @@ export async function receberPagamentoEEmitir(
         origem: item.produto.origem,
         unidade: item.produto.unidade,
         fiscal: item.produto.fiscal
-          ? { ncm: item.produto.fiscal.ncm, cest: item.produto.fiscal.cest, origem: item.produto.fiscal.origem, regraTributariaId: item.produto.fiscal.regraTributariaId }
+          ? { ncm: item.produto.fiscal.ncm, cest: item.produto.fiscal.cest, origem: item.produto.fiscal.origem, regraTributariaId: item.produto.fiscal.regraTributariaId, icmsSt: item.produto.fiscal.icmsSt }
           : null
       },
       quantidade: Number(item.quantidade),
