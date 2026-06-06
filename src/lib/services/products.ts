@@ -173,6 +173,32 @@ export async function listStorefrontProducts(): Promise<StorefrontProduct[]> {
   }
 }
 
+export type ProductPickerOption = { id: string; sku: string; name: string };
+
+/**
+ * Lista enxuta de produtos (id/sku/nome) para seletores e matching — sem os
+ * includes pesados (saldos, aplicações, fornecedores, fiscal) do summary
+ * completo. Usado no wizard de entrada de NF-e, que só precisa identificar o
+ * produto a vincular. Reduz muito o tempo de carga da tela de lançamento.
+ */
+export async function listProductPickerOptions(): Promise<ProductPickerOption[]> {
+  if (!process.env.DATABASE_URL) {
+    throw new Error("DATABASE_URL não configurada. Configure o banco de dados para listar produtos.");
+  }
+
+  const scope = await getDevelopmentTenantScope();
+  const products = await prisma.produto.findMany({
+    where: {
+      ...scopedByTenantCompany(scope),
+      ativo: true
+    },
+    select: { id: true, sku: true, nome: true },
+    orderBy: [{ criadoEm: "asc" }, { nome: "asc" }]
+  });
+
+  return products.map((product) => ({ id: product.id, sku: product.sku, name: product.nome }));
+}
+
 export async function listErpProductSummaries(): Promise<ErpProductSummary[]> {
   if (!process.env.DATABASE_URL) {
     throw new Error("DATABASE_URL não configurada. Configure o banco de dados para listar produtos.");

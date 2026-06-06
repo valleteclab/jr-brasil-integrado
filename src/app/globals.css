@@ -2341,3 +2341,91 @@ label.checkbox input {
 /* PDV/Cadastro: tabela de aplicação veicular */
 .produto-aplicacoes .erp-table td { padding: 6px; }
 .produto-aplicacoes .erp-table input { width: 100%; border: 1px solid var(--erp-line); border-radius: 6px; height: 34px; padding: 0 8px; font: inherit; }
+
+/* Notas de entrada: overlay bloqueante de importação/sincronização */
+@keyframes fiscal-spin { to { transform: rotate(360deg); } }
+.fiscal-busy {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(14, 17, 23, .55);
+  backdrop-filter: blur(2px);
+}
+.fiscal-busy-card {
+  width: min(440px, 100%);
+  background: var(--erp-card);
+  border-radius: var(--jr-radius);
+  box-shadow: var(--jr-shadow-md);
+  padding: 28px 26px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.fiscal-busy-card strong { font-size: 16px; color: var(--erp-ink); }
+.fiscal-busy-card small { color: var(--erp-mute); font-size: 12.5px; line-height: 1.5; }
+.fiscal-spinner {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 3px solid var(--erp-line);
+  border-top-color: var(--erp-yellow);
+  animation: fiscal-spin .8s linear infinite;
+  margin-bottom: 4px;
+}
+.fiscal-busy-steps {
+  list-style: none;
+  margin: 6px 0 4px;
+  padding: 0;
+  width: 100%;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.fiscal-busy-steps li {
+  position: relative;
+  padding-left: 26px;
+  font-size: 13px;
+  color: var(--erp-mute);
+  transition: color .2s ease;
+}
+.fiscal-busy-steps li::before {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--erp-line);
+  background: transparent;
+}
+.fiscal-busy-steps li.active { color: var(--erp-ink); font-weight: 600; }
+.fiscal-busy-steps li.active::before {
+  border-color: var(--erp-yellow);
+  border-top-color: transparent;
+  animation: fiscal-spin .8s linear infinite;
+}
+.fiscal-busy-steps li.done { color: var(--erp-slate); }
+.fiscal-busy-steps li.done::before {
+  border-color: var(--erp-success);
+  background: var(--erp-success);
+}
+.fiscal-busy-steps li.done::after {
+  content: "✓";
+  position: absolute;
+  left: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 9px;
+  font-weight: 700;
+  color: #fff;
+  line-height: 1;
+}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/shared/Button";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import type { FiscalEntrySummary } from "@/lib/services/fiscal-entries";
@@ -12,6 +12,16 @@ type FiscalEntriesListProps = {
 };
 
 type Tab = "compra" | "recebidas";
+
+// Etapas da importação (Ciência → XML → lançamento). O backend é uma única
+// chamada síncrona à SEFAZ via ACBr; aqui só damos feedback de progresso para o
+// usuário entender que o sistema está trabalhando (e não travado).
+const IMPORT_STEPS = [
+  "Enviando Ciência da Operação à SEFAZ…",
+  "Baixando o XML completo da NF-e…",
+  "Lançando a nota para conferência…",
+  "Abrindo a tela de lançamento…"
+];
 
 export function FiscalEntriesList({ entries, receivedDocuments }: FiscalEntriesListProps) {
   const [rows, setRows] = useState(entries);
@@ -25,6 +35,16 @@ export function FiscalEntriesList({ entries, receivedDocuments }: FiscalEntriesL
   const [reversingId, setReversingId] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [importingId, setImportingId] = useState<string | null>(null);
+  const [importLabel, setImportLabel] = useState("");
+  const [importStep, setImportStep] = useState(0);
+  const [navigating, setNavigating] = useState(false);
+  const stepTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (stepTimer.current) clearInterval(stepTimer.current);
+    };
+  }, []);
 
   const filteredEntries = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -204,6 +224,23 @@ export function FiscalEntriesList({ entries, receivedDocuments }: FiscalEntriesL
     }
   }
 
+  function startImportSteps() {
+    setImportStep(0);
+    if (stepTimer.current) clearInterval(stepTimer.current);
+    // Avança as etapas no tempo enquanto o backend conversa com a SEFAZ. Para na
+    // penúltima etapa ("lançando…") — a última ("abrindo…") é setada no sucesso.
+    stepTimer.current = setInterval(() => {
+      setImportStep((current) => (current < IMPORT_STEPS.length - 2 ? current + 1 : current));
+    }, 2500);
+  }
+
+  function stopImportSteps() {
+    if (stepTimer.current) {
+      clearInterval(stepTimer.current);
+      stepTimer.current = null;
+    }
+  }
+
   async function importReceived(doc: NfeDistributionSummary) {
     const confirmed = window.confirm(
       `Enviar Ciência da Operação e importar o XML da NF-e ${doc.numero || doc.chaveAcesso}?\n\n` +
@@ -212,8 +249,10 @@ export function FiscalEntriesList({ entries, receivedDocuments }: FiscalEntriesL
     if (!confirmed) return;
 
     setImportingId(doc.id);
+    setImportLabel(doc.numero ? `NF-e ${doc.numero}` : doc.chaveAcesso || "NF-e recebida");
     setError("");
     setMessage("");
+    startImportSteps();
 
     try {
       const response = await fetch(`/api/erp/entradas-fiscais/distribuicao/${doc.id}/importar`, { method: "POST" });
@@ -223,20 +262,52 @@ export function FiscalEntriesList({ entries, receivedDocuments }: FiscalEntriesL
         throw new Error(data.error || "Não foi possível importar a NF-e recebida.");
       }
 
+      // Sucesso: trava a última etapa e mantém o overlay até a nova tela carregar.
+      stopImportSteps();
+      setImportStep(IMPORT_STEPS.length - 1);
+      setNavigating(true);
       window.location.href = `/erp/entradas-fiscais/nova?id=${data.entradaFiscalId}`;
     } catch (importError) {
+      stopImportSteps();
+      setImportingId(null);
+      setImportLabel("");
       setError(importError instanceof Error ? importError.message : "Não foi possível importar a NF-e recebida.");
       const refresh = await fetch("/api/erp/entradas-fiscais/distribuicao")
         .then((r) => r.json())
         .catch(() => null) as { documents?: NfeDistributionSummary[] } | null;
       if (refresh?.documents) setReceivedRows(refresh.documents);
-    } finally {
-      setImportingId(null);
     }
   }
 
+  const busy = Boolean(importingId) || syncing || navigating;
+
   return (
-    <section className="fiscal-list-page">
+    <section className="fiscal-list-page" aria-busy={busy}>
+      {busy && (
+        <div className="fiscal-busy" role="alertdialog" aria-live="assertive" aria-label="Processando">
+          <div className="fiscal-busy-card">
+            <div className="fiscal-spinner" aria-hidden="true" />
+            {importingId ? (
+              <>
+                <strong>Importando {importLabel}</strong>
+                <ol className="fiscal-busy-steps">
+                  {IMPORT_STEPS.map((label, idx) => (
+                    <li key={label} className={idx < importStep ? "done" : idx === importStep ? "active" : "pending"}>
+                      {label}
+                    </li>
+                  ))}
+                </ol>
+                <small>Pode levar alguns segundos — depende da resposta da SEFAZ. Não feche esta janela.</small>
+              </>
+            ) : (
+              <>
+                <strong>Sincronizando com a ACBr / SEFAZ…</strong>
+                <small>Buscando as NF-e emitidas contra o seu CNPJ. Pode levar alguns segundos.</small>
+              </>
+            )}
+          </div>
+        </div>
+      )}
       <div className="fiscal-list-actions">
         <div className="fiscal-list-search">
           <span aria-hidden="true">⌕</span>

@@ -3,7 +3,7 @@
 import { useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { Button } from "@/components/shared/Button";
-import type { ErpProductSummary } from "@/lib/services/products";
+import type { ProductPickerOption } from "@/lib/services/products";
 
 type WizardStep = 1 | 2 | 3 | 4;
 
@@ -125,7 +125,7 @@ type Installment = {
 };
 
 type FiscalEntryWizardProps = {
-  products: ErpProductSummary[];
+  products: ProductPickerOption[];
   initialDraft?: FiscalDraft | null;
 };
 
