@@ -2342,6 +2342,21 @@ label.checkbox input {
 .produto-aplicacoes .erp-table td { padding: 6px; }
 .produto-aplicacoes .erp-table input { width: 100%; border: 1px solid var(--erp-line); border-radius: 6px; height: 34px; padding: 0 8px; font: inherit; }
 
+/* Entrada de NF-e: legenda explicativa dos códigos de ICMS (CST/CSOSN) */
+.fiscal-item-impostos { color: var(--erp-slate); }
+.fiscal-legenda {
+  margin-top: 12px;
+  padding: 12px 14px;
+  background: rgba(2, 132, 199, .06);
+  border: 1px solid rgba(2, 132, 199, .2);
+  border-radius: var(--erp-radius);
+  font-size: 12.5px;
+  color: var(--erp-slate);
+}
+.fiscal-legenda > strong { display: block; color: var(--erp-ink); margin-bottom: 6px; }
+.fiscal-legenda ul { margin: 0 0 8px; padding-left: 18px; display: flex; flex-direction: column; gap: 3px; }
+.fiscal-legenda-nota { display: block; color: var(--erp-mute); line-height: 1.5; }
+
 /* Cadastro de produto: resultados da busca no catálogo Cosmos */
 .cosmos-search .cosmos-results {
   list-style: none;

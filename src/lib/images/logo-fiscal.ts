@@ -46,10 +46,13 @@ function canvasParaBlob(canvas: HTMLCanvasElement, tipo: string, qualidade?: num
  */
 export async function ajustarLogoFiscal(
   file: File,
-  opts: { maxLado?: number; maxBytes?: number } = {}
+  opts: { maxLado?: number; maxBytes?: number; fundoBranco?: boolean } = {}
 ): Promise<LogoAjustada> {
   const maxLado = opts.maxLado ?? 400;
   const maxBytes = opts.maxBytes ?? 200 * 1024;
+  // fundoBranco=true (padrão): achata em branco — ideal para o DANFE. fundoBranco=false:
+  // preserva transparência (logo do sistema sobre a barra lateral escura) e exporta sempre PNG.
+  const fundoBranco = opts.fundoBranco ?? true;
 
   const img = await carregarImagem(file);
   const maiorLado = Math.max(img.width, img.height) || 1;
@@ -62,19 +65,20 @@ export async function ajustarLogoFiscal(
   canvas.height = altura;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Seu navegador não suporta o ajuste automático de imagem.");
-  // Fundo branco: achata transparência (PNG transparente fica estranho no DANFE) e evita
-  // fundo preto ao converter para JPEG.
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, largura, altura);
+  if (fundoBranco) {
+    // Achata transparência (PNG transparente fica estranho no DANFE) e evita fundo preto no JPEG.
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, largura, altura);
+  }
   ctx.imageSmoothingQuality = "high";
   ctx.drawImage(img, 0, 0, largura, altura);
 
-  // Primeira tentativa: PNG (preserva nitidez de logos com texto/linhas).
+  // Primeira tentativa: PNG (preserva nitidez de logos com texto/linhas e a transparência).
   let blob = await canvasParaBlob(canvas, "image/png");
   let tipo = "image/png";
 
-  if (blob.size > maxBytes) {
-    // PNG ficou grande: usa JPEG e reduz a qualidade até caber.
+  // Só cai para JPEG quando o fundo é branco (JPEG não tem transparência).
+  if (blob.size > maxBytes && fundoBranco) {
     for (const q of [0.92, 0.85, 0.78, 0.7, 0.6, 0.5]) {
       const jpeg = await canvasParaBlob(canvas, "image/jpeg", q);
       blob = jpeg;

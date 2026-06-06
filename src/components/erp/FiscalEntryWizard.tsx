@@ -30,6 +30,7 @@ type FiscalDraftItem = {
   finalidadeOrigem?: string;
   cfopEntradaDerivado?: string;
   movimentaEstoque?: boolean;
+  impostos?: Array<{ tributo: string; cst: string | null; csosn: string | null; base: number; aliquota: number; valor: number }>;
 };
 
 type FinalidadeEntrada = "REVENDA" | "USO_CONSUMO" | "IMOBILIZADO" | "INDUSTRIALIZACAO";
@@ -138,6 +139,42 @@ function formatBrl(value: number) {
   return new Intl.NumberFormat("pt-BR", { currency: "BRL", style: "currency" }).format(value);
 }
 
+// Resumo de um imposto do XML para conferência: "ICMS CSOSN 500 · IPI CST 53 · PIS CST 01 0,65% R$ 0,04".
+// Distingue CST (regime normal) de CSOSN (Simples Nacional) para não confundir os códigos.
+function formatImposto(imp: { tributo: string; cst: string | null; csosn: string | null; aliquota: number; valor: number }): string {
+  const situacao = imp.cst ? `CST ${imp.cst}` : imp.csosn ? `CSOSN ${imp.csosn}` : "";
+  const aliq = imp.aliquota > 0 ? `${imp.aliquota.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%` : "";
+  const val = imp.valor > 0 ? formatBrl(imp.valor) : "";
+  return [imp.tributo, situacao, aliq, val].filter(Boolean).join(" ");
+}
+
+// Descrições resumidas dos códigos de ICMS, para o usuário que lança a nota entender o que veio.
+const ICMS_CSOSN_DESC: Record<string, string> = {
+  "101": "Simples, COM crédito de ICMS",
+  "102": "Simples, SEM crédito de ICMS",
+  "103": "Simples, isenção do ICMS",
+  "201": "Simples, com crédito e com ICMS-ST",
+  "202": "Simples, sem crédito e com ICMS-ST",
+  "203": "Simples, isenção e com ICMS-ST",
+  "300": "Imune",
+  "400": "Não tributada no Simples",
+  "500": "ICMS já recolhido por substituição tributária (ST)",
+  "900": "Outros"
+};
+const ICMS_CST_DESC: Record<string, string> = {
+  "00": "Tributada integralmente",
+  "10": "Tributada e com cobrança de ICMS-ST",
+  "20": "Com redução de base de cálculo",
+  "30": "Isenta/não tributada e com cobrança de ICMS-ST",
+  "40": "Isenta",
+  "41": "Não tributada",
+  "50": "Suspensão",
+  "51": "Diferimento",
+  "60": "ICMS já recolhido por substituição tributária (ST)",
+  "70": "Com redução de base e cobrança de ICMS-ST",
+  "90": "Outras"
+};
+
 function currencyToNumber(value: string) {
   return Number(value.replace(/[^\d,.-]/g, "").replace(/\./g, "").replace(",", ".")) || 0;
 }
@@ -190,6 +227,19 @@ export function FiscalEntryWizard({ initialDraft = null, products, formasPagamen
   const totalItems = draft?.items.reduce((total, item) => total + currencyToNumber(item.importedProduct.costValue) * item.importedProduct.availableStock, 0) ?? 0;
   const linkedCount = draft?.items.filter((item) => item.action === "update" && item.matchedProductId).length ?? 0;
   const createCount = draft?.items.filter((item) => item.action === "create").length ?? 0;
+
+  // Legenda: códigos de ICMS (CST/CSOSN) que aparecem nos itens desta nota, com explicação resumida.
+  const legendaIcms = useMemo(() => {
+    const codigos = new Map<string, string>();
+    for (const item of draft?.items ?? []) {
+      for (const imp of item.impostos ?? []) {
+        if (imp.tributo !== "ICMS") continue;
+        if (imp.cst) codigos.set(`CST ${imp.cst}`, ICMS_CST_DESC[imp.cst] ?? "Situação tributária do ICMS");
+        else if (imp.csosn) codigos.set(`CSOSN ${imp.csosn}`, ICMS_CSOSN_DESC[imp.csosn] ?? "Situação do ICMS no Simples Nacional");
+      }
+    }
+    return [...codigos.entries()];
+  }, [draft]);
 
   async function importXml(file: File) {
     setLoading(true);
@@ -595,6 +645,11 @@ export function FiscalEntryWizard({ initialDraft = null, products, formasPagamen
                     <td>
                       <strong>{item.importedProduct.name}</strong>
                       <small className="block-muted">NCM {item.importedProduct.ncm || "não informado"} · CFOP {item.importedProduct.cfopInState || "não informado"} · {item.importedProduct.unit}</small>
+                      {item.impostos && item.impostos.length > 0 && (
+                        <small className="block-muted fiscal-item-impostos">
+                          {item.impostos.map((imp) => formatImposto(imp)).filter(Boolean).join("  ·  ")}
+                        </small>
+                      )}
                     </td>
                     <td className="num">{item.importedProduct.availableStock}</td>
                     <td className="num">{item.importedProduct.costValue}</td>
@@ -706,6 +761,22 @@ export function FiscalEntryWizard({ initialDraft = null, products, formasPagamen
             O CFOP de entrada é sugerido pela finalidade. Para casos especiais (devolução, remessa, importação),
             digite o CFOP correto no campo ou escolha um da lista.
           </p>
+
+          {legendaIcms.length > 0 && (
+            <div className="fiscal-legenda">
+              <strong>Entenda os códigos de ICMS desta nota</strong>
+              <ul>
+                {legendaIcms.map(([codigo, desc]) => (
+                  <li key={codigo}><b>{codigo}</b> — {desc}</li>
+                ))}
+              </ul>
+              <span className="fiscal-legenda-nota">
+                <b>CST</b> é usado por empresas do regime normal (Lucro Presumido/Real); <b>CSOSN</b>, por empresas do
+                Simples Nacional. Itens com <b>ST</b> (CSOSN 500 / CST 60) já tiveram o ICMS recolhido: não geram
+                crédito na entrada e, na revenda, saem sem novo ICMS.
+              </span>
+            </div>
+          )}
         </div>
       )}
 

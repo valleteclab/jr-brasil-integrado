@@ -315,6 +315,13 @@ model Empresa {
   regimeTributario   RegimeTributario  @default(SIMPLES_NACIONAL)
   tipoNegocio        TipoNegocio       @default(AMBOS)
   segmento           SegmentoEmpresa   @default(GERAL)
+  // Identidade visual (branding) exibida no sistema — não confundir com a logo fiscal (DANFE).
+  // logoSistema é um data URL (base64) da imagem; corDestaque é um hex (#rrggbb).
+  logoSistema        String?
+  corDestaque        String?
+  // Regra de operação: quando true, permite saída/venda de produtos sem saldo (estoque negativo)
+  // para toda a empresa. Por produto, permiteEstoqueNegativo/permiteVendaSobEncomenda ainda valem.
+  permiteVendaSemEstoque Boolean        @default(false)
   criadoEm           DateTime           @default(now())
   atualizadoEm       DateTime           @updatedAt
 

@@ -92,6 +92,14 @@ type FiscalEntryDraftSource = {
     finalidadeOrigem: string | null;
     cfopEntradaDerivado: string | null;
     movimentaEstoque: boolean;
+    impostos?: Array<{
+      tributo: TipoTributo;
+      cst: string | null;
+      csosn: string | null;
+      baseCalculo: Prisma.Decimal | null;
+      aliquota: Prisma.Decimal | null;
+      valor: Prisma.Decimal | null;
+    }>;
   }>;
 };
 
@@ -211,7 +219,16 @@ function buildFiscalEntryDraft(entrada: FiscalEntryDraftSource) {
       finalidade: item.finalidade ?? undefined,
       finalidadeOrigem: item.finalidadeOrigem ?? undefined,
       cfopEntradaDerivado: item.cfopEntradaDerivado ?? undefined,
-      movimentaEstoque: item.movimentaEstoque
+      movimentaEstoque: item.movimentaEstoque,
+      // Impostos lidos do XML da NF-e (conferência da tributação que veio do fornecedor).
+      impostos: (item.impostos ?? []).map((imp) => ({
+        tributo: imp.tributo,
+        cst: imp.cst,
+        csosn: imp.csosn,
+        base: Number(imp.baseCalculo ?? 0),
+        aliquota: Number(imp.aliquota ?? 0),
+        valor: Number(imp.valor ?? 0)
+      }))
     }))
   };
 }
@@ -1061,7 +1078,8 @@ export async function getFiscalEntryDraft(scope: TenantScope, entradaFiscalId: s
         orderBy: { vencimento: "asc" }
       },
       itens: {
-        orderBy: { itemNumero: "asc" }
+        orderBy: { itemNumero: "asc" },
+        include: { impostos: true }
       }
     }
   });

@@ -12,6 +12,8 @@ type CartItem = {
   nome: string;
   preco: number;
   qtd: number;
+  /** Saldo disponível do produto no momento (para validar venda sem estoque). */
+  disponivel?: number;
   codigoServicoLc116?: string | null;
   codigoNbs?: string | null;
 };
@@ -106,6 +108,7 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
   const [modeloProduto, setModeloProduto] = useState<"NFCE" | "NFE">("NFCE");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [aviso, setAviso] = useState("");
   const [resultado, setResultado] = useState<{ notas: NotaResultado[]; troco: number } | null>(null);
   const [pagamentoAberto, setPagamentoAberto] = useState(false);
   const [movimentoAberto, setMovimentoAberto] = useState(false);
@@ -128,10 +131,28 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
   }, [busca, data.servicos]);
 
   function addProduto(p: PdvProduto) {
+    // Verifica o estoque ao adicionar (não só no pagamento). Sempre INFORMA quando falta saldo;
+    // só BLOQUEIA quando a empresa não aceita venda sem estoque.
+    const noCarrinho = cart.find((i) => i.kind === "produto" && i.refId === p.id)?.qtd ?? 0;
+    const faltaEstoque = p.disponivel <= 0 || noCarrinho + 1 > p.disponivel;
+    if (faltaEstoque) {
+      const msg = p.disponivel <= 0
+        ? `"${p.nome}" está sem estoque (disponível 0).`
+        : `Estoque insuficiente de "${p.nome}": disponível ${p.disponivel}, no carrinho ${noCarrinho}.`;
+      if (!data.permiteVendaSemEstoque) {
+        setAviso("");
+        setError(msg);
+        return;
+      }
+      setAviso(`${msg} Venda liberada (empresa aceita venda sem estoque).`);
+    } else {
+      setAviso("");
+    }
+    setError("");
     setCart((cur) => {
       const ex = cur.find((i) => i.kind === "produto" && i.refId === p.id);
       if (ex) return cur.map((i) => (i === ex ? { ...i, qtd: i.qtd + 1 } : i));
-      return [...cur, { key: `p-${p.id}`, kind: "produto", refId: p.id, nome: p.nome, preco: p.preco, qtd: 1 }];
+      return [...cur, { key: `p-${p.id}`, kind: "produto", refId: p.id, nome: p.nome, preco: p.preco, qtd: 1, disponivel: p.disponivel }];
     });
     setBusca("");
     buscaRef.current?.focus();
@@ -167,11 +188,27 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
   }
 
   function mudarQtd(key: string, delta: number) {
-    setCart((cur) => cur.flatMap((i) => {
-      if (i.key !== key) return [i];
-      const q = i.qtd + delta;
-      return q <= 0 ? [] : [{ ...i, qtd: q }];
-    }));
+    const item = cart.find((i) => i.key === key);
+    if (!item) return;
+    const q = item.qtd + delta;
+    if (q <= 0) {
+      setCart((cur) => cur.filter((i) => i.key !== key));
+      return;
+    }
+    // Ao aumentar a quantidade de um produto, informa quando passa do saldo; só bloqueia se a
+    // empresa não aceitar venda sem estoque.
+    if (delta > 0 && item.kind === "produto" && item.disponivel != null && q > item.disponivel) {
+      const msg = `Estoque insuficiente de "${item.nome}": disponível ${item.disponivel}.`;
+      if (!data.permiteVendaSemEstoque) {
+        setError(msg);
+        return;
+      }
+      setAviso(`${msg} Venda liberada (empresa aceita venda sem estoque).`);
+    } else {
+      setAviso("");
+    }
+    setError("");
+    setCart((cur) => cur.map((i) => (i.key === key ? { ...i, qtd: q } : i)));
   }
 
   function removerItem(key: string) { setCart((cur) => cur.filter((i) => i.key !== key)); }
@@ -345,6 +382,7 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
             </div>
             <div className="pdv-total"><span>Total</span><strong>{brl(total)}</strong></div>
 
+            {aviso && <div className="alert warn">{aviso}</div>}
             {error && <div className="alert danger">{error}</div>}
             {resultado && (
               <div className="pdv-resultado">

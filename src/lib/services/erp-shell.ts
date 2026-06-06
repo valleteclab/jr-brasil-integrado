@@ -1,4 +1,5 @@
 import { getDevelopmentTenantScope, scopedByTenantCompany } from "@/lib/auth/dev-session";
+import { getSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/db/prisma";
 import type { TipoNegocio } from "@/lib/auth/modules";
 
@@ -18,6 +19,9 @@ export type ErpShellContext = {
   usuarioPerfil: string;
   ambiente: "PRODUCAO" | "HOMOLOGACAO";
   tipoNegocio: TipoNegocio;
+  /** Identidade visual da empresa (Configurações → Aparência). */
+  logoSistema: string | null;
+  corDestaque: string | null;
   badges: ErpShellBadges;
 };
 
@@ -35,6 +39,8 @@ const SHELL_FALLBACK: ErpShellContext = {
   usuarioPerfil: "Sem vínculo",
   ambiente: "HOMOLOGACAO",
   tipoNegocio: "AMBOS",
+  logoSistema: null,
+  corDestaque: null,
   badges: { vendas: 0, orcamentos: 0, os: 0, compras: 0, estoque: 0, financeiro: 0 }
 };
 
@@ -51,7 +57,7 @@ export async function getErpShellContext(): Promise<ErpShellContext> {
 
     const [
       empresa,
-      vinculo,
+      session,
       configFiscal,
       vendas,
       orcamentos,
@@ -63,13 +69,10 @@ export async function getErpShellContext(): Promise<ErpShellContext> {
     ] = await Promise.all([
       prisma.empresa.findUnique({
         where: { id: scope.empresaId },
-        select: { razaoSocial: true, nomeFantasia: true, tipoNegocio: true }
+        select: { razaoSocial: true, nomeFantasia: true, tipoNegocio: true, logoSistema: true, corDestaque: true }
       }),
-      prisma.usuarioVinculo.findFirst({
-        where: { ...base, ativo: true },
-        orderBy: { criadoEm: "asc" },
-        select: { usuario: { select: { nome: true } }, perfil: { select: { nome: true } } }
-      }),
+      // Usuário REALMENTE logado (sessão atual) — não o vínculo mais antigo da empresa.
+      getSession(),
       prisma.configuracaoFiscal.findUnique({
         where: { empresaId: scope.empresaId },
         select: { ambiente: true, ativo: true }
@@ -110,15 +113,17 @@ export async function getErpShellContext(): Promise<ErpShellContext> {
     ).length;
 
     const empresaNome = empresa?.nomeFantasia ?? empresa?.razaoSocial ?? SHELL_FALLBACK.empresaNome;
-    const usuarioNome = vinculo?.usuario.nome ?? SHELL_FALLBACK.usuarioNome;
+    const usuarioNome = session?.nome ?? SHELL_FALLBACK.usuarioNome;
 
     return {
       empresaNome,
       usuarioNome,
       usuarioIniciais: iniciais(usuarioNome),
-      usuarioPerfil: vinculo?.perfil.nome ?? SHELL_FALLBACK.usuarioPerfil,
+      usuarioPerfil: session?.perfilNome ?? SHELL_FALLBACK.usuarioPerfil,
       ambiente: configFiscal?.ativo && configFiscal.ambiente === "PRODUCAO" ? "PRODUCAO" : "HOMOLOGACAO",
       tipoNegocio: empresa?.tipoNegocio ?? "AMBOS",
+      logoSistema: empresa?.logoSistema ?? null,
+      corDestaque: empresa?.corDestaque ?? null,
       badges: {
         vendas,
         orcamentos,

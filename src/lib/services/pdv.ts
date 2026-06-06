@@ -11,6 +11,8 @@ export type PdvData = {
   /** Defaults fiscais de serviço da empresa (para a NFS-e dos serviços do PDV). */
   lc116Padrao: string | null;
   nbsPadrao: string | null;
+  /** Regra da empresa: permite vender produtos sem saldo (não bloqueia ao adicionar). */
+  permiteVendaSemEstoque: boolean;
   clientes: PdvCliente[];
   produtos: PdvProduto[];
   servicos: PdvServico[];
@@ -25,7 +27,7 @@ export async function getPdvData(): Promise<PdvData> {
   const base = scopedByTenantCompany(scope);
 
   const [empresa, config, clientes, itens] = await Promise.all([
-    prisma.empresa.findUnique({ where: { id: scope.empresaId }, select: { tipoNegocio: true } }),
+    prisma.empresa.findUnique({ where: { id: scope.empresaId }, select: { tipoNegocio: true, permiteVendaSemEstoque: true } }),
     prisma.configuracaoFiscal.findUnique({
       where: { empresaId: scope.empresaId },
       select: { codigoServicoLc116Padrao: true, codigoNbsPadrao: true }
@@ -76,6 +78,7 @@ export async function getPdvData(): Promise<PdvData> {
     tipoNegocio: empresa?.tipoNegocio ?? "AMBOS",
     lc116Padrao: config?.codigoServicoLc116Padrao || null,
     nbsPadrao: config?.codigoNbsPadrao || null,
+    permiteVendaSemEstoque: Boolean(empresa?.permiteVendaSemEstoque),
     clientes: clientes.map((c) => ({
       id: c.id,
       label: c.nomeFantasia ? `${c.nomeFantasia} (${c.razaoSocial})` : c.razaoSocial,

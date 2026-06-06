@@ -100,6 +100,15 @@ type MovementInput = {
 const TIPOS_ENTRADA: TipoMovimentoEstoque[] = ["ENTRADA"];
 const TIPOS_SAIDA: TipoMovimentoEstoque[] = ["SAIDA"];
 
+/** Regra global da empresa: aceitar saída/venda de produtos sem saldo (estoque negativo). */
+async function empresaAceitaSemEstoque(tx: Prisma.TransactionClient, scope: TenantScope): Promise<boolean> {
+  const empresa = await tx.empresa.findUnique({
+    where: { id: scope.empresaId },
+    select: { permiteVendaSemEstoque: true }
+  });
+  return Boolean(empresa?.permiteVendaSemEstoque);
+}
+
 /**
  * Aplica um movimento de estoque dentro de uma transação: atualiza saldo, recalcula
  * custo médio ponderado em entradas, grava EstoqueMovimento idempotente e devolve
@@ -131,7 +140,7 @@ export async function applyStockMovement(
   const delta = isEntrada ? input.quantidade : isSaida ? -input.quantidade : input.quantidade;
   const saldoDepois = saldoAntes + delta;
 
-  if (saldoDepois < 0 && !produto.permiteEstoqueNegativo) {
+  if (saldoDepois < 0 && !produto.permiteEstoqueNegativo && !(await empresaAceitaSemEstoque(tx, scope))) {
     throw new Error(
       `Saldo insuficiente para o SKU ${produto.sku}. Saldo atual ${saldoAntes}, movimento ${delta}.`
     );
@@ -206,7 +215,12 @@ export async function reserveStock(tx: Prisma.TransactionClient, scope: TenantSc
   const saldo = await getSaldo(tx, scope, input.produtoId, input.depositoId);
   const disponivel = Number(saldo?.quantidade ?? 0) - Number(saldo?.reservado ?? 0);
 
-  if (disponivel < input.quantidade && !produto.permiteEstoqueNegativo && !produto.permiteVendaSobEncomenda) {
+  if (
+    disponivel < input.quantidade &&
+    !produto.permiteEstoqueNegativo &&
+    !produto.permiteVendaSobEncomenda &&
+    !(await empresaAceitaSemEstoque(tx, scope))
+  ) {
     throw new Error(`Estoque disponível insuficiente para o SKU ${produto.sku}. Disponível ${disponivel}.`);
   }
 

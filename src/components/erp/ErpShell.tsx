@@ -2,9 +2,28 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import type { ErpShellBadges, ErpShellContext } from "@/lib/services/erp-shell";
 import { moduloFromPath, moduloVisivelNoTipoNegocio } from "@/lib/auth/modules";
+
+// Escurece um hex #rrggbb (para a variante "dark" usada em hovers/bordas da cor de destaque).
+function darken(hex: string, amount = 0.14): string {
+  const m = /^#?([0-9a-fA-F]{6})$/.exec(hex.trim());
+  if (!m) return hex;
+  const n = parseInt(m[1], 16);
+  const r = Math.round(((n >> 16) & 255) * (1 - amount));
+  const g = Math.round(((n >> 8) & 255) * (1 - amount));
+  const b = Math.round((n & 255) * (1 - amount));
+  return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, "0")}`;
+}
+
+// Converte um hex #rrggbb em rgba() — usado nos fundos translúcidos do tema.
+function hexToRgba(hex: string, alpha: number): string {
+  const m = /^#?([0-9a-fA-F]{6})$/.exec(hex.trim());
+  if (!m) return hex;
+  const n = parseInt(m[1], 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+}
 
 const TIPO_NEGOCIO_LABEL: Record<string, string> = {
   VENDA: "Vendas",
@@ -74,6 +93,7 @@ const groups: ErpNavGroup[] = [
     group: "Configurações",
     items: [
       { label: "Dados da empresa", href: "/erp/configuracoes/empresa", icon: "🏢" },
+      { label: "Aparência", href: "/erp/configuracoes/aparencia", icon: "🎨" },
       { label: "Contas financeiras", href: "/erp/configuracoes/contas-financeiras", icon: "🏦" },
       { label: "Formas de pagamento", href: "/erp/configuracoes/formas-pagamento", icon: "💳" },
       { label: "Emissão fiscal", href: "/erp/configuracoes/fiscal", icon: "⚙" },
@@ -113,15 +133,36 @@ export function ErpShell({ children, context, modulos }: ErpShellProps) {
     router.refresh();
   }
 
+  // Cor de destaque da empresa: sobrescreve as variáveis de tema (as demais derivam destas).
+  // Inclui o fundo translúcido do item ativo do menu (que no CSS base é um rgba amarelo fixo).
+  const temaVars = context.corDestaque
+    ? ({
+        "--jr-yellow": context.corDestaque,
+        "--jr-yellow-dk": darken(context.corDestaque),
+        "--erp-side-active": hexToRgba(context.corDestaque, 0.14)
+      } as CSSProperties)
+    : undefined;
+
   return (
-    <div className="erp-app">
+    <div className="erp-app" style={temaVars}>
       <aside className="erp-side">
         <div className="erp-side-head">
-          <div className="mark">JR</div>
-          <div>
-            <b>{context.empresaNome}</b>
-            <span>{TIPO_NEGOCIO_LABEL[context.tipoNegocio] ?? "ERP"}</span>
-          </div>
+          {context.logoSistema ? (
+            // Fundo claro atrás da logo: garante legibilidade de logos com cores escuras sobre a
+            // barra lateral escura (funciona para qualquer logo, transparente ou não).
+            <span style={{ background: "#fff", borderRadius: 8, padding: "6px 10px", display: "inline-flex", alignItems: "center", width: "100%", justifyContent: "center" }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={context.logoSistema} alt={context.empresaNome} style={{ maxWidth: "100%", maxHeight: 36, objectFit: "contain", display: "block" }} />
+            </span>
+          ) : (
+            <div className="mark">JR</div>
+          )}
+          {!context.logoSistema && (
+            <div>
+              <b>{context.empresaNome}</b>
+              <span>{TIPO_NEGOCIO_LABEL[context.tipoNegocio] ?? "ERP"}</span>
+            </div>
+          )}
         </div>
         <div className="erp-side-nav">
           {gruposVisiveis.map((g) => (
