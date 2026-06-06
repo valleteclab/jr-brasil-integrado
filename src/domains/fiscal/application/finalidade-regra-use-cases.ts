@@ -41,17 +41,17 @@ function ruleScore(rule: RegraFinalidadeEntrada): number {
   return score;
 }
 
-/** Casa o item contra as regras De/Para vigentes; devolve a mais específica ou null. */
-export async function matchFinalidadeRule(
-  tx: Prisma.TransactionClient,
+/**
+ * Carrega as regras De/Para vigentes do tenant/empresa (inclui globais com empresaId nulo).
+ * Carregue UMA vez por documento e reutilize via pickFinalidadeRule — evita refazer esta
+ * consulta por item (N itens → N queries idênticas dentro da transação de importação).
+ */
+export async function loadFinalidadeRules(
+  client: Prisma.TransactionClient,
   scope: TenantScope,
-  input: FinalidadeMatchInput,
   now: Date
-): Promise<RegraFinalidadeEntrada | null> {
-  const ncm = (input.ncm ?? "").replace(/\D/g, "") || null;
-  const cfop = (input.cfopOrigem ?? "").replace(/\D/g, "") || null;
-
-  const regras = await tx.regraFinalidadeEntrada.findMany({
+): Promise<RegraFinalidadeEntrada[]> {
+  return client.regraFinalidadeEntrada.findMany({
     where: {
       tenantId: scope.tenantId,
       OR: [{ empresaId: scope.empresaId }, { empresaId: null }],
@@ -60,6 +60,15 @@ export async function matchFinalidadeRule(
       AND: [{ OR: [{ vigenciaFim: null }, { vigenciaFim: { gte: now } }] }]
     }
   });
+}
+
+/** Escolhe, entre regras já carregadas, a mais específica aplicável ao item (ou null). Pura. */
+export function pickFinalidadeRule(
+  regras: RegraFinalidadeEntrada[],
+  input: FinalidadeMatchInput
+): RegraFinalidadeEntrada | null {
+  const ncm = (input.ncm ?? "").replace(/\D/g, "") || null;
+  const cfop = (input.cfopOrigem ?? "").replace(/\D/g, "") || null;
 
   const aplicaveis = regras.filter((rule) => {
     if (rule.fornecedorId && rule.fornecedorId !== input.fornecedorId) return false;
@@ -73,6 +82,17 @@ export async function matchFinalidadeRule(
   return aplicaveis.sort((a, b) => ruleScore(b) - ruleScore(a))[0];
 }
 
+/** Casa o item contra as regras De/Para vigentes; devolve a mais específica ou null. */
+export async function matchFinalidadeRule(
+  tx: Prisma.TransactionClient,
+  scope: TenantScope,
+  input: FinalidadeMatchInput,
+  now: Date
+): Promise<RegraFinalidadeEntrada | null> {
+  const regras = await loadFinalidadeRules(tx, scope, now);
+  return pickFinalidadeRule(regras, input);
+}
+
 /**
  * Resolve a finalidade de um item aplicando a precedência completa (memória do produto →
  * regra De/Para → heurística). Sempre retorna uma finalidade (a heurística tem fallback).
@@ -82,7 +102,10 @@ export async function resolveFinalidadeForItem(
   scope: TenantScope,
   item: { ncm?: string | null; cfopOrigem?: string | null; descricao?: string | null; produtoId?: string | null },
   fornecedorId: string | null,
-  now: Date
+  now: Date,
+  /** Regras De/Para já carregadas (loadFinalidadeRules). Quando ausente, são carregadas aqui.
+   *  Em importações com muitos itens, carregue uma vez e passe — evita N queries idênticas. */
+  regrasCache?: RegraFinalidadeEntrada[]
 ): Promise<FinalidadeResolvida> {
   // 1. Memória do produto já vinculado.
   if (item.produtoId) {
@@ -96,7 +119,9 @@ export async function resolveFinalidadeForItem(
   }
 
   // 2. Regra De/Para configurável.
-  const regra = await matchFinalidadeRule(tx, scope, { ncm: item.ncm, cfopOrigem: item.cfopOrigem, fornecedorId }, now);
+  const regra = regrasCache
+    ? pickFinalidadeRule(regrasCache, { ncm: item.ncm, cfopOrigem: item.cfopOrigem, fornecedorId })
+    : await matchFinalidadeRule(tx, scope, { ncm: item.ncm, cfopOrigem: item.cfopOrigem, fornecedorId }, now);
   if (regra) {
     return { finalidade: regra.finalidade, origem: "DEPARA", confianca: 0.9 };
   }

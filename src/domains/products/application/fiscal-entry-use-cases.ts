@@ -8,11 +8,19 @@ import type { ParsedNfeItem } from "@/domains/products/xml/nfe-server-parser";
 import { callOpenRouter } from "@/domains/ai/openrouter-service";
 import { isSubstituicaoTributaria } from "@/domains/fiscal/cfop";
 import { cfopVendaPadrao, creditoPorFinalidade, isFinalidadeEntrada, resolveCfopEntrada } from "@/domains/fiscal/finalidade-entrada";
-import { resolveFinalidadeForItem } from "@/domains/fiscal/application/finalidade-regra-use-cases";
+import { loadFinalidadeRules, resolveFinalidadeForItem } from "@/domains/fiscal/application/finalidade-regra-use-cases";
 
 const FISCAL_TRANSACTION_OPTIONS = {
   maxWait: 10000,
   timeout: 30000
+};
+
+// Importação e processamento de NF-e percorrem TODOS os itens da nota dentro de uma transação
+// (classificação, produtos, estoque, impostos). Notas com muitos itens passam dos 30s padrão —
+// timeout maior evita "Transaction already closed". As demais operações fiscais seguem em 30s.
+const FISCAL_BATCH_TRANSACTION_OPTIONS = {
+  maxWait: 15000,
+  timeout: 120000
 };
 
 function nfeChecksum(xmlText: string) {
@@ -484,6 +492,9 @@ export async function importNfeXml(scope: TenantScope, xmlText: string) {
     });
 
     const responseItems = [];
+    // Regras De/Para de finalidade: carregadas UMA vez para todos os itens (evita N queries
+    // idênticas dentro da transação, principal causa de timeout em notas com muitos itens).
+    const regrasFinalidade = await loadFinalidadeRules(tx, scope, agora);
 
     for (const item of parsed.items) {
       const match = await matchProduct(tx, scope, fornecedor?.id, item);
@@ -495,7 +506,8 @@ export async function importNfeXml(scope: TenantScope, xmlText: string) {
         scope,
         { ncm: item.ncm, cfopOrigem: item.cfop, descricao: item.description, produtoId: match.product?.id },
         fornecedor?.id ?? null,
-        agora
+        agora,
+        regrasFinalidade
       );
       const icms = item.taxes.find((tax) => tax.tax === "ICMS");
       const st = isSubstituicaoTributaria({ cstIcms: icms?.cst ?? null, csosn: icms?.csosn ?? null });
@@ -668,7 +680,7 @@ export async function importNfeXml(scope: TenantScope, xmlText: string) {
       receivedAt: entrada.recebidaEm?.toISOString() ?? new Date().toISOString(),
       items: responseItems
     };
-  }, FISCAL_TRANSACTION_OPTIONS);
+  }, FISCAL_BATCH_TRANSACTION_OPTIONS);
 }
 
 export async function processFiscalEntry(
@@ -1030,7 +1042,7 @@ export async function processFiscalEntry(
     });
 
     return { id: entrada.id, created, updated, contasPagar: parcelas.length };
-  }, FISCAL_TRANSACTION_OPTIONS);
+  }, FISCAL_BATCH_TRANSACTION_OPTIONS);
 }
 
 export async function getFiscalEntryDraft(scope: TenantScope, entradaFiscalId: string) {
