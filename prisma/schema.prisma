@@ -422,6 +422,18 @@ model UnidadeMedida {
   atualizadoEm DateTime @default(now())
 }
 
+/// Códigos fiscais de referência (GLOBAL): CFOP, CST_ICMS, CSOSN, ORIGEM, CST_PIS, CST_COFINS,
+/// CST_IPI. Fonte das descrições e dos seletores nas telas fiscais. `tipo` identifica a tabela.
+model CodigoFiscal {
+  tipo         String
+  codigo       String
+  descricao    String
+  atualizadoEm DateTime @default(now())
+
+  @@id([tipo, codigo])
+  @@index([tipo])
+}
+
 /// Cache de consultas ao catálogo Cosmos por GTIN (global — GTIN é universal). Evita gastar
 /// a cota diária consultando o mesmo código de barras mais de uma vez.
 model CosmosCache {

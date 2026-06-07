@@ -5,6 +5,7 @@ import type { ErpProductSummary, ProductTaxRuleOption } from "@/lib/services/pro
 import { listDepositos } from "@/lib/services/stock";
 import { getEmpresaPerfil } from "@/domains/company/application/company-use-cases";
 import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
+import { listCodigosFiscaisMany } from "@/lib/services/fiscal-codes";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +27,7 @@ export default async function ErpProductsPage() {
   let categories: string[] = [];
   let units: string[] = [];
   let segmento = "GERAL";
+  let fiscalCodes: Awaited<ReturnType<typeof listCodigosFiscaisMany>> = {};
   let loadError = "";
 
   try {
@@ -35,6 +37,7 @@ export default async function ErpProductsPage() {
     categories = await listProductCategories();
     units = (await listUnidades()).map((u) => u.codigo);
     segmento = (await getEmpresaPerfil(await getDevelopmentTenantScope())).segmento;
+    fiscalCodes = await listCodigosFiscaisMany(["ORIGEM", "CST_ICMS", "CSOSN", "CFOP"]);
   } catch (error) {
     loadError = error instanceof Error ? error.message : "Não foi possível carregar produtos.";
   }
@@ -55,7 +58,7 @@ export default async function ErpProductsPage() {
           <span>{loadError}</span>
         </div>
       )}
-      <ProductCrud initialProducts={products} taxRules={taxRules} warehouses={warehouses} categoryOptions={categories} unitOptions={units} segmento={segmento} />
+      <ProductCrud initialProducts={products} taxRules={taxRules} warehouses={warehouses} categoryOptions={categories} unitOptions={units} fiscalCodes={fiscalCodes} segmento={segmento} />
     </>
   );
 }

@@ -9,6 +9,7 @@
  */
 import { prisma } from "../src/lib/db/prisma";
 import { applyDefaultCategoriasPadrao, applyDefaultUnidades } from "../src/domains/products/application/category-baseline";
+import { applyFiscalCodes } from "../src/domains/fiscal/fiscal-codes-baseline";
 
 async function main() {
   const cat = await applyDefaultCategoriasPadrao();
@@ -16,6 +17,9 @@ async function main() {
 
   const uni = await applyDefaultUnidades();
   console.log(`Unidades de medida (global): ${uni.total}.`);
+
+  const fiscais = await applyFiscalCodes();
+  console.log("Códigos fiscais (global):", fiscais);
 
   // Limpeza: remove ProdutoCategoria (por empresa) que duplicam a lista padrão e não têm produtos.
   const slugsPadrao = (await prisma.categoriaPadrao.findMany({ select: { slug: true } })).map((c) => c.slug);

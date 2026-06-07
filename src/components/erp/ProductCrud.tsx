@@ -80,6 +80,8 @@ type ProductCrudProps = {
   categoryOptions?: string[];
   /** Unidades de medida padrão (tabela global) — alimenta o seletor de unidade. */
   unitOptions?: string[];
+  /** Códigos fiscais (ORIGEM, CST_ICMS, CSOSN, CFOP) — alimentam os seletores fiscais. */
+  fiscalCodes?: Record<string, { codigo: string; descricao: string }[]>;
   /** Ramo da empresa — habilita recursos específicos (AUTOPECAS → aplicação veicular). */
   segmento?: string;
 };
@@ -296,7 +298,7 @@ function toProduct(form: ProductFormState): ProductRecord {
   };
 }
 
-export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOptions = [], unitOptions = [], segmento }: ProductCrudProps) {
+export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOptions = [], unitOptions = [], fiscalCodes = {}, segmento }: ProductCrudProps) {
   const isAutopecas = segmento === "AUTOPECAS";
   const defaultWarehouse = warehouses[0] ?? "";
   const initialRecords = useMemo(() => initialProducts.map(enrichProduct), [initialProducts]);
@@ -338,6 +340,20 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
     () => (unitOptions.length ? unitOptions : ["UN", "PC", "CX", "KG", "L", "M"]),
     [unitOptions]
   );
+  // Listas de códigos fiscais para os seletores (datalist) da aba fiscal.
+  const origemOpcoes = useMemo(() => fiscalCodes.ORIGEM ?? [], [fiscalCodes]);
+  const cfopOpcoes = useMemo(() => fiscalCodes.CFOP ?? [], [fiscalCodes]);
+  // CST/CSOSN ICMS: o campo serve aos dois regimes, então unimos as duas listas.
+  const cstIcmsOpcoes = useMemo(
+    () => [...(fiscalCodes.CST_ICMS ?? []), ...(fiscalCodes.CSOSN ?? [])],
+    [fiscalCodes]
+  );
+  // Descrição do código atualmente selecionado (mostrada no field-hint abaixo do input).
+  function descricaoCodigo(opcoes: { codigo: string; descricao: string }[], codigo: string) {
+    const alvo = codigo.trim();
+    if (!alvo) return "";
+    return opcoes.find((opcao) => opcao.codigo === alvo)?.descricao ?? "";
+  }
   const brands = useMemo(
     () => Array.from(new Set(products.map((product) => product.brand))).sort(),
     [products]
@@ -912,16 +928,25 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
           </label>
           <label>
             Origem
-            <input value={form.origin} onChange={(event) => updateField("origin", event.target.value)} />
+            <input list="origem-opcoes" value={form.origin} onChange={(event) => updateField("origin", event.target.value)} />
+            {descricaoCodigo(origemOpcoes, form.origin) && <small className="field-hint">{descricaoCodigo(origemOpcoes, form.origin)}</small>}
           </label>
           <label>
             CFOP dentro do estado
-            <input value={form.cfopInState} onChange={(event) => updateField("cfopInState", event.target.value)} />
+            <input list="cfop-opcoes" value={form.cfopInState} onChange={(event) => updateField("cfopInState", event.target.value)} />
+            {descricaoCodigo(cfopOpcoes, form.cfopInState) && <small className="field-hint">{descricaoCodigo(cfopOpcoes, form.cfopInState)}</small>}
           </label>
           <label>
             CFOP fora do estado
-            <input value={form.cfopOutState} onChange={(event) => updateField("cfopOutState", event.target.value)} />
+            <input list="cfop-opcoes" value={form.cfopOutState} onChange={(event) => updateField("cfopOutState", event.target.value)} />
+            {descricaoCodigo(cfopOpcoes, form.cfopOutState) && <small className="field-hint">{descricaoCodigo(cfopOpcoes, form.cfopOutState)}</small>}
           </label>
+          <datalist id="origem-opcoes">
+            {origemOpcoes.map((opcao) => <option key={opcao.codigo} value={opcao.codigo}>{opcao.codigo + " — " + opcao.descricao}</option>)}
+          </datalist>
+          <datalist id="cfop-opcoes">
+            {cfopOpcoes.map((opcao) => <option key={opcao.codigo} value={opcao.codigo}>{opcao.codigo + " — " + opcao.descricao}</option>)}
+          </datalist>
           <label className="full">
             Regra tributária para emissão
             <select
@@ -946,8 +971,12 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
           </label>
           <label>
             CST/CSOSN ICMS
-            <input value={form.icmsCst} onChange={(event) => updateField("icmsCst", event.target.value)} />
+            <input list="csticms-opcoes" value={form.icmsCst} onChange={(event) => updateField("icmsCst", event.target.value)} />
+            {descricaoCodigo(cstIcmsOpcoes, form.icmsCst) && <small className="field-hint">{descricaoCodigo(cstIcmsOpcoes, form.icmsCst)}</small>}
           </label>
+          <datalist id="csticms-opcoes">
+            {cstIcmsOpcoes.map((opcao) => <option key={opcao.codigo} value={opcao.codigo}>{opcao.codigo + " — " + opcao.descricao}</option>)}
+          </datalist>
           <label>
             ICMS %
             <input value={form.icmsRate} onChange={(event) => updateField("icmsRate", event.target.value)} />

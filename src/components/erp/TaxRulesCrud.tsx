@@ -5,6 +5,8 @@ import type { TaxRuleSummary } from "@/lib/services/tax-rules";
 
 type TaxRulesCrudProps = {
   initialRules: TaxRuleSummary[];
+  /** Códigos fiscais (CFOP, CST_*, CSOSN) — alimentam os seletores do formulário. */
+  fiscalCodes?: Record<string, { codigo: string; descricao: string }[]>;
 };
 
 type TaxRuleForm = Omit<TaxRuleSummary, "id"> & { id?: string; notes?: string };
@@ -39,7 +41,7 @@ const emptyForm: TaxRuleForm = {
 const taxOptions = ["ICMS", "IPI", "PIS", "COFINS", "ISS", "CBS", "IBS", "IS"] as const;
 const operationOptions = ["COMPRA", "VENDA", "DEVOLUCAO_COMPRA", "DEVOLUCAO_VENDA", "TRANSFERENCIA", "REMESSA", "RETORNO"] as const;
 
-export function TaxRulesCrud({ initialRules }: TaxRulesCrudProps) {
+export function TaxRulesCrud({ initialRules, fiscalCodes = {} }: TaxRulesCrudProps) {
   const [rules, setRules] = useState(initialRules);
   const [form, setForm] = useState<TaxRuleForm>(emptyForm);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -67,6 +69,27 @@ export function TaxRulesCrud({ initialRules }: TaxRulesCrudProps) {
       rule.csosn
     ].some((field) => field.toLowerCase().includes(normalized)));
   }, [query, rules]);
+
+  // Listas de códigos fiscais para os seletores (datalist) do formulário.
+  const cfopOpcoes = useMemo(() => fiscalCodes.CFOP ?? [], [fiscalCodes]);
+  const csosnOpcoes = useMemo(() => fiscalCodes.CSOSN ?? [], [fiscalCodes]);
+  // CST: a lista depende do tributo selecionado (ICMS/IPI/PIS/COFINS), com fallback CST_ICMS.
+  const cstOpcoes = useMemo(() => {
+    const porTributo: Record<string, string> = {
+      ICMS: "CST_ICMS",
+      IPI: "CST_IPI",
+      PIS: "CST_PIS",
+      COFINS: "CST_COFINS"
+    };
+    const tipo = porTributo[form.tax] ?? "CST_ICMS";
+    return fiscalCodes[tipo] ?? [];
+  }, [fiscalCodes, form.tax]);
+  // Descrição do código atualmente selecionado (mostrada no field-hint abaixo do input).
+  function descricaoCodigo(opcoes: { codigo: string; descricao: string }[], codigo: string) {
+    const alvo = codigo.trim();
+    if (!alvo) return "";
+    return opcoes.find((opcao) => opcao.codigo === alvo)?.descricao ?? "";
+  }
 
   function openNew() {
     setForm(emptyForm);
@@ -266,9 +289,18 @@ export function TaxRulesCrud({ initialRules }: TaxRulesCrudProps) {
                 <label>UF destino<input maxLength={2} value={form.destinationState} onChange={(event) => updateField("destinationState", event.target.value.toUpperCase())} /></label>
                 <label>NCM<input value={form.ncm} onChange={(event) => updateField("ncm", event.target.value)} /></label>
                 <label>CEST<input value={form.cest} onChange={(event) => updateField("cest", event.target.value)} /></label>
-                <label>CFOP<input value={form.cfop} onChange={(event) => updateField("cfop", event.target.value)} /></label>
-                <label>CST<input value={form.cst} onChange={(event) => updateField("cst", event.target.value)} /></label>
-                <label>CSOSN<input value={form.csosn} onChange={(event) => updateField("csosn", event.target.value)} /></label>
+                <label>CFOP<input list="cfop-opcoes" value={form.cfop} onChange={(event) => updateField("cfop", event.target.value)} />{descricaoCodigo(cfopOpcoes, form.cfop) && <small className="field-hint">{descricaoCodigo(cfopOpcoes, form.cfop)}</small>}</label>
+                <label>CST<input list="cst-opcoes" value={form.cst} onChange={(event) => updateField("cst", event.target.value)} />{descricaoCodigo(cstOpcoes, form.cst) && <small className="field-hint">{descricaoCodigo(cstOpcoes, form.cst)}</small>}</label>
+                <label>CSOSN<input list="csosn-opcoes" value={form.csosn} onChange={(event) => updateField("csosn", event.target.value)} />{descricaoCodigo(csosnOpcoes, form.csosn) && <small className="field-hint">{descricaoCodigo(csosnOpcoes, form.csosn)}</small>}</label>
+                <datalist id="cfop-opcoes">
+                  {cfopOpcoes.map((opcao) => <option key={opcao.codigo} value={opcao.codigo}>{opcao.codigo + " — " + opcao.descricao}</option>)}
+                </datalist>
+                <datalist id="cst-opcoes">
+                  {cstOpcoes.map((opcao) => <option key={opcao.codigo} value={opcao.codigo}>{opcao.codigo + " — " + opcao.descricao}</option>)}
+                </datalist>
+                <datalist id="csosn-opcoes">
+                  {csosnOpcoes.map((opcao) => <option key={opcao.codigo} value={opcao.codigo}>{opcao.codigo + " — " + opcao.descricao}</option>)}
+                </datalist>
                 <label>cClassTrib<input value={form.taxClass} onChange={(event) => updateField("taxClass", event.target.value)} /></label>
                 <label>Cód. benefício<input value={form.benefitCode} onChange={(event) => updateField("benefitCode", event.target.value)} /></label>
                 <label>Alíquota %<input value={form.rate} onChange={(event) => updateField("rate", event.target.value)} /></label>
