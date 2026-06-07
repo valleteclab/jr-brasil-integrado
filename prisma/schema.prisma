@@ -423,7 +423,7 @@ model UnidadeMedida {
 }
 
 /// Códigos fiscais de referência (GLOBAL): CFOP, CST_ICMS, CSOSN, ORIGEM, CST_PIS, CST_COFINS,
-/// CST_IPI. Fonte das descrições e dos seletores nas telas fiscais. `tipo` identifica a tabela.
+/// CST_IPI, NBS, LC116. Fonte das descrições e dos seletores nas telas fiscais.
 model CodigoFiscal {
   tipo         String
   codigo       String
@@ -432,6 +432,27 @@ model CodigoFiscal {
 
   @@id([tipo, codigo])
   @@index([tipo])
+}
+
+/// CEST (Código Especificador da Substituição Tributária) — GLOBAL. `ncms` lista os NCMs aos
+/// quais o CEST se aplica (usado para ancorar a sugestão de CEST por NCM, inclusive na IA).
+model Cest {
+  codigo       String   @id
+  descricao    String
+  ncms         String[]
+  atualizadoEm DateTime @default(now())
+}
+
+/// Municípios do IBGE (GLOBAL): código IBGE de 7 dígitos + nome + UF. Valida/preenche o município
+/// na NF-e (emitente/destinatário) e alimenta seletores de endereço.
+model Municipio {
+  codigo       String   @id
+  nome         String
+  uf           String
+  atualizadoEm DateTime @default(now())
+
+  @@index([uf])
+  @@index([nome])
 }
 
 /// Cache de consultas ao catálogo Cosmos por GTIN (global — GTIN é universal). Evita gastar

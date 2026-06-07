@@ -9,6 +9,7 @@ import type { TenantScope } from "@/lib/auth/dev-session";
 import { callOpenRouter } from "@/domains/ai/openrouter-service";
 import { findNcm, searchNcm, normalizeNcm } from "@/domains/fiscal/ncm-service";
 import { listProductCategories } from "@/lib/services/products";
+import { searchCest } from "@/lib/services/fiscal-codes";
 import { consultarGtinCosmos } from "./cosmos-service";
 
 export type FiscalAiSuggestion = {
@@ -139,8 +140,18 @@ export async function suggestProductFiscalWithAi(
   }
 
   const ncmDescricao = ncmCosmos?.descricao ?? ncmIa?.descricao ?? null;
-  const cest =
-    (typeof obj.cest === "string" ? obj.cest.replace(/\D/g, "") : "") || (cosmos?.cest ?? "") || null;
+
+  // CEST ancorado por NCM: candidatos reais vinculados ao NCM sugerido. Se o CEST da IA/Cosmos
+  // estiver entre eles, usa-o; se houver um único candidato, sugere-o; senão deixa em branco.
+  const cestIa = (typeof obj.cest === "string" ? obj.cest.replace(/\D/g, "") : "") || (cosmos?.cest ?? "");
+  let cest: string | null = null;
+  const candidatosCest = ncmSugerido ? await searchCest(ncmSugerido) : [];
+  if (cestIa && candidatosCest.some((c) => c.codigo === cestIa)) cest = cestIa;
+  else if (candidatosCest.length === 1) cest = candidatosCest[0].codigo;
+  else if (cestIa && candidatosCest.length === 0) cest = cestIa; // NCM sem CEST mapeado: respeita a IA/Cosmos
+  if (candidatosCest.length > 1 && !cest) {
+    avisos.push(`Este NCM tem ${candidatosCest.length} CESTs possíveis — selecione o correto manualmente.`);
+  }
 
   avisos.push("Sugestão de IA — confira o NCM/CEST com seu contador antes de emitir.");
 

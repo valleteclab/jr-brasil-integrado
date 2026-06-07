@@ -10,6 +10,8 @@
 import { prisma } from "../src/lib/db/prisma";
 import { applyDefaultCategoriasPadrao, applyDefaultUnidades } from "../src/domains/products/application/category-baseline";
 import { applyFiscalCodes } from "../src/domains/fiscal/fiscal-codes-baseline";
+import { applyCest } from "../src/domains/fiscal/cest-baseline";
+import { applyMunicipios } from "../src/domains/fiscal/municipio-baseline";
 
 async function main() {
   const cat = await applyDefaultCategoriasPadrao();
@@ -20,6 +22,12 @@ async function main() {
 
   const fiscais = await applyFiscalCodes();
   console.log("Códigos fiscais (global):", fiscais);
+
+  const cest = await applyCest();
+  console.log(`CEST (global): ${cest.total}.`);
+
+  const mun = await applyMunicipios();
+  console.log(`Municípios IBGE (global): ${mun.total}.`);
 
   // Limpeza: remove ProdutoCategoria (por empresa) que duplicam a lista padrão e não têm produtos.
   const slugsPadrao = (await prisma.categoriaPadrao.findMany({ select: { slug: true } })).map((c) => c.slug);

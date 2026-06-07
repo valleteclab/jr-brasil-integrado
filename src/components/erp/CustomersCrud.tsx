@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { CustomerDetail, CustomerDetailedSummary, TabelaPrecoOption } from "@/lib/services/customers-admin";
 import { useCadastroLookup } from "./useCadastroLookup";
 import { formatDocumento } from "@/lib/fiscal/documento";
@@ -10,6 +10,8 @@ import { formatDocumento } from "@/lib/fiscal/documento";
 // ---------------------------------------------------------------------------
 
 type BadgeTone = "success" | "warn" | "danger" | "mute";
+
+type Municipio = { codigo: string; nome: string; uf: string };
 
 type ContatoForm = {
   nome: string;
@@ -135,8 +137,63 @@ export function CustomersCrud({ initialCustomers, tabelasPreco }: CustomersCrudP
   const [saving, setSaving] = useState(false);
   const [actioning, setActioning] = useState<string | null>(null);
   const [loadingDetail, setLoadingDetail] = useState<string | null>(null);
+  // Municípios carregados por UF (cache), usados nos datalists dos endereços.
+  const [municipiosPorUf, setMunicipiosPorUf] = useState<Record<string, Municipio[]>>({});
 
   const editing = Boolean(form.id);
+
+  // UFs distintas (2 letras) presentes nos endereços do formulário aberto.
+  const ufsEnderecos = useMemo(() => {
+    const ufs = form.enderecos
+      .map((e) => e.uf.trim().toUpperCase())
+      .filter((uf) => uf.length === 2);
+    return Array.from(new Set(ufs));
+  }, [form.enderecos]);
+
+  // Para cada UF informada (e ainda não carregada), busca a lista de municípios.
+  // Erros são tratados silenciosamente para não atrapalhar o cadastro.
+  useEffect(() => {
+    const pendentes = ufsEnderecos.filter((uf) => !municipiosPorUf[uf]);
+    if (!pendentes.length) return;
+    let cancelado = false;
+    Promise.all(
+      pendentes.map((uf) =>
+        fetch(`/api/erp/fiscal/municipios?uf=${encodeURIComponent(uf)}`)
+          .then((response) => response.json())
+          .then((data: { municipios?: Municipio[] }) => ({ uf, municipios: data?.municipios ?? [] }))
+          .catch(() => ({ uf, municipios: [] as Municipio[] }))
+      )
+    ).then((resultados) => {
+      if (cancelado) return;
+      setMunicipiosPorUf((prev) => {
+        const next = { ...prev };
+        for (const { uf, municipios } of resultados) next[uf] = municipios;
+        return next;
+      });
+    });
+    return () => {
+      cancelado = true;
+    };
+  }, [ufsEnderecos, municipiosPorUf]);
+
+  // Atualiza a cidade de um endereço e, havendo match exato pelo nome (case-insensitive),
+  // preenche automaticamente o código IBGE do município.
+  function updateCidade(index: number, value: string) {
+    setForm((prev) => {
+      const enderecos = prev.enderecos.map((e, i) => {
+        if (i !== index) return e;
+        const uf = e.uf.trim().toUpperCase();
+        const lista = municipiosPorUf[uf] ?? [];
+        const match = lista.find((m) => m.nome.toLowerCase() === value.trim().toLowerCase());
+        return {
+          ...e,
+          cidade: value,
+          codigoMunicipioIbge: match ? match.codigo : e.codigoMunicipioIbge
+        };
+      });
+      return { ...prev, enderecos };
+    });
+  }
 
   // KPIs
   const kpis = useMemo(() => {
@@ -598,11 +655,20 @@ export function CustomersCrud({ initialCustomers, tabelasPreco }: CustomersCrudP
                 </label>
                 <label>
                   Cidade
-                  <input value={e.cidade} onChange={(ev) => updateEndereco(i, "cidade", ev.target.value)} />
+                  <input
+                    list={`municipio-opcoes-${i}`}
+                    value={e.cidade}
+                    onChange={(ev) => updateCidade(i, ev.target.value)}
+                  />
+                  <datalist id={`municipio-opcoes-${i}`}>
+                    {(municipiosPorUf[e.uf.trim().toUpperCase()] ?? []).map((m) => (
+                      <option key={m.codigo} value={m.nome}>{m.nome}</option>
+                    ))}
+                  </datalist>
                 </label>
                 <label>
                   UF
-                  <input value={e.uf} maxLength={2} onChange={(ev) => updateEndereco(i, "uf", ev.target.value)} />
+                  <input value={e.uf} maxLength={2} onChange={(ev) => updateEndereco(i, "uf", ev.target.value.toUpperCase())} />
                 </label>
                 <label>
                   Código IBGE do município

@@ -315,6 +315,8 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
   const [cosmosResultados, setCosmosResultados] = useState<Array<{ gtin: string; descricao: string; ncm: string | null; cest: string | null; marca: string | null; thumbnail: string | null }>>([]);
   const [iaSugerindo, setIaSugerindo] = useState(false);
   const [iaMsg, setIaMsg] = useState("");
+  // CESTs candidatos para o NCM informado (alimentam o datalist do campo CEST).
+  const [cestOpcoes, setCestOpcoes] = useState<{ codigo: string; descricao: string }[]>([]);
   const [fiscalEntryDraft, setFiscalEntryDraft] = useState<FiscalEntryDraft | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<ProductTab>("geral");
@@ -419,6 +421,31 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
       setCurrentPage(totalPages);
     }
   }, [currentPage, totalPages]);
+
+  // Quando o NCM tiver 8 dígitos, busca os CESTs vinculados (debounce simples de ~400ms).
+  // Erros são tratados silenciosamente para não atrapalhar o cadastro.
+  useEffect(() => {
+    const digitos = (form.ncm || "").replace(/\D/g, "");
+    if (digitos.length < 8) {
+      setCestOpcoes([]);
+      return;
+    }
+    let cancelado = false;
+    const timer = setTimeout(() => {
+      fetch(`/api/erp/fiscal/cest?ncm=${encodeURIComponent(digitos)}`)
+        .then((response) => response.json())
+        .then((data: { cests?: { codigo: string; descricao: string }[] }) => {
+          if (!cancelado) setCestOpcoes(data?.cests ?? []);
+        })
+        .catch(() => {
+          if (!cancelado) setCestOpcoes([]);
+        });
+    }, 400);
+    return () => {
+      cancelado = true;
+      clearTimeout(timer);
+    };
+  }, [form.ncm]);
 
   function updateField<Key extends keyof ProductFormState>(key: Key, value: ProductFormState[Key]) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -924,7 +951,10 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
           </label>
           <label>
             CEST
-            <input value={form.cest} onChange={(event) => updateField("cest", event.target.value)} />
+            <input list="cest-opcoes" value={form.cest} onChange={(event) => updateField("cest", event.target.value)} />
+            <small className="field-hint">
+              {descricaoCodigo(cestOpcoes, form.cest) || "Informe o NCM para ver os CESTs vinculados"}
+            </small>
           </label>
           <label>
             Origem
@@ -946,6 +976,9 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
           </datalist>
           <datalist id="cfop-opcoes">
             {cfopOpcoes.map((opcao) => <option key={opcao.codigo} value={opcao.codigo}>{opcao.codigo + " — " + opcao.descricao}</option>)}
+          </datalist>
+          <datalist id="cest-opcoes">
+            {cestOpcoes.map((opcao) => <option key={opcao.codigo} value={opcao.codigo}>{opcao.codigo + " — " + opcao.descricao}</option>)}
           </datalist>
           <label className="full">
             Regra tributária para emissão

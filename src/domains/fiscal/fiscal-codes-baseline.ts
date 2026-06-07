@@ -1,4 +1,6 @@
 import { prisma } from "@/lib/db/prisma";
+import { NBS_LIST } from "./nbs-data";
+import { LC116_LIST } from "./lc116";
 
 /**
  * Códigos fiscais de referência (GLOBAIS): Origem, CST ICMS, CSOSN, CST PIS/COFINS, CST IPI e
@@ -7,7 +9,7 @@ import { prisma } from "@/lib/db/prisma";
  * dataset público (com fallback curado) por ter ~570 códigos.
  */
 
-export type TipoCodigoFiscal = "ORIGEM" | "CST_ICMS" | "CSOSN" | "CST_PIS" | "CST_COFINS" | "CST_IPI" | "CFOP";
+export type TipoCodigoFiscal = "ORIGEM" | "CST_ICMS" | "CSOSN" | "CST_PIS" | "CST_COFINS" | "CST_IPI" | "CFOP" | "NBS" | "LC116";
 
 type Par = { codigo: string; descricao: string };
 
@@ -169,8 +171,12 @@ export async function applyFiscalCodes(): Promise<Record<string, number>> {
   await gravar("CST_IPI", CST_IPI);
   await gravar("CFOP", cfop);
 
+  // NBS e LC116 (serviços) — migrados dos arquivos para a tabela global, por consistência.
+  await gravar("NBS" as TipoCodigoFiscal, NBS_LIST.map((i) => ({ codigo: i.code, descricao: i.description })));
+  await gravar("LC116" as TipoCodigoFiscal, LC116_LIST.map((i) => ({ codigo: i.code, descricao: i.description })));
+
   const counts: Record<string, number> = {};
-  for (const tipo of ["ORIGEM", "CST_ICMS", "CSOSN", "CST_PIS", "CST_COFINS", "CST_IPI", "CFOP"]) {
+  for (const tipo of ["ORIGEM", "CST_ICMS", "CSOSN", "CST_PIS", "CST_COFINS", "CST_IPI", "CFOP", "NBS", "LC116"]) {
     counts[tipo] = await prisma.codigoFiscal.count({ where: { tipo } });
   }
   return counts;
