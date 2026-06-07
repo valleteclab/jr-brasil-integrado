@@ -90,7 +90,7 @@ export default async function AdminClienteDetalhePage({ params }: { params: { id
       </Card>
 
       <Card>
-        <div className="erp-card-head"><h3>Empresas</h3></div>
+        <div className="erp-card-head"><div><h3>Empresas</h3><span>Em cada empresa, use <strong>⚙️ Configurar fiscal</strong> para o onboarding fiscal (emitente, certificado, base tributária) e validar a emissão.</span></div></div>
         <div className="erp-table-wrap">
           <table className="erp-table">
             <thead>
@@ -100,7 +100,7 @@ export default async function AdminClienteDetalhePage({ params }: { params: { id
                 <th>Cidade/UF</th>
                 <th>Status</th>
                 <th>Matriz</th>
-                <th className="actions">Alterar status</th>
+                <th className="actions">Ações</th>
               </tr>
             </thead>
             <tbody>
@@ -121,7 +121,7 @@ export default async function AdminClienteDetalhePage({ params }: { params: { id
                   <td>{e.matriz ? "Sim" : "—"}</td>
                   <td className="actions">
                     <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
-                      <Link href={`/admin/clientes/${cliente.id}/empresas/${e.id}/fiscal`} className="btn-erp ghost xs">Config. fiscal</Link>
+                      <Link href={`/admin/clientes/${cliente.id}/empresas/${e.id}/fiscal`} className="btn-erp primary xs">⚙️ Configurar fiscal</Link>
                       <EmpresaStatusActions empresaId={e.id} status={e.status} />
                     </div>
                   </td>
