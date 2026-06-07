@@ -242,3 +242,54 @@ export async function suggestEntryItemsFiscalWithAi(
     })
   );
 }
+
+/**
+ * Classifica itens (descrição) nas categorias GLOBAIS via IA, em uma única chamada. Usado na
+ * importação de NF-e para categorizar os produtos automaticamente. Retorna { itemId → categoria }
+ * (canonizada para uma categoria existente). Falhas ou IA não configurada → mapa vazio.
+ */
+export async function sugerirCategoriasEntrada(
+  scope: TenantScope,
+  itens: Array<{ id: string; descricao: string }>
+): Promise<Record<string, string>> {
+  const alvos = itens.filter((i) => i.descricao?.trim()).slice(0, 60);
+  if (!alvos.length) return {};
+  const categorias = await listProductCategories(scope);
+  if (!categorias.length) return {};
+
+  try {
+    const content = await callOpenRouter(
+      scope,
+      [
+        {
+          role: "system",
+          content:
+            "Você classifica produtos em categorias. Responda SOMENTE com JSON válido, sem markdown. " +
+            "A categoria DEVE ser escolhida exatamente da lista 'categorias'; se nenhuma servir, use null."
+        },
+        {
+          role: "user",
+          content: JSON.stringify({
+            instrucoes: "Para cada item, retorne { id, categoria }.",
+            categorias,
+            itens: alvos,
+            formato: [{ id: "id-do-item", categoria: "Bebidas" }]
+          })
+        }
+      ],
+      { maxTokens: 1500, temperature: 0 }
+    );
+
+    const chave = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+    const mapa: Record<string, string> = {};
+    for (const s of extractJsonArray(content)) {
+      const id = s.id ? String(s.id) : "";
+      const cat = typeof s.categoria === "string" ? s.categoria.trim() : "";
+      if (!id || !cat) continue;
+      mapa[id] = categorias.find((c) => chave(c) === chave(cat)) ?? cat;
+    }
+    return mapa;
+  } catch {
+    return {};
+  }
+}

@@ -9,6 +9,7 @@ import { callOpenRouter } from "@/domains/ai/openrouter-service";
 import { cfopIndicaSt, isSubstituicaoTributaria } from "@/domains/fiscal/cfop";
 import { cfopVendaPadrao, creditoPorFinalidade, isFinalidadeEntrada, resolveCfopEntrada } from "@/domains/fiscal/finalidade-entrada";
 import { loadFinalidadeRules, resolveFinalidadeForItem } from "@/domains/fiscal/application/finalidade-regra-use-cases";
+import { sugerirCategoriasEntrada } from "./ai-enrichment-use-cases";
 
 const FISCAL_TRANSACTION_OPTIONS = {
   maxWait: 10000,
@@ -707,6 +708,16 @@ export async function processFiscalEntry(
   entradaFiscalId: string,
   input?: { installments?: FiscalEntryInstallmentInput[] }
 ) {
+  // Categorização automática por IA — feita FORA da transação (chamada externa). Mapa itemId→categoria.
+  const itensParaCategorizar = await prisma.entradaFiscalItem.findMany({
+    where: { tenantId: scope.tenantId, empresaId: scope.empresaId, entradaFiscalId },
+    select: { id: true, descricaoFornecedor: true }
+  });
+  const categoriasIa = await sugerirCategoriasEntrada(
+    scope,
+    itensParaCategorizar.map((i) => ({ id: i.id, descricao: i.descricaoFornecedor }))
+  ).catch(() => ({} as Record<string, string>));
+
   return prisma.$transaction(async (tx) => {
     const entrada = await tx.entradaFiscal.findFirst({
       where: {
@@ -784,22 +795,22 @@ export async function processFiscalEntry(
         uf: "BA"
       }
     });
-    const categoria = await tx.produtoCategoria.upsert({
-      where: {
-        tenantId_empresaId_slug: {
-          tenantId: scope.tenantId,
-          empresaId: scope.empresaId,
-          slug: "importado-xml"
-        }
-      },
-      update: { nome: "Importado XML" },
-      create: {
-        tenantId: scope.tenantId,
-        empresaId: scope.empresaId,
-        nome: "Importado XML",
-        slug: "importado-xml"
-      }
-    });
+    // Categoria por produto: usa a sugerida pela IA (ou "Sem categoria"); faz upsert sob demanda,
+    // com cache por slug para não repetir a consulta dentro do loop.
+    const categoriaCache = new Map<string, string>();
+    async function categoriaIdPara(nome: string): Promise<string> {
+      const nomeFinal = nome.trim() || "Sem categoria";
+      const slug = slugify(nomeFinal) || "sem-categoria";
+      const cacheado = categoriaCache.get(slug);
+      if (cacheado) return cacheado;
+      const cat = await tx.produtoCategoria.upsert({
+        where: { tenantId_empresaId_slug: { tenantId: scope.tenantId, empresaId: scope.empresaId, slug } },
+        update: { nome: nomeFinal },
+        create: { tenantId: scope.tenantId, empresaId: scope.empresaId, nome: nomeFinal, slug }
+      });
+      categoriaCache.set(slug, cat.id);
+      return cat.id;
+    }
     let created = 0;
     let updated = 0;
 
@@ -853,7 +864,7 @@ export async function processFiscalEntry(
             tipo: item.finalidade === "INDUSTRIALIZACAO" ? "INSUMO" : "PRODUTO",
             codigoOriginal: item.codigoFornecedor,
             gtin: item.gtin,
-            categoriaId: categoria.id,
+            categoriaId: await categoriaIdPara(categoriasIa[item.id] ?? ""),
             marcaId: marca?.id,
             unidade: item.unidade,
             unidadeCompra: item.unidade,
