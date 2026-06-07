@@ -931,14 +931,14 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
             Código original
             <input value={form.originalCode} onChange={(event) => updateField("originalCode", event.target.value)} />
           </label>
-          <label>
+          <label className="full">
             GTIN / EAN
-            <div style={{ display: "flex", gap: 6 }}>
-              <input value={form.barcode} onChange={(event) => updateField("barcode", event.target.value)} style={{ flex: 1 }} />
-              <button type="button" className="btn-erp ghost sm" onClick={buscarPorCodigoBarras} disabled={cosmosBuscando} title="Buscar dados pelo código de barras (Cosmos)">
+            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <input value={form.barcode} onChange={(event) => updateField("barcode", event.target.value)} style={{ flex: 1, minWidth: 0 }} />
+              <button type="button" className="btn-erp ghost sm" style={{ whiteSpace: "nowrap" }} onClick={buscarPorCodigoBarras} disabled={cosmosBuscando} title="Buscar dados pelo código de barras (Cosmos)">
                 {cosmosBuscando ? "..." : "🔎 Dados"}
               </button>
-              <button type="button" className="btn-erp ghost sm" onClick={buscarImagemDataload} disabled={imgBuscando} title="Buscar imagem pelo código de barras (Dataload)">
+              <button type="button" className="btn-erp ghost sm" style={{ whiteSpace: "nowrap" }} onClick={buscarImagemDataload} disabled={imgBuscando} title="Buscar imagem pelo código de barras (Dataload)">
                 {imgBuscando ? "..." : "🖼️ Imagem"}
               </button>
             </div>
