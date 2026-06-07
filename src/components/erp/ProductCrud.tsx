@@ -306,6 +306,8 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, segmento }:
   const [cosmosQuery, setCosmosQuery] = useState("");
   const [cosmosBuscandoDesc, setCosmosBuscandoDesc] = useState(false);
   const [cosmosResultados, setCosmosResultados] = useState<Array<{ gtin: string; descricao: string; ncm: string | null; cest: string | null; marca: string | null; thumbnail: string | null }>>([]);
+  const [iaSugerindo, setIaSugerindo] = useState(false);
+  const [iaMsg, setIaMsg] = useState("");
   const [fiscalEntryDraft, setFiscalEntryDraft] = useState<FiscalEntryDraft | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<ProductTab>("geral");
@@ -419,6 +421,61 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, segmento }:
       setError(e instanceof Error ? e.message : "Não foi possível consultar o código de barras.");
     } finally {
       setCosmosBuscando(false);
+    }
+  }
+
+  // Sugere dados fiscais (descrição limpa, categoria, NCM/CEST) com IA a partir do nome do produto.
+  // O NCM vem ancorado na tabela oficial; nunca sobrescreve campos já preenchidos sem aviso.
+  async function sugerirFiscalComIa() {
+    const descricao = form.name.trim();
+    setIaMsg("");
+    setError("");
+    if (descricao.length < 3) {
+      setError("Informe o nome/descrição do produto para a IA sugerir os dados fiscais.");
+      return;
+    }
+    setIaSugerindo(true);
+    try {
+      const response = await fetch("/api/erp/produtos/ia/fiscal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          descricao,
+          gtin: form.barcode.replace(/\D/g, "") || null,
+          ncmAtual: form.ncm || null,
+          marca: form.brand || null
+        })
+      });
+      const data = (await response.json()) as {
+        descricaoLimpa: string | null;
+        categoria: string | null;
+        ncmSugerido: string | null;
+        ncmDescricao: string | null;
+        cest: string | null;
+        marca: string | null;
+        thumbnail: string | null;
+        confianca: number;
+        avisos: string[];
+        error?: string;
+      };
+      if (!response.ok) throw new Error(data.error || "Não foi possível sugerir com IA.");
+      setForm((current) => ({
+        ...current,
+        name: current.name.trim() || data.descricaoLimpa || current.name,
+        category: current.category.trim() || data.categoria || current.category,
+        ncm: data.ncmSugerido || current.ncm,
+        cest: data.cest || current.cest,
+        brand: current.brand.trim() || data.marca || current.brand,
+        imageUrl: current.imageUrl || data.thumbnail || current.imageUrl
+      }));
+      const partes: string[] = [];
+      if (data.ncmSugerido) partes.push(`NCM ${data.ncmSugerido}${data.ncmDescricao ? ` (${data.ncmDescricao})` : ""}`);
+      if (data.categoria) partes.push(`categoria ${data.categoria}`);
+      setIaMsg(`Sugerido por IA · confiança ${data.confianca}%${partes.length ? " · " + partes.join(" · ") : ""}. ${(data.avisos ?? []).join(" ")}`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Não foi possível sugerir com IA.");
+    } finally {
+      setIaSugerindo(false);
     }
   }
 
@@ -793,6 +850,12 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, segmento }:
     if (activeTab === "fiscal") {
       return (
         <div className="erp-form">
+          <div className="full" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <button type="button" className="btn-erp light sm" style={{ alignSelf: "flex-start" }} onClick={sugerirFiscalComIa} disabled={iaSugerindo}>
+              {iaSugerindo ? "Consultando IA..." : "🤖 Sugerir dados fiscais com IA"}
+            </button>
+            {iaMsg && <small className="field-hint" style={{ color: "var(--erp-warn, #92400e)" }}>{iaMsg}</small>}
+          </div>
           <label>
             NCM
             <input value={form.ncm} onChange={(event) => updateField("ncm", event.target.value)} />

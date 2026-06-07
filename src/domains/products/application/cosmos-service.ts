@@ -97,10 +97,26 @@ function extractCest(raw: unknown): string | null {
   return code || null;
 }
 
+/** Cache de GTIN válido por 180 dias — dados de produto mudam pouco e a cota diária é escassa. */
+const COSMOS_CACHE_TTL_MS = 180 * 24 * 60 * 60 * 1000;
+
 /** Consulta um produto por GTIN no Cosmos e devolve os campos para preencher o cadastro. */
 export async function consultarGtinCosmos(scope: TenantScope, gtinInput: string): Promise<GtinLookupResult> {
   const gtin = onlyDigits(gtinInput);
   if (gtin.length < 8) throw new CosmosError("Código de barras (GTIN/EAN) inválido.");
+
+  // Cache primeiro: evita gastar a cota diária consultando o mesmo GTIN de novo.
+  const cached = await prisma.cosmosCache.findUnique({ where: { gtin } });
+  if (cached && Date.now() - cached.buscadoEm.getTime() < COSMOS_CACHE_TTL_MS) {
+    return {
+      gtin: cached.gtin,
+      descricao: cached.descricao ?? "",
+      ncm: cached.ncm,
+      cest: cached.cest,
+      marca: cached.marca,
+      thumbnail: cached.thumbnail
+    };
+  }
 
   const token = await getActiveToken(scope);
 
@@ -132,7 +148,7 @@ export async function consultarGtinCosmos(scope: TenantScope, gtinInput: string)
     thumbnail?: string | null;
   };
 
-  return {
+  const resultado: GtinLookupResult = {
     gtin: onlyDigits(data.gtin) || gtin,
     descricao: (data.description ?? "").trim(),
     ncm: onlyDigits(data.ncm?.code) || null,
@@ -140,6 +156,15 @@ export async function consultarGtinCosmos(scope: TenantScope, gtinInput: string)
     marca: data.brand?.name?.trim() || null,
     thumbnail: data.thumbnail ?? null
   };
+
+  // Grava no cache (chave = GTIN consultado) para próximas consultas não gastarem cota.
+  await prisma.cosmosCache.upsert({
+    where: { gtin },
+    update: { descricao: resultado.descricao, ncm: resultado.ncm, cest: resultado.cest, marca: resultado.marca, thumbnail: resultado.thumbnail, buscadoEm: new Date() },
+    create: { gtin, descricao: resultado.descricao, ncm: resultado.ncm, cest: resultado.cest, marca: resultado.marca, thumbnail: resultado.thumbnail }
+  });
+
+  return resultado;
 }
 
 type CosmosProduct = {

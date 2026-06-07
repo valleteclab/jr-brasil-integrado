@@ -394,6 +394,30 @@ model ConfiguracaoIntegracao {
   @@index([tenantId, empresaId])
 }
 
+/// Tabela oficial de NCM (referência global, sem tenant). Usada para ancorar as sugestões de
+/// NCM da IA (RAG + validação): a IA só pode escolher códigos que existam aqui.
+model Ncm {
+  codigo        String   @id
+  descricao     String
+  /// Descrição normalizada (sem HTML/acentos, minúscula) para busca por palavra-chave (RAG).
+  descricaoBusca String  @default("")
+  atualizadoEm  DateTime @default(now())
+
+  @@index([descricaoBusca])
+}
+
+/// Cache de consultas ao catálogo Cosmos por GTIN (global — GTIN é universal). Evita gastar
+/// a cota diária consultando o mesmo código de barras mais de uma vez.
+model CosmosCache {
+  gtin      String   @id
+  descricao String?
+  ncm       String?
+  cest      String?
+  marca     String?
+  thumbnail String?
+  buscadoEm DateTime @default(now())
+}
+
 model Usuario {
   id           String           @id @default(cuid())
   nome         String

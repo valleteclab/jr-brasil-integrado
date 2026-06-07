@@ -216,6 +216,7 @@ export function FiscalEntryWizard({ initialDraft = null, products, formasPagamen
   const [loading, setLoading] = useState(false);
   const [suggesting, setSuggesting] = useState(false);
   const [suggestingFinalidade, setSuggestingFinalidade] = useState(false);
+  const [suggestingFiscal, setSuggestingFiscal] = useState(false);
   const [finalidadeEmMassa, setFinalidadeEmMassa] = useState<FinalidadeEntrada>("REVENDA");
   // Há alterações de vínculo/finalidade ainda não gravadas? Evita re-salvar os 50 itens toda vez
   // que o usuário volta e avança sem mudar nada. Começa true: a primeira passagem sempre grava.
@@ -477,6 +478,54 @@ export function FiscalEntryWizard({ initialDraft = null, products, formasPagamen
     }
   }
 
+  // Sugere NCM (ancorado na tabela oficial) com IA para os itens sem NCM. Preenche para conferência.
+  async function suggestFiscal() {
+    if (!draft) {
+      return;
+    }
+    setSuggestingFiscal(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await fetch(`/api/erp/entradas-fiscais/${draft.id}/ia/fiscal`, { method: "POST" });
+      const data = await response.json() as {
+        suggestions?: Array<{ itemId: string; ncmSugerido: string | null; confianca: number; motivo: string }>;
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(data.error || "Não foi possível sugerir dados fiscais com IA.");
+      }
+      const suggestions = data.suggestions ?? [];
+      const aplicaveis = suggestions.filter((s) => s.ncmSugerido);
+      if (!aplicaveis.length) {
+        setMessage("A IA não encontrou NCM com segurança para os itens pendentes.");
+        return;
+      }
+      setItemsDirty(true);
+      setDraft((current) => {
+        if (!current) {
+          return current;
+        }
+        return {
+          ...current,
+          items: current.items.map((item) => {
+            const suggestion = aplicaveis.find((entry) => entry.itemId === item.id);
+            // Só preenche NCM vazio — não sobrescreve o que já veio do XML.
+            if (!suggestion || item.importedProduct.ncm.replace(/\D/g, "").length === 8) {
+              return item;
+            }
+            return { ...item, importedProduct: { ...item.importedProduct, ncm: suggestion.ncmSugerido as string } };
+          })
+        };
+      });
+      setMessage(`NCM sugerido por IA para ${aplicaveis.length} item(ns). Confira com seu contador antes de confirmar.`);
+    } catch (aiError) {
+      setError(aiError instanceof Error ? aiError.message : "Não foi possível sugerir dados fiscais com IA.");
+    } finally {
+      setSuggestingFiscal(false);
+    }
+  }
+
   async function confirmEntry() {
     if (!draft) {
       return;
@@ -621,6 +670,9 @@ export function FiscalEntryWizard({ initialDraft = null, products, formasPagamen
               </Button>
               <Button type="button" variant="light" onClick={suggestLinks} disabled={suggesting}>
                 {suggesting ? "Consultando IA..." : "Sugerir vínculos com IA"}
+              </Button>
+              <Button type="button" variant="light" onClick={suggestFiscal} disabled={suggestingFiscal}>
+                {suggestingFiscal ? "Consultando IA..." : "Sugerir NCM com IA"}
               </Button>
             </div>
           </div>
