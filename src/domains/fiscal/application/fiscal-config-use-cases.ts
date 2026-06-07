@@ -274,6 +274,12 @@ export async function getFiscalRuntimeConfig(scope: TenantScope) {
     throw new Error("Empresa não encontrada para emissão fiscal.");
   }
 
+  // ACBr: client_id/client_secret são da APLICAÇÃO (plataforma/SaaS), não de cada empresa. Vêm das
+  // envs ACBR_CLIENT_ID/ACBR_CLIENT_SECRET; cai para a config da empresa só por retrocompatibilidade.
+  const isAcbr = (config?.provedor ?? "MANUAL") === "ACBR";
+  const acbrClientId = process.env.ACBR_CLIENT_ID?.trim();
+  const acbrClientSecret = process.env.ACBR_CLIENT_SECRET?.trim();
+
   return {
     provider: config?.provedor ?? "MANUAL",
     ambiente: config?.ambiente ?? "HOMOLOGACAO",
@@ -281,8 +287,8 @@ export async function getFiscalRuntimeConfig(scope: TenantScope) {
     baseUrl: config?.baseUrl ?? null,
     emissionMode: config?.spedyModoEmissao ?? "COMPLETO",
     nfseAmbienteNacional: config?.nfseAmbienteNacional ?? null,
-    token: config?.tokenCriptografado ? decryptSecret(config.tokenCriptografado) : null,
-    cscId: config?.cscId ?? null,
+    token: isAcbr && acbrClientSecret ? acbrClientSecret : config?.tokenCriptografado ? decryptSecret(config.tokenCriptografado) : null,
+    cscId: isAcbr && acbrClientId ? acbrClientId : config?.cscId ?? null,
     cscToken: config?.cscTokenCriptografado ? decryptSecret(config.cscTokenCriptografado) : null,
     nfceIdCsc: config?.nfceIdCsc ?? null,
     nfceCsc: config?.nfceCscCriptografado ? decryptSecret(config.nfceCscCriptografado) : null,

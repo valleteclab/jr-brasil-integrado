@@ -81,7 +81,8 @@ export function FiscalOnboardingWizard({
     if (step === 2 && externalProvider) {
       // SPEDY deriva a base do ambiente; exige apenas o token (X-Api-Key).
       if (form.provider !== "SPEDY" && !isAcbr && !form.baseUrl.trim()) return "Provedor externo exige a URL base.";
-      if (!initialData.config.hasToken && !token.trim()) return "Provedor externo exige o token de integração.";
+      // ACBr: credenciais (client_id/secret) são da PLATAFORMA (env), não pedidas aqui.
+      if (!isAcbr && !initialData.config.hasToken && !token.trim()) return "Provedor externo exige o token de integração.";
     }
     return "";
   }, [step, form, externalProvider, token, initialData.config.hasToken]);
@@ -306,26 +307,34 @@ export function FiscalOnboardingWizard({
               <option value="PRODUCAO">Produção</option>
             </select>
           </label>
-          {externalProvider && (
+          {externalProvider && isAcbr && (
+            <div className="full alert info" style={{ margin: 0 }}>
+              <strong>Credenciais ACBr são da plataforma</strong>
+              <span>
+                O client_id/client_secret do ACBr pertencem à APLICAÇÃO (configurados pelo dono do SaaS
+                nas variáveis ACBR_CLIENT_ID / ACBR_CLIENT_SECRET), não por empresa. Aqui você define só o
+                ambiente, as séries e o certificado — e registra a empresa na ACBr.
+              </span>
+            </div>
+          )}
+          {externalProvider && !isAcbr && (
             <>
               <label className="full">
-                URL base do provedor{isAcbr ? " (opcional)" : "*"}
-                <input value={form.baseUrl} onChange={(e) => update("baseUrl", e.target.value)} placeholder={isAcbr ? "Deixe em branco — usa o ambiente (prod/homologação) da ACBr" : "https://api.provedor.com.br"} />
+                URL base do provedor*
+                <input value={form.baseUrl} onChange={(e) => update("baseUrl", e.target.value)} placeholder="https://api.provedor.com.br" />
               </label>
               <label>
-                {isAcbr ? "Client Secret (ACBr)" : "Token de integração"}{initialData.config.hasToken ? " (já salvo)" : "*"}
+                Token de integração{initialData.config.hasToken ? " (já salvo)" : "*"}
                 <input type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder={initialData.config.hasToken ? "•••• manter atual" : ""} />
               </label>
               <label>
-                {isAcbr ? "Client ID (ACBr)*" : "CSC ID (NFC-e)"}
-                <input value={form.cscId} onChange={(e) => update("cscId", e.target.value)} placeholder={isAcbr ? "client_id da sua conta ACBr" : ""} />
+                CSC ID (NFC-e)
+                <input value={form.cscId} onChange={(e) => update("cscId", e.target.value)} />
               </label>
-              {!isAcbr && (
-                <label>
-                  CSC Token (NFC-e){initialData.config.hasCscToken ? " (já salvo)" : ""}
-                  <input type="password" value={cscToken} onChange={(e) => setCscToken(e.target.value)} />
-                </label>
-              )}
+              <label>
+                CSC Token (NFC-e){initialData.config.hasCscToken ? " (já salvo)" : ""}
+                <input type="password" value={cscToken} onChange={(e) => setCscToken(e.target.value)} />
+              </label>
             </>
           )}
           <label>

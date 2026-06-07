@@ -449,6 +449,9 @@ export async function emitirNotaTesteHomologacao(scope: TenantScope) {
   return emitProductInvoiceAvulsa(scope, {
     modelo: "NFE",
     naturezaOperacao: "Venda de teste (homologação)",
+    // Forma de pagamento explícita (Dinheiro → tPag 01); sem isso cai em "99-outros", que a SEFAZ
+    // rejeita por exigir descrição do pagamento.
+    formaPagamento: "Dinheiro",
     receiver: {
       // Em homologação a SEFAZ exige este nome no destinatário; usamos o CNPJ/endereço da empresa.
       nome: "NF-E EMITIDA EM AMBIENTE DE HOMOLOGACAO - SEM VALOR FISCAL",
