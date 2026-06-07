@@ -1146,6 +1146,19 @@ p {
   height: 28px;
   justify-content: center;
   width: 28px;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+/* Miniatura real do produto na lista (imagem) — mesmo tamanho do placeholder. */
+.product-thumb-img {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  border-radius: 6px;
+  border: 1px solid var(--erp-line);
+  background: #fff;
+  flex-shrink: 0;
 }
 
 .category-pill {

@@ -19,6 +19,14 @@ function derivarCfops(icmsCst: string) {
   };
 }
 
+/** Miniatura do produto na lista: mostra a imagem e cai no placeholder se a URL falhar/estiver vazia. */
+function ProductThumb({ url, name }: { url?: string; name: string }) {
+  const [erro, setErro] = useState(false);
+  if (!url || erro) return <span className="product-thumb">⊙</span>;
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img className="product-thumb-img" src={url} alt={name} loading="lazy" onError={() => setErro(true)} />;
+}
+
 function Pill({ tone, children }: { tone: BadgeTone; children: React.ReactNode }) {
   return (
     <span className={`pill ${tone}`}>
@@ -480,6 +488,27 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
     setForm((current) => ({ ...current, [key]: value }));
   }
 
+  // Sobe uma imagem do computador: converte em dataURL (base64) e usa como imagem do produto.
+  function onUploadImagem(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setError("Selecione um arquivo de imagem (PNG/JPG).");
+      return;
+    }
+    if (file.size > 1.5 * 1024 * 1024) {
+      setError("Imagem muito grande (máx. 1,5 MB). Reduza a imagem ou use um link.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      updateField("imageUrl", String(reader.result || ""));
+      setError("");
+    };
+    reader.readAsDataURL(file);
+  }
+
   // Busca o produto no Cosmos pelo código de barras e preenche os campos ainda vazios
   // (descrição/marca) e os fiscais (NCM/CEST). Não sobrescreve o que o usuário já digitou.
   async function buscarPorCodigoBarras() {
@@ -882,17 +911,24 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
               </ul>
             )}
           </label>
-          {form.imageUrl && (
-            <label className="full">
-              Imagem da loja (catálogo)
-              <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
+          <label className="full">
+            Imagem do produto (loja/catálogo)
+            <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+              {form.imageUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
                 <img src={form.imageUrl} alt={form.name} style={{ width: 60, height: 60, objectFit: "contain", border: "1px solid var(--erp-line)", borderRadius: 8, background: "#fff", flexShrink: 0 }} />
-                <input value={form.imageUrl} onChange={(event) => updateField("imageUrl", event.target.value)} style={{ flex: 1 }} />
-                <button type="button" className="btn-erp ghost xs" onClick={() => updateField("imageUrl", "")}>Remover</button>
-              </div>
-            </label>
-          )}
+              ) : (
+                <span style={{ width: 60, height: 60, display: "grid", placeItems: "center", border: "1px dashed var(--erp-line)", borderRadius: 8, background: "#fff", color: "#94a3b8", flexShrink: 0 }}>⊙</span>
+              )}
+              <input value={form.imageUrl} onChange={(event) => updateField("imageUrl", event.target.value)} placeholder="Cole o link da imagem (https://...)" style={{ flex: 1, minWidth: 0 }} />
+              <label className="btn-erp ghost sm" style={{ cursor: "pointer", margin: 0, whiteSpace: "nowrap" }}>
+                ⬆️ Subir
+                <input type="file" accept="image/*" onChange={onUploadImagem} style={{ display: "none" }} />
+              </label>
+              {form.imageUrl && <button type="button" className="btn-erp ghost sm" onClick={() => updateField("imageUrl", "")}>Remover</button>}
+            </div>
+            <small className="field-hint">Preenchida automaticamente pelo GTIN (Buscar); ou cole um link, ou suba uma imagem do computador.</small>
+          </label>
           <label>
             SKU interno (deixe em branco para gerar automaticamente)
             <div style={{ display: "flex", gap: 6 }}>
@@ -1416,7 +1452,7 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
                     <td className="mono bold">{product.sku}</td>
                     <td>
                       <div className="product-cell">
-                        <span className="product-thumb">⊙</span>
+                        <ProductThumb url={product.imageUrl} name={product.name} />
                         <span>
                           <strong>{product.name}</strong>
                           <small>Cód. {product.originalCode || product.sku}</small>

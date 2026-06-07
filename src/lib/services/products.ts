@@ -377,7 +377,8 @@ export async function listErpProductSummaries(): Promise<ErpProductSummary[]> {
         purchaseConversion: String(Number(product.fatorConversaoCompra)),
         storeTitle: product.nome,
         storeDescription: product.descricaoComercial ?? "",
-        imageUrl: product.imagens[0]?.url,
+        // Sem imagem própria, tenta a do Dataload pelo GTIN (a lista cai no placeholder se falhar).
+        imageUrl: product.imagens[0]?.url ?? imagemDataloadUrl(product.gtin) ?? undefined,
         aplicacoes: product.aplicacoes.map((a) => ({
           marca: a.marca ?? "",
           modelo: a.modelo ?? "",
