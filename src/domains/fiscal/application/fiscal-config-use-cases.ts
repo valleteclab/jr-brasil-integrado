@@ -5,7 +5,7 @@ import { createAuditLog } from "@/lib/audit/audit-service";
 import { decryptSecret, encryptSecret, secretLastChars } from "@/lib/security/secret-crypto";
 import { resolveFiscalProvider } from "@/domains/fiscal/providers";
 import { updateAcbrNfceCsc, registrarEmpresaAcbr } from "@/domains/fiscal/providers/acbr-provider";
-import { getCredenciaisAcbrPlataforma } from "@/domains/fiscal/application/plataforma-provedor-use-cases";
+import { getCredenciaisProvedorPlataforma, getProvedorFiscalAtivo, provedorCred } from "@/domains/fiscal/application/plataforma-provedor-use-cases";
 
 export type FiscalConfigSummary = {
   configured: boolean;
@@ -275,23 +275,34 @@ export async function getFiscalRuntimeConfig(scope: TenantScope) {
     throw new Error("Empresa não encontrada para emissão fiscal.");
   }
 
-  // ACBr: client_id/client_secret e URL são da APLICAÇÃO (plataforma/SaaS), por AMBIENTE, vindos do
-  // banco (configurados no /admin). Env e config da empresa ficam só como fallback retrocompatível.
+  // O PROVEDOR e as credenciais são da PLATAFORMA (escolhidos pelo dono do SaaS no /admin), por
+  // AMBIENTE. Empresas marcadas como INTERNO/MANUAL mantêm o provedor interno; as demais usam o
+  // provedor ATIVO da plataforma. Env/config da empresa ficam só como fallback retrocompatível.
   const ambiente = config?.ambiente ?? "HOMOLOGACAO";
-  const isAcbr = (config?.provedor ?? "MANUAL") === "ACBR";
-  const plataformaAcbr = isAcbr ? await getCredenciaisAcbrPlataforma(ambiente) : null;
-  const acbrClientId = plataformaAcbr?.clientId ?? process.env.ACBR_CLIENT_ID?.trim() ?? null;
-  const acbrClientSecret = plataformaAcbr?.clientSecret ?? process.env.ACBR_CLIENT_SECRET?.trim() ?? null;
+  const provedorEmpresa = config?.provedor ?? "MANUAL";
+  const provedorAtivo = await getProvedorFiscalAtivo();
+  const provider = (provedorEmpresa === "INTERNO" || provedorEmpresa === "MANUAL" ? provedorEmpresa : provedorAtivo) as ProvedorFiscal;
+  const usaPlataforma = provider !== "INTERNO" && provider !== "MANUAL";
+  const isOauth = provedorCred(provider) === "oauth";
+  const plataforma = usaPlataforma ? await getCredenciaisProvedorPlataforma(provider, ambiente) : null;
+
+  // OAuth (ACBr): token = client_secret, cscId = client_id. Token-based: token = chave de API.
+  const tokenRuntime = isOauth
+    ? plataforma?.clientSecret ?? process.env.ACBR_CLIENT_SECRET?.trim() ?? null
+    : plataforma?.token ?? (config?.tokenCriptografado ? decryptSecret(config.tokenCriptografado) : null);
+  const cscIdRuntime = isOauth
+    ? plataforma?.clientId ?? process.env.ACBR_CLIENT_ID?.trim() ?? null
+    : config?.cscId ?? null;
 
   return {
-    provider: config?.provedor ?? "MANUAL",
+    provider,
     ambiente,
     regime: config?.regimeTributario ?? empresa.regimeTributario,
-    baseUrl: isAcbr ? plataformaAcbr?.baseUrl ?? config?.baseUrl ?? null : config?.baseUrl ?? null,
+    baseUrl: plataforma?.baseUrl ?? config?.baseUrl ?? null,
     emissionMode: config?.spedyModoEmissao ?? "COMPLETO",
     nfseAmbienteNacional: config?.nfseAmbienteNacional ?? null,
-    token: isAcbr ? acbrClientSecret : config?.tokenCriptografado ? decryptSecret(config.tokenCriptografado) : null,
-    cscId: isAcbr ? acbrClientId : config?.cscId ?? null,
+    token: tokenRuntime,
+    cscId: cscIdRuntime,
     cscToken: config?.cscTokenCriptografado ? decryptSecret(config.cscTokenCriptografado) : null,
     nfceIdCsc: config?.nfceIdCsc ?? null,
     nfceCsc: config?.nfceCscCriptografado ? decryptSecret(config.nfceCscCriptografado) : null,

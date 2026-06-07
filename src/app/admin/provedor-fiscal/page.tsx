@@ -1,16 +1,16 @@
 import { PageHeader } from "@/components/shared/PageHeader";
 import { ProvedorFiscalForm } from "@/components/admin/ProvedorFiscalForm";
 import { getProvedorFiscalPlataforma } from "@/lib/services/platform-admin";
-import type { ProvedorFiscalAmbiente } from "@/lib/services/platform-admin";
+import type { ProvedorFiscalPlataforma } from "@/lib/services/platform-admin";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminProvedorFiscalPage() {
-  let ambientes: ProvedorFiscalAmbiente[] = [];
+  let dados: ProvedorFiscalPlataforma | null = null;
   let loadError = "";
 
   try {
-    ambientes = (await getProvedorFiscalPlataforma()).ambientes;
+    dados = await getProvedorFiscalPlataforma();
   } catch (error) {
     loadError = error instanceof Error ? error.message : "Não foi possível carregar o provedor fiscal.";
   }
@@ -19,8 +19,8 @@ export default async function AdminProvedorFiscalPage() {
     <>
       <PageHeader eyebrow="Plataforma" title="Provedor de emissão fiscal">
         <p>
-          Credenciais do provedor (ACBr) no nível da plataforma — usadas por <strong>todas</strong> as
-          empresas. O client_id/client_secret são da APLICAÇÃO (não por empresa), separados por ambiente.
+          Escolha o provedor de emissão usado pela plataforma e configure suas credenciais por ambiente
+          (homologação/produção). As credenciais valem para <strong>todas</strong> as empresas.
         </p>
       </PageHeader>
 
@@ -31,7 +31,7 @@ export default async function AdminProvedorFiscalPage() {
         </div>
       )}
 
-      {!loadError && <ProvedorFiscalForm ambientes={ambientes} />}
+      {dados && <ProvedorFiscalForm dados={dados} />}
     </>
   );
 }

@@ -2,30 +2,63 @@ import type { AmbienteFiscal } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 import { decryptSecret } from "@/lib/security/secret-crypto";
 
-/** URLs padrão da ACBr por ambiente (usadas quando o dono do SaaS não define uma própria). */
+/** Provedores de emissão integrados e o tipo de credencial de cada um. */
+export const PROVEDORES_FISCAIS = [
+  { key: "ACBR", label: "ACBr", cred: "oauth" as const },
+  { key: "SPEDY", label: "Spedy", cred: "token" as const },
+  { key: "FOCUS_NFE", label: "Focus NFe", cred: "token" as const },
+  { key: "NFEIO", label: "NFe.io", cred: "token" as const },
+  { key: "PLUGNOTAS", label: "PlugNotas", cred: "token" as const },
+  { key: "WEBMANIA", label: "Webmania", cred: "token" as const }
+];
+
+export type CredencialTipo = "oauth" | "token";
+
+export function provedorCred(provedor: string): CredencialTipo {
+  return PROVEDORES_FISCAIS.find((p) => p.key === provedor)?.cred ?? "token";
+}
+
+/** URLs padrão da ACBr por ambiente. Demais provedores derivam a própria base internamente. */
 export const ACBR_DEFAULT_BASE: Record<AmbienteFiscal, string> = {
   HOMOLOGACAO: "https://hom.acbr.api.br",
   PRODUCAO: "https://prod.acbr.api.br"
 };
 
-export type CredenciaisAcbrPlataforma = {
+const DEFAULT_BASE: Record<string, Partial<Record<AmbienteFiscal, string>>> = {
+  ACBR: ACBR_DEFAULT_BASE
+};
+
+export function defaultBaseUrl(provedor: string, ambiente: AmbienteFiscal): string {
+  return DEFAULT_BASE[provedor]?.[ambiente] ?? "";
+}
+
+/** Provedor de emissão ativo na plataforma (default ACBr). */
+export async function getProvedorFiscalAtivo(): Promise<string> {
+  const cfg = await prisma.plataformaConfiguracao.findUnique({ where: { id: "default" } });
+  return cfg?.provedorFiscalAtivo ?? "ACBR";
+}
+
+export type CredenciaisProvedorPlataforma = {
   clientId: string | null;
   clientSecret: string | null;
-  baseUrl: string;
+  token: string | null;
+  baseUrl: string | null;
 };
 
 /**
- * Credenciais do ACBr no nível da PLATAFORMA (do dono do SaaS) para um ambiente. Usado pelo
- * runtime de emissão — sem exigir admin, pois roda durante a emissão da empresa. Decripta os
- * segredos e aplica a URL padrão do ambiente quando não houver uma configurada.
+ * Credenciais do provedor no nível da PLATAFORMA (do dono do SaaS) para um ambiente. Usado pelo
+ * runtime de emissão — sem exigir admin, pois roda durante a emissão. Decripta os segredos e
+ * aplica a URL padrão do provedor/ambiente quando não houver uma configurada.
  */
-export async function getCredenciaisAcbrPlataforma(ambiente: AmbienteFiscal): Promise<CredenciaisAcbrPlataforma> {
+export async function getCredenciaisProvedorPlataforma(provedor: string, ambiente: AmbienteFiscal): Promise<CredenciaisProvedorPlataforma> {
   const row = await prisma.plataformaProvedorFiscal.findUnique({
-    where: { provedor_ambiente: { provedor: "ACBR", ambiente } }
+    where: { provedor_ambiente: { provedor, ambiente } }
   });
+  const base = row?.baseUrl?.trim() || defaultBaseUrl(provedor, ambiente);
   return {
     clientId: row?.clientIdCriptografado ? decryptSecret(row.clientIdCriptografado) : null,
     clientSecret: row?.clientSecretCriptografado ? decryptSecret(row.clientSecretCriptografado) : null,
-    baseUrl: (row?.baseUrl?.trim() || ACBR_DEFAULT_BASE[ambiente]).replace(/\/$/, "")
+    token: row?.tokenCriptografado ? decryptSecret(row.tokenCriptografado) : null,
+    baseUrl: base ? base.replace(/\/$/, "") : null
   };
 }

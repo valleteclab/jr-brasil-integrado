@@ -448,10 +448,20 @@ model PlataformaProvedorFiscal {
   clientSecretCriptografado String?
   clientIdFinal             String?
   secretFinal               String?
+  // Provedores baseados em token (Spedy, Focus NFe, NFe.io, PlugNotas, Webmania).
+  tokenCriptografado        String?
+  tokenFinal                String?
   ativo                     Boolean        @default(true)
   atualizadoEm              DateTime       @updatedAt
 
   @@id([provedor, ambiente])
+}
+
+/// Configuração única (global) da plataforma. Hoje guarda qual provedor de emissão está ativo.
+model PlataformaConfiguracao {
+  id                  String   @id @default("default")
+  provedorFiscalAtivo String   @default("ACBR")
+  atualizadoEm        DateTime @updatedAt
 }
 
 /// CEST (Código Especificador da Substituição Tributária) — GLOBAL. `ncms` lista os NCMs aos
