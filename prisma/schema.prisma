@@ -406,6 +406,22 @@ model Ncm {
   @@index([descricaoBusca])
 }
 
+/// Categorias-padrão de produto (GLOBAL, compartilhadas por todas as empresas). Fonte da lista
+/// padrão no seletor e no grounding da IA. Cada empresa ainda pode criar categorias próprias em
+/// ProdutoCategoria (por empresa) — o seletor mostra as padrão + as próprias.
+model CategoriaPadrao {
+  slug         String   @id
+  nome         String
+  atualizadoEm DateTime @default(now())
+}
+
+/// Unidades de medida padrão (GLOBAL, compartilhadas por todas as empresas).
+model UnidadeMedida {
+  codigo       String   @id
+  nome         String
+  atualizadoEm DateTime @default(now())
+}
+
 /// Cache de consultas ao catálogo Cosmos por GTIN (global — GTIN é universal). Evita gastar
 /// a cota diária consultando o mesmo código de barras mais de uma vez.
 model CosmosCache {

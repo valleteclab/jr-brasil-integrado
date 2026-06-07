@@ -76,8 +76,10 @@ type ProductCrudProps = {
   initialProducts: ErpProductSummary[];
   taxRules: ProductTaxRuleOption[];
   warehouses: string[];
-  /** Categorias cadastradas (tabela ProdutoCategoria) — alimenta o seletor do cadastro. */
+  /** Categorias padrão (global) + próprias da empresa — alimenta o seletor do cadastro. */
   categoryOptions?: string[];
+  /** Unidades de medida padrão (tabela global) — alimenta o seletor de unidade. */
+  unitOptions?: string[];
   /** Ramo da empresa — habilita recursos específicos (AUTOPECAS → aplicação veicular). */
   segmento?: string;
 };
@@ -294,7 +296,7 @@ function toProduct(form: ProductFormState): ProductRecord {
   };
 }
 
-export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOptions = [], segmento }: ProductCrudProps) {
+export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOptions = [], unitOptions = [], segmento }: ProductCrudProps) {
   const isAutopecas = segmento === "AUTOPECAS";
   const defaultWarehouse = warehouses[0] ?? "";
   const initialRecords = useMemo(() => initialProducts.map(enrichProduct), [initialProducts]);
@@ -330,6 +332,11 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
   const categoriaOpcoes = useMemo(
     () => Array.from(new Set([...categoryOptions, ...categories].filter(Boolean))).sort((a, b) => a.localeCompare(b)),
     [categoryOptions, categories]
+  );
+  // Opções de unidade: tabela global (unitOptions); fallback mínimo se ainda não populada.
+  const unidadeOpcoes = useMemo(
+    () => (unitOptions.length ? unitOptions : ["UN", "PC", "CX", "KG", "L", "M"]),
+    [unitOptions]
   );
   const brands = useMemo(
     () => Array.from(new Set(products.map((product) => product.brand))).sort(),
@@ -853,6 +860,9 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
               {categoriaOpcoes.map((cat) => <option key={cat} value={cat} />)}
             </datalist>
           </label>
+          <datalist id="unidade-opcoes">
+            {unidadeOpcoes.map((u) => <option key={u} value={u} />)}
+          </datalist>
           <label>
             Tipo
             <select value={form.type} onChange={(event) => updateField("type", event.target.value)}>
@@ -864,13 +874,12 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
           </label>
           <label>
             Unidade
-            <select value={form.unit} onChange={(event) => updateField("unit", event.target.value)}>
-              <option>UN</option>
-              <option>PAR</option>
-              <option>CX</option>
-              <option>KG</option>
-              <option>MT</option>
-            </select>
+            <input
+              list="unidade-opcoes"
+              value={form.unit}
+              onChange={(event) => updateField("unit", event.target.value.toUpperCase())}
+              placeholder="UN, CX, KG…"
+            />
           </label>
           <label className="full">
             Descrição curta
@@ -1055,7 +1064,7 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
           </label>
           <label>
             Unidade de compra
-            <input value={form.purchaseUnit} onChange={(event) => updateField("purchaseUnit", event.target.value)} />
+            <input list="unidade-opcoes" value={form.purchaseUnit} onChange={(event) => updateField("purchaseUnit", event.target.value.toUpperCase())} placeholder="UN, CX, KG…" />
           </label>
           <label>
             Fator de conversão

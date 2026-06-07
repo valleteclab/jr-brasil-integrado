@@ -110,19 +110,34 @@ export async function listStorefrontCategories(scopeArg?: TenantScope): Promise<
   }
 }
 
-/** Todas as categorias cadastradas da empresa (para o seletor do cadastro e o grounding da IA). */
+/**
+ * Categorias para o seletor/IA: as PADRÃO (tabela global CategoriaPadrao, compartilhada por todas
+ * as empresas) + as PRÓPRIAS da empresa (ProdutoCategoria). Deduplicadas por nome.
+ */
 export async function listProductCategories(scopeArg?: TenantScope): Promise<string[]> {
   if (!process.env.DATABASE_URL) {
     return [];
   }
   try {
     const scope = scopeArg ?? await getDevelopmentTenantScope();
-    const categorias = await prisma.produtoCategoria.findMany({
-      where: scopedByTenantCompany(scope),
-      orderBy: { nome: "asc" },
-      select: { nome: true }
-    });
-    return categorias.map((categoria) => categoria.nome);
+    const [padrao, proprias] = await Promise.all([
+      prisma.categoriaPadrao.findMany({ orderBy: { nome: "asc" }, select: { nome: true } }),
+      prisma.produtoCategoria.findMany({ where: scopedByTenantCompany(scope), select: { nome: true } })
+    ]);
+    const nomes = [...padrao, ...proprias].map((c) => c.nome);
+    return Array.from(new Set(nomes)).sort((a, b) => a.localeCompare(b));
+  } catch {
+    return [];
+  }
+}
+
+/** Unidades de medida padrão (tabela global UnidadeMedida) para o seletor do cadastro. */
+export async function listUnidades(): Promise<Array<{ codigo: string; nome: string }>> {
+  if (!process.env.DATABASE_URL) {
+    return [];
+  }
+  try {
+    return await prisma.unidadeMedida.findMany({ orderBy: { codigo: "asc" }, select: { codigo: true, nome: true } });
   } catch {
     return [];
   }

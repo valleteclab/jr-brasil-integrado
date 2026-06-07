@@ -1,14 +1,13 @@
-import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
-import type { TenantScope } from "@/lib/auth/dev-session";
-import { scopedByTenantCompany } from "@/lib/auth/dev-session";
 import { slugify } from "@/lib/slug";
 
 /**
- * Conjunto-base de categorias de produto, abrangendo os ramos atendidos (peças automotivas/
- * agrícolas, material de construção e varejo geral). Serve para popular a tabela `ProdutoCategoria`
- * e ancorar a sugestão de categoria da IA. O usuário pode editar/criar livremente depois.
+ * Dados de referência GLOBAIS (compartilhados por todas as empresas): categorias-padrão e
+ * unidades de medida. Populam as tabelas globais `CategoriaPadrao` / `UnidadeMedida`, que
+ * alimentam o seletor do cadastro e o grounding da IA. Cada empresa ainda pode criar categorias
+ * próprias (ProdutoCategoria, por empresa) — o seletor mostra as padrão + as próprias.
  */
+
 export const CATEGORIAS_BASE: string[] = [
   // Peças e componentes (auto/agro)
   "Filtros",
@@ -46,38 +45,44 @@ export const CATEGORIAS_BASE: string[] = [
   "Diversos"
 ];
 
-export type CategoriaBaselineInput = Omit<
-  Prisma.ProdutoCategoriaCreateManyInput,
-  "tenantId" | "empresaId" | "id" | "criadoEm" | "atualizadoEm"
->;
+export const UNIDADES_BASE: Array<{ codigo: string; nome: string }> = [
+  { codigo: "UN", nome: "Unidade" },
+  { codigo: "PC", nome: "Peça" },
+  { codigo: "PAR", nome: "Par" },
+  { codigo: "CX", nome: "Caixa" },
+  { codigo: "FD", nome: "Fardo" },
+  { codigo: "SC", nome: "Saco" },
+  { codigo: "KG", nome: "Quilograma" },
+  { codigo: "G", nome: "Grama" },
+  { codigo: "TON", nome: "Tonelada" },
+  { codigo: "L", nome: "Litro" },
+  { codigo: "ML", nome: "Mililitro" },
+  { codigo: "GL", nome: "Galão" },
+  { codigo: "LT", nome: "Lata" },
+  { codigo: "M", nome: "Metro" },
+  { codigo: "M2", nome: "Metro quadrado" },
+  { codigo: "M3", nome: "Metro cúbico" },
+  { codigo: "RL", nome: "Rolo" },
+  { codigo: "JG", nome: "Jogo" },
+  { codigo: "KIT", nome: "Kit" },
+  { codigo: "DZ", nome: "Dúzia" },
+  { codigo: "CT", nome: "Cento" },
+  { codigo: "MIL", nome: "Milheiro" }
+];
 
-/**
- * Popula as categorias-base para a empresa do escopo de forma idempotente (upsert por slug).
- * Não remove nem renomeia categorias existentes — apenas garante que as base existam.
- */
-export async function applyDefaultCategories(scope: TenantScope): Promise<{ criadas: number; total: number }> {
-  const existentes = await prisma.produtoCategoria.findMany({
-    where: scopedByTenantCompany(scope),
-    select: { slug: true }
-  });
-  const slugsExistentes = new Set(existentes.map((c) => c.slug));
+/** Popula as categorias-padrão globais (idempotente). */
+export async function applyDefaultCategoriasPadrao(): Promise<{ total: number }> {
+  const data = CATEGORIAS_BASE.map((nome) => ({ slug: slugify(nome), nome })).filter((c) => c.slug);
+  await prisma.categoriaPadrao.createMany({ data, skipDuplicates: true });
+  // Mantém o nome atualizado caso tenha mudado.
+  await Promise.all(data.map((c) => prisma.categoriaPadrao.update({ where: { slug: c.slug }, data: { nome: c.nome } }).catch(() => null)));
+  const total = await prisma.categoriaPadrao.count();
+  return { total };
+}
 
-  const novas = CATEGORIAS_BASE
-    .map((nome) => ({ nome, slug: slugify(nome) }))
-    .filter((c) => c.slug && !slugsExistentes.has(c.slug));
-
-  if (novas.length) {
-    await prisma.produtoCategoria.createMany({
-      data: novas.map((c) => ({
-        tenantId: scope.tenantId,
-        empresaId: scope.empresaId,
-        nome: c.nome,
-        slug: c.slug
-      })),
-      skipDuplicates: true
-    });
-  }
-
-  const total = await prisma.produtoCategoria.count({ where: scopedByTenantCompany(scope) });
-  return { criadas: novas.length, total };
+/** Popula as unidades de medida globais (idempotente). */
+export async function applyDefaultUnidades(): Promise<{ total: number }> {
+  await prisma.unidadeMedida.createMany({ data: UNIDADES_BASE, skipDuplicates: true });
+  const total = await prisma.unidadeMedida.count();
+  return { total };
 }
