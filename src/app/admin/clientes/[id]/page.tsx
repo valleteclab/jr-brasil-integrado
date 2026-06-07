@@ -4,6 +4,7 @@ import { Card } from "@/components/shared/Card";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { ClienteBloqueioButton } from "@/components/admin/ClienteBloqueioButton";
 import { LojaModuloToggle } from "@/components/admin/LojaModuloToggle";
+import { IaModuloToggle } from "@/components/admin/IaModuloToggle";
 import { EmpresaStatusActions } from "@/components/admin/EmpresaStatusActions";
 import { ResetarSenhaButton } from "@/components/admin/ResetarSenhaButton";
 import { ClientePerfisManager } from "@/components/admin/ClientePerfisManager";
@@ -69,12 +70,21 @@ export default async function AdminClienteDetalhePage({ params }: { params: { id
             <span>Recursos do SaaS que este cliente pode usar.</span>
           </div>
         </div>
-        <div style={{ padding: "0 16px 16px" }}>
-          <LojaModuloToggle clienteId={cliente.id} habilitada={cliente.lojaHabilitada} />
-          <p className="block-muted" style={{ marginTop: 8, fontSize: 12 }}>
-            Quando habilitada, as empresas deste cliente podem publicar a loja virtual (vitrine pública
-            em /loja/{"{slug}"}). Com a loja desabilitada, o endereço público fica indisponível.
-          </p>
+        <div style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 14 }}>
+          <div>
+            <LojaModuloToggle clienteId={cliente.id} habilitada={cliente.lojaHabilitada} />
+            <p className="block-muted" style={{ marginTop: 8, fontSize: 12 }}>
+              Quando habilitada, as empresas deste cliente podem publicar a loja virtual (vitrine pública
+              em /loja/{"{slug}"}). Com a loja desabilitada, o endereço público fica indisponível.
+            </p>
+          </div>
+          <div>
+            <IaModuloToggle clienteId={cliente.id} habilitada={cliente.iaHabilitada} />
+            <p className="block-muted" style={{ marginTop: 8, fontSize: 12 }}>
+              Quando habilitada, este cliente pode usar as funções de IA (sugestão de dados/categoria,
+              assistente). Desabilitada, as chamadas de IA são bloqueadas para o cliente.
+            </p>
+          </div>
         </div>
       </Card>
 

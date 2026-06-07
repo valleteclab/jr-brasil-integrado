@@ -175,6 +175,7 @@ export type ClienteDetail = {
   slug: string;
   ativo: boolean;
   lojaHabilitada: boolean;
+  iaHabilitada: boolean;
   criadoEm: string;
   empresas: {
     id: string;
@@ -258,6 +259,7 @@ export async function getClienteDetail(tenantId: string): Promise<ClienteDetail 
     slug: tenant.slug,
     ativo: tenant.ativo,
     lojaHabilitada: tenant.lojaHabilitada,
+    iaHabilitada: tenant.iaHabilitada,
     criadoEm: tenant.criadoEm.toISOString(),
     empresas: tenant.empresas.map((e) => ({
       id: e.id,
@@ -327,6 +329,28 @@ export async function setTenantLojaHabilitada(tenantId: string, habilitada: bool
   });
 
   return { id: atualizado.id, lojaHabilitada: atualizado.lojaHabilitada };
+}
+
+/** Habilita/desabilita o módulo de IA do cliente (gate do dono do SaaS). */
+export async function setTenantIaHabilitada(tenantId: string, habilitada: boolean) {
+  const admin = await requirePlatformAdmin();
+  assertDb();
+
+  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+  if (!tenant) throw new PlatformAdminError("Cliente não encontrado.");
+
+  const atualizado = await prisma.tenant.update({ where: { id: tenantId }, data: { iaHabilitada: habilitada } });
+
+  await audit({
+    tenantId,
+    usuarioId: admin.usuarioId,
+    entidade: "Tenant",
+    entidadeId: tenantId,
+    acao: habilitada ? "plataforma.habilitar_ia" : "plataforma.desabilitar_ia",
+    payload: { iaHabilitadaAnterior: tenant.iaHabilitada, iaHabilitadaNova: habilitada }
+  });
+
+  return { id: atualizado.id, iaHabilitada: atualizado.iaHabilitada };
 }
 
 /** Edita o nome e/ou o slug (identificador) do cliente (tenant). Slug único entre clientes. */

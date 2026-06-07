@@ -149,6 +149,12 @@ export async function saveAiConfig(scope: TenantScope, input: SaveAiConfigInput)
 }
 
 async function getActiveOpenRouterSecret(scope: TenantScope) {
+  // Gate do módulo de IA (liberado pelo dono do SaaS). Desligado → bloqueia toda a IA do cliente.
+  const tenant = await prisma.tenant.findUnique({ where: { id: scope.tenantId }, select: { iaHabilitada: true } });
+  if (tenant && !tenant.iaHabilitada) {
+    throw new Error("Módulo de IA desabilitado para este cliente. Fale com o administrador da plataforma.");
+  }
+
   const config = await prisma.configuracaoIa.findUnique({
     where: {
       tenantId_empresaId_provedor: {

@@ -248,6 +248,9 @@ model Tenant {
   // Módulo Loja Virtual liberado pelo dono do SaaS (painel /admin). Quando false, as lojas das
   // empresas deste cliente não ficam acessíveis publicamente.
   lojaHabilitada  Boolean          @default(false)
+  // Módulo de IA liberado pelo dono do SaaS. Ligado por padrão; quando false, as funções de IA
+  // (sugestões, assistente) ficam bloqueadas para este cliente.
+  iaHabilitada    Boolean          @default(true)
   empresas        Empresa[]
   vinculos        UsuarioVinculo[]
   perfis          Perfil[]
