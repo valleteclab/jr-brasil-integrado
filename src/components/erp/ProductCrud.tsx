@@ -4,6 +4,20 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { correspondeBusca } from "@/lib/search/normalize";
 import type { ErpProductSummary, ProductTaxRuleOption } from "@/lib/services/products";
+import { resolveCfopVenda, isSubstituicaoTributaria } from "@/domains/fiscal/cfop";
+
+// CFOPs derivados automaticamente (revenda) — só estes são sobrescritos ao mudar o CST/CSOSN;
+// um CFOP digitado manualmente (ex.: 5910 bonificação) é preservado.
+const CFOPS_AUTO = new Set(["5102", "6102", "5405", "6404"]);
+
+/** Deriva os CFOPs de venda interna/interestadual a partir do CST/CSOSN do produto. */
+function derivarCfops(icmsCst: string) {
+  const st = isSubstituicaoTributaria({ cstIcms: icmsCst, csosn: icmsCst });
+  return {
+    interna: resolveCfopVenda({ ufOrigem: "UF", ufDestino: "UF", substituicaoTributaria: st }),
+    inter: resolveCfopVenda({ ufOrigem: "UF", ufDestino: "XX", substituicaoTributaria: st })
+  };
+}
 
 function Pill({ tone, children }: { tone: BadgeTone; children: React.ReactNode }) {
   return (
@@ -421,6 +435,21 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
       setCurrentPage(totalPages);
     }
   }, [currentPage, totalPages]);
+
+  // Preenche automaticamente os CFOPs de venda (interna/interestadual) a partir do CST/CSOSN:
+  // normal → 5102/6102; substituição tributária → 5405/6404. Preenche campos vazios e atualiza
+  // os que estão num CFOP-padrão; preserva um CFOP digitado manualmente.
+  useEffect(() => {
+    if (!drawerOpen) return;
+    const { interna, inter } = derivarCfops(form.icmsCst);
+    setForm((cur) => {
+      const inState = !cur.cfopInState.trim() || CFOPS_AUTO.has(cur.cfopInState.trim()) ? interna : cur.cfopInState;
+      const outState = !cur.cfopOutState.trim() || CFOPS_AUTO.has(cur.cfopOutState.trim()) ? inter : cur.cfopOutState;
+      if (inState === cur.cfopInState && outState === cur.cfopOutState) return cur;
+      return { ...cur, cfopInState: inState, cfopOutState: outState };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.icmsCst, drawerOpen]);
 
   // Quando o NCM tiver 8 dígitos, busca os CESTs vinculados (debounce simples de ~400ms).
   // Erros são tratados silenciosamente para não atrapalhar o cadastro.
@@ -964,7 +993,7 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
           <label>
             CFOP dentro do estado
             <input list="cfop-opcoes" value={form.cfopInState} onChange={(event) => updateField("cfopInState", event.target.value)} />
-            {descricaoCodigo(cfopOpcoes, form.cfopInState) && <small className="field-hint">{descricaoCodigo(cfopOpcoes, form.cfopInState)}</small>}
+            <small className="field-hint">{descricaoCodigo(cfopOpcoes, form.cfopInState) || "Sugerido automaticamente pelo CST/CSOSN — pode ajustar"}</small>
           </label>
           <label>
             CFOP fora do estado
