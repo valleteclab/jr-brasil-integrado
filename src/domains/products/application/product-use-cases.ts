@@ -6,6 +6,10 @@ import { createAuditLog } from "@/lib/audit/audit-service";
 import type { ProductPayload, ValidatedProductInput } from "./product-dto";
 import { validateProductPayload } from "./product-dto";
 
+// Banco remoto (Railway) tem latência: o cadastro faz várias queries em transação (produto,
+// ficha fiscal, estoque inicial, aplicações, imagem, auditoria) e estoura o timeout padrão de 5s.
+const TX_OPTIONS = { maxWait: 15000, timeout: 30000 };
+
 function slugify(value: string) {
   return value
     .normalize("NFD")
@@ -310,7 +314,7 @@ export async function createProduct(scope: TenantScope, payload: ProductPayload)
     });
 
     return product;
-  });
+  }, TX_OPTIONS);
 }
 
 export async function updateProduct(scope: TenantScope, productId: string, payload: ProductPayload) {
@@ -362,7 +366,7 @@ export async function updateProduct(scope: TenantScope, productId: string, paylo
     });
 
     return product;
-  });
+  }, TX_OPTIONS);
 }
 
 export async function archiveOrDeleteProduct(scope: TenantScope, productId: string) {
@@ -397,5 +401,5 @@ export async function archiveOrDeleteProduct(scope: TenantScope, productId: stri
     });
 
     return { id: product.id, archived: true };
-  });
+  }, TX_OPTIONS);
 }
