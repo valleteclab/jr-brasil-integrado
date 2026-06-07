@@ -7,6 +7,7 @@
  */
 import type { TenantScope } from "@/lib/auth/dev-session";
 import { consultarGtinCosmos } from "./cosmos-service";
+import { consultarImagemDataload } from "./dataload-service";
 
 /** Bytes dos caracteres específicos do Windows-1252 (faixa 0x80–0x9F) para reverter mojibake. */
 const CP1252: Record<string, number> = {
@@ -96,10 +97,15 @@ export type GtinLookup = {
  */
 export async function lookupProdutoGtin(scope: TenantScope, gtin: string): Promise<GtinLookup> {
   const dl = await consultarDadosDataload(gtin).catch(() => null);
+  // Imagem do Dataload em paralelo — tudo numa busca só (dados + imagem).
+  const img = await consultarImagemDataload(gtin).catch(() => null);
+  const imagem = img?.encontrado ? img.url : null;
+
   if (dl?.encontrado) {
-    return { gtin: dl.ean, descricao: dl.nome ?? "", ncm: dl.ncm, cest: dl.cest, marca: null, thumbnail: null, fonte: "DATALOAD" };
+    return { gtin: dl.ean, descricao: dl.nome ?? "", ncm: dl.ncm, cest: dl.cest, marca: null, thumbnail: imagem, fonte: "DATALOAD" };
   }
   // Fallback Cosmos (consome cota; pode lançar "não encontrado"/"não configurado").
   const cosmos = await consultarGtinCosmos(scope, gtin);
-  return { ...cosmos, fonte: "COSMOS" };
+  // Prioriza a imagem do Dataload; senão mantém a do Cosmos.
+  return { ...cosmos, thumbnail: imagem ?? cosmos.thumbnail, fonte: "COSMOS" };
 }

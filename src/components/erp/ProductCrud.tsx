@@ -322,7 +322,6 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
   const [error, setError] = useState("");
   const [importResult, setImportResult] = useState<XmlImportResult | null>(null);
   const [cosmosBuscando, setCosmosBuscando] = useState(false);
-  const [imgBuscando, setImgBuscando] = useState(false);
   const [gerandoSku, setGerandoSku] = useState(false);
   const [cosmosMsg, setCosmosMsg] = useState("");
   const [cosmosQuery, setCosmosQuery] = useState("");
@@ -483,33 +482,6 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
 
   // Busca o produto no Cosmos pelo código de barras e preenche os campos ainda vazios
   // (descrição/marca) e os fiscais (NCM/CEST). Não sobrescreve o que o usuário já digitou.
-  // Busca a imagem do produto no banco Dataload pelo código de barras e preenche a imagem.
-  async function buscarImagemDataload() {
-    const gtin = form.barcode.replace(/\D/g, "");
-    setCosmosMsg("");
-    setError("");
-    if (gtin.length < 8) {
-      setError("Informe um código de barras (GTIN/EAN) válido para buscar a imagem.");
-      return;
-    }
-    setImgBuscando(true);
-    try {
-      const response = await fetch(`/api/erp/produtos/imagem-dataload/${gtin}`);
-      const data = (await response.json()) as { encontrado?: boolean; url?: string | null; error?: string };
-      if (!response.ok) throw new Error(data.error || "Não foi possível consultar a imagem.");
-      if (data.encontrado && data.url) {
-        setForm((current) => ({ ...current, imageUrl: data.url as string }));
-        setCosmosMsg("Imagem encontrada no Dataload e vinculada. Revise antes de salvar.");
-      } else {
-        setCosmosMsg("Nenhuma imagem encontrada no Dataload para este código de barras.");
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Não foi possível consultar a imagem.");
-    } finally {
-      setImgBuscando(false);
-    }
-  }
-
   async function buscarPorCodigoBarras() {
     const gtin = form.barcode.replace(/\D/g, "");
     setCosmosMsg("");
@@ -935,11 +907,8 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
             GTIN / EAN
             <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
               <input value={form.barcode} onChange={(event) => updateField("barcode", event.target.value)} style={{ flex: 1, minWidth: 0 }} />
-              <button type="button" className="btn-erp ghost sm" style={{ whiteSpace: "nowrap" }} onClick={buscarPorCodigoBarras} disabled={cosmosBuscando} title="Buscar dados pelo código de barras (Cosmos)">
-                {cosmosBuscando ? "..." : "🔎 Dados"}
-              </button>
-              <button type="button" className="btn-erp ghost sm" style={{ whiteSpace: "nowrap" }} onClick={buscarImagemDataload} disabled={imgBuscando} title="Buscar imagem pelo código de barras (Dataload)">
-                {imgBuscando ? "..." : "🖼️ Imagem"}
+              <button type="button" className="btn-erp ghost sm" style={{ whiteSpace: "nowrap" }} onClick={buscarPorCodigoBarras} disabled={cosmosBuscando} title="Buscar nome, NCM, CEST e imagem pelo código de barras">
+                {cosmosBuscando ? "..." : "🔎 Buscar"}
               </button>
             </div>
           </label>
