@@ -104,8 +104,14 @@ export async function lookupProdutoGtin(scope: TenantScope, gtin: string): Promi
   if (dl?.encontrado) {
     return { gtin: dl.ean, descricao: dl.nome ?? "", ncm: dl.ncm, cest: dl.cest, marca: null, thumbnail: imagem, fonte: "DATALOAD" };
   }
-  // Fallback Cosmos (consome cota; pode lançar "não encontrado"/"não configurado").
-  const cosmos = await consultarGtinCosmos(scope, gtin);
-  // Prioriza a imagem do Dataload; senão mantém a do Cosmos.
-  return { ...cosmos, thumbnail: imagem ?? cosmos.thumbnail, fonte: "COSMOS" };
+  // Sem dados no Dataload → tenta o Cosmos (consome cota); erro do Cosmos não interrompe.
+  const cosmos = await consultarGtinCosmos(scope, gtin).catch(() => null);
+  if (cosmos) {
+    return { ...cosmos, thumbnail: imagem ?? cosmos.thumbnail, fonte: "COSMOS" };
+  }
+  // Nenhum dado encontrado; se ao menos a imagem existir, retorna só a imagem.
+  if (imagem) {
+    return { gtin: gtin.replace(/\D/g, ""), descricao: "", ncm: null, cest: null, marca: null, thumbnail: imagem, fonte: "DATALOAD" };
+  }
+  throw new Error(`Produto não encontrado para o GTIN ${gtin} (sem dados no Dataload nem no Cosmos).`);
 }

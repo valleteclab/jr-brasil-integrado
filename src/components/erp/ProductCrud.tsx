@@ -503,7 +503,10 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
         cest: data.cest || current.cest,
         imageUrl: data.thumbnail || current.imageUrl
       }));
-      setCosmosMsg(`Encontrado: ${data.descricao || "produto"}${data.ncm ? ` · NCM ${data.ncm}` : ""}${data.thumbnail ? " · imagem incluída" : ""}. Revise antes de salvar.`);
+      const nome = data.descricao || "produto";
+      const ncmTxt = data.ncm ? ` · NCM ${data.ncm}` : "";
+      const imgTxt = data.thumbnail ? " · ✅ imagem incluída" : " · ⚠️ SEM imagem no banco para este GTIN";
+      setCosmosMsg(`Encontrado: ${nome}${ncmTxt}${imgTxt}. Revise antes de salvar.`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Não foi possível consultar o código de barras.");
     } finally {
