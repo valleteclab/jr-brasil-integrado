@@ -884,6 +884,56 @@ export class AcbrFiscalProvider implements FiscalProvider {
   }
 }
 
+/** Dados do emitente para cadastrar/atualizar a empresa na ACBr (formato Nuvem Fiscal). */
+export type AcbrEmpresaInput = {
+  cpf_cnpj: string;
+  nome_razao_social: string;
+  nome_fantasia?: string | null;
+  inscricao_estadual?: string | null;
+  inscricao_municipal?: string | null;
+  fone?: string | null;
+  email?: string | null;
+  endereco: {
+    logradouro?: string | null;
+    numero?: string | null;
+    complemento?: string | null;
+    bairro?: string | null;
+    codigo_municipio?: string | null;
+    cidade?: string | null;
+    uf?: string | null;
+    cep?: string | null;
+  };
+};
+
+/**
+ * Cadastra/atualiza a empresa emitente na ACBr por API (sem usar o console).
+ * Tenta atualizar (`PUT /empresas/{cnpj}`); se não existir (404), cria (`POST /empresas`).
+ */
+export async function registrarEmpresaAcbr(
+  ctx: ProviderContext,
+  empresa: AcbrEmpresaInput
+): Promise<{ ok: boolean; created: boolean; message: string }> {
+  const provider = new AcbrFiscalProvider();
+  const documento = normalizeDocumento(empresa.cpf_cnpj);
+  const body = {
+    ...empresa,
+    cpf_cnpj: documento,
+    endereco: { ...empresa.endereco, codigo_pais: "1058", pais: "BRASIL" }
+  };
+  const req = (provider as unknown as {
+    request: <T>(c: ProviderContext, m: string, p: string, b?: unknown) => Promise<{ ok: boolean; status: number; data: T | undefined; errorMessage: string | null }>;
+  }).request;
+
+  const put = await req(ctx, "PUT", `/empresas/${documento}`, body);
+  if (put.ok) return { ok: true, created: false, message: "Empresa atualizada na ACBr." };
+  if (put.status === 404) {
+    const post = await req(ctx, "POST", "/empresas", body);
+    if (post.ok) return { ok: true, created: true, message: "Empresa cadastrada na ACBr." };
+    return { ok: false, created: false, message: post.errorMessage ?? `Falha ao cadastrar a empresa na ACBr (HTTP ${post.status}).` };
+  }
+  return { ok: false, created: false, message: put.errorMessage ?? `Falha ao atualizar a empresa na ACBr (HTTP ${put.status}).` };
+}
+
 /**
  * Configura o CSC da NFC-e no cadastro da empresa na ACBr
  * (`PUT /empresas/{cpf_cnpj}`, grupo `config_nfce: { id_csc, csc }` — compatível Nuvem Fiscal).

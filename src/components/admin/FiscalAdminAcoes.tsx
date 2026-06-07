@@ -13,10 +13,30 @@ export function FiscalAdminAcoes({ clienteId, empresaId }: Props) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [senha, setSenha] = useState("");
 
-  const [carregando, setCarregando] = useState<"" | "certificado" | "testar" | "emissao">("");
+  const [carregando, setCarregando] = useState<"" | "certificado" | "testar" | "emissao" | "sync">("");
   const [resCertificado, setResCertificado] = useState<Resultado>(null);
   const [resTestar, setResTestar] = useState<Resultado>(null);
   const [resEmissao, setResEmissao] = useState<Resultado>(null);
+  const [resSync, setResSync] = useState<Resultado>(null);
+
+  async function sincronizarEmpresa() {
+    setCarregando("sync");
+    setResSync(null);
+    try {
+      const res = await fetch(`${base}/sincronizar-acbr`, { method: "POST" });
+      const data = (await res.json().catch(() => ({}))) as { ok?: boolean; message?: string; error?: string };
+      if (data.error) {
+        setResSync({ tone: "danger", texto: data.error });
+        return;
+      }
+      const ok = data.ok !== false && res.ok;
+      setResSync({ tone: ok ? "info" : "danger", texto: data.message || (ok ? "Empresa sincronizada na ACBr." : "Falha ao sincronizar.") });
+    } catch (e) {
+      setResSync({ tone: "danger", texto: e instanceof Error ? e.message : "Falha ao sincronizar a empresa." });
+    } finally {
+      setCarregando("");
+    }
+  }
 
   async function enviarCertificado() {
     const file = fileRef.current?.files?.[0];
@@ -104,6 +124,23 @@ export function FiscalAdminAcoes({ clienteId, empresaId }: Props) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
+      {/* Cadastrar/atualizar a empresa na ACBr por API (sem o console) */}
+      <div>
+        <h4 style={{ margin: "0 0 8px" }}>Empresa na ACBr</h4>
+        <button type="button" className="btn-erp primary sm" onClick={sincronizarEmpresa} disabled={carregando === "sync"}>
+          {carregando === "sync" ? "Sincronizando…" : "Sincronizar empresa na ACBr"}
+        </button>
+        <small className="field-hint" style={{ display: "block", marginTop: 6 }}>
+          Cadastra/atualiza a empresa emitente na ACBr por API (sem abrir o console), com os dados do
+          cadastro. Faça isto antes de enviar o certificado.
+        </small>
+        {resSync && (
+          <div className={`alert ${resSync.tone}`} style={{ marginTop: 12 }}>
+            <span>{resSync.texto}</span>
+          </div>
+        )}
+      </div>
+
       {/* Upload de certificado A1 */}
       <div>
         <h4 style={{ margin: "0 0 8px" }}>Certificado digital A1</h4>

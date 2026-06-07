@@ -4,7 +4,7 @@ import type { TenantScope } from "@/lib/auth/dev-session";
 import { createAuditLog } from "@/lib/audit/audit-service";
 import { decryptSecret, encryptSecret, secretLastChars } from "@/lib/security/secret-crypto";
 import { resolveFiscalProvider } from "@/domains/fiscal/providers";
-import { updateAcbrNfceCsc } from "@/domains/fiscal/providers/acbr-provider";
+import { updateAcbrNfceCsc, registrarEmpresaAcbr } from "@/domains/fiscal/providers/acbr-provider";
 
 export type FiscalConfigSummary = {
   configured: boolean;
@@ -307,6 +307,63 @@ export type TestFiscalConnectionResult = { ok: boolean; message: string };
  * Testa as credenciais do provedor fiscal configurado, sem emitir nenhum documento.
  * Usa a configuração persistida (token descriptografado) e o `testConnection` do provedor.
  */
+/**
+ * Cadastra/atualiza a empresa emitente na ACBr por API (sem abrir o console), com os dados do
+ * nosso cadastro. Só para o provedor ACBr. Idempotente (atualiza se já existir).
+ */
+export async function sincronizarEmpresaAcbr(scope: TenantScope): Promise<{ ok: boolean; message: string }> {
+  const runtime = await getFiscalRuntimeConfig(scope);
+  if (runtime.provider !== "ACBR") {
+    return { ok: false, message: "A sincronização de empresa por API está disponível apenas para o provedor ACBr." };
+  }
+  if (!runtime.token) {
+    return { ok: false, message: "Configure a credencial da ACBr (token) antes de sincronizar a empresa." };
+  }
+
+  const empresa = await prisma.empresa.findUniqueOrThrow({ where: { id: scope.empresaId } });
+
+  const res = await registrarEmpresaAcbr(
+    {
+      ambiente: runtime.ambiente,
+      provedor: runtime.provider,
+      baseUrl: runtime.baseUrl,
+      emissionMode: runtime.emissionMode,
+      token: runtime.token,
+      cscId: runtime.cscId,
+      cscToken: runtime.cscToken
+    },
+    {
+      cpf_cnpj: empresa.cnpj,
+      nome_razao_social: empresa.razaoSocial,
+      nome_fantasia: empresa.nomeFantasia,
+      inscricao_estadual: empresa.inscricaoEstadual,
+      inscricao_municipal: empresa.inscricaoMunicipal,
+      fone: empresa.telefone,
+      email: empresa.email,
+      endereco: {
+        logradouro: empresa.enderecoLogradouro,
+        numero: empresa.enderecoNumero,
+        complemento: empresa.enderecoComplemento,
+        bairro: empresa.enderecoBairro,
+        codigo_municipio: empresa.codigoMunicipioIbge,
+        cidade: empresa.enderecoCidade,
+        uf: empresa.enderecoUf,
+        cep: empresa.enderecoCep
+      }
+    }
+  );
+
+  await createAuditLog(prisma, {
+    scope,
+    entidade: "Empresa",
+    entidadeId: scope.empresaId,
+    acao: res.created ? "fiscal.acbr_empresa_criada" : "fiscal.acbr_empresa_atualizada",
+    payload: { ok: res.ok, cnpj: empresa.cnpj }
+  });
+
+  return { ok: res.ok, message: res.message };
+}
+
 export async function testFiscalConnection(scope: TenantScope): Promise<TestFiscalConnectionResult> {
   const runtime = await getFiscalRuntimeConfig(scope);
 
