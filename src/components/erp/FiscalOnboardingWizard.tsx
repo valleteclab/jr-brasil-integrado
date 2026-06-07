@@ -63,6 +63,8 @@ export function FiscalOnboardingWizard({
   });
 
   const externalProvider = !["INTERNO", "MANUAL"].includes(form.provider);
+  // ACBr usa OAuth: client_id (campo cscId) + client_secret (campo token); a URL base vem do ambiente.
+  const isAcbr = form.provider === "ACBR";
 
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -78,7 +80,7 @@ export function FiscalOnboardingWizard({
     }
     if (step === 2 && externalProvider) {
       // SPEDY deriva a base do ambiente; exige apenas o token (X-Api-Key).
-      if (form.provider !== "SPEDY" && !form.baseUrl.trim()) return "Provedor externo exige a URL base.";
+      if (form.provider !== "SPEDY" && !isAcbr && !form.baseUrl.trim()) return "Provedor externo exige a URL base.";
       if (!initialData.config.hasToken && !token.trim()) return "Provedor externo exige o token de integração.";
     }
     return "";
@@ -307,21 +309,23 @@ export function FiscalOnboardingWizard({
           {externalProvider && (
             <>
               <label className="full">
-                URL base do provedor*
-                <input value={form.baseUrl} onChange={(e) => update("baseUrl", e.target.value)} placeholder="https://api.provedor.com.br" />
+                URL base do provedor{isAcbr ? " (opcional)" : "*"}
+                <input value={form.baseUrl} onChange={(e) => update("baseUrl", e.target.value)} placeholder={isAcbr ? "Deixe em branco — usa o ambiente (prod/homologação) da ACBr" : "https://api.provedor.com.br"} />
               </label>
               <label>
-                Token de integração{initialData.config.hasToken ? " (já salvo)" : "*"}
+                {isAcbr ? "Client Secret (ACBr)" : "Token de integração"}{initialData.config.hasToken ? " (já salvo)" : "*"}
                 <input type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder={initialData.config.hasToken ? "•••• manter atual" : ""} />
               </label>
               <label>
-                CSC ID (NFC-e)
-                <input value={form.cscId} onChange={(e) => update("cscId", e.target.value)} />
+                {isAcbr ? "Client ID (ACBr)*" : "CSC ID (NFC-e)"}
+                <input value={form.cscId} onChange={(e) => update("cscId", e.target.value)} placeholder={isAcbr ? "client_id da sua conta ACBr" : ""} />
               </label>
-              <label>
-                CSC Token (NFC-e){initialData.config.hasCscToken ? " (já salvo)" : ""}
-                <input type="password" value={cscToken} onChange={(e) => setCscToken(e.target.value)} />
-              </label>
+              {!isAcbr && (
+                <label>
+                  CSC Token (NFC-e){initialData.config.hasCscToken ? " (já salvo)" : ""}
+                  <input type="password" value={cscToken} onChange={(e) => setCscToken(e.target.value)} />
+                </label>
+              )}
             </>
           )}
           <label>
