@@ -2,6 +2,7 @@ import { getDevelopmentTenantScope, scopedByTenantCompany } from "@/lib/auth/dev
 import type { TenantScope } from "@/lib/auth/dev-session";
 import { prisma } from "@/lib/db/prisma";
 import { formatBrl } from "@/lib/formatters/currency";
+import { imagemDataloadUrl } from "@/domains/products/application/dataload-service";
 
 export type StorefrontProduct = {
   id: string;
@@ -217,7 +218,8 @@ export async function listStorefrontProducts(scopeArg?: TenantScope, filtro?: St
         price: formatBrl(Number(product.precoVenda)),
         priceValue: Number(product.precoVenda),
         stockLabel: `${availableStock} un.`,
-        imageUrl: product.imagens[0]?.url,
+        // Sem imagem própria, usa o banco Dataload pelo GTIN (a loja faz fallback no onError).
+        imageUrl: product.imagens[0]?.url ?? imagemDataloadUrl(product.gtin) ?? undefined,
         description: product.descricaoComercial ?? product.descricao ?? undefined
       };
     });
@@ -253,7 +255,7 @@ export async function getStorefrontProduct(scope: TenantScope, id: string): Prom
     price: formatBrl(Number(product.precoVenda)),
     priceValue: Number(product.precoVenda),
     stockLabel: `${availableStock} un.`,
-    imageUrl: product.imagens[0]?.url,
+    imageUrl: product.imagens[0]?.url ?? imagemDataloadUrl(product.gtin) ?? undefined,
     description: product.descricaoComercial ?? product.descricao ?? undefined
   };
 }
