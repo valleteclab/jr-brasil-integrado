@@ -1,7 +1,7 @@
 import type { Prisma, RegimeTributario, RegraTributaria, TipoTributo } from "@prisma/client";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import type { ItemTaxResult, NormalizedFiscalItem } from "./types";
-import { aliquotaIcmsVendaSafe, aliquotaInternaIcmsSafe, fcpInterno, pisCofinsBaseline } from "./national-tax-baseline";
+import { aliquotaIcmsVendaSafe, aliquotaInternaIcmsSafe, fcpInterno, pisCofinsBaseline, reformaBaseline } from "./national-tax-baseline";
 
 /** Zera os campos de FCP/ICMS-ST de um resultado (operações sem ST/FCP). */
 const SEM_ST_FCP = {
@@ -45,6 +45,38 @@ function computeIcmsSt(
 
 function round2(value: number) {
   return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+/**
+ * Reforma Tributária (IBS/CBS/IS): calcula os valores sobre a base da operação. Regra cadastrada
+ * (por NCM/UF) vence; sem regra, usa a base nacional de teste (CBS 0,9% / IBS 0,1% / IS 0%).
+ * A redução de base (quando houver) vem da regra de CBS/IBS (reducaoBase). IS incide sobre o
+ * valor cheio. Resultado informativo — exibido no espelho; ainda não enviado no XML em 2026.
+ */
+function computeReforma(
+  rules: RegraTributaria[],
+  ncm: string | null,
+  ufDestino: string | null,
+  base: number
+) {
+  const ibsRule = pickRule(rules, "IBS", ncm, ufDestino);
+  const cbsRule = pickRule(rules, "CBS", ncm, ufDestino);
+  const isRule = pickRule(rules, "IS", ncm, ufDestino);
+  const bl = reformaBaseline();
+  const aliquotaIbs = ibsRule ? num(ibsRule.aliquota) : bl.ibs;
+  const aliquotaCbs = cbsRule ? num(cbsRule.aliquota) : bl.cbs;
+  const aliquotaIs = isRule ? num(isRule.aliquota) : bl.is;
+  const reducao = num((cbsRule ?? ibsRule)?.reducaoBase) / 100;
+  const baseIbsCbs = round2(base * (1 - reducao));
+  return {
+    baseIbsCbs,
+    aliquotaIbs,
+    valorIbs: round2(baseIbsCbs * (aliquotaIbs / 100)),
+    aliquotaCbs,
+    valorCbs: round2(baseIbsCbs * (aliquotaCbs / 100)),
+    aliquotaIs,
+    valorIs: round2(base * (aliquotaIs / 100))
+  };
 }
 
 function num(value: Prisma.Decimal | number | null | undefined) {
@@ -130,6 +162,8 @@ export function computeItemTaxes(
 ): ItemTaxResult {
   const base = round2(Math.max(item.valorTotal - item.desconto, 0));
   const origem = item.origem ?? "0";
+  // Reforma Tributária (IBS/CBS/IS) — mesma base para todos os ramos (serviço/ST/Simples/normal).
+  const reforma = computeReforma(rules, item.ncm, ctx.ufDestino, base);
 
   if (ctx.servico) {
     const issRule = pickRule(rules, "ISS", item.ncm, ctx.ufDestino);
@@ -157,6 +191,7 @@ export function computeItemTaxes(
       itemListaServico: item.itemListaServico,
       aliquotaIss,
       valorIss,
+      ...reforma,
       valorTributos: valorIss,
       cClassTrib: issRule?.cClassTrib ?? null
     };
@@ -201,6 +236,7 @@ export function computeItemTaxes(
       itemListaServico: null,
       aliquotaIss: 0,
       valorIss: 0,
+      ...reforma,
       valorTributos: somaTributos([valorIpi, valorPis, valorCofins]),
       cClassTrib: null
     };
@@ -238,6 +274,7 @@ export function computeItemTaxes(
       itemListaServico: null,
       aliquotaIss: 0,
       valorIss: 0,
+      ...reforma,
       valorTributos: somaTributos([valorIpi, valorPis, valorCofins, st.valorIcmsSt]),
       cClassTrib: icmsRuleSimples?.cClassTrib ?? null
     };
@@ -285,6 +322,7 @@ export function computeItemTaxes(
     itemListaServico: null,
     aliquotaIss: 0,
     valorIss: 0,
+    ...reforma,
     valorTributos: somaTributos([valorIcms, valorFcp, st.valorIcmsSt, valorIpi, valorPis, valorCofins]),
     cClassTrib: icmsRule?.cClassTrib ?? null
   };
@@ -301,6 +339,9 @@ export type DocumentTaxTotals = {
   valorPis: number;
   valorCofins: number;
   valorIss: number;
+  valorIbs: number;
+  valorCbs: number;
+  valorIs: number;
   valorTotalTributos: number;
 };
 
@@ -316,6 +357,9 @@ export function emptyTotals(): DocumentTaxTotals {
     valorPis: 0,
     valorCofins: 0,
     valorIss: 0,
+    valorIbs: 0,
+    valorCbs: 0,
+    valorIs: 0,
     valorTotalTributos: 0
   };
 }
@@ -334,6 +378,10 @@ export function accumulateTotals(totals: DocumentTaxTotals, item: NormalizedFisc
   totals.valorPis = round2(totals.valorPis + taxes.valorPis);
   totals.valorCofins = round2(totals.valorCofins + taxes.valorCofins);
   totals.valorIss = round2(totals.valorIss + taxes.valorIss);
+  // Reforma Tributária: acumula à parte (informativo em 2026, fora do valorTotalTributos da Lei 12.741).
+  totals.valorIbs = round2(totals.valorIbs + taxes.valorIbs);
+  totals.valorCbs = round2(totals.valorCbs + taxes.valorCbs);
+  totals.valorIs = round2(totals.valorIs + taxes.valorIs);
   totals.valorTotalTributos = round2(
     totals.valorIcms + totals.valorIcmsSt + totals.valorFcp + totals.valorIpi + totals.valorPis + totals.valorCofins + totals.valorIss
   );

@@ -6,7 +6,7 @@ import { correspondeBusca } from "@/lib/search/normalize";
 import type { EmissaoFormData } from "@/lib/services/fiscal-emit";
 import type { EmissaoPrefill } from "@/lib/services/fiscal";
 import { useCadastroLookup } from "./useCadastroLookup";
-import { EspelhoFiscalModal, type FiscalPreview } from "./EspelhoFiscal";
+import { EspelhoFiscalModal, CalculoImpostoPanel, type FiscalPreview } from "./EspelhoFiscal";
 
 type DocTipo = "NFE" | "NFCE" | "NFSE";
 type Finalidade = "NORMAL" | "COMPLEMENTAR" | "AJUSTE" | "DEVOLUCAO";
@@ -375,6 +375,14 @@ export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormDat
         desconto: it.desconto || 0
       }))
     };
+  }
+
+  // Corpo do POST para o painel inline de cálculo (produto). Retorna null quando não há o que calcular.
+  function buildPreviewBody(): Record<string, unknown> | null {
+    if (!isProduto || !itens.length) return null;
+    const receiver = buildReceiver();
+    const receiverPayload = receiver ?? { nome: undefined };
+    return buildProdutoBody(receiverPayload);
   }
 
   // Espelho fiscal: prévia dos tributos (somente produto) sem emitir.
@@ -830,6 +838,15 @@ export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormDat
               <div className="atend-total-row grand"><span>Total</span><strong>{brl(total)}</strong></div>
             </div>
           </div>
+
+          {/* CÁLCULO DE IMPOSTO (painel inline, formato Bling) — só produto */}
+          {isProduto && (
+            <CalculoImpostoPanel
+              endpoint="/api/erp/fiscal/preview"
+              buildBody={buildPreviewBody}
+              deps={[JSON.stringify(itens), frete, descontoGlobal, tipo, finalidade, modalidadeFrete, modoDest, clienteId, avUf, avDocumento]}
+            />
+          )}
 
           {/* OPERAÇÃO */}
           <div className="erp-card">

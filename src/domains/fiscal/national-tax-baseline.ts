@@ -109,6 +109,21 @@ function isSimples(regime: RegimeTributario): boolean {
   return regime === "SIMPLES_NACIONAL" || regime === "MEI" || regime === "SIMPLES_EXCESSO_SUBLIMITE";
 }
 
+/**
+ * Reforma Tributária — alíquotas de TESTE do período de transição de 2026 (%).
+ * Em 2026 IBS/CBS são informados na nota para validação do sistema, em fase de teste:
+ * CBS 0,9% e IBS 0,1% (IBS-UF + IBS-Mun somados). IS (Imposto Seletivo) só incide sobre
+ * produtos específicos (cigarro, bebida, etc.) — default 0, definido por regra/NCM.
+ * REVISAR conforme a transição avança (2027+ as alíquotas sobem e PIS/COFINS são extintos).
+ */
+export const REFORMA_ATUALIZADO_EM = "2026-01";
+export const REFORMA_2026 = { cbs: 0.9, ibs: 0.1, is: 0 } as const;
+
+/** Alíquotas-base de IBS/CBS/IS (Reforma Tributária) usadas quando não há regra cadastrada. */
+export function reformaBaseline(): { ibs: number; cbs: number; is: number } {
+  return { ibs: REFORMA_2026.ibs, cbs: REFORMA_2026.cbs, is: REFORMA_2026.is };
+}
+
 /** PIS/COFINS por regime: Simples não destaca (CST 49); Presumido cumulativo; Real não-cumulativo. */
 export function pisCofinsBaseline(regime: RegimeTributario) {
   if (isSimples(regime)) {

@@ -139,6 +139,14 @@ export type FiscalPreviewItem = {
   cstCofins: string | null;
   aliquotaCofins: number;
   valorCofins: number;
+  cClassTrib: string | null;
+  baseIbsCbs: number;
+  aliquotaIbs: number;
+  valorIbs: number;
+  aliquotaCbs: number;
+  valorCbs: number;
+  aliquotaIs: number;
+  valorIs: number;
   valorTributos: number;
 };
 
@@ -164,6 +172,9 @@ export type FiscalPreview = {
     valorPis: number;
     valorCofins: number;
     valorIss: number;
+    valorIbs: number;
+    valorCbs: number;
+    valorIs: number;
     valorTotalTributos: number;
     total: number;
   };
@@ -236,6 +247,14 @@ export async function previewFiscalDocument(
       cstCofins: taxes.cstCofins,
       aliquotaCofins: taxes.aliquotaCofins,
       valorCofins: taxes.valorCofins,
+      cClassTrib: taxes.cClassTrib,
+      baseIbsCbs: taxes.baseIbsCbs,
+      aliquotaIbs: taxes.aliquotaIbs,
+      valorIbs: taxes.valorIbs,
+      aliquotaCbs: taxes.aliquotaCbs,
+      valorCbs: taxes.valorCbs,
+      aliquotaIs: taxes.aliquotaIs,
+      valorIs: taxes.valorIs,
       valorTributos: taxes.valorTributos
     };
   });
@@ -272,6 +291,9 @@ export async function previewFiscalDocument(
       valorPis: totals.valorPis,
       valorCofins: totals.valorCofins,
       valorIss: totals.valorIss,
+      valorIbs: totals.valorIbs,
+      valorCbs: totals.valorCbs,
+      valorIs: totals.valorIs,
       valorTotalTributos: totals.valorTotalTributos,
       total
     },

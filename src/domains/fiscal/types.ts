@@ -27,6 +27,14 @@ export type ItemTaxResult = {
   itemListaServico: string | null;
   aliquotaIss: number;
   valorIss: number;
+  /** Reforma Tributária (IBS/CBS/IS) — calculado e exibido no espelho; ainda não enviado no XML. */
+  baseIbsCbs: number;
+  aliquotaIbs: number;
+  valorIbs: number;
+  aliquotaCbs: number;
+  valorCbs: number;
+  aliquotaIs: number;
+  valorIs: number;
   /** Valor aproximado dos tributos do item (Lei 12.741 / transparência). */
   valorTributos: number;
   cClassTrib: string | null;

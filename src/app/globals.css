@@ -2626,3 +2626,27 @@ label.checkbox input {
   padding-top: 8px; font-size: 15px;
 }
 .espelho-totais .espelho-grand strong { color: #0f172a; }
+
+/* Grade de totalizadores (formato Bling) — usada no modal e no painel inline */
+.espelho-sub { margin: 16px 0 8px; font-size: 13px; color: #334155; }
+.espelho-reforma-nota { margin: 10px 0 0; font-size: 11.5px; color: #64748b; }
+.calc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.calc-box {
+  display: flex; flex-direction: column; gap: 2px;
+  background: #f8fafc; border: 1px solid var(--erp-border, #e5e7eb);
+  border-radius: 8px; padding: 8px 10px;
+}
+.calc-box-label { font-size: 11px; color: #64748b; }
+.calc-box-value { font-size: 14px; color: #0f172a; font-variant-numeric: tabular-nums; }
+.calc-box.reforma { background: rgba(3, 105, 161, .06); border-color: rgba(3, 105, 161, .22); }
+.calc-box.reforma .calc-box-value { color: #0369a1; }
+.calc-box.muted .calc-box-value { color: #475569; }
+
+/* Painel inline de cálculo de imposto no rail da emissão */
+.calc-imposto-panel { margin-bottom: 14px; }
+.calc-imposto-panel .calc-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.calc-auto { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: #475569; cursor: pointer; }
+.calc-auto input { accent-color: var(--erp-yellow-dk, #b45309); width: 15px; height: 15px; }
+.calc-imposto-panel .calc-body { padding: 0 12px 12px; }
+.calc-imposto-panel .calc-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
+.calc-imposto-panel .alert ul { margin: 4px 0 0; padding-left: 18px; }
