@@ -6,6 +6,7 @@ import { createAuditLog } from "@/lib/audit/audit-service";
 import { exitStock, getDefaultDeposito } from "@/domains/stock/application/stock-service";
 import { buildDocumentFromPedido, buildNfseFromOrdemServico } from "@/domains/fiscal/document-builder";
 import { emitFiscalDocument, previewFiscalDocument } from "@/domains/fiscal/application/fiscal-emission-use-cases";
+import { getFiscalRuntimeConfig } from "@/domains/fiscal/application/fiscal-config-use-cases";
 import { isValidLc116 } from "@/domains/fiscal/lc116";
 import { sugerirPorLc116 } from "@/domains/fiscal/nbs";
 import type { TaxationTypeIss } from "@/domains/fiscal/types";
@@ -416,5 +417,47 @@ export async function emitServiceInvoiceAvulsa(scope: TenantScope, input: Servic
   return emitFiscalDocument(scope, doc, {
     clienteId: input.receiver.clienteId ?? null,
     retryNotaId: input.retryNotaId ?? null
+  });
+}
+
+/**
+ * Emite uma NF-e de TESTE em homologação para validar a configuração fiscal de ponta a ponta
+ * (certificado + provedor + dados do emitente). Usa a própria empresa como destinatário e um item
+ * genérico. Só roda em ambiente de HOMOLOGAÇÃO — recusa em produção para não gerar nota real.
+ * Reusa todo o pipeline de emissão (emitProductInvoiceAvulsa).
+ */
+export async function emitirNotaTesteHomologacao(scope: TenantScope) {
+  const config = await getFiscalRuntimeConfig(scope);
+  if (config.ambiente !== "HOMOLOGACAO") {
+    throw new StandaloneEmissionError(
+      "Coloque o ambiente fiscal em HOMOLOGAÇÃO antes de emitir a nota de teste (evita gerar nota real em produção)."
+    );
+  }
+
+  const empresa = await prisma.empresa.findUniqueOrThrow({ where: { id: scope.empresaId } });
+  const endereco = {
+    logradouro: empresa.enderecoLogradouro ?? undefined,
+    numero: empresa.enderecoNumero ?? undefined,
+    complemento: empresa.enderecoComplemento ?? undefined,
+    bairro: empresa.enderecoBairro ?? undefined,
+    cep: empresa.enderecoCep ?? undefined,
+    cidade: empresa.enderecoCidade ?? undefined,
+    uf: empresa.enderecoUf ?? undefined,
+    codigoMunicipioIbge: empresa.codigoMunicipioIbge ?? undefined
+  };
+
+  return emitProductInvoiceAvulsa(scope, {
+    modelo: "NFE",
+    naturezaOperacao: "Venda de teste (homologação)",
+    receiver: {
+      // Em homologação a SEFAZ exige este nome no destinatário; usamos o CNPJ/endereço da empresa.
+      nome: "NF-E EMITIDA EM AMBIENTE DE HOMOLOGACAO - SEM VALOR FISCAL",
+      documento: empresa.cnpj,
+      inscricaoEstadual: empresa.inscricaoEstadual ?? undefined,
+      endereco
+    },
+    itens: [
+      { descricao: "PRODUTO TESTE HOMOLOGACAO", ncm: "84799090", cfop: "5102", origem: "0", unidade: "UN", quantidade: 1, precoUnitario: 1, desconto: 0 }
+    ]
   });
 }

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Card } from "@/components/shared/Card";
@@ -118,7 +119,12 @@ export default async function AdminClienteDetalhePage({ params }: { params: { id
                   <td>{e.cidade ? `${e.cidade}${e.uf ? `/${e.uf}` : ""}` : "—"}</td>
                   <td><StatusBadge tone={e.statusTone}>{e.statusLabel}</StatusBadge></td>
                   <td>{e.matriz ? "Sim" : "—"}</td>
-                  <td className="actions"><EmpresaStatusActions empresaId={e.id} status={e.status} /></td>
+                  <td className="actions">
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
+                      <Link href={`/admin/clientes/${cliente.id}/empresas/${e.id}/fiscal`} className="btn-erp ghost xs">Config. fiscal</Link>
+                      <EmpresaStatusActions empresaId={e.id} status={e.status} />
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>

@@ -1,6 +1,7 @@
 import { hashPassword } from "@/lib/security/password";
 import { prisma } from "@/lib/db/prisma";
 import { requirePlatformAdmin } from "@/lib/auth/session";
+import type { TenantScope } from "@/lib/auth/dev-session";
 import { formatBrl } from "@/lib/formatters/currency";
 import { PERFIS_PADRAO, TODOS_MODULOS, isAdminPerfil, type ModuloKey } from "@/lib/auth/modules";
 
@@ -329,6 +330,19 @@ export async function setTenantLojaHabilitada(tenantId: string, habilitada: bool
   });
 
   return { id: atualizado.id, lojaHabilitada: atualizado.lojaHabilitada };
+}
+
+/**
+ * Resolve o escopo (tenant/empresa) de uma empresa de um cliente, validando que ela pertence ao
+ * cliente e que o requisitante é dono da plataforma. Usado para o dono do SaaS operar a config
+ * fiscal (onboarding, certificado, teste) DA empresa do cliente, reusando os use-cases fiscais.
+ */
+export async function resolveEmpresaScope(tenantId: string, empresaId: string): Promise<TenantScope> {
+  await requirePlatformAdmin();
+  assertDb();
+  const empresa = await prisma.empresa.findFirst({ where: { id: empresaId, tenantId }, select: { id: true } });
+  if (!empresa) throw new PlatformAdminError("Empresa não encontrada para este cliente.");
+  return { tenantId, empresaId };
 }
 
 /** Habilita/desabilita o módulo de IA do cliente (gate do dono do SaaS). */

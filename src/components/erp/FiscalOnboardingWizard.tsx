@@ -41,7 +41,13 @@ function regimeLabel(value: string) {
   return REGIMES.find((r) => r.value === value)?.label ?? value;
 }
 
-export function FiscalOnboardingWizard({ initialData }: { initialData: FiscalOnboardingData }) {
+export function FiscalOnboardingWizard({
+  initialData,
+  apiBase = "/api/erp/configuracoes/fiscal"
+}: {
+  initialData: FiscalOnboardingData;
+  apiBase?: string;
+}) {
   const router = useRouter();
   const [step, setStep] = useState(0);
   const [token, setToken] = useState("");
@@ -96,7 +102,7 @@ export function FiscalOnboardingWizard({ initialData }: { initialData: FiscalOnb
     setSaving(true);
     setError("");
     try {
-      const response = await fetch("/api/erp/configuracoes/fiscal/onboarding", {
+      const response = await fetch(`${apiBase}/onboarding`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
