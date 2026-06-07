@@ -98,15 +98,11 @@ export function validateProductPayload(payload: ProductPayload): ValidatedProduc
   const availableStock = numeric(payload.availableStock);
   const minimumStock = numeric(payload.minimumStock);
 
-  if (!sku) {
-    throw new ProductValidationError("Informe o SKU do produto.");
-  }
-
   if (!name) {
     throw new ProductValidationError("Informe o nome do produto.");
   }
 
-  if (sku.length > 64) {
+  if (sku && sku.length > 64) {
     throw new ProductValidationError("SKU deve ter no máximo 64 caracteres.");
   }
 

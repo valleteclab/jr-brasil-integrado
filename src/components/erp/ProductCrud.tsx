@@ -302,6 +302,7 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, segmento }:
   const [error, setError] = useState("");
   const [importResult, setImportResult] = useState<XmlImportResult | null>(null);
   const [cosmosBuscando, setCosmosBuscando] = useState(false);
+  const [gerandoSku, setGerandoSku] = useState(false);
   const [cosmosMsg, setCosmosMsg] = useState("");
   const [cosmosQuery, setCosmosQuery] = useState("");
   const [cosmosBuscandoDesc, setCosmosBuscandoDesc] = useState(false);
@@ -564,6 +565,30 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, segmento }:
     setDrawerOpen(true);
   }
 
+  async function gerarSku() {
+    setGerandoSku(true);
+    try {
+      const base = form.sku.trim();
+      const url = base
+        ? `/api/erp/produtos/sku/sugerir?base=${encodeURIComponent(base)}`
+        : "/api/erp/produtos/sku/sugerir";
+      const response = await fetch(url);
+      const data = await response.json() as { sku?: string; error?: string };
+
+      if (!response.ok || !data.sku) {
+        throw new Error(data.error || "Não foi possível gerar o SKU.");
+      }
+
+      updateField("sku", data.sku);
+      setError("");
+    } catch (skuError) {
+      const message = skuError instanceof Error ? skuError.message : "Não foi possível gerar o SKU.";
+      setError(message);
+    } finally {
+      setGerandoSku(false);
+    }
+  }
+
   async function persistProduct(product: ProductRecord, productId?: string) {
     const response = await fetch(productId ? `/api/erp/produtos/${productId}` : "/api/erp/produtos", {
       body: JSON.stringify(product),
@@ -582,16 +607,8 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, segmento }:
   async function saveProduct() {
     const product = toProduct(form);
 
-    if (!product.sku || !product.name) {
-      setError("Informe SKU e nome do produto.");
-      setActiveTab("geral");
-      return;
-    }
-
-    const duplicateSku = products.some((item) => item.sku === product.sku && item.id !== product.id);
-
-    if (duplicateSku) {
-      setError("Já existe um produto com este SKU.");
+    if (!product.name) {
+      setError("Informe o nome do produto.");
       setActiveTab("geral");
       return;
     }
@@ -788,8 +805,13 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, segmento }:
             </label>
           )}
           <label>
-            SKU interno
-            <input value={form.sku} onChange={(event) => updateField("sku", event.target.value)} />
+            SKU interno (deixe em branco para gerar automaticamente)
+            <div style={{ display: "flex", gap: 6 }}>
+              <input value={form.sku} onChange={(event) => updateField("sku", event.target.value)} placeholder="Gerado automaticamente se vazio" style={{ flex: 1 }} />
+              <button type="button" className="btn-erp ghost sm" onClick={gerarSku} disabled={gerandoSku} title="Gerar um SKU disponível automaticamente">
+                {gerandoSku ? "..." : "Gerar"}
+              </button>
+            </div>
           </label>
           <label>
             Código original

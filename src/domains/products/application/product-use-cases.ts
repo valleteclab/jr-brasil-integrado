@@ -19,6 +19,144 @@ function slugify(value: string) {
     .replace(/(^-|-$)/g, "");
 }
 
+const AUTO_SKU_PREFIX = "PRD-";
+const AUTO_SKU_DIGITS = 6;
+
+function formatAutoSku(numero: number) {
+  return `${AUTO_SKU_PREFIX}${String(numero).padStart(AUTO_SKU_DIGITS, "0")}`;
+}
+
+/**
+ * Descobre o maior número já usado entre SKUs no padrão PRD-NNNNNN da empresa.
+ * Aceita um client de leitura (prisma ou tx) para uso dentro e fora de transação.
+ */
+async function maiorNumeroAutoSku(
+  client: Pick<Prisma.TransactionClient, "produto">,
+  scope: TenantScope
+): Promise<number> {
+  const existentes = await client.produto.findMany({
+    where: { ...scopedByTenantCompany(scope), sku: { startsWith: AUTO_SKU_PREFIX } },
+    select: { sku: true }
+  });
+
+  let maior = 0;
+  for (const { sku } of existentes) {
+    const match = /^PRD-(\d+)$/.exec(sku);
+    if (!match) continue;
+    const numero = Number.parseInt(match[1], 10);
+    if (Number.isFinite(numero) && numero > maior) {
+      maior = numero;
+    }
+  }
+  return maior;
+}
+
+async function skuExiste(
+  client: Pick<Prisma.TransactionClient, "produto">,
+  scope: TenantScope,
+  sku: string
+): Promise<boolean> {
+  const encontrado = await client.produto.findUnique({
+    where: {
+      tenantId_empresaId_sku: {
+        tenantId: scope.tenantId,
+        empresaId: scope.empresaId,
+        sku
+      }
+    },
+    select: { id: true }
+  });
+  return Boolean(encontrado);
+}
+
+/**
+ * Gera um SKU único no formato PRD-000001 dentro de uma transação.
+ * Garante unicidade incrementando até achar um livre.
+ */
+async function gerarSkuUnico(tx: Prisma.TransactionClient, scope: TenantScope): Promise<string> {
+  let proximo = (await maiorNumeroAutoSku(tx, scope)) + 1;
+  let candidato = formatAutoSku(proximo);
+  while (await skuExiste(tx, scope, candidato)) {
+    proximo += 1;
+    candidato = formatAutoSku(proximo);
+  }
+  return candidato;
+}
+
+/**
+ * Calcula a primeira sugestão de SKU livre a partir de uma base.
+ * Se a base estiver livre retorna a própria base; senão tenta base-2, base-3...
+ */
+async function proximoSkuLivreComBase(
+  client: Pick<Prisma.TransactionClient, "produto">,
+  scope: TenantScope,
+  base: string
+): Promise<string> {
+  if (!(await skuExiste(client, scope, base))) {
+    return base;
+  }
+  let sufixo = 2;
+  let candidato = `${base}-${sufixo}`;
+  while (await skuExiste(client, scope, candidato)) {
+    sufixo += 1;
+    candidato = `${base}-${sufixo}`;
+  }
+  return candidato;
+}
+
+/**
+ * Monta a mensagem de colisão amigável para SKU duplicado, com o nome do produto
+ * conflitante (mesmo arquivado) e uma sugestão de SKU livre.
+ */
+async function mensagemColisaoSku(
+  tx: Prisma.TransactionClient,
+  scope: TenantScope,
+  sku: string,
+  conflitante?: { nome: string; ativo: boolean } | null
+): Promise<string> {
+  let produto = conflitante;
+  if (!produto) {
+    produto = await tx.produto.findUnique({
+      where: {
+        tenantId_empresaId_sku: {
+          tenantId: scope.tenantId,
+          empresaId: scope.empresaId,
+          sku
+        }
+      },
+      select: { nome: true, ativo: true }
+    });
+  }
+
+  const nome = produto?.nome ?? "outro produto";
+  const arquivado = produto?.ativo === false ? " (arquivado)" : "";
+  const sugestao = await proximoSkuLivreComBase(tx, scope, sku);
+
+  return `SKU "${sku}" já está em uso pelo produto "${nome}"${arquivado}. Tente "${sugestao}" ou deixe o SKU em branco para gerar automaticamente.`;
+}
+
+/**
+ * Sugere um SKU para a UI. Usável FORA de transação (usa o client global `prisma`).
+ * - Sem base: retorna o próximo PRD-NNNNNN livre.
+ * - Com base: normaliza e retorna a base (ou base-2, base-3...) livre.
+ */
+export async function suggestSku(scope: TenantScope, base?: string): Promise<string> {
+  const normalizada = (base ?? "").trim().toUpperCase();
+
+  if (!normalizada) {
+    const proximo = (await maiorNumeroAutoSku(prisma, scope)) + 1;
+    let candidato = formatAutoSku(proximo);
+    let numero = proximo;
+    while (await skuExiste(prisma, scope, candidato)) {
+      numero += 1;
+      candidato = formatAutoSku(numero);
+    }
+    return candidato;
+  }
+
+  return proximoSkuLivreComBase(prisma, scope, normalizada);
+}
+
 async function resolveProductRelations(tx: Prisma.TransactionClient, scope: TenantScope, input: ValidatedProductInput) {
   const categorySlug = slugify(input.category) || "sem-categoria";
 
@@ -278,26 +416,29 @@ export async function createProduct(scope: TenantScope, payload: ProductPayload)
   const input = validateProductPayload(payload);
 
   return prisma.$transaction(async (tx) => {
+    const sku = input.sku ? input.sku : await gerarSkuUnico(tx, scope);
+
     const duplicate = await tx.produto.findUnique({
       where: {
         tenantId_empresaId_sku: {
           tenantId: scope.tenantId,
           empresaId: scope.empresaId,
-          sku: input.sku
+          sku
         }
       }
     });
 
     if (duplicate) {
-      throw new Error("Já existe um produto com este SKU.");
+      throw new Error(await mensagemColisaoSku(tx, scope, sku, duplicate));
     }
 
-    const { categoria, marca, deposito } = await resolveProductRelations(tx, scope, input);
+    const inputComSku: ValidatedProductInput = { ...input, sku };
+    const { categoria, marca, deposito } = await resolveProductRelations(tx, scope, inputComSku);
     const product = await tx.produto.create({
       data: {
         tenantId: scope.tenantId,
         empresaId: scope.empresaId,
-        ...productData(input, categoria.id, marca.id)
+        ...productData(inputComSku, categoria.id, marca.id)
       }
     });
 
@@ -337,11 +478,12 @@ export async function updateProduct(scope: TenantScope, productId: string, paylo
         ...scopedByTenantCompany(scope),
         sku: input.sku,
         NOT: { id: productId }
-      }
+      },
+      select: { nome: true, ativo: true }
     });
 
     if (duplicate) {
-      throw new Error("Já existe outro produto com este SKU.");
+      throw new Error(await mensagemColisaoSku(tx, scope, input.sku, duplicate));
     }
 
     const { categoria, marca, deposito } = await resolveProductRelations(tx, scope, input);
