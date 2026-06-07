@@ -5,7 +5,7 @@
  *   npx tsx scripts/backfill-imagens-dataload.ts
  */
 import { prisma } from "../src/lib/db/prisma";
-import { consultarImagemDataload } from "../src/domains/products/application/dataload-service";
+import { resolverImagemPorGtin } from "../src/domains/products/application/product-image-resolver";
 
 async function main() {
   const produtos = await prisma.produto.findMany({
@@ -20,8 +20,8 @@ async function main() {
     const gtin = (p.gtin ?? "").replace(/\D/g, "");
     if (gtin.length < 8) continue;
     try {
-      const res = await consultarImagemDataload(gtin);
-      if (res.encontrado && res.url) {
+      const res = await resolverImagemPorGtin(gtin);
+      if (res?.url) {
         await prisma.produtoImagem.create({
           data: { tenantId: p.tenantId, empresaId: p.empresaId, produtoId: p.id, url: res.url, ordem: 0 }
         });
