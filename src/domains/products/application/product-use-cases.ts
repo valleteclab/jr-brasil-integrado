@@ -297,18 +297,21 @@ async function upsertProductFiscal(tx: Prisma.TransactionClient, scope: TenantSc
   });
 }
 
-async function upsertInitialStock(tx: Prisma.TransactionClient, scope: TenantScope, productId: string, depositoId: string, input: ValidatedProductInput) {
-  const previous = await tx.estoqueSaldo.findUnique({
-    where: {
-      tenantId_empresaId_produtoId_depositoId_controleKey: {
-        tenantId: scope.tenantId,
-        empresaId: scope.empresaId,
-        produtoId: productId,
-        depositoId,
-        controleKey: "SEM_CONTROLE"
-      }
-    }
-  });
+async function upsertInitialStock(tx: Prisma.TransactionClient, scope: TenantScope, productId: string, depositoId: string, input: ValidatedProductInput, opts?: { isCreate?: boolean }) {
+  // No cadastro novo não há saldo anterior — pula a consulta (economiza uma ida ao banco).
+  const previous = opts?.isCreate
+    ? null
+    : await tx.estoqueSaldo.findUnique({
+        where: {
+          tenantId_empresaId_produtoId_depositoId_controleKey: {
+            tenantId: scope.tenantId,
+            empresaId: scope.empresaId,
+            produtoId: productId,
+            depositoId,
+            controleKey: "SEM_CONTROLE"
+          }
+        }
+      });
   const previousQuantity = Number(previous?.quantidade ?? 0);
 
   const saldo = await tx.estoqueSaldo.upsert({
@@ -370,8 +373,11 @@ async function replaceProductAplicacoes(
   tx: Prisma.TransactionClient,
   scope: TenantScope,
   productId: string,
-  aplicacoes: ValidatedProductInput["aplicacoes"]
+  aplicacoes: ValidatedProductInput["aplicacoes"],
+  opts?: { isCreate?: boolean }
 ) {
+  // No cadastro novo sem aplicações não há o que apagar — pula o deleteMany.
+  if (opts?.isCreate && !aplicacoes.length) return;
   await tx.produtoAplicacao.deleteMany({
     where: { tenantId: scope.tenantId, empresaId: scope.empresaId, produtoId: productId }
   });
@@ -396,10 +402,18 @@ async function ensureProductImagem(
   tx: Prisma.TransactionClient,
   scope: TenantScope,
   productId: string,
-  imageUrl?: string
+  imageUrl?: string,
+  opts?: { isCreate?: boolean }
 ) {
   const url = imageUrl?.trim();
   if (!url) return;
+  // No cadastro novo o produto não tem imagens ainda — cria direto (pula findFirst + count).
+  if (opts?.isCreate) {
+    await tx.produtoImagem.create({
+      data: { tenantId: scope.tenantId, empresaId: scope.empresaId, produtoId: productId, url, ordem: 0 }
+    });
+    return;
+  }
   const existe = await tx.produtoImagem.findFirst({
     where: { tenantId: scope.tenantId, empresaId: scope.empresaId, produtoId: productId, url }
   });
@@ -443,9 +457,9 @@ export async function createProduct(scope: TenantScope, payload: ProductPayload)
     });
 
     await upsertProductFiscal(tx, scope, product.id, input);
-    await upsertInitialStock(tx, scope, product.id, deposito.id, input);
-    await replaceProductAplicacoes(tx, scope, product.id, input.aplicacoes);
-    await ensureProductImagem(tx, scope, product.id, input.imageUrl);
+    await upsertInitialStock(tx, scope, product.id, deposito.id, input, { isCreate: true });
+    await replaceProductAplicacoes(tx, scope, product.id, input.aplicacoes, { isCreate: true });
+    await ensureProductImagem(tx, scope, product.id, input.imageUrl, { isCreate: true });
     await createAuditLog(tx, {
       scope,
       entidade: "Produto",

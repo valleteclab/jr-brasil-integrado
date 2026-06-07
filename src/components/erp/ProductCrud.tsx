@@ -331,6 +331,7 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
   const [importResult, setImportResult] = useState<XmlImportResult | null>(null);
   const [cosmosBuscando, setCosmosBuscando] = useState(false);
   const [gerandoSku, setGerandoSku] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [cosmosMsg, setCosmosMsg] = useState("");
   const [cosmosQuery, setCosmosQuery] = useState("");
   const [cosmosBuscandoDesc, setCosmosBuscandoDesc] = useState(false);
@@ -731,6 +732,8 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
       return;
     }
 
+    setSaving(true);
+    setError("");
     try {
       const savedId = await persistProduct(product, editing ? product.id : undefined);
       const savedProduct = { ...product, id: savedId };
@@ -746,6 +749,8 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
     } catch (saveError) {
       const message = saveError instanceof Error ? saveError.message : "Não foi possível salvar o produto.";
       setError(message);
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -1561,8 +1566,10 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
               {error && <p className="form-error drawer-error">{error}</p>}
             </div>
             <footer className="drawer-foot">
-              <button type="button" className="btn-erp ghost sm" onClick={closeDrawer}>Cancelar</button>
-              <button type="button" className="btn-erp primary sm" onClick={saveProduct}>{editing ? "Salvar alterações" : "Cadastrar produto"}</button>
+              <button type="button" className="btn-erp ghost sm" onClick={closeDrawer} disabled={saving}>Cancelar</button>
+              <button type="button" className="btn-erp primary sm" onClick={saveProduct} disabled={saving}>
+                {saving ? "Salvando…" : editing ? "Salvar alterações" : "Cadastrar produto"}
+              </button>
             </footer>
           </aside>
         </>
