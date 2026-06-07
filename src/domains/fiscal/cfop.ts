@@ -64,3 +64,24 @@ export function isSubstituicaoTributaria(taxes: { csosn: string | null; cstIcms:
   if (taxes.cstIcms && ["10", "30", "60", "70"].includes(taxes.cstIcms)) return true;
   return false;
 }
+
+/**
+ * CFOPs que caracterizam substituição tributária de ICMS. Na importação de NF-e de entrada o
+ * XML traz o CFOP do fornecedor (saída, ex. 5403/5405 = revenda de mercadoria com ST), então o
+ * CFOP é um sinal de ST tão confiável quanto o CST/CSOSN — e às vezes o único, quando o CST do
+ * XML vem fora do padrão. Inclui CFOPs de saída (5/6) e de entrada (1/2) relacionados a ST.
+ */
+const CFOPS_ST = new Set([
+  // Saída — substituto/substituído (venda, transferência, devolução)
+  "5401", "5402", "5403", "5405", "5409", "5410", "5411", "5412", "5413", "5414", "5415",
+  "6401", "6402", "6403", "6404", "6409", "6410", "6411", "6412", "6413", "6414", "6415",
+  // Entrada — aquisição/retorno/devolução com ST
+  "1401", "1403", "1406", "1408", "1409", "1410", "1411", "1414", "1415",
+  "2401", "2403", "2406", "2408", "2409", "2410", "2411", "2414", "2415"
+]);
+
+/** Indica se o CFOP caracteriza operação com substituição tributária de ICMS. */
+export function cfopIndicaSt(cfop: string | null | undefined): boolean {
+  const c = (cfop ?? "").replace(/\D/g, "");
+  return c.length === 4 && CFOPS_ST.has(c);
+}

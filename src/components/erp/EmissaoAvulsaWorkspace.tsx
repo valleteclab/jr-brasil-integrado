@@ -798,6 +798,15 @@ export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormDat
             </div>
           )}
 
+          {/* CÁLCULO DE IMPOSTO (painel inline, formato Bling) — abaixo dos itens, só produto */}
+          {isProduto && (
+            <CalculoImpostoPanel
+              endpoint="/api/erp/fiscal/preview"
+              buildBody={buildPreviewBody}
+              deps={[JSON.stringify(itens), frete, descontoGlobal, tipo, finalidade, modalidadeFrete, modoDest, clienteId, avUf, avDocumento]}
+            />
+          )}
+
           {/* OBSERVAÇÕES */}
           <div className="erp-card">
             <div className="erp-card-head"><h3>Observações</h3></div>
@@ -838,15 +847,6 @@ export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormDat
               <div className="atend-total-row grand"><span>Total</span><strong>{brl(total)}</strong></div>
             </div>
           </div>
-
-          {/* CÁLCULO DE IMPOSTO (painel inline, formato Bling) — só produto */}
-          {isProduto && (
-            <CalculoImpostoPanel
-              endpoint="/api/erp/fiscal/preview"
-              buildBody={buildPreviewBody}
-              deps={[JSON.stringify(itens), frete, descontoGlobal, tipo, finalidade, modalidadeFrete, modoDest, clienteId, avUf, avDocumento]}
-            />
-          )}
 
           {/* OPERAÇÃO */}
           <div className="erp-card">

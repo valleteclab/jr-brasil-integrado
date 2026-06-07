@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/shared/PageHeader";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { getSaleDetail } from "@/lib/services/sales";
 import { SaleDetailActions } from "@/components/erp/SaleDetailActions";
+import { VendaCalculoImposto } from "@/components/erp/VendaCalculoImposto";
 import { formatBrl } from "@/lib/formatters/currency";
 
 export const dynamic = "force-dynamic";
@@ -66,6 +67,8 @@ export default async function VendaDetalhePage({ params }: { params: { id: strin
           </div>
         </div>
       </section>
+
+      <VendaCalculoImposto id={venda.id} />
 
       {venda.notas.length > 0 && (
         <section className="erp-card">

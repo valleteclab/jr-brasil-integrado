@@ -6,7 +6,7 @@ import { createAuditLog } from "@/lib/audit/audit-service";
 import { parseNfeXml } from "@/domains/products/xml/nfe-server-parser";
 import type { ParsedNfeItem } from "@/domains/products/xml/nfe-server-parser";
 import { callOpenRouter } from "@/domains/ai/openrouter-service";
-import { isSubstituicaoTributaria } from "@/domains/fiscal/cfop";
+import { cfopIndicaSt, isSubstituicaoTributaria } from "@/domains/fiscal/cfop";
 import { cfopVendaPadrao, creditoPorFinalidade, isFinalidadeEntrada, resolveCfopEntrada } from "@/domains/fiscal/finalidade-entrada";
 import { loadFinalidadeRules, resolveFinalidadeForItem } from "@/domains/fiscal/application/finalidade-regra-use-cases";
 
@@ -527,7 +527,9 @@ export async function importNfeXml(scope: TenantScope, xmlText: string) {
         regrasFinalidade
       );
       const icms = item.taxes.find((tax) => tax.tax === "ICMS");
-      const st = isSubstituicaoTributaria({ cstIcms: icms?.cst ?? null, csosn: icms?.csosn ?? null });
+      // ST detectada pelo CST/CSOSN OU pelo CFOP do XML (ex.: 5403/5405 = revenda com ST) —
+      // o CFOP cobre o caso em que o CST do XML vem fora do padrão.
+      const st = isSubstituicaoTributaria({ cstIcms: icms?.cst ?? null, csosn: icms?.csosn ?? null }) || cfopIndicaSt(item.cfop);
       const interestadual = Boolean(empresaUf && parsed.supplierUf && empresaUf !== parsed.supplierUf);
       const cfopEntrada = resolveCfopEntrada(finalidadeRes.finalidade, { interestadual, st });
       const movimentaEstoque = finalidadeRes.finalidade === "REVENDA" || finalidadeRes.finalidade === "INDUSTRIALIZACAO";
@@ -807,7 +809,9 @@ export async function processFiscalEntry(
       // Mercadoria substituída (ICMS-ST já recolhido): memorizada no produto para que a revenda
       // saia sem ICMS próprio (CST 60 / CSOSN 500) e com CFOP de ST.
       const icmsItem = item.impostos.find((imp) => imp.tributo === "ICMS");
-      const itemSt = isSubstituicaoTributaria({ cstIcms: icmsItem?.cst ?? null, csosn: icmsItem?.csosn ?? null });
+      // ST detectada pelo CST/CSOSN OU pelo CFOP do XML (ex.: 5403/5405 = revenda com ST).
+      const itemSt =
+        isSubstituicaoTributaria({ cstIcms: icmsItem?.cst ?? null, csosn: icmsItem?.csosn ?? null }) || cfopIndicaSt(item.cfop);
       const itemFiscal = { ncm: item.ncm, cest: item.cest, finalidade: item.finalidade, st: itemSt };
 
       if (!produtoId) {
