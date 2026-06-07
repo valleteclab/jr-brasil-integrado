@@ -171,6 +171,7 @@ export type ClienteDetail = {
   nome: string;
   slug: string;
   ativo: boolean;
+  lojaHabilitada: boolean;
   criadoEm: string;
   empresas: {
     id: string;
@@ -253,6 +254,7 @@ export async function getClienteDetail(tenantId: string): Promise<ClienteDetail 
     nome: tenant.nome,
     slug: tenant.slug,
     ativo: tenant.ativo,
+    lojaHabilitada: tenant.lojaHabilitada,
     criadoEm: tenant.criadoEm.toISOString(),
     empresas: tenant.empresas.map((e) => ({
       id: e.id,
@@ -301,6 +303,27 @@ export async function setTenantAtivo(tenantId: string, ativo: boolean) {
   });
 
   return { id: atualizado.id, ativo: atualizado.ativo };
+}
+
+export async function setTenantLojaHabilitada(tenantId: string, habilitada: boolean) {
+  const admin = await requirePlatformAdmin();
+  assertDb();
+
+  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+  if (!tenant) throw new PlatformAdminError("Cliente não encontrado.");
+
+  const atualizado = await prisma.tenant.update({ where: { id: tenantId }, data: { lojaHabilitada: habilitada } });
+
+  await audit({
+    tenantId,
+    usuarioId: admin.usuarioId,
+    entidade: "Tenant",
+    entidadeId: tenantId,
+    acao: habilitada ? "plataforma.habilitar_loja" : "plataforma.desabilitar_loja",
+    payload: { lojaHabilitadaAnterior: tenant.lojaHabilitada, lojaHabilitadaNova: habilitada }
+  });
+
+  return { id: atualizado.id, lojaHabilitada: atualizado.lojaHabilitada };
 }
 
 export async function setEmpresaStatus(empresaId: string, status: "ATIVA" | "INATIVA" | "BLOQUEADA") {

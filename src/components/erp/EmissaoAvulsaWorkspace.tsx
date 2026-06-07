@@ -6,6 +6,7 @@ import { correspondeBusca } from "@/lib/search/normalize";
 import type { EmissaoFormData } from "@/lib/services/fiscal-emit";
 import type { EmissaoPrefill } from "@/lib/services/fiscal";
 import { useCadastroLookup } from "./useCadastroLookup";
+import { EspelhoFiscalModal, type FiscalPreview } from "./EspelhoFiscal";
 
 type DocTipo = "NFE" | "NFCE" | "NFSE";
 type Finalidade = "NORMAL" | "COMPLEMENTAR" | "AJUSTE" | "DEVOLUCAO";
@@ -207,6 +208,8 @@ export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormDat
   const [error, setError] = useState("");
   const [resultado, setResultado] = useState<ResultadoEmissao | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const [preview, setPreview] = useState<FiscalPreview | null>(null);
+  const [previewing, setPreviewing] = useState(false);
   // Id da última nota rejeitada/erro — reenviada (reaproveitada) na próxima tentativa.
   const [retryNotaId, setRetryNotaId] = useState<string | null>(null);
 
@@ -341,6 +344,70 @@ export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormDat
     return null;
   }
 
+  // Monta o payload de NF-e/NFC-e de produto (compartilhado por emitir e pré-visualizar).
+  function buildProdutoBody(receiverPayload: Record<string, unknown>): Record<string, unknown> {
+    return {
+      modelo: tipo,
+      finalidade,
+      retryNotaId: retryNotaId ?? undefined,
+      // Devolução: referencia a NF-e original (NFref/refNFe) e vincula a nota de origem.
+      chaveReferenciada: finalidade === "DEVOLUCAO" ? origem?.chaveReferenciada ?? undefined : undefined,
+      notaOrigemId: finalidade === "DEVOLUCAO" ? origem?.notaOrigemId ?? undefined : undefined,
+      naturezaOperacao: naturezaOperacao.trim() || undefined,
+      receiver: receiverPayload,
+      formaPagamento: formaPagamento || undefined,
+      condicaoPagamento: condicaoPagamento.trim() || undefined,
+      observacoes: obs.trim() || undefined,
+      frete: Number(frete) || 0,
+      modalidadeFrete,
+      desconto: Number(descontoGlobal) || 0,
+      baixarEstoque,
+      itens: itens.map((it) => ({
+        produtoId: it.produtoId ?? undefined,
+        codigo: it.produtoId ? undefined : it.codigo.trim() || undefined,
+        descricao: it.descricao.trim() || undefined,
+        ncm: it.ncm.trim() || undefined,
+        cfop: it.cfop.trim() || undefined,
+        origem: it.origem.trim() || undefined,
+        unidade: it.unidade.trim() || undefined,
+        quantidade: it.quantidade,
+        precoUnitario: it.precoUnitario,
+        desconto: it.desconto || 0
+      }))
+    };
+  }
+
+  // Espelho fiscal: prévia dos tributos (somente produto) sem emitir.
+  async function previsualizar() {
+    setError("");
+    const validation = validate();
+    if (validation) {
+      setError(validation);
+      return;
+    }
+    const receiver = buildReceiver();
+    const receiverPayload = receiver ?? (isNfce ? { nome: undefined } : null);
+    if (!receiverPayload) {
+      setError("Informe o destinatário da nota.");
+      return;
+    }
+    setPreviewing(true);
+    try {
+      const res = await fetch("/api/erp/fiscal/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(buildProdutoBody(receiverPayload))
+      });
+      const data = (await res.json().catch(() => ({}))) as FiscalPreview & { error?: string };
+      if (!res.ok) throw new Error(data.error || "Não foi possível calcular o espelho fiscal.");
+      setPreview(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não foi possível calcular o espelho fiscal.");
+    } finally {
+      setPreviewing(false);
+    }
+  }
+
   async function emitir() {
     setError("");
     const validation = validate();
@@ -364,35 +431,7 @@ export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormDat
 
       if (isProduto) {
         endpoint = "/api/erp/fiscal/emitir/produto";
-        body = {
-          modelo: tipo,
-          finalidade,
-          retryNotaId: retryNotaId ?? undefined,
-          // Devolução: referencia a NF-e original (NFref/refNFe) e vincula a nota de origem.
-          chaveReferenciada: finalidade === "DEVOLUCAO" ? origem?.chaveReferenciada ?? undefined : undefined,
-          notaOrigemId: finalidade === "DEVOLUCAO" ? origem?.notaOrigemId ?? undefined : undefined,
-          naturezaOperacao: naturezaOperacao.trim() || undefined,
-          receiver: receiverPayload,
-          formaPagamento: formaPagamento || undefined,
-          condicaoPagamento: condicaoPagamento.trim() || undefined,
-          observacoes: obs.trim() || undefined,
-          frete: Number(frete) || 0,
-          modalidadeFrete,
-          desconto: Number(descontoGlobal) || 0,
-          baixarEstoque,
-          itens: itens.map((it) => ({
-            produtoId: it.produtoId ?? undefined,
-            codigo: it.produtoId ? undefined : it.codigo.trim() || undefined,
-            descricao: it.descricao.trim() || undefined,
-            ncm: it.ncm.trim() || undefined,
-            cfop: it.cfop.trim() || undefined,
-            origem: it.origem.trim() || undefined,
-            unidade: it.unidade.trim() || undefined,
-            quantidade: it.quantidade,
-            precoUnitario: it.precoUnitario,
-            desconto: it.desconto || 0
-          }))
-        };
+        body = buildProdutoBody(receiverPayload);
       } else {
         endpoint = "/api/erp/fiscal/emitir/servico";
         body = {
@@ -894,10 +933,17 @@ export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormDat
             <button type="button" className="btn-erp primary lg" disabled={!podeEmitir} onClick={emitir}>
               {saving ? "Emitindo…" : `Emitir ${tipoLabel}`}
             </button>
+            {isProduto && (
+              <button type="button" className="btn-erp light sm" onClick={previsualizar} disabled={saving || previewing}>
+                {previewing ? "Calculando…" : "🔍 Espelho fiscal (prévia dos impostos)"}
+              </button>
+            )}
             <button type="button" className="btn-erp ghost sm" onClick={reset} disabled={saving}>Limpar</button>
           </div>
         </aside>
       </div>
+
+      {preview && <EspelhoFiscalModal preview={preview} onClose={() => setPreview(null)} />}
 
       {/* PRODUTO PICKER — adiciona vários sem fechar */}
       {showProd && (

@@ -6,12 +6,14 @@
 import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import { createAuditLog } from "@/lib/audit/audit-service";
+import { slugify } from "@/lib/slug";
 
 export class BrandingError extends Error {}
 
 export type BrandingConfig = {
   logoSistema: string | null;
   corDestaque: string | null;
+  slugLoja: string | null;
 };
 
 // Limite do data URL da logo (base64 é ~33% maior que o binário; ~300 KB de imagem cabem aqui).
@@ -21,9 +23,13 @@ const HEX_RE = /^#[0-9a-fA-F]{6}$/;
 export async function getBranding(scope: TenantScope): Promise<BrandingConfig> {
   const empresa = await prisma.empresa.findUnique({
     where: { id: scope.empresaId },
-    select: { logoSistema: true, corDestaque: true }
+    select: { logoSistema: true, corDestaque: true, slugLoja: true }
   });
-  return { logoSistema: empresa?.logoSistema ?? null, corDestaque: empresa?.corDestaque ?? null };
+  return {
+    logoSistema: empresa?.logoSistema ?? null,
+    corDestaque: empresa?.corDestaque ?? null,
+    slugLoja: empresa?.slugLoja ?? null
+  };
 }
 
 export type SaveBrandingInput = {
@@ -31,6 +37,8 @@ export type SaveBrandingInput = {
   logoSistema?: string | null;
   /** Hex #rrggbb, ou null para voltar ao padrão. undefined = manter. */
   corDestaque?: string | null;
+  /** Identificador da loja na URL (/loja/{slug}). Vazio/null remove. undefined = manter. */
+  slugLoja?: string | null;
 };
 
 function validarLogo(value: string): string {
@@ -44,7 +52,7 @@ function validarLogo(value: string): string {
 }
 
 export async function saveBranding(scope: TenantScope, input: SaveBrandingInput): Promise<BrandingConfig> {
-  const data: { logoSistema?: string | null; corDestaque?: string | null } = {};
+  const data: { logoSistema?: string | null; corDestaque?: string | null; slugLoja?: string | null } = {};
 
   if (input.logoSistema !== undefined) {
     const logo = (input.logoSistema ?? "").trim();
@@ -57,10 +65,23 @@ export async function saveBranding(scope: TenantScope, input: SaveBrandingInput)
     data.corDestaque = cor || null;
   }
 
+  if (input.slugLoja !== undefined) {
+    const slug = slugify(input.slugLoja ?? "");
+    if (slug) {
+      if (slug.length < 2) throw new BrandingError("O endereço da loja deve ter ao menos 2 caracteres.");
+      const emUso = await prisma.empresa.findFirst({
+        where: { slugLoja: slug, id: { not: scope.empresaId } },
+        select: { id: true }
+      });
+      if (emUso) throw new BrandingError("Este endereço de loja já está em uso. Escolha outro.");
+    }
+    data.slugLoja = slug || null;
+  }
+
   const empresa = await prisma.empresa.update({
     where: { id: scope.empresaId },
     data,
-    select: { logoSistema: true, corDestaque: true }
+    select: { logoSistema: true, corDestaque: true, slugLoja: true }
   });
 
   await createAuditLog(prisma, {
@@ -68,8 +89,8 @@ export async function saveBranding(scope: TenantScope, input: SaveBrandingInput)
     entidade: "Empresa",
     entidadeId: scope.empresaId,
     acao: "BRANDING_ATUALIZAR",
-    payload: { corDestaque: empresa.corDestaque, temLogo: Boolean(empresa.logoSistema) }
+    payload: { corDestaque: empresa.corDestaque, temLogo: Boolean(empresa.logoSistema), slugLoja: empresa.slugLoja }
   });
 
-  return { logoSistema: empresa.logoSistema, corDestaque: empresa.corDestaque };
+  return { logoSistema: empresa.logoSistema, corDestaque: empresa.corDestaque, slugLoja: empresa.slugLoja };
 }

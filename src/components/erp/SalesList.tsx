@@ -146,7 +146,8 @@ export function SalesList({ sales }: Props) {
             {filtered.map((row) => (
               <tr key={row.id}>
                 <td>
-                  <span className="mono bold">{row.numero}</span>
+                  <Link className="mono bold link-detalhe" href={`/erp/vendas/${row.id}`}>{row.numero}</Link>
+                  {row.canal === "LOJA" && <span className="canal-loja" title="Pedido recebido pela loja virtual">🛒 Loja</span>}
                   {row.faturadoEm && (
                     <small className="block-muted">Faturado em {row.faturadoEm}</small>
                   )}

@@ -1,7 +1,7 @@
 import type { Prisma, RegimeTributario, RegraTributaria, TipoTributo } from "@prisma/client";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import type { ItemTaxResult, NormalizedFiscalItem } from "./types";
-import { aliquotaInternaIcmsSafe, fcpInterno } from "./national-tax-baseline";
+import { aliquotaIcmsVendaSafe, aliquotaInternaIcmsSafe, fcpInterno, pisCofinsBaseline } from "./national-tax-baseline";
 
 /** Zera os campos de FCP/ICMS-ST de um resultado (operações sem ST/FCP). */
 const SEM_ST_FCP = {
@@ -167,9 +167,12 @@ export function computeItemTaxes(
   const cofinsRule = pickRule(rules, "COFINS", item.ncm, ctx.ufDestino);
   const isSimples = ctx.regime === "SIMPLES_NACIONAL" || ctx.regime === "MEI" || ctx.regime === "SIMPLES_EXCESSO_SUBLIMITE";
 
+  // Sem regra de PIS/COFINS, cai no baseline do regime (Simples = 0; Presumido 0,65/3;
+  // Real 1,65/7,6) — assim o cálculo automático destaca PIS/COFINS como em outros ERPs.
+  const pisCofinsFallback = pisCofinsBaseline(ctx.regime);
   const aliquotaIpi = num(ipiRule?.aliquota);
-  const aliquotaPis = num(pisRule?.aliquota);
-  const aliquotaCofins = num(cofinsRule?.aliquota);
+  const aliquotaPis = pisRule ? num(pisRule.aliquota) : pisCofinsFallback.pis;
+  const aliquotaCofins = cofinsRule ? num(cofinsRule.aliquota) : pisCofinsFallback.cofins;
 
   // Mercadoria substituída (ICMS-ST já recolhido na cadeia): a saída NÃO tem ICMS próprio nem
   // novo ICMS-ST. Sai com CSOSN 500 (Simples) ou CST 60 (regime normal) — o que faz a emissão
@@ -244,7 +247,10 @@ export function computeItemTaxes(
   const icmsRule = pickRule(rules, "ICMS", item.ncm, ctx.ufDestino);
   const fallbackIcms = defaultIcms(ctx.regime);
   const cstIcms = icmsRule?.cst ?? fallbackIcms.cst;
-  const aliquotaIcms = num(icmsRule?.aliquota);
+  // Sem regra específica, o CST padrão é 00 (tributada integralmente) — então a alíquota NÃO
+  // pode ser 0. Cai na base nacional (interna/interestadual) pela UF de origem/destino, igual ao
+  // "cálculo automático" de outros ERPs. Uma regra cadastrada (mesmo com 0%) sempre prevalece.
+  const aliquotaIcms = icmsRule ? num(icmsRule.aliquota) : aliquotaIcmsVendaSafe(ctx.ufOrigem, ctx.ufDestino);
   const reducao = num(icmsRule?.reducaoBase) / 100;
   const baseIcms = round2(base * (1 - reducao));
   const valorIcms = round2(baseIcms * (aliquotaIcms / 100));

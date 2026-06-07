@@ -1,16 +1,21 @@
 import { PageHeader } from "@/components/shared/PageHeader";
 import { AparenciaForm } from "@/components/erp/AparenciaForm";
 import { getBranding } from "@/domains/company/application/branding-use-cases";
+import { getEmpresaPerfil } from "@/domains/company/application/company-use-cases";
 import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
 
 export const dynamic = "force-dynamic";
 
 export default async function AparenciaPage() {
-  let initial = { logoSistema: null as string | null, corDestaque: null as string | null };
+  let initial = { logoSistema: null as string | null, corDestaque: null as string | null, slugLoja: null as string | null };
+  let nomeSugerido = "";
   let loadError = "";
 
   try {
-    initial = await getBranding(await getDevelopmentTenantScope());
+    const scope = await getDevelopmentTenantScope();
+    const [branding, perfil] = await Promise.all([getBranding(scope), getEmpresaPerfil(scope)]);
+    initial = branding;
+    nomeSugerido = perfil.nomeFantasia ?? perfil.razaoSocial ?? "";
   } catch (error) {
     loadError = error instanceof Error ? error.message : "Não foi possível carregar a aparência.";
   }
@@ -30,7 +35,7 @@ export default async function AparenciaPage() {
           <span>{loadError}</span>
         </div>
       )}
-      <AparenciaForm initial={initial} />
+      <AparenciaForm initial={initial} nomeSugerido={nomeSugerido} />
     </>
   );
 }

@@ -5,7 +5,7 @@ import { scopedByTenantCompany } from "@/lib/auth/dev-session";
 import { createAuditLog } from "@/lib/audit/audit-service";
 import { exitStock, getDefaultDeposito } from "@/domains/stock/application/stock-service";
 import { buildDocumentFromPedido, buildNfseFromOrdemServico } from "@/domains/fiscal/document-builder";
-import { emitFiscalDocument } from "@/domains/fiscal/application/fiscal-emission-use-cases";
+import { emitFiscalDocument, previewFiscalDocument } from "@/domains/fiscal/application/fiscal-emission-use-cases";
 import { isValidLc116 } from "@/domains/fiscal/lc116";
 import { sugerirPorLc116 } from "@/domains/fiscal/nbs";
 import type { TaxationTypeIss } from "@/domains/fiscal/types";
@@ -185,7 +185,13 @@ async function resolveReceiver(scope: TenantScope, receiver: ReceiverInput): Pro
 }
 
 /** Emite NF-e ou NFC-e avulsa (sem pedido de venda). */
-export async function emitProductInvoiceAvulsa(scope: TenantScope, input: ProductInvoiceAvulsaInput) {
+/**
+ * Monta o documento fiscal normalizado de uma emissão avulsa de produto (sem persistir nem
+ * emitir). Reaproveitado pela emissão real e pelo espelho fiscal (preview), garantindo que a
+ * prévia reflita exatamente o que será enviado. As validações específicas da SEFAZ (NCM/
+ * endereço) ficam fora daqui — a emissão as aplica como bloqueio; o preview as mostra como aviso.
+ */
+export async function buildProductInvoiceDocument(scope: TenantScope, input: ProductInvoiceAvulsaInput) {
   if (!input.itens?.length) throw new StandaloneEmissionError("Informe ao menos um item.");
 
   const cliente = await resolveReceiver(scope, input.receiver);
@@ -249,25 +255,6 @@ export async function emitProductInvoiceAvulsa(scope: TenantScope, input: Produc
     };
   });
 
-  // Validações de schema da SEFAZ feitas ANTES de enviar (espelham as rejeições da Spedy):
-  // NCM obrigatório (8 dígitos) por item e endereço do destinatário com tamanhos mínimos.
-  linhas.forEach((linha, index) => {
-    const ncm = (linha.produto.ncm ?? "").replace(/\D/g, "");
-    if (ncm.length !== 8) {
-      throw new StandaloneEmissionError(`Item ${index + 1} (${linha.produto.nome}): informe o NCM com 8 dígitos (obrigatório na NF-e/NFC-e).`);
-    }
-  });
-  const end = cliente.enderecos[0];
-  if (!end || (end.logradouro ?? "").trim().length < 2) {
-    throw new StandaloneEmissionError("Endereço do destinatário incompleto: o logradouro deve ter ao menos 2 caracteres (exigência da SEFAZ).");
-  }
-  if (!(end.bairro ?? "").trim() || (end.bairro ?? "").trim().length < 2) {
-    throw new StandaloneEmissionError("Endereço do destinatário incompleto: informe o bairro (mínimo 2 caracteres).");
-  }
-  if ((end.cep ?? "").replace(/\D/g, "").length !== 8) {
-    throw new StandaloneEmissionError("Endereço do destinatário incompleto: informe um CEP válido (8 dígitos).");
-  }
-
   const doc = buildDocumentFromPedido({
     cliente,
     modelo,
@@ -291,6 +278,45 @@ export async function emitProductInvoiceAvulsa(scope: TenantScope, input: Produc
       item.produtoId = null;
     }
   });
+
+  return { doc, modelo, cliente, linhas };
+}
+
+/**
+ * Validações de schema da SEFAZ feitas ANTES de enviar (espelham as rejeições da Spedy):
+ * NCM obrigatório (8 dígitos) por item e endereço do destinatário com tamanhos mínimos.
+ */
+function validateProductInvoiceForSefaz(
+  linhas: Awaited<ReturnType<typeof buildProductInvoiceDocument>>["linhas"],
+  cliente: Awaited<ReturnType<typeof buildProductInvoiceDocument>>["cliente"]
+) {
+  linhas.forEach((linha, index) => {
+    const ncm = (linha.produto.ncm ?? "").replace(/\D/g, "");
+    if (ncm.length !== 8) {
+      throw new StandaloneEmissionError(`Item ${index + 1} (${linha.produto.nome}): informe o NCM com 8 dígitos (obrigatório na NF-e/NFC-e).`);
+    }
+  });
+  const end = cliente.enderecos[0];
+  if (!end || (end.logradouro ?? "").trim().length < 2) {
+    throw new StandaloneEmissionError("Endereço do destinatário incompleto: o logradouro deve ter ao menos 2 caracteres (exigência da SEFAZ).");
+  }
+  if (!(end.bairro ?? "").trim() || (end.bairro ?? "").trim().length < 2) {
+    throw new StandaloneEmissionError("Endereço do destinatário incompleto: informe o bairro (mínimo 2 caracteres).");
+  }
+  if ((end.cep ?? "").replace(/\D/g, "").length !== 8) {
+    throw new StandaloneEmissionError("Endereço do destinatário incompleto: informe um CEP válido (8 dígitos).");
+  }
+}
+
+/** Espelho fiscal de uma emissão avulsa de produto: tributos por item + totais, sem emitir. */
+export async function previewProductInvoiceAvulsa(scope: TenantScope, input: ProductInvoiceAvulsaInput) {
+  const { doc } = await buildProductInvoiceDocument(scope, input);
+  return previewFiscalDocument(scope, doc);
+}
+
+export async function emitProductInvoiceAvulsa(scope: TenantScope, input: ProductInvoiceAvulsaInput) {
+  const { doc, modelo, cliente, linhas } = await buildProductInvoiceDocument(scope, input);
+  validateProductInvoiceForSefaz(linhas, cliente);
 
   const nota = await emitFiscalDocument(scope, doc, {
     clienteId: input.receiver.clienteId ?? null,

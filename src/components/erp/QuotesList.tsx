@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Button } from "@/components/shared/Button";
 import { StatusBadge } from "@/components/shared/StatusBadge";
@@ -128,7 +129,8 @@ export function QuotesList({ quotes }: Props) {
             {filtered.map((orc) => (
               <tr key={orc.id}>
                 <td>
-                  <span className="mono bold">{orc.numero}</span>
+                  <Link className="mono bold link-detalhe" href={`/erp/orcamentos/${orc.id}`}>{orc.numero}</Link>
+                  {orc.canal === "LOJA" && <span className="canal-loja" title="Solicitação recebida pela loja virtual">🛒 Loja</span>}
                   <small className="block-muted">{orc.criadoEm}</small>
                 </td>
                 <td>

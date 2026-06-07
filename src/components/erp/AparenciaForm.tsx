@@ -4,8 +4,9 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/shared/Button";
 import { ajustarLogoFiscal } from "@/lib/images/logo-fiscal";
+import { slugify } from "@/lib/slug";
 
-type Branding = { logoSistema: string | null; corDestaque: string | null };
+type Branding = { logoSistema: string | null; corDestaque: string | null; slugLoja: string | null };
 
 const COR_PADRAO = "#ffc107";
 
@@ -18,10 +19,11 @@ function fileParaDataUrl(file: File): Promise<string> {
   });
 }
 
-export function AparenciaForm({ initial }: { initial: Branding }) {
+export function AparenciaForm({ initial, nomeSugerido }: { initial: Branding; nomeSugerido?: string }) {
   const router = useRouter();
   const [logo, setLogo] = useState<string | null>(initial.logoSistema);
   const [cor, setCor] = useState(initial.corDestaque || COR_PADRAO);
+  const [slug, setSlug] = useState(initial.slugLoja ?? "");
   const [ajustando, setAjustando] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -57,7 +59,7 @@ export function AparenciaForm({ initial }: { initial: Branding }) {
       const response = await fetch("/api/erp/configuracoes/aparencia", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ logoSistema: logo, corDestaque: cor })
+        body: JSON.stringify({ logoSistema: logo, corDestaque: cor, slugLoja: slug })
       });
       const data = await response.json() as { error?: string };
       if (!response.ok) throw new Error(data.error || "Não foi possível salvar.");
@@ -94,6 +96,25 @@ export function AparenciaForm({ initial }: { initial: Branding }) {
             <input value={cor} onChange={(e) => setCor(e.target.value)} placeholder="#ffc107" style={{ width: 120 }} />
             <button type="button" className="btn-erp ghost xs" onClick={() => setCor(COR_PADRAO)}>Padrão</button>
           </div>
+        </label>
+
+        <label className="full">
+          Endereço da loja virtual
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <span className="block-muted">/loja/</span>
+            <input
+              value={slug}
+              onChange={(e) => setSlug(slugify(e.target.value))}
+              placeholder="ex: jr-brasil"
+              style={{ flex: 1, minWidth: 160 }}
+            />
+            {nomeSugerido && (
+              <button type="button" className="btn-erp ghost xs" onClick={() => setSlug(slugify(nomeSugerido))}>Gerar do nome</button>
+            )}
+          </div>
+          <small className="block-muted">
+            {slug ? <>A loja ficará em <strong>/loja/{slug}</strong></> : "Defina um endereço para publicar a loja. Sem ele, a loja não fica acessível."}
+          </small>
         </label>
       </div>
 

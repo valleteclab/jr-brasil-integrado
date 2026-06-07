@@ -11,7 +11,7 @@ import {
   applyStockMovement
 } from "@/domains/stock/application/stock-service";
 import { buildDocumentFromPedido, type ClienteLike } from "@/domains/fiscal/document-builder";
-import { emitFiscalDocument } from "@/domains/fiscal/application/fiscal-emission-use-cases";
+import { emitFiscalDocument, previewFiscalDocument } from "@/domains/fiscal/application/fiscal-emission-use-cases";
 
 const TX_OPTIONS = { maxWait: 15000, timeout: 30000 };
 
@@ -29,6 +29,8 @@ export type CreateSaleInput = {
   observacoesInternas?: string;
   desconto?: number;
   frete?: number;
+  /** Reservar estoque na criação (padrão true). A loja cria pedidos a aprovar sem reservar. */
+  reservarEstoque?: boolean;
   itens: Array<{
     produtoId: string;
     quantidade: number;
@@ -110,15 +112,17 @@ export async function createSale(scope: TenantScope, input: CreateSaleInput) {
       }
     });
 
-    // Reserva estoque para cada item
-    for (const item of itensMapped) {
-      await reserveStock(tx, scope, {
-        produtoId: item.produtoId,
-        depositoId,
-        quantidade: item.quantidade,
-        origemTipo: "PEDIDO_VENDA",
-        origemId: pedido.id
-      });
+    // Reserva estoque para cada item (a loja cria pedidos a aprovar sem reservar).
+    if (input.reservarEstoque !== false) {
+      for (const item of itensMapped) {
+        await reserveStock(tx, scope, {
+          produtoId: item.produtoId,
+          depositoId,
+          quantidade: item.quantidade,
+          origemTipo: "PEDIDO_VENDA",
+          origemId: pedido.id
+        });
+      }
     }
 
     await createAuditLog(tx, {
@@ -197,38 +201,21 @@ export async function confirmSale(scope: TenantScope, id: string) {
   }, TX_OPTIONS);
 }
 
-export async function invoiceSale(scope: TenantScope, id: string, options?: { modelo?: "NFE" | "NFCE" }) {
-  // Carrega pedido com todos os dados necessários para emissão fiscal
-  const pedido = await prisma.pedidoVenda.findFirst({
+/** Carrega o pedido com cliente/endereços e itens/ficha fiscal — base para emitir/pré-visualizar. */
+async function loadPedidoParaNota(scope: TenantScope, id: string) {
+  return prisma.pedidoVenda.findFirst({
     where: { id, ...scopedByTenantCompany(scope) },
     include: {
-      cliente: {
-        include: {
-          enderecos: true,
-          contatos: true
-        }
-      },
-      itens: {
-        include: {
-          produto: {
-            include: {
-              fiscal: true
-            }
-          }
-        }
-      }
+      cliente: { include: { enderecos: true, contatos: true } },
+      itens: { include: { produto: { include: { fiscal: true } } } }
     }
   });
+}
 
-  if (!pedido) throw new Error("Pedido de venda não encontrado.");
-  if (pedido.status !== "AGUARDANDO_NOTA") {
-    throw new Error("Somente pedidos AGUARDANDO_NOTA podem ser faturados. Confirme o pedido primeiro.");
-  }
-  const modelo = options?.modelo ?? "NFE";
-  // NFC-e (mod 65) admite consumidor anônimo; NF-e (mod 55) exige destinatário identificado.
-  if (!pedido.cliente && modelo !== "NFCE") {
-    throw new Error("Pedido sem cliente identificado. Para venda a consumidor anônimo, emita NFC-e.");
-  }
+type PedidoParaNota = NonNullable<Awaited<ReturnType<typeof loadPedidoParaNota>>>;
+
+/** Monta o documento fiscal normalizado a partir do pedido (compartilhado por emitir/preview). */
+function buildDocumentoVenda(pedido: PedidoParaNota, modelo: "NFE" | "NFCE") {
   const clienteDoc: ClienteLike = pedido.cliente ?? {
     razaoSocial: "Consumidor final",
     documento: null,
@@ -236,9 +223,7 @@ export async function invoiceSale(scope: TenantScope, id: string, options?: { mo
     enderecos: [],
     contatos: []
   };
-
-  // Monta documento fiscal — fora de transação (emitFiscalDocument gerencia suas próprias)
-  const doc = buildDocumentFromPedido({
+  return buildDocumentFromPedido({
     cliente: clienteDoc,
     formaPagamento: pedido.formaPagamento,
     condicaoPagamento: pedido.condicaoPagamento,
@@ -271,6 +256,51 @@ export async function invoiceSale(scope: TenantScope, id: string, options?: { mo
       desconto: Number(item.desconto)
     }))
   });
+}
+
+/** Espelho fiscal de um pedido de venda: como a NF-e/NFC-e seria emitida, sem emitir. */
+export async function previewSaleInvoice(scope: TenantScope, id: string, options?: { modelo?: "NFE" | "NFCE" }) {
+  const pedido = await loadPedidoParaNota(scope, id);
+  if (!pedido) throw new Error("Pedido de venda não encontrado.");
+  const doc = buildDocumentoVenda(pedido, options?.modelo ?? "NFE");
+  return previewFiscalDocument(scope, doc);
+}
+
+export async function invoiceSale(scope: TenantScope, id: string, options?: { modelo?: "NFE" | "NFCE" }) {
+  // Carrega pedido com todos os dados necessários para emissão fiscal
+  const pedido = await loadPedidoParaNota(scope, id);
+
+  if (!pedido) throw new Error("Pedido de venda não encontrado.");
+  if (pedido.status !== "AGUARDANDO_NOTA") {
+    throw new Error("Somente pedidos AGUARDANDO_NOTA podem ser faturados. Confirme o pedido primeiro.");
+  }
+  const modelo = options?.modelo ?? "NFE";
+  // NFC-e (mod 65) admite consumidor anônimo; NF-e (mod 55) exige destinatário identificado.
+  if (!pedido.cliente && modelo !== "NFCE") {
+    throw new Error("Pedido sem cliente identificado. Para venda a consumidor anônimo, emita NFC-e.");
+  }
+
+  // NF-e (mod 55) exige endereço completo do destinatário (a SEFAZ rejeita sem xBairro/UF).
+  // Pedidos vindos da loja (cadastro rápido) costumam vir sem endereço — avisa de forma clara
+  // em vez de deixar a rejeição técnica do provedor chegar ao usuário.
+  if (modelo === "NFE" && pedido.cliente) {
+    const end = pedido.cliente.enderecos.find((e) => e.padrao) ?? pedido.cliente.enderecos[0];
+    const faltando: string[] = [];
+    if (!end?.logradouro?.trim()) faltando.push("logradouro");
+    if (!end?.bairro?.trim()) faltando.push("bairro");
+    if (!end?.cidade?.trim()) faltando.push("cidade");
+    if (!end?.uf?.trim()) faltando.push("UF");
+    if (!(end?.cep ?? "").replace(/\D/g, "").match(/^\d{8}$/)) faltando.push("CEP");
+    if (faltando.length) {
+      throw new Error(
+        `Endereço do cliente incompleto para emitir NF-e (faltando: ${faltando.join(", ")}). ` +
+          `Complete o cadastro do cliente "${pedido.cliente.razaoSocial}" em Clientes, ou emita NFC-e.`
+      );
+    }
+  }
+
+  // Monta documento fiscal — fora de transação (emitFiscalDocument gerencia suas próprias)
+  const doc = buildDocumentoVenda(pedido, modelo);
 
   // Emite a nota fiscal (gerencia suas próprias transações)
   const nota = await emitFiscalDocument(scope, doc, {

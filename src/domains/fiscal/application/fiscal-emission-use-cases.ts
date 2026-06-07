@@ -55,11 +55,17 @@ async function enrichMunicipioIbge(document: NormalizedFiscalDocument): Promise<
   }
 }
 
-function validateBeforeProvider(
+/**
+ * Reúne as pendências que impediriam (ou comprometeriam) a emissão de NF-e/NFC-e, sem lançar.
+ * Usado tanto para bloquear a emissão (validateBeforeProvider) quanto para alimentar os
+ * "avisos" do espelho fiscal (previewFiscalDocument), garantindo que o que o usuário vê no
+ * preview é exatamente o que será validado na emissão.
+ */
+function collectFiscalIssues(
   config: Awaited<ReturnType<typeof getFiscalRuntimeConfig>>,
   document: NormalizedFiscalDocument
-) {
-  if (document.modelo !== "NFE" && document.modelo !== "NFCE") return;
+): string[] {
+  if (document.modelo !== "NFE" && document.modelo !== "NFCE") return [];
 
   const issues: string[] = [];
   if (!isValidCnpj(config.emitter.cnpj)) {
@@ -73,14 +79,204 @@ function validateBeforeProvider(
   if (document.modelo === "NFE") {
     if (!endereco) {
       issues.push("Endereço do destinatário é obrigatório para NF-e.");
-    } else if (!isIbgeMunicipio(endereco.codigoMunicipioIbge)) {
-      issues.push("Código IBGE do município do destinatário ausente ou inválido (7 dígitos). Atualize o endereço do cliente ou use a busca por CEP/CNPJ.");
+    } else {
+      if (!(endereco.logradouro ?? "").trim()) issues.push("Logradouro do destinatário é obrigatório para NF-e.");
+      if (!(endereco.bairro ?? "").trim()) issues.push("Bairro do destinatário é obrigatório para NF-e.");
+      if (!(endereco.uf ?? document.destinatario.uf ?? "").trim()) issues.push("UF do destinatário é obrigatória para NF-e.");
+      if (onlyDigits(endereco.cep).length !== 8) issues.push("CEP do destinatário inválido (8 dígitos) para NF-e.");
+      if (!isIbgeMunicipio(endereco.codigoMunicipioIbge)) {
+        issues.push("Código IBGE do município do destinatário ausente ou inválido (7 dígitos). Atualize o endereço do cliente ou use a busca por CEP/CNPJ.");
+      }
     }
   }
 
+  // NCM por item (obrigatório, 8 dígitos) — vale para NF-e e NFC-e.
+  document.itens.forEach((item, index) => {
+    if (item.servico) return;
+    if (onlyDigits(item.ncm).length !== 8) {
+      issues.push(`Item ${index + 1} (${item.descricao}): NCM com 8 dígitos é obrigatório.`);
+    }
+  });
+
+  return issues;
+}
+
+function validateBeforeProvider(
+  config: Awaited<ReturnType<typeof getFiscalRuntimeConfig>>,
+  document: NormalizedFiscalDocument
+) {
+  const issues = collectFiscalIssues(config, document);
   if (issues.length) {
     throw new Error(`Não foi possível emitir a nota fiscal: ${issues.join(" ")}`);
   }
+}
+
+/** Linha do espelho fiscal: tributos calculados de um item, como sairão no XML. */
+export type FiscalPreviewItem = {
+  numeroItem: number;
+  codigo: string;
+  descricao: string;
+  ncm: string | null;
+  cfop: string | null;
+  origem: string;
+  quantidade: number;
+  valorTotal: number;
+  cstIcms: string | null;
+  csosn: string | null;
+  baseIcms: number;
+  aliquotaIcms: number;
+  valorIcms: number;
+  baseIcmsSt: number;
+  aliquotaIcmsSt: number;
+  valorIcmsSt: number;
+  valorFcp: number;
+  cstIpi: string | null;
+  aliquotaIpi: number;
+  valorIpi: number;
+  cstPis: string | null;
+  aliquotaPis: number;
+  valorPis: number;
+  cstCofins: string | null;
+  aliquotaCofins: number;
+  valorCofins: number;
+  valorTributos: number;
+};
+
+/** Espelho fiscal: prévia de como a nota será emitida (tributos por item + totais). */
+export type FiscalPreview = {
+  modelo: ModeloFiscal;
+  regime: string;
+  serie: string;
+  naturezaOperacao: string;
+  destinatarioNome: string;
+  itens: FiscalPreviewItem[];
+  totais: {
+    valorProdutos: number;
+    valorServicos: number;
+    valorDesconto: number;
+    valorFrete: number;
+    valorSeguro: number;
+    outrasDespesas: number;
+    valorIcms: number;
+    valorIcmsSt: number;
+    valorFcp: number;
+    valorIpi: number;
+    valorPis: number;
+    valorCofins: number;
+    valorIss: number;
+    valorTotalTributos: number;
+    total: number;
+  };
+  /** Pendências (endereço, NCM, IBGE…) que impediriam a emissão — apenas informativo aqui. */
+  avisos: string[];
+};
+
+/**
+ * Calcula o espelho fiscal de um documento normalizado SEM persistir nem chamar o provedor.
+ * Reaproveita exatamente o mesmo motor de tributos e resolução de CFOP da emissão real
+ * (computeItemTaxes, resolveCfop e accumulateTotals), para que o preview reflita a nota emitida.
+ */
+export async function previewFiscalDocument(
+  scope: TenantScope,
+  document: NormalizedFiscalDocument
+): Promise<FiscalPreview> {
+  if (!document.itens.length) throw new Error("Documento fiscal sem itens.");
+
+  const config = await getFiscalRuntimeConfig(scope);
+  await enrichMunicipioIbge(document);
+  const serie =
+    document.serie ||
+    (document.modelo === "NFE" ? config.serieNfe : document.modelo === "NFCE" ? config.serieNfce : config.serieNfse);
+
+  const rules = await loadSalesTaxRules(prisma, scope);
+  const totals = emptyTotals();
+  const itens: FiscalPreviewItem[] = document.itens.map((item, index) => {
+    const taxes = computeItemTaxes(item, rules, {
+      regime: config.regime,
+      ufOrigem: config.emitter.uf,
+      ufDestino: document.destinatario.uf,
+      servico: item.servico
+    });
+    const cfopCtx = {
+      ufOrigem: config.emitter.uf,
+      ufDestino: document.destinatario.uf,
+      substituicaoTributaria: isSubstituicaoTributaria(taxes)
+    };
+    let cfop: string | null;
+    if (item.servico) cfop = null;
+    else if (document.finalidade === "DEVOLUCAO") {
+      const explicitoEntrada = item.cfop && /^[12]/.test(item.cfop) ? item.cfop : null;
+      cfop = explicitoEntrada ?? resolveCfopDevolucao(cfopCtx);
+    } else cfop = item.cfop ?? resolveCfopVenda(cfopCtx);
+    accumulateTotals(totals, item, taxes);
+    return {
+      numeroItem: index + 1,
+      codigo: item.codigo,
+      descricao: item.descricao,
+      ncm: item.ncm,
+      cfop,
+      origem: taxes.origem,
+      quantidade: item.quantidade,
+      valorTotal: item.valorTotal,
+      cstIcms: taxes.cstIcms,
+      csosn: taxes.csosn,
+      baseIcms: taxes.baseIcms,
+      aliquotaIcms: taxes.aliquotaIcms,
+      valorIcms: taxes.valorIcms,
+      baseIcmsSt: taxes.baseIcmsSt,
+      aliquotaIcmsSt: taxes.aliquotaIcmsSt,
+      valorIcmsSt: taxes.valorIcmsSt,
+      valorFcp: taxes.valorFcp,
+      cstIpi: taxes.cstIpi,
+      aliquotaIpi: taxes.aliquotaIpi,
+      valorIpi: taxes.valorIpi,
+      cstPis: taxes.cstPis,
+      aliquotaPis: taxes.aliquotaPis,
+      valorPis: taxes.valorPis,
+      cstCofins: taxes.cstCofins,
+      aliquotaCofins: taxes.aliquotaCofins,
+      valorCofins: taxes.valorCofins,
+      valorTributos: taxes.valorTributos
+    };
+  });
+
+  const baseValor = round2(totals.valorProdutos + totals.valorServicos);
+  const total = round2(
+    baseValor -
+      document.valorDesconto +
+      document.valorFrete +
+      document.valorSeguro +
+      document.outrasDespesas +
+      totals.valorIcmsSt +
+      totals.valorIpi
+  );
+
+  return {
+    modelo: document.modelo,
+    regime: config.regime,
+    serie: String(serie ?? ""),
+    naturezaOperacao: document.naturezaOperacao,
+    destinatarioNome: document.destinatario.nome,
+    itens,
+    totais: {
+      valorProdutos: totals.valorProdutos,
+      valorServicos: totals.valorServicos,
+      valorDesconto: document.valorDesconto || totals.valorDesconto,
+      valorFrete: document.valorFrete,
+      valorSeguro: document.valorSeguro,
+      outrasDespesas: document.outrasDespesas,
+      valorIcms: totals.valorIcms,
+      valorIcmsSt: totals.valorIcmsSt,
+      valorFcp: totals.valorFcp,
+      valorIpi: totals.valorIpi,
+      valorPis: totals.valorPis,
+      valorCofins: totals.valorCofins,
+      valorIss: totals.valorIss,
+      valorTotalTributos: totals.valorTotalTributos,
+      total
+    },
+    avisos: collectFiscalIssues(config, document)
+  };
 }
 
 export type FiscalDocumentLinks = {

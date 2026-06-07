@@ -1,4 +1,5 @@
 import { getDevelopmentTenantScope, scopedByTenantCompany } from "@/lib/auth/dev-session";
+import type { TenantScope } from "@/lib/auth/dev-session";
 import { prisma } from "@/lib/db/prisma";
 import { formatBrl } from "@/lib/formatters/currency";
 
@@ -9,6 +10,8 @@ export type StorefrontProduct = {
   brand: string;
   category: string;
   price: string;
+  /** Preço numérico (para carrinho e pedido). */
+  priceValue: number;
   stockLabel: string;
   imageUrl?: string;
   description?: string;
@@ -83,13 +86,13 @@ function getStockStatus(availableStock: number, minimumStock: number): ErpProduc
   return "Em estoque";
 }
 
-export async function listStorefrontCategories(): Promise<string[]> {
+export async function listStorefrontCategories(scopeArg?: TenantScope): Promise<string[]> {
   if (!process.env.DATABASE_URL) {
     return [];
   }
 
   try {
-    const scope = await getDevelopmentTenantScope();
+    const scope = scopeArg ?? await getDevelopmentTenantScope();
     const categorias = await prisma.produtoCategoria.findMany({
       where: {
         ...scopedByTenantCompany(scope),
@@ -107,18 +110,33 @@ export async function listStorefrontCategories(): Promise<string[]> {
   }
 }
 
-export async function listStorefrontProducts(): Promise<StorefrontProduct[]> {
+export type StorefrontFilter = { q?: string; categoria?: string };
+
+export async function listStorefrontProducts(scopeArg?: TenantScope, filtro?: StorefrontFilter): Promise<StorefrontProduct[]> {
   if (!process.env.DATABASE_URL) {
     throw new Error("DATABASE_URL não configurada. Configure o banco de dados para listar produtos.");
   }
 
   try {
-    const scope = await getDevelopmentTenantScope();
+    const scope = scopeArg ?? await getDevelopmentTenantScope();
+    const termo = filtro?.q?.trim();
+    const categoria = filtro?.categoria?.trim();
     const products = await prisma.produto.findMany({
       where: {
         ...scopedByTenantCompany(scope),
         ativo: true,
-        visivelEcommerce: true
+        visivelEcommerce: true,
+        ...(categoria ? { categoria: { nome: categoria } } : {}),
+        ...(termo
+          ? {
+              OR: [
+                { nome: { contains: termo, mode: "insensitive" } },
+                { sku: { contains: termo, mode: "insensitive" } },
+                { codigoFabricante: { contains: termo, mode: "insensitive" } },
+                { marca: { nome: { contains: termo, mode: "insensitive" } } }
+              ]
+            }
+          : {})
       },
       include: {
         categoria: true,
@@ -164,6 +182,7 @@ export async function listStorefrontProducts(): Promise<StorefrontProduct[]> {
         brand: product.marca?.nome ?? "JR Brasil",
         category: product.categoria.nome,
         price: formatBrl(Number(product.precoVenda)),
+        priceValue: Number(product.precoVenda),
         stockLabel: `${availableStock} un.`,
         imageUrl: product.imagens[0]?.url,
         description: product.descricaoComercial ?? product.descricao ?? undefined
@@ -173,6 +192,37 @@ export async function listStorefrontProducts(): Promise<StorefrontProduct[]> {
     const message = error instanceof Error ? error.message : "erro desconhecido";
     throw new Error(`Não foi possível conectar ao banco para listar produtos da loja: ${message}`);
   }
+}
+
+/** Detalhe de um produto para a página da loja (apenas se ativo e visível no e-commerce). */
+export async function getStorefrontProduct(scope: TenantScope, id: string): Promise<StorefrontProduct | null> {
+  const product = await prisma.produto.findFirst({
+    where: { id, ...scopedByTenantCompany(scope), ativo: true, visivelEcommerce: true },
+    include: {
+      categoria: true,
+      marca: true,
+      imagens: { orderBy: { ordem: "asc" }, take: 1 },
+      saldosEstoque: true
+    }
+  });
+  if (!product) return null;
+
+  const availableStock = product.saldosEstoque.reduce(
+    (total, balance) => total + Math.max(Number(balance.quantidade) - Number(balance.reservado), 0),
+    0
+  );
+  return {
+    id: product.id,
+    sku: product.sku,
+    name: product.nome,
+    brand: product.marca?.nome ?? "",
+    category: product.categoria.nome,
+    price: formatBrl(Number(product.precoVenda)),
+    priceValue: Number(product.precoVenda),
+    stockLabel: `${availableStock} un.`,
+    imageUrl: product.imagens[0]?.url,
+    description: product.descricaoComercial ?? product.descricao ?? undefined
+  };
 }
 
 export type ProductPickerOption = { id: string; sku: string; name: string };

@@ -245,6 +245,9 @@ model Tenant {
   nome            String
   slug            String           @unique
   ativo           Boolean          @default(true)
+  // Módulo Loja Virtual liberado pelo dono do SaaS (painel /admin). Quando false, as lojas das
+  // empresas deste cliente não ficam acessíveis publicamente.
+  lojaHabilitada  Boolean          @default(false)
   empresas        Empresa[]
   vinculos        UsuarioVinculo[]
   perfis          Perfil[]
@@ -319,6 +322,8 @@ model Empresa {
   // logoSistema é um data URL (base64) da imagem; corDestaque é um hex (#rrggbb).
   logoSistema        String?
   corDestaque        String?
+  // Identificador da loja virtual na URL (/loja/{slugLoja}). Único entre todas as empresas.
+  slugLoja           String?           @unique
   // Regra de operação: quando true, permite saída/venda de produtos sem saldo (estoque negativo)
   // para toda a empresa. Por produto, permiteEstoqueNegativo/permiteVendaSobEncomenda ainda valem.
   permiteVendaSemEstoque Boolean        @default(false)

@@ -3,6 +3,7 @@ import { PageHeader } from "@/components/shared/PageHeader";
 import { Card } from "@/components/shared/Card";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { ClienteBloqueioButton } from "@/components/admin/ClienteBloqueioButton";
+import { LojaModuloToggle } from "@/components/admin/LojaModuloToggle";
 import { EmpresaStatusActions } from "@/components/admin/EmpresaStatusActions";
 import { ResetarSenhaButton } from "@/components/admin/ResetarSenhaButton";
 import { ClientePerfisManager } from "@/components/admin/ClientePerfisManager";
@@ -54,6 +55,22 @@ export default async function AdminClienteDetalhePage({ params }: { params: { id
           · Criado em {formatarData(cliente.criadoEm)}
         </p>
       </PageHeader>
+
+      <Card>
+        <div className="erp-card-head">
+          <div>
+            <h3>Módulos liberados</h3>
+            <span>Recursos do SaaS que este cliente pode usar.</span>
+          </div>
+        </div>
+        <div style={{ padding: "0 16px 16px" }}>
+          <LojaModuloToggle clienteId={cliente.id} habilitada={cliente.lojaHabilitada} />
+          <p className="block-muted" style={{ marginTop: 8, fontSize: 12 }}>
+            Quando habilitada, as empresas deste cliente podem publicar a loja virtual (vitrine pública
+            em /loja/{"{slug}"}). Com a loja desabilitada, o endereço público fica indisponível.
+          </p>
+        </div>
+      </Card>
 
       <Card>
         <div className="erp-card-head"><h3>Empresas</h3></div>

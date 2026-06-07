@@ -7,6 +7,7 @@ export type QuoteSummary = {
   numero: string;
   cliente: string;
   clienteId: string;
+  canal: string;
   status: string;
   statusLabel: string;
   statusTone: "success" | "warn" | "danger" | "info" | "mute" | "violet";
@@ -66,6 +67,7 @@ function mapQuote(orc: {
   id: string;
   numero: string;
   clienteId: string;
+  canal: string;
   cliente: { razaoSocial: string; nomeFantasia?: string | null };
   status: string;
   total: { toString(): string };
@@ -83,6 +85,7 @@ function mapQuote(orc: {
     numero: orc.numero,
     cliente: orc.cliente.nomeFantasia ?? orc.cliente.razaoSocial,
     clienteId: orc.clienteId,
+    canal: orc.canal,
     status: orc.status,
     statusLabel: STATUS_LABELS[orc.status] ?? orc.status,
     statusTone: STATUS_TONES[orc.status] ?? "mute",

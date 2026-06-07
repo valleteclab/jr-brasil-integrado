@@ -19,6 +19,8 @@ export type CreateQuoteInput = {
   condicaoPagamento?: string;
   desconto?: number;
   observacaoVendedor?: string;
+  /** Origem do orçamento (ex.: "LOJA" para solicitações vindas da loja virtual). Padrão MANUAL. */
+  canal?: string;
 };
 
 export async function createQuote(scope: TenantScope, input: CreateQuoteInput) {
@@ -44,7 +46,7 @@ export async function createQuote(scope: TenantScope, input: CreateQuoteInput) {
         ...scopedByTenantCompany(scope),
         numero,
         clienteId: input.clienteId,
-        canal: "MANUAL",
+        canal: input.canal ?? "MANUAL",
         status: "EM_ANALISE",
         validoAte,
         vendedor: input.vendedor ?? null,

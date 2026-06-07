@@ -11,6 +11,7 @@ import type {
   TestConnectionResult
 } from "./types";
 import { randomBytes } from "node:crypto";
+import type { ItemTaxResult } from "@/domains/fiscal/types";
 import { normalizeDocumento } from "@/lib/fiscal/documento";
 
 /**
@@ -217,6 +218,71 @@ function pisCofinsGroup(
     return { [`${tipo}NT`]: { CST: c } };
   }
   return { [`${tipo}Outr`]: { CST: c, vBC: base, [aliqKey]: aliquota, [valKey]: valor } };
+}
+
+/**
+ * Monta o grupo ICMS do XML conforme o regime e o CST/CSOSN (a SEFAZ valida o par grupo↔código).
+ * O grupo ICMS00 SÓ aceita CST 00; ST (CST 60 / CSOSN 500) precisa do grupo próprio, senão a
+ * SEFAZ rejeita com "CST possui valor inválido: 60. O campo pode assumir: 00".
+ *
+ * Normal (CST):
+ *  - 00 → ICMS00 (tributada integralmente: base/alíquota/valor + FCP)
+ *  - 60 → ICMS60 (ICMS cobrado anteriormente por ST: revenda de substituído, sem ICMS próprio)
+ *  - 40/41/50 → ICMS40 (isenta/não tributada/suspensão: só orig+CST)
+ *  - demais → ICMS90 (genérico)
+ * Simples (CSOSN):
+ *  - 102/103/300/400 → ICMSSN102 (sem permissão de crédito: só orig+CSOSN)
+ *  - 500 → ICMSSN500 (ICMS cobrado anteriormente por ST)
+ *  - 101 → ICMSSN101 (com permissão de crédito)
+ *  - demais → ICMSSN900 (genérico)
+ */
+function icmsGroup(
+  simples: boolean,
+  taxes: ItemTaxResult | undefined,
+  base: number,
+  orig: number
+): Record<string, unknown> {
+  if (simples) {
+    const csosn = (taxes?.csosn ?? "102").padStart(3, "0");
+    if (csosn === "500") {
+      // Substituído: ICMS retido na operação anterior (vBCSTRet/vICMSSTRet, podem ser 0).
+      return { ICMSSN500: { orig, CSOSN: csosn, vBCSTRet: round2(taxes?.baseIcmsSt ?? 0), vICMSSTRet: round2(taxes?.valorIcmsSt ?? 0) } };
+    }
+    if (csosn === "101") {
+      return { ICMSSN101: { orig, CSOSN: csosn, pCredSN: taxes?.aliquotaIcms ?? 0, vCredICMSSN: round2(taxes?.valorIcms ?? 0) } };
+    }
+    if (["102", "103", "300", "400"].includes(csosn)) {
+      return { ICMSSN102: { orig, CSOSN: csosn } };
+    }
+    return { ICMSSN900: { orig, CSOSN: csosn } };
+  }
+
+  const cst = (taxes?.cstIcms ?? "00").padStart(2, "0");
+  if (cst === "60") {
+    // Revenda de mercadoria com ICMS-ST recolhido: sem ICMS próprio; informa o retido (pode ser 0).
+    return { ICMS60: { orig, CST: cst, vBCSTRet: round2(taxes?.baseIcmsSt ?? 0), vICMSSTRet: round2(taxes?.valorIcmsSt ?? 0) } };
+  }
+  if (["40", "41", "50"].includes(cst)) {
+    return { ICMS40: { orig, CST: cst } };
+  }
+  if (cst === "00") {
+    return {
+      ICMS00: {
+        orig, CST: cst, modBC: 3,
+        vBC: taxes?.baseIcms ?? base, pICMS: taxes?.aliquotaIcms ?? 0, vICMS: taxes?.valorIcms ?? 0,
+        // FCP por item para reconciliar com total.ICMSTot.vFCP (a SEFAZ valida a soma).
+        pFCP: taxes?.percentualFcp ?? 0, vFCP: taxes?.valorFcp ?? 0
+      }
+    };
+  }
+  // CST 10/20/70/90 e demais: grupo genérico com ICMS próprio.
+  return {
+    ICMS90: {
+      orig, CST: cst, modBC: 3,
+      vBC: taxes?.baseIcms ?? base, pICMS: taxes?.aliquotaIcms ?? 0, vICMS: taxes?.valorIcms ?? 0,
+      pFCP: taxes?.percentualFcp ?? 0, vFCP: taxes?.valorFcp ?? 0
+    }
+  };
 }
 
 /**
@@ -471,25 +537,20 @@ export class AcbrFiscalProvider implements FiscalProvider {
       const orig = Number(taxes?.origem ?? item.origem ?? "0") || 0;
       const base = item.valorTotal - item.desconto;
 
-      // ICMS: Simples usa CSOSN (ICMSSN102); Normal usa CST com base/alíquota/valor (ICMS00).
-      const icms = simples
-        ? { ICMSSN102: { orig, CSOSN: taxes?.csosn ?? "102" } }
-        : {
-            ICMS00: {
-              orig, CST: taxes?.cstIcms ?? "00", modBC: 3,
-              vBC: taxes?.baseIcms ?? base, pICMS: taxes?.aliquotaIcms ?? 0, vICMS: taxes?.valorIcms ?? 0,
-              // FCP por item para reconciliar com total.ICMSTot.vFCP (a SEFAZ valida a soma).
-              pFCP: taxes?.percentualFcp ?? 0, vFCP: taxes?.valorFcp ?? 0
-            }
-          };
+      // ICMS: o grupo do XML depende do regime e do CST/CSOSN — ST (CST 60 / CSOSN 500) usa
+      // grupo próprio (ICMS60/ICMSSN500). Ver icmsGroup() para o mapeamento completo.
+      const icms = icmsGroup(simples, taxes, base, orig);
       // PIS/COFINS: o grupo do XML depende do CST, não do regime. Simples normalmente
       // não tributa (CST 49 → grupo "Outras Operações"); CST 01/02 → alíquota; 04-09 → NT.
       const pis = pisCofinsGroup("PIS", simples ? taxes?.cstPis ?? "49" : taxes?.cstPis ?? "01", base, taxes?.aliquotaPis ?? 0, taxes?.valorPis ?? 0);
       const cofins = pisCofinsGroup("COFINS", simples ? taxes?.cstCofins ?? "49" : taxes?.cstCofins ?? "01", base, taxes?.aliquotaCofins ?? 0, taxes?.valorCofins ?? 0);
 
-      // Acumula exatamente o que foi colocado no item.
+      // Acumula exatamente o que foi colocado no item. ST/isenta (CST 60/40/41/50) não têm
+      // ICMS próprio, então não entram em ICMSTot.vBC/vICMS — senão a SEFAZ rejeita o total.
       sum.vProd += item.valorTotal;
-      if (!simples) {
+      const cstIcms = (taxes?.cstIcms ?? "00").padStart(2, "0");
+      const semIcmsProprio = ["40", "41", "50", "60"].includes(cstIcms);
+      if (!simples && !semIcmsProprio) {
         sum.vBC += taxes?.baseIcms ?? base;
         sum.vICMS += taxes?.valorIcms ?? 0;
         sum.vFCP += taxes?.valorFcp ?? 0;

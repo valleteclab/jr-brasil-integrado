@@ -86,12 +86,31 @@ export function aliquotaInterestadualIcms(ufOrigem: Uf, ufDestino: Uf): number {
   return 12;
 }
 
+/**
+ * Alíquota de ICMS de venda (modal) aceitando UFs como string livre — usada como FALLBACK
+ * quando não há regra tributária cadastrada para o item. Com origem e destino conhecidos,
+ * aplica a interestadual (7/12) ou a interna (mesma UF); com destino desconhecido, assume
+ * operação interna pela UF de origem. Retorna 0 só quando nem a origem é conhecida.
+ */
+export function aliquotaIcmsVendaSafe(
+  ufOrigem: string | null | undefined,
+  ufDestino: string | null | undefined
+): number {
+  const o = ufOrigem?.trim().toUpperCase();
+  const d = ufDestino?.trim().toUpperCase();
+  if (o && o in ICMS_INTERNO && d && d in ICMS_INTERNO) {
+    return aliquotaInterestadualIcms(o as Uf, d as Uf);
+  }
+  if (o && o in ICMS_INTERNO) return ICMS_INTERNO[o as Uf];
+  return 0;
+}
+
 function isSimples(regime: RegimeTributario): boolean {
   return regime === "SIMPLES_NACIONAL" || regime === "MEI" || regime === "SIMPLES_EXCESSO_SUBLIMITE";
 }
 
 /** PIS/COFINS por regime: Simples não destaca (CST 49); Presumido cumulativo; Real não-cumulativo. */
-function pisCofinsBaseline(regime: RegimeTributario) {
+export function pisCofinsBaseline(regime: RegimeTributario) {
   if (isSimples(regime)) {
     return { cst: "49", pis: 0, cofins: 0 };
   }

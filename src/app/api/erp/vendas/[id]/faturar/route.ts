@@ -16,7 +16,9 @@ export async function POST(
     const isValidation =
       message.includes("não encontrado") ||
       message.includes("Somente") ||
-      message.includes("Confirme");
+      message.includes("Confirme") ||
+      message.includes("incompleto") ||
+      message.includes("consumidor anônimo");
     return NextResponse.json({ error: message }, { status: isValidation ? 400 : 500 });
   }
 }

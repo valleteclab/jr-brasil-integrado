@@ -7,6 +7,7 @@ export type SaleSummary = {
   id: string;
   numero: string;
   clienteNome: string;
+  canal: string;
   status: StatusPedido;
   statusLabel: string;
   statusTone: "success" | "warn" | "danger" | "info" | "violet" | "mute";
@@ -114,6 +115,7 @@ export async function listSales(): Promise<SaleSummary[]> {
         id: p.id,
         numero: p.numero,
         clienteNome: p.cliente ? (p.cliente.nomeFantasia ?? p.cliente.razaoSocial) : "Consumidor não identificado",
+        canal: p.canal,
         status: p.status,
         statusLabel: statusLabel(p.status),
         statusTone: statusTone(p.status),
