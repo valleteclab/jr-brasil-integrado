@@ -2,6 +2,9 @@ import { hashPassword } from "@/lib/security/password";
 import { prisma } from "@/lib/db/prisma";
 import { requirePlatformAdmin } from "@/lib/auth/session";
 import type { TenantScope } from "@/lib/auth/dev-session";
+import type { AmbienteFiscal } from "@prisma/client";
+import { encryptSecret, secretLastChars } from "@/lib/security/secret-crypto";
+import { ACBR_DEFAULT_BASE } from "@/domains/fiscal/application/plataforma-provedor-use-cases";
 import { formatBrl } from "@/lib/formatters/currency";
 import { PERFIS_PADRAO, TODOS_MODULOS, isAdminPerfil, type ModuloKey } from "@/lib/auth/modules";
 
@@ -1263,4 +1266,86 @@ export async function atualizarPerfilModulos(perfilId: string, modulos: string[]
   });
 
   return { id: perfilId, modulos: validos };
+}
+
+/* ===== Provedor de emissão fiscal no nível da plataforma (dono do SaaS) ===== */
+
+export type ProvedorFiscalAmbiente = {
+  ambiente: AmbienteFiscal;
+  baseUrl: string;
+  clientIdFinal: string | null;
+  secretFinal: string | null;
+  configurado: boolean;
+  ativo: boolean;
+};
+
+/** Lê a configuração do provedor (ACBr) por ambiente, com os segredos MASCARADOS (para a UI). */
+export async function getProvedorFiscalPlataforma(): Promise<{ provedor: string; ambientes: ProvedorFiscalAmbiente[] }> {
+  await requirePlatformAdmin();
+  assertDb();
+  const rows = await prisma.plataformaProvedorFiscal.findMany({ where: { provedor: "ACBR" } });
+  const porAmbiente = new Map(rows.map((r) => [r.ambiente, r]));
+  const ambientes = (["HOMOLOGACAO", "PRODUCAO"] as AmbienteFiscal[]).map((amb) => {
+    const r = porAmbiente.get(amb);
+    return {
+      ambiente: amb,
+      baseUrl: r?.baseUrl ?? ACBR_DEFAULT_BASE[amb],
+      clientIdFinal: r?.clientIdFinal ?? null,
+      secretFinal: r?.secretFinal ?? null,
+      configurado: Boolean(r?.clientSecretCriptografado),
+      ativo: r?.ativo ?? true
+    };
+  });
+  return { provedor: "ACBR", ambientes };
+}
+
+/** Salva as credenciais/URL do ACBr de um ambiente (segredos só atualizados quando informados). */
+export async function saveProvedorFiscalPlataforma(input: {
+  ambiente: AmbienteFiscal;
+  clientId?: string;
+  clientSecret?: string;
+  baseUrl?: string;
+  ativo?: boolean;
+}): Promise<{ provedor: string; ambientes: ProvedorFiscalAmbiente[] }> {
+  await requirePlatformAdmin();
+  assertDb();
+  const provedor = "ACBR";
+  const ambiente = input.ambiente;
+  if (ambiente !== "HOMOLOGACAO" && ambiente !== "PRODUCAO") {
+    throw new PlatformAdminError("Ambiente inválido.");
+  }
+
+  const existing = await prisma.plataformaProvedorFiscal.findUnique({
+    where: { provedor_ambiente: { provedor, ambiente } }
+  });
+
+  const data: {
+    baseUrl: string | null;
+    ativo: boolean;
+    clientIdCriptografado?: string;
+    clientIdFinal?: string;
+    clientSecretCriptografado?: string;
+    secretFinal?: string;
+  } = {
+    baseUrl: input.baseUrl?.trim() || null,
+    ativo: input.ativo ?? existing?.ativo ?? true
+  };
+  const clientId = input.clientId?.trim();
+  if (clientId) {
+    data.clientIdCriptografado = encryptSecret(clientId);
+    data.clientIdFinal = secretLastChars(clientId);
+  }
+  const clientSecret = input.clientSecret?.trim();
+  if (clientSecret) {
+    data.clientSecretCriptografado = encryptSecret(clientSecret);
+    data.secretFinal = secretLastChars(clientSecret);
+  }
+
+  await prisma.plataformaProvedorFiscal.upsert({
+    where: { provedor_ambiente: { provedor, ambiente } },
+    update: data,
+    create: { provedor, ambiente, ...data }
+  });
+
+  return getProvedorFiscalPlataforma();
 }

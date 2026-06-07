@@ -5,6 +5,7 @@ import { createAuditLog } from "@/lib/audit/audit-service";
 import { decryptSecret, encryptSecret, secretLastChars } from "@/lib/security/secret-crypto";
 import { resolveFiscalProvider } from "@/domains/fiscal/providers";
 import { updateAcbrNfceCsc, registrarEmpresaAcbr } from "@/domains/fiscal/providers/acbr-provider";
+import { getCredenciaisAcbrPlataforma } from "@/domains/fiscal/application/plataforma-provedor-use-cases";
 
 export type FiscalConfigSummary = {
   configured: boolean;
@@ -274,21 +275,23 @@ export async function getFiscalRuntimeConfig(scope: TenantScope) {
     throw new Error("Empresa não encontrada para emissão fiscal.");
   }
 
-  // ACBr: client_id/client_secret são da APLICAÇÃO (plataforma/SaaS), não de cada empresa. Vêm das
-  // envs ACBR_CLIENT_ID/ACBR_CLIENT_SECRET; cai para a config da empresa só por retrocompatibilidade.
+  // ACBr: client_id/client_secret e URL são da APLICAÇÃO (plataforma/SaaS), por AMBIENTE, vindos do
+  // banco (configurados no /admin). Env e config da empresa ficam só como fallback retrocompatível.
+  const ambiente = config?.ambiente ?? "HOMOLOGACAO";
   const isAcbr = (config?.provedor ?? "MANUAL") === "ACBR";
-  const acbrClientId = process.env.ACBR_CLIENT_ID?.trim();
-  const acbrClientSecret = process.env.ACBR_CLIENT_SECRET?.trim();
+  const plataformaAcbr = isAcbr ? await getCredenciaisAcbrPlataforma(ambiente) : null;
+  const acbrClientId = plataformaAcbr?.clientId ?? process.env.ACBR_CLIENT_ID?.trim() ?? null;
+  const acbrClientSecret = plataformaAcbr?.clientSecret ?? process.env.ACBR_CLIENT_SECRET?.trim() ?? null;
 
   return {
     provider: config?.provedor ?? "MANUAL",
-    ambiente: config?.ambiente ?? "HOMOLOGACAO",
+    ambiente,
     regime: config?.regimeTributario ?? empresa.regimeTributario,
-    baseUrl: config?.baseUrl ?? null,
+    baseUrl: isAcbr ? plataformaAcbr?.baseUrl ?? config?.baseUrl ?? null : config?.baseUrl ?? null,
     emissionMode: config?.spedyModoEmissao ?? "COMPLETO",
     nfseAmbienteNacional: config?.nfseAmbienteNacional ?? null,
-    token: isAcbr && acbrClientSecret ? acbrClientSecret : config?.tokenCriptografado ? decryptSecret(config.tokenCriptografado) : null,
-    cscId: isAcbr && acbrClientId ? acbrClientId : config?.cscId ?? null,
+    token: isAcbr ? acbrClientSecret : config?.tokenCriptografado ? decryptSecret(config.tokenCriptografado) : null,
+    cscId: isAcbr ? acbrClientId : config?.cscId ?? null,
     cscToken: config?.cscTokenCriptografado ? decryptSecret(config.cscTokenCriptografado) : null,
     nfceIdCsc: config?.nfceIdCsc ?? null,
     nfceCsc: config?.nfceCscCriptografado ? decryptSecret(config.nfceCscCriptografado) : null,

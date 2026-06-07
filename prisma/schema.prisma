@@ -437,6 +437,23 @@ model CodigoFiscal {
   @@index([tipo])
 }
 
+/// Credenciais do provedor de emissão fiscal no nível da PLATAFORMA (do dono do SaaS), por
+/// ambiente (homologação/produção). No ACBr o client_id/client_secret são da aplicação, não por
+/// empresa — todas as empresas emitem com estas credenciais. Segredos criptografados.
+model PlataformaProvedorFiscal {
+  provedor                  String
+  ambiente                  AmbienteFiscal
+  baseUrl                   String?
+  clientIdCriptografado     String?
+  clientSecretCriptografado String?
+  clientIdFinal             String?
+  secretFinal               String?
+  ativo                     Boolean        @default(true)
+  atualizadoEm              DateTime       @updatedAt
+
+  @@id([provedor, ambiente])
+}
+
 /// CEST (Código Especificador da Substituição Tributária) — GLOBAL. `ncms` lista os NCMs aos
 /// quais o CEST se aplica (usado para ancorar a sugestão de CEST por NCM, inclusive na IA).
 model Cest {
