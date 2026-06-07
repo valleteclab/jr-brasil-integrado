@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
-import { consultarGtinCosmos } from "@/domains/products/application/cosmos-service";
+import { lookupProdutoGtin } from "@/domains/products/application/dataload-dados-service";
 import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
 
+// Consulta dados do produto por GTIN: Dataload primeiro (sem cota), Cosmos como fallback.
 export async function GET(_request: Request, { params }: { params: { gtin: string } }) {
   try {
     const scope = await getDevelopmentTenantScope();
-    const produto = await consultarGtinCosmos(scope, params.gtin);
+    const produto = await lookupProdutoGtin(scope, params.gtin);
     return NextResponse.json(produto);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Não foi possível consultar o código de barras.";

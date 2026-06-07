@@ -10,7 +10,7 @@ import { callOpenRouter } from "@/domains/ai/openrouter-service";
 import { findNcm, searchNcm, normalizeNcm } from "@/domains/fiscal/ncm-service";
 import { listProductCategories } from "@/lib/services/products";
 import { searchCest } from "@/lib/services/fiscal-codes";
-import { consultarGtinCosmos } from "./cosmos-service";
+import { lookupProdutoGtin } from "./dataload-dados-service";
 
 export type FiscalAiSuggestion = {
   descricaoLimpa: string | null;
@@ -42,12 +42,12 @@ function extractJsonArray(content: string): Array<Record<string, unknown>> {
   return JSON.parse(content.slice(first, last + 1)) as Array<Record<string, unknown>>;
 }
 
-/** Tenta o Cosmos (com cache) sem quebrar o fluxo se falhar/estourar a cota. */
+/** Consulta dados por GTIN (Dataload primeiro, Cosmos fallback) sem quebrar o fluxo se falhar. */
 async function tentarCosmos(scope: TenantScope, gtin?: string | null) {
   const g = (gtin ?? "").replace(/\D/g, "");
   if (g.length < 8) return null;
   try {
-    return await consultarGtinCosmos(scope, g);
+    return await lookupProdutoGtin(scope, g);
   } catch {
     return null;
   }
