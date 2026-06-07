@@ -8,6 +8,7 @@ import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import { callOpenRouter } from "@/domains/ai/openrouter-service";
 import { findNcm, searchNcm, normalizeNcm } from "@/domains/fiscal/ncm-service";
+import { listProductCategories } from "@/lib/services/products";
 import { consultarGtinCosmos } from "./cosmos-service";
 
 export type FiscalAiSuggestion = {
@@ -70,6 +71,7 @@ export async function suggestProductFiscalWithAi(
   const cosmos = await tentarCosmos(scope, input.gtin);
   const termoBusca = [descricao, cosmos?.descricao].filter(Boolean).join(" ");
   const candidatos = await searchNcm(termoBusca, 15);
+  const categoriasDisponiveis = await listProductCategories(scope);
 
   const content = await callOpenRouter(
     scope,
@@ -79,7 +81,8 @@ export async function suggestProductFiscalWithAi(
         role: "user",
         content: JSON.stringify({
           instrucoes:
-            "Sugira descricaoLimpa (nome comercial claro), categoria, ncmSugerido (código de 8 dígitos escolhido da lista de candidatos), cest, confianca (0-100) e justificativa curta.",
+            "Sugira descricaoLimpa (nome comercial claro), categoria, ncmSugerido (código de 8 dígitos escolhido da lista de candidatos), cest, confianca (0-100) e justificativa curta. " +
+            "A categoria DEVE ser escolhida exatamente da lista 'categoriasDisponiveis'; só proponha uma nova (curta) se nenhuma servir.",
           produto: {
             descricao,
             gtin: input.gtin ?? null,
@@ -88,6 +91,7 @@ export async function suggestProductFiscalWithAi(
             dadosCosmos: cosmos ? { descricao: cosmos.descricao, ncm: cosmos.ncm, cest: cosmos.cest } : null
           },
           candidatosNcm: candidatos,
+          categoriasDisponiveis,
           formato: {
             descricaoLimpa: "Água Mineral Natural sem Gás 500ml",
             categoria: "Bebidas",
@@ -106,7 +110,12 @@ export async function suggestProductFiscalWithAi(
   const avisos: string[] = [];
 
   const descricaoLimpa = typeof obj.descricaoLimpa === "string" && obj.descricaoLimpa.trim() ? obj.descricaoLimpa.trim() : null;
-  const categoria = typeof obj.categoria === "string" && obj.categoria.trim() ? obj.categoria.trim() : null;
+  const categoriaBruta = typeof obj.categoria === "string" && obj.categoria.trim() ? obj.categoria.trim() : null;
+  // Canoniza para uma categoria existente quando casar (ignora acento/maiúscula) — evita duplicar.
+  const chave = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+  const categoria = categoriaBruta
+    ? categoriasDisponiveis.find((c) => chave(c) === chave(categoriaBruta)) ?? categoriaBruta
+    : null;
   let confianca = Number(obj.confianca) || 0;
   const justificativa = typeof obj.justificativa === "string" ? obj.justificativa.trim() : "";
 

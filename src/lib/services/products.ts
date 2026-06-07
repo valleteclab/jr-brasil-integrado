@@ -110,6 +110,24 @@ export async function listStorefrontCategories(scopeArg?: TenantScope): Promise<
   }
 }
 
+/** Todas as categorias cadastradas da empresa (para o seletor do cadastro e o grounding da IA). */
+export async function listProductCategories(scopeArg?: TenantScope): Promise<string[]> {
+  if (!process.env.DATABASE_URL) {
+    return [];
+  }
+  try {
+    const scope = scopeArg ?? await getDevelopmentTenantScope();
+    const categorias = await prisma.produtoCategoria.findMany({
+      where: scopedByTenantCompany(scope),
+      orderBy: { nome: "asc" },
+      select: { nome: true }
+    });
+    return categorias.map((categoria) => categoria.nome);
+  } catch {
+    return [];
+  }
+}
+
 export type StorefrontFilter = { q?: string; categoria?: string };
 
 export async function listStorefrontProducts(scopeArg?: TenantScope, filtro?: StorefrontFilter): Promise<StorefrontProduct[]> {

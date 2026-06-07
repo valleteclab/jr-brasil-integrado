@@ -76,6 +76,8 @@ type ProductCrudProps = {
   initialProducts: ErpProductSummary[];
   taxRules: ProductTaxRuleOption[];
   warehouses: string[];
+  /** Categorias cadastradas (tabela ProdutoCategoria) — alimenta o seletor do cadastro. */
+  categoryOptions?: string[];
   /** Ramo da empresa — habilita recursos específicos (AUTOPECAS → aplicação veicular). */
   segmento?: string;
 };
@@ -292,7 +294,7 @@ function toProduct(form: ProductFormState): ProductRecord {
   };
 }
 
-export function ProductCrud({ initialProducts, taxRules, warehouses, segmento }: ProductCrudProps) {
+export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOptions = [], segmento }: ProductCrudProps) {
   const isAutopecas = segmento === "AUTOPECAS";
   const defaultWarehouse = warehouses[0] ?? "";
   const initialRecords = useMemo(() => initialProducts.map(enrichProduct), [initialProducts]);
@@ -323,6 +325,11 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, segmento }:
   const categories = useMemo(
     () => Array.from(new Set(products.map((product) => product.category))).sort(),
     [products]
+  );
+  // Opções do seletor de categoria: tabela (categoryOptions) + as já usadas pelos produtos.
+  const categoriaOpcoes = useMemo(
+    () => Array.from(new Set([...categoryOptions, ...categories].filter(Boolean))).sort((a, b) => a.localeCompare(b)),
+    [categoryOptions, categories]
   );
   const brands = useMemo(
     () => Array.from(new Set(products.map((product) => product.brand))).sort(),
@@ -836,7 +843,15 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, segmento }:
           </label>
           <label>
             Categoria
-            <input value={form.category} onChange={(event) => updateField("category", event.target.value)} />
+            <input
+              list="categoria-opcoes"
+              value={form.category}
+              onChange={(event) => updateField("category", event.target.value)}
+              placeholder="Selecione ou digite para criar"
+            />
+            <datalist id="categoria-opcoes">
+              {categoriaOpcoes.map((cat) => <option key={cat} value={cat} />)}
+            </datalist>
           </label>
           <label>
             Tipo
