@@ -932,9 +932,6 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
               {categoriaOpcoes.map((cat) => <option key={cat} value={cat} />)}
             </datalist>
           </label>
-          <datalist id="unidade-opcoes">
-            {unidadeOpcoes.map((u) => <option key={u} value={u} />)}
-          </datalist>
           <label>
             Tipo
             <select value={form.type} onChange={(event) => updateField("type", event.target.value)}>
@@ -946,12 +943,10 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
           </label>
           <label>
             Unidade
-            <input
-              list="unidade-opcoes"
-              value={form.unit}
-              onChange={(event) => updateField("unit", event.target.value.toUpperCase())}
-              placeholder="UN, CX, KG…"
-            />
+            <select value={form.unit} onChange={(event) => updateField("unit", event.target.value)}>
+              {form.unit && !unidadeOpcoes.includes(form.unit) && <option value={form.unit}>{form.unit}</option>}
+              {unidadeOpcoes.map((u) => <option key={u} value={u}>{u}</option>)}
+            </select>
           </label>
           <label className="full">
             Descrição curta
@@ -1155,7 +1150,10 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
           </label>
           <label>
             Unidade de compra
-            <input list="unidade-opcoes" value={form.purchaseUnit} onChange={(event) => updateField("purchaseUnit", event.target.value.toUpperCase())} placeholder="UN, CX, KG…" />
+            <select value={form.purchaseUnit} onChange={(event) => updateField("purchaseUnit", event.target.value)}>
+              {form.purchaseUnit && !unidadeOpcoes.includes(form.purchaseUnit) && <option value={form.purchaseUnit}>{form.purchaseUnit}</option>}
+              {unidadeOpcoes.map((u) => <option key={u} value={u}>{u}</option>)}
+            </select>
           </label>
           <label>
             Fator de conversão
