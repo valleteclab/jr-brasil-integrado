@@ -15,6 +15,30 @@ function CardAmbiente({ provedor, cred, inicial }: { provedor: string; cred: "oa
   const [salvando, setSalvando] = useState(false);
   const [msg, setMsg] = useState("");
   const [erro, setErro] = useState("");
+  const [testando, setTestando] = useState(false);
+  const [resTeste, setResTeste] = useState<{ ok: boolean; texto: string } | null>(null);
+
+  async function testar() {
+    setTestando(true);
+    setResTeste(null);
+    try {
+      const res = await fetch("/api/admin/provedor-fiscal/testar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provedor, ambiente: inicial.ambiente })
+      });
+      const data = (await res.json().catch(() => ({}))) as { ok?: boolean; message?: string; error?: string };
+      if (data.error) {
+        setResTeste({ ok: false, texto: data.error });
+        return;
+      }
+      setResTeste({ ok: Boolean(data.ok), texto: data.message || (data.ok ? "Conexão OK." : "Falha na conexão.") });
+    } catch (e) {
+      setResTeste({ ok: false, texto: e instanceof Error ? e.message : "Falha ao testar." });
+    } finally {
+      setTestando(false);
+    }
+  }
 
   async function salvar() {
     setSalvando(true);
@@ -91,13 +115,21 @@ function CardAmbiente({ provedor, cred, inicial }: { provedor: string; cred: "oa
           <input type="checkbox" checked={ativo} onChange={(e) => setAtivo(e.target.checked)} style={{ width: "auto" }} />
           Ambiente ativo
         </label>
-        <div className="full" style={{ display: "flex", gap: 10, alignItems: "center" }}>
+        <div className="full" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           <button type="button" className="btn-erp primary sm" onClick={salvar} disabled={salvando}>
             {salvando ? "Salvando…" : "Salvar"}
+          </button>
+          <button type="button" className="btn-erp ghost sm" onClick={testar} disabled={testando}>
+            {testando ? "Testando…" : "Testar credenciais"}
           </button>
           {msg && <span style={{ color: "var(--erp-success, #16a34a)", fontSize: 13 }}>{msg}</span>}
           {erro && <span style={{ color: "var(--erp-danger, #dc2626)", fontSize: 13 }}>{erro}</span>}
         </div>
+        {resTeste && (
+          <div className={`full alert ${resTeste.ok ? "info" : "danger"}`} style={{ margin: 0 }}>
+            <span>{resTeste.texto}</span>
+          </div>
+        )}
       </div>
     </section>
   );

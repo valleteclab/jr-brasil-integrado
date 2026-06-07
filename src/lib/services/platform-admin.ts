@@ -2,9 +2,10 @@ import { hashPassword } from "@/lib/security/password";
 import { prisma } from "@/lib/db/prisma";
 import { requirePlatformAdmin } from "@/lib/auth/session";
 import type { TenantScope } from "@/lib/auth/dev-session";
-import type { AmbienteFiscal } from "@prisma/client";
+import type { AmbienteFiscal, ProvedorFiscal } from "@prisma/client";
 import { encryptSecret, secretLastChars } from "@/lib/security/secret-crypto";
-import { PROVEDORES_FISCAIS, defaultBaseUrl, getProvedorFiscalAtivo } from "@/domains/fiscal/application/plataforma-provedor-use-cases";
+import { PROVEDORES_FISCAIS, defaultBaseUrl, getProvedorFiscalAtivo, getCredenciaisProvedorPlataforma, provedorCred } from "@/domains/fiscal/application/plataforma-provedor-use-cases";
+import { resolveFiscalProvider } from "@/domains/fiscal/providers";
 import { formatBrl } from "@/lib/formatters/currency";
 import { PERFIS_PADRAO, TODOS_MODULOS, isAdminPerfil, type ModuloKey } from "@/lib/auth/modules";
 
@@ -1394,4 +1395,42 @@ export async function saveProvedorFiscalPlataforma(input: {
   });
 
   return getProvedorFiscalPlataforma();
+}
+
+/** Testa as credenciais de um provedor+ambiente (ping autenticado), sem emitir nada. */
+export async function testarCredenciaisProvedorPlataforma(
+  provedor: string,
+  ambiente: AmbienteFiscal
+): Promise<{ ok: boolean; message: string }> {
+  await requirePlatformAdmin();
+  assertDb();
+  if (!PROVEDORES_FISCAIS.some((p) => p.key === provedor)) throw new PlatformAdminError("Provedor inválido.");
+  if (ambiente !== "HOMOLOGACAO" && ambiente !== "PRODUCAO") throw new PlatformAdminError("Ambiente inválido.");
+
+  const provider = resolveFiscalProvider(provedor as ProvedorFiscal);
+  if (!provider.testConnection) {
+    return { ok: false, message: "Teste de conexão não disponível para este provedor." };
+  }
+
+  const cred = await getCredenciaisProvedorPlataforma(provedor, ambiente);
+  const oauth = provedorCred(provedor) === "oauth";
+  const token = oauth ? cred.clientSecret : cred.token;
+  const cscId = oauth ? cred.clientId : null;
+  if (!token) {
+    return { ok: false, message: "Configure as credenciais deste ambiente antes de testar." };
+  }
+
+  try {
+    return await provider.testConnection({
+      ambiente,
+      provedor: provedor as ProvedorFiscal,
+      baseUrl: cred.baseUrl,
+      token,
+      cscId,
+      cscToken: null,
+      emissionMode: "COMPLETO"
+    });
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : "Falha ao testar a conexão." };
+  }
 }
