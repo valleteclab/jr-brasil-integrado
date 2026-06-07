@@ -7,6 +7,7 @@ import { LojaModuloToggle } from "@/components/admin/LojaModuloToggle";
 import { EmpresaStatusActions } from "@/components/admin/EmpresaStatusActions";
 import { ResetarSenhaButton } from "@/components/admin/ResetarSenhaButton";
 import { ClientePerfisManager } from "@/components/admin/ClientePerfisManager";
+import { ClienteEditForm } from "@/components/admin/ClienteEditForm";
 import { getClienteDetail, listPerfisCliente } from "@/lib/services/platform-admin";
 import type { ClienteDetail, PerfilClienteRow } from "@/lib/services/platform-admin";
 
@@ -55,6 +56,11 @@ export default async function AdminClienteDetalhePage({ params }: { params: { id
           · Criado em {formatarData(cliente.criadoEm)}
         </p>
       </PageHeader>
+
+      <Card>
+        <div className="erp-card-head"><div><h3>Dados do cliente</h3><span>Nome e identificador (slug) do cliente.</span></div></div>
+        <ClienteEditForm clienteId={cliente.id} nome={cliente.nome} slug={cliente.slug} />
+      </Card>
 
       <Card>
         <div className="erp-card-head">

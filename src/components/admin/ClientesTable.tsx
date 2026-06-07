@@ -61,7 +61,10 @@ export function ClientesTable({ clientes }: Props) {
           )}
           {clientes.map((c) => (
             <tr key={c.id}>
-              <td><Link href={`/admin/clientes/${c.id}`} className="bold">{c.nome}</Link></td>
+              <td>
+                <Link href={`/admin/clientes/${c.id}`} className="bold">{c.razaoSocial || c.nome}</Link>
+                {c.razaoSocial && c.razaoSocial !== c.nome && <small style={{ display: "block", color: "#64748b" }}>{c.nome}</small>}
+              </td>
               <td className="mono">{c.slug}</td>
               <td><StatusBadge tone={c.statusTone}>{c.statusLabel}</StatusBadge></td>
               <td className="num">{c.totalEmpresas}</td>

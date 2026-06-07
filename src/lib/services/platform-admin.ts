@@ -114,6 +114,8 @@ export async function getPlatformMetrics(): Promise<PlatformMetrics> {
 export type ClienteSummary = {
   id: string;
   nome: string;
+  /** Razão social da empresa matriz (ou a primeira) — nome "de verdade" do cliente. */
+  razaoSocial: string | null;
   slug: string;
   ativo: boolean;
   statusLabel: string;
@@ -132,7 +134,7 @@ export async function listClientes(): Promise<ClienteSummary[]> {
   const tenants = await prisma.tenant.findMany({
     orderBy: { criadoEm: "desc" },
     include: {
-      empresas: { select: { status: true } },
+      empresas: { select: { status: true, razaoSocial: true, nomeFantasia: true, matriz: true } },
       _count: { select: { empresas: true, vinculos: true } }
     }
   });
@@ -154,6 +156,7 @@ export async function listClientes(): Promise<ClienteSummary[]> {
   return tenants.map((t) => ({
     id: t.id,
     nome: t.nome,
+    razaoSocial: (t.empresas.find((e) => e.matriz) ?? t.empresas[0])?.razaoSocial ?? null,
     slug: t.slug,
     ativo: t.ativo,
     statusLabel: t.ativo ? "Ativo" : "Bloqueado",
@@ -324,6 +327,42 @@ export async function setTenantLojaHabilitada(tenantId: string, habilitada: bool
   });
 
   return { id: atualizado.id, lojaHabilitada: atualizado.lojaHabilitada };
+}
+
+/** Edita o nome e/ou o slug (identificador) do cliente (tenant). Slug único entre clientes. */
+export async function updateCliente(tenantId: string, input: { nome?: string; slug?: string }) {
+  const admin = await requirePlatformAdmin();
+  assertDb();
+
+  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+  if (!tenant) throw new PlatformAdminError("Cliente não encontrado.");
+
+  const nome = input.nome?.trim();
+  const slug = input.slug != null ? slugify(input.slug) : undefined;
+  if (input.nome != null && !nome) throw new PlatformAdminError("Informe o nome do cliente.");
+  if (input.slug != null && (!slug || slug.length < 2)) {
+    throw new PlatformAdminError("Slug inválido — use ao menos 2 caracteres (letras, números e hífen).");
+  }
+  if (slug && slug !== tenant.slug) {
+    const existe = await prisma.tenant.findUnique({ where: { slug } });
+    if (existe) throw new PlatformAdminError(`O identificador "${slug}" já está em uso por outro cliente.`);
+  }
+
+  const atualizado = await prisma.tenant.update({
+    where: { id: tenantId },
+    data: { ...(nome ? { nome } : {}), ...(slug ? { slug } : {}) }
+  });
+
+  await audit({
+    tenantId,
+    usuarioId: admin.usuarioId,
+    entidade: "Tenant",
+    entidadeId: tenantId,
+    acao: "plataforma.editar_cliente",
+    payload: { nomeAnterior: tenant.nome, nomeNovo: atualizado.nome, slugAnterior: tenant.slug, slugNovo: atualizado.slug }
+  });
+
+  return { id: atualizado.id, nome: atualizado.nome, slug: atualizado.slug };
 }
 
 export async function setEmpresaStatus(empresaId: string, status: "ATIVA" | "INATIVA" | "BLOQUEADA") {
