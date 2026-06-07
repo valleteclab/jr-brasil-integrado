@@ -2611,7 +2611,10 @@ label.checkbox input {
 .espelho-meta b { color: #0f172a; }
 .espelho-avisos ul { margin: 4px 0 0; padding-left: 18px; }
 .espelho-avisos li { margin: 2px 0; }
-.espelho-tabela th, .espelho-tabela td { font-size: 12.5px; white-space: nowrap; }
+/* A tabela do espelho tem muitas colunas (ICMS…IBS/CBS/IS): rola na horizontal em vez de cortar. */
+.espelho-fiscal .erp-table-wrap { overflow-x: auto; }
+.espelho-tabela th, .espelho-tabela td { font-size: 12.5px; white-space: nowrap; padding: 8px 10px; }
+.espelho-tabela th.num, .espelho-tabela td.num { text-align: right; }
 .espelho-item-nome { white-space: normal; min-width: 200px; font-weight: 600; }
 .espelho-item-sub { font-size: 11px; color: #64748b; }
 .espelho-totais {
