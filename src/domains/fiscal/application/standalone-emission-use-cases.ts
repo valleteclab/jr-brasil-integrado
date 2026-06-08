@@ -458,12 +458,18 @@ export async function emitirNotaTesteHomologacao(scope: TenantScope, modelo: Mod
     endereco
   };
 
-  // NFS-e: serviço de teste (LC 116 17.01 — assessoria/consultoria).
+  // NFS-e: usa o código de serviço PADRÃO da empresa (config) — a empresa é credenciada nele no
+  // município (o CNC recusa códigos não autorizados). Só cai para "17.01" se não houver padrão.
   if (modelo === "NFSE") {
+    const cfg = await prisma.configuracaoFiscal.findUnique({
+      where: { empresaId: scope.empresaId },
+      select: { codigoServicoLc116Padrao: true }
+    });
+    const lc116 = cfg?.codigoServicoLc116Padrao?.trim() || "17.01";
     return emitServiceInvoiceAvulsa(scope, {
       receiver,
-      codigoServicoLc116: "17.01",
-      servicos: [{ descricao: "SERVICO DE TESTE HOMOLOGACAO", valor: 1, codigoServicoLc116: "17.01" }]
+      codigoServicoLc116: lc116,
+      servicos: [{ descricao: "SERVICO DE TESTE HOMOLOGACAO", valor: 1 }]
     });
   }
 
