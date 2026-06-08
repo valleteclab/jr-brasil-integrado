@@ -22,6 +22,7 @@ export type ModuloKey =
   | "regras-tributarias"
   | "regras-finalidade"
   | "financeiro"
+  | "gastos"
   | "fluxo-caixa"
   | "fiscal"
   | "relatorios"
@@ -46,6 +47,7 @@ export const MODULOS: Array<{ key: ModuloKey; label: string }> = [
   { key: "regras-tributarias", label: "Regras tributárias" },
   { key: "regras-finalidade", label: "Regras de finalidade" },
   { key: "financeiro", label: "Financeiro" },
+  { key: "gastos", label: "Gastos" },
   { key: "fluxo-caixa", label: "Fluxo de caixa" },
   { key: "fiscal", label: "Notas fiscais" },
   { key: "relatorios", label: "Relatórios" },
@@ -89,7 +91,7 @@ export const PERFIS_PADRAO: Array<{ nome: string; descricao: string; modulos: Mo
   {
     nome: "FINANCE",
     descricao: "Financeiro, fluxo de caixa e relatórios.",
-    modulos: ["dashboard", "financeiro", "fluxo-caixa", "relatorios", "assistente"]
+    modulos: ["dashboard", "financeiro", "gastos", "fluxo-caixa", "relatorios", "assistente"]
   },
   {
     nome: "FISCAL",

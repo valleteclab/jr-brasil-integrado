@@ -1,10 +1,18 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 import "./globals.css";
+import { RegisterSW } from "@/components/pwa/RegisterSW";
 
 export const metadata: Metadata = {
   title: "JR Brasil Integrado",
-  description: "ERP e ecommerce B2B integrados para JR Brasil Peças & Serviços"
+  description: "ERP e ecommerce B2B integrados para JR Brasil Peças & Serviços",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: { capable: true, statusBarStyle: "default", title: "Gastos" },
+  icons: { icon: "/icons/icon.svg", apple: "/icons/icon.svg" }
+};
+
+export const viewport: Viewport = {
+  themeColor: "#4f46e5"
 };
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
@@ -18,7 +26,10 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
           rel="stylesheet"
         />
       </head>
-      <body>{children}</body>
+      <body>
+        <RegisterSW />
+        {children}
+      </body>
     </html>
   );
 }

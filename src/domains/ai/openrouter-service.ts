@@ -226,6 +226,60 @@ export async function callOpenRouter(scope: TenantScope, messages: ChatMessage[]
 }
 
 /**
+ * Variante com VISÃO (multimodal): envia uma imagem + prompt e devolve o texto. Usado para ler
+ * cupons fiscais (OCR). Monta `content` como array no padrão OpenAI/OpenRouter. Reusa a mesma
+ * credencial/modelo de `callOpenRouter` (gpt-4o-mini tem visão). A imagem pode ser uma URL http
+ * ou um data URL base64 (image_url aceita ambos).
+ */
+export async function callOpenRouterVision(
+  scope: TenantScope,
+  input: { prompt: string; systemPrompt?: string; imageUrl: string; maxTokens?: number; temperature?: number }
+): Promise<string> {
+  const config = await getActiveOpenRouterSecret(scope);
+  const messages: Array<Record<string, unknown>> = [];
+  if (input.systemPrompt) messages.push({ role: "system", content: input.systemPrompt });
+  messages.push({
+    role: "user",
+    content: [
+      { type: "text", text: input.prompt },
+      { type: "image_url", image_url: { url: input.imageUrl } }
+    ]
+  });
+
+  const response = await fetch(OPENROUTER_CHAT_URL, {
+    body: JSON.stringify({
+      model: config.model,
+      messages,
+      temperature: input.temperature ?? 0,
+      max_tokens: input.maxTokens ?? 1200
+    }),
+    headers: {
+      Authorization: `Bearer ${config.apiKey}`,
+      "Content-Type": "application/json",
+      "X-Title": "JR Brasil ERP"
+    },
+    method: "POST"
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    let message = typeof data?.error?.message === "string" ? data.error.message : `OpenRouter retornou HTTP ${response.status}.`;
+    if (/image|vision|multimodal|modality/i.test(message)) {
+      message = `O modelo configurado (${config.model}) não suporta leitura de imagem. Use um modelo de visão (ex.: openai/gpt-4o-mini). Detalhe: ${message}`;
+    }
+    await prisma.configuracaoIa.update({ where: { id: config.id }, data: { ultimoErro: message } });
+    throw new Error(message);
+  }
+
+  await prisma.configuracaoIa.update({ where: { id: config.id }, data: { testadoEm: new Date(), ultimoErro: null } });
+  const content = data?.choices?.[0]?.message?.content;
+  if (typeof content !== "string" || !content.trim()) {
+    throw new Error("OpenRouter respondeu sem conteúdo utilizável.");
+  }
+  return content;
+}
+
+/**
  * Variante com function calling: envia `tools` e devolve a MENSAGEM completa do
  * assistant (incluindo `tool_calls`), para o runtime do agente conduzir o loop.
  * Reusa a mesma credencial/modelo criptografados de `callOpenRouter`.

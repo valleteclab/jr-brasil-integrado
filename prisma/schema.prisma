@@ -305,6 +305,7 @@ model Empresa {
   inventarios        Inventario[]
   auditorias         Auditoria[]
   conversasAgente    ConversaAgente[]
+  gastos             Gasto[]
   chavesApiAgente    ChaveApiAgente[]
   telefonesAgente    AgenteTelefone[]
   configWhatsapp     ConfiguracaoWhatsapp[]
@@ -2033,4 +2034,60 @@ model ConfiguracaoWhatsapp {
   atualizadoEm    DateTime         @updatedAt
 
   @@index([tenantId, empresaId])
+}
+
+// ─── Controle de gastos (despesas operacionais por cupom) ─────────────────────
+
+enum GastoOrigem {
+  PWA
+  WHATSAPP
+  MANUAL
+}
+
+enum GastoStatus {
+  PENDENTE
+  CONFIRMADO
+}
+
+/// Despesa operacional registrada a partir de foto de cupom (IA) ou manual. Controle próprio;
+/// quando o usuário "lança no financeiro", gera uma ContaPagar quitada (contaPagarId).
+model Gasto {
+  id                String      @id @default(cuid())
+  tenantId          String
+  empresaId         String
+  empresa           Empresa     @relation(fields: [empresaId], references: [id])
+  estabelecimento   String
+  documento         String?
+  categoria         String
+  data              DateTime
+  valorTotal        Decimal     @db.Decimal(14, 2)
+  formaPagamento    String?
+  origem            GastoOrigem @default(MANUAL)
+  status            GastoStatus @default(PENDENTE)
+  imagemCupom       String?     @db.Text
+  iaConfianca       Int?
+  iaBruto           Json?
+  contaPagarId      String?
+  lancadoFinanceiro Boolean     @default(false)
+  observacoes       String?
+  criadoPor         String?
+  itens             GastoItem[]
+  criadoEm          DateTime    @default(now())
+  atualizadoEm      DateTime    @updatedAt
+
+  @@index([tenantId, empresaId, data])
+  @@index([tenantId, empresaId, categoria])
+}
+
+model GastoItem {
+  id          String   @id @default(cuid())
+  tenantId    String
+  empresaId   String
+  gastoId     String
+  gasto       Gasto    @relation(fields: [gastoId], references: [id])
+  descricao   String
+  quantidade  Decimal? @db.Decimal(14, 3)
+  valor       Decimal  @db.Decimal(14, 2)
+
+  @@index([tenantId, empresaId, gastoId])
 }

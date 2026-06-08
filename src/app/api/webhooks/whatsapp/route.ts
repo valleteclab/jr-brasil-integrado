@@ -1,21 +1,24 @@
 import { NextResponse } from "next/server";
 import { processWhatsappMessage } from "@/domains/agent/runtime/process-whatsapp-message";
+import { processWhatsappReceipt } from "@/domains/expenses/runtime/process-whatsapp-receipt";
 
 export const dynamic = "force-dynamic";
 
 /**
- * Webhook de entrada do WhatsApp (Z-API: "Ao receber"). Espelha o padrão do
- * webhook da Spedy: SEMPRE responde 200, é tolerante a payloads inesperados e
- * absorve erros para evitar reentregas. A identidade (empresa/papel/cliente) é
- * resolvida pelo telefone dentro de processWhatsappMessage.
+ * Webhook de entrada do WhatsApp (Z-API: "Ao receber"). SEMPRE responde 200, é tolerante a
+ * payloads inesperados e absorve erros para evitar reentregas. A identidade (empresa/papel/cliente)
+ * é resolvida pelo telefone.
  *
- * Ignora mensagens enviadas pela própria conta (fromMe) e não-texto.
+ * - Texto → agente (processWhatsappMessage).
+ * - Imagem (foto de cupom) → controle de gastos (processWhatsappReceipt).
+ * Ignora mensagens enviadas pela própria conta (fromMe).
  */
 type ZapiInbound = {
   phone?: string;
   fromMe?: boolean;
   type?: string;
   text?: { message?: string } | null;
+  image?: { imageUrl?: string; caption?: string } | null;
 };
 
 export async function POST(request: Request) {
@@ -28,11 +31,18 @@ export async function POST(request: Request) {
 
   try {
     const telefone = (body?.phone ?? "").trim();
-    const texto = body?.text?.message?.trim() ?? "";
-    if (body?.fromMe || !telefone || !texto) {
+    if (body?.fromMe || !telefone) {
       return NextResponse.json({ received: true }, { status: 200 });
     }
-    await processWhatsappMessage({ telefone, texto });
+
+    const imageUrl = body?.image?.imageUrl?.trim() ?? "";
+    if (imageUrl) {
+      // Foto recebida → trata como cupom (controle de gastos).
+      await processWhatsappReceipt({ telefone, imageUrl });
+    } else {
+      const texto = body?.text?.message?.trim() ?? "";
+      if (texto) await processWhatsappMessage({ telefone, texto });
+    }
   } catch (error) {
     console.error("[webhook/whatsapp] falha ao processar:", error instanceof Error ? error.message : "erro desconhecido");
   }

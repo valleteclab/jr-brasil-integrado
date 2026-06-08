@@ -76,6 +76,7 @@ const groups: ErpNavGroup[] = [
     group: "Financeiro & Fiscal",
     items: [
       { label: "Contas a pagar/receber", href: "/erp/financeiro", icon: "＄", badgeKey: "financeiro", danger: true },
+      { label: "Gastos (cupom)", href: "/erp/gastos", icon: "💸" },
       { label: "Fluxo de caixa", href: "/erp/fluxo-caixa", icon: "📈" },
       { label: "NF-e emitidas", href: "/erp/fiscal", icon: "🧾" },
       { label: "Regras tributárias", href: "/erp/regras-tributarias", icon: "⚖" },
