@@ -4,6 +4,8 @@ import { PageHeader } from "@/components/shared/PageHeader";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { getSaleDetail } from "@/lib/services/sales";
 import { SaleDetailActions } from "@/components/erp/SaleDetailActions";
+import { getSession } from "@/lib/auth/session";
+import { isAdminPerfil } from "@/lib/auth/modules";
 import { VendaCalculoImposto } from "@/components/erp/VendaCalculoImposto";
 import { formatBrl } from "@/lib/formatters/currency";
 
@@ -12,6 +14,9 @@ export const dynamic = "force-dynamic";
 export default async function VendaDetalhePage({ params }: { params: { id: string } }) {
   const venda = await getSaleDetail(params.id);
   if (!venda) notFound();
+
+  const session = await getSession();
+  const isAdmin = isAdminPerfil(session?.perfilNome ?? "");
 
   return (
     <>
@@ -29,6 +34,8 @@ export default async function VendaDetalhePage({ params }: { params: { id: strin
         canInvoice={venda.canInvoice}
         canCancel={venda.canCancel}
         temNotaAutorizada={venda.temNotaAutorizada}
+        isAdmin={isAdmin}
+        status={venda.status}
       />
 
       <section className="erp-card">

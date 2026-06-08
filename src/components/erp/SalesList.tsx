@@ -6,9 +6,11 @@ import type { SaleSummary } from "@/lib/services/sales";
 
 type Props = {
   sales: SaleSummary[];
+  /** Mostra a ação de EXCLUIR (apenas perfil admin). */
+  isAdmin?: boolean;
 };
 
-export function SalesList({ sales }: Props) {
+export function SalesList({ sales, isAdmin = false }: Props) {
   const [rows, setRows] = useState(sales);
   const [query, setQuery] = useState("");
   const [error, setError] = useState("");
@@ -101,6 +103,22 @@ export function SalesList({ sales }: Props) {
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao cancelar pedido.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function excluir(row: SaleSummary) {
+    if (!window.confirm(`Excluir definitivamente o pedido ${row.numero}? Esta ação não pode ser desfeita.`)) return;
+    setBusyId(row.id);
+    setError("");
+    try {
+      const res = await fetch(`/api/erp/vendas/${row.id}`, { method: "DELETE" });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(data.error || "Não foi possível excluir o pedido.");
+      setRows((current) => current.filter((r) => r.id !== row.id));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao excluir pedido.");
     } finally {
       setBusyId(null);
     }
@@ -201,6 +219,17 @@ export function SalesList({ sales }: Props) {
                       onClick={() => cancelar(row)}
                     >
                       {busyId === row.id ? "Processando..." : "Cancelar"}
+                    </button>
+                  )}
+                  {isAdmin && (row.status === "RASCUNHO" || row.status === "CANCELADO") && (
+                    <button
+                      className="btn-erp danger xs"
+                      type="button"
+                      title="Excluir pedido (admin)"
+                      disabled={busyId === row.id}
+                      onClick={() => excluir(row)}
+                    >
+                      {busyId === row.id ? "..." : "Excluir"}
                     </button>
                   )}
                 </td>

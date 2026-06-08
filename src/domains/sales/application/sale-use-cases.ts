@@ -489,3 +489,47 @@ export async function cancelSale(scope: TenantScope, id: string) {
     return updated;
   }, TX_OPTIONS);
 }
+
+/**
+ * EXCLUI (remove) um pedido de venda — ação ADMIN. Só permite em pedidos RASCUNHO ou CANCELADOS,
+ * para não desfazer estoque/financeiro de pedidos ativos (nesses casos, cancele antes). Notas
+ * fiscais e movimentos de caixa são apenas DESVINCULADOS (preservados), nunca apagados.
+ */
+export async function deleteSale(scope: TenantScope, id: string) {
+  const pedido = await prisma.pedidoVenda.findFirst({
+    where: { id, ...scopedByTenantCompany(scope) },
+    include: { notasFiscais: { where: { status: "AUTORIZADA" }, select: { id: true } } }
+  });
+  if (!pedido) throw new Error("Pedido de venda não encontrado.");
+
+  if (pedido.status !== "RASCUNHO" && pedido.status !== "CANCELADO") {
+    throw new Error("Só é possível excluir pedidos em RASCUNHO ou CANCELADOS. Cancele o pedido antes de excluir.");
+  }
+  if (pedido.notasFiscais.length > 0) {
+    throw new Error("Há nota fiscal autorizada vinculada. Cancele a nota antes de excluir o pedido.");
+  }
+
+  return prisma.$transaction(async (tx) => {
+    // Libera reservas de estoque que ainda existam (rascunho).
+    await releaseReservations(tx, scope, "PEDIDO_VENDA", id);
+
+    const scoped = { tenantId: scope.tenantId, empresaId: scope.empresaId, pedidoVendaId: id };
+    // Preserva notas fiscais e movimentos de caixa: apenas desvincula.
+    await tx.notaFiscal.updateMany({ where: scoped, data: { pedidoVendaId: null } });
+    await tx.caixaMovimento.updateMany({ where: scoped, data: { pedidoVendaId: null } });
+    await tx.contaReceber.updateMany({ where: scoped, data: { pedidoVendaId: null } });
+    await tx.pagamentoVenda.deleteMany({ where: { pedidoVendaId: id } });
+    await tx.pedidoVendaItem.deleteMany({ where: { pedidoVendaId: id } });
+    const removido = await tx.pedidoVenda.delete({ where: { id } });
+
+    await createAuditLog(tx, {
+      scope,
+      entidade: "PedidoVenda",
+      entidadeId: id,
+      acao: "DELETE",
+      payload: { numero: pedido.numero, statusAnterior: pedido.status }
+    });
+
+    return removido;
+  }, TX_OPTIONS);
+}

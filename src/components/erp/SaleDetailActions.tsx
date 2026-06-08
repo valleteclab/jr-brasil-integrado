@@ -11,9 +11,12 @@ type Props = {
   canInvoice: boolean;
   canCancel: boolean;
   temNotaAutorizada: boolean;
+  /** Mostra a ação de EXCLUIR (apenas perfil admin). */
+  isAdmin?: boolean;
+  status?: string;
 };
 
-export function SaleDetailActions({ id, numero, canConfirm, canInvoice, canCancel, temNotaAutorizada }: Props) {
+export function SaleDetailActions({ id, numero, canConfirm, canInvoice, canCancel, temNotaAutorizada, isAdmin = false, status }: Props) {
   const router = useRouter();
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
@@ -78,7 +81,24 @@ export function SaleDetailActions({ id, numero, canConfirm, canInvoice, canCance
     executar("cancelar", `/api/erp/vendas/${id}/cancelar`);
   }
 
-  const semAcoes = !canConfirm && !canInvoice && !canCancel;
+  async function excluir() {
+    if (!window.confirm(`Excluir definitivamente o pedido ${numero}? Esta ação não pode ser desfeita.`)) return;
+    setBusy("excluir");
+    setError("");
+    setMessage("");
+    try {
+      const res = await fetch(`/api/erp/vendas/${id}`, { method: "DELETE" });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(data.error || "Não foi possível excluir o pedido.");
+      router.push("/erp/vendas");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Não foi possível excluir o pedido.");
+      setBusy("");
+    }
+  }
+
+  const podeExcluir = isAdmin && (status === "RASCUNHO" || status === "CANCELADO");
+  const semAcoes = !canConfirm && !canInvoice && !canCancel && !podeExcluir;
 
   return (
     <section className="erp-card">
@@ -89,6 +109,7 @@ export function SaleDetailActions({ id, numero, canConfirm, canInvoice, canCance
         {canInvoice && <button type="button" className="btn-erp ghost sm" onClick={() => faturar("NFCE")} disabled={!!busy}>Emitir NFC-e</button>}
         <button type="button" className="btn-erp light sm" onClick={() => espelho("NFE")} disabled={!!busy}>{busy === "espelho" ? "Calculando…" : "🔍 Espelho fiscal"}</button>
         {canCancel && <button type="button" className="btn-erp danger sm" onClick={cancelar} disabled={!!busy}>{busy === "cancelar" ? "Cancelando…" : "Cancelar pedido"}</button>}
+        {podeExcluir && <button type="button" className="btn-erp danger sm" onClick={excluir} disabled={!!busy} title="Excluir pedido (admin)">{busy === "excluir" ? "Excluindo…" : "🗑️ Excluir pedido"}</button>}
         {semAcoes && <span className="block-muted">Use o espelho fiscal para conferir os impostos. Nenhuma outra ação disponível para a situação atual.</span>}
       </div>
       {message && <div className="alert info" style={{ margin: "0 16px 12px" }}><span>{message}</span></div>}

@@ -166,6 +166,20 @@ export async function requireModulo(modulo: ModuloKey): Promise<SessionUser> {
 export class ForbiddenError extends Error {}
 
 /**
+ * Exige que o usuário autenticado tenha perfil ADMIN do cliente (SUPER_ADMIN/COMPANY_ADMIN/
+ * TENANT_ADMIN). Usado para ações sensíveis como EXCLUIR registros. Gate de servidor — a UI só
+ * esconde o botão, mas a permissão real é validada aqui.
+ */
+export async function requireAdmin(): Promise<SessionUser> {
+  const session = await getSession();
+  if (!session) throw new SessionError("Sessão expirada ou inexistente. Faça login.");
+  if (!isAdminPerfil(session.perfilNome)) {
+    throw new ForbiddenError("Ação restrita a administradores.");
+  }
+  return session;
+}
+
+/**
  * Exige que o usuário autenticado seja dono da plataforma (super admin global do
  * SaaS). Usado para proteger o painel /admin e suas APIs. Lança SessionError (sem
  * sessão) ou ForbiddenError (logado, mas sem acesso de plataforma).

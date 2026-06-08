@@ -3,6 +3,8 @@ import { PageHeader } from "@/components/shared/PageHeader";
 import { SalesList } from "@/components/erp/SalesList";
 import { listSales } from "@/lib/services/sales";
 import type { SaleSummary } from "@/lib/services/sales";
+import { getSession } from "@/lib/auth/session";
+import { isAdminPerfil } from "@/lib/auth/modules";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +21,9 @@ export default async function VendasPage() {
   } catch (error) {
     loadError = error instanceof Error ? error.message : "Não foi possível carregar vendas.";
   }
+
+  const session = await getSession();
+  const isAdmin = isAdminPerfil(session?.perfilNome ?? "");
 
   const abertos = sales.filter((s) =>
     ["RASCUNHO", "AGUARDANDO_PAGAMENTO", "AGUARDANDO_NOTA", "SEPARACAO"].includes(s.status)
@@ -61,7 +66,7 @@ export default async function VendasPage() {
         />
       </div>
 
-      <SalesList sales={sales} />
+      <SalesList sales={sales} isAdmin={isAdmin} />
     </>
   );
 }
