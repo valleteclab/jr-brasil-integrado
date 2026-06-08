@@ -4,6 +4,8 @@ import { Button } from "@/components/shared/Button";
 import { KpiCard } from "@/components/shared/KpiCard";
 import { listQuotes } from "@/lib/services/sales-quote";
 import type { QuoteSummary } from "@/lib/services/sales-quote";
+import { getSession } from "@/lib/auth/session";
+import { isAdminPerfil } from "@/lib/auth/modules";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +18,9 @@ export default async function OrcamentosPage() {
   } catch (error) {
     loadError = error instanceof Error ? error.message : "Não foi possível carregar orçamentos.";
   }
+
+  const session = await getSession();
+  const isAdmin = isAdminPerfil(session?.perfilNome ?? "");
 
   const total = quotes.length;
   const aprovados = quotes.filter((q) => q.status === "APROVADO").length;
@@ -51,7 +56,7 @@ export default async function OrcamentosPage() {
         />
       </div>
 
-      <QuotesList quotes={quotes} />
+      <QuotesList quotes={quotes} isAdmin={isAdmin} />
     </>
   );
 }

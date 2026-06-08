@@ -5,6 +5,8 @@ import { NotasFiscaisList } from "@/components/erp/NotasFiscaisList";
 import { listNotasFiscais } from "@/lib/services/fiscal";
 import type { NotaFiscalSummary } from "@/lib/services/fiscal";
 import { formatBrl } from "@/lib/formatters/currency";
+import { getSession } from "@/lib/auth/session";
+import { isAdminPerfil } from "@/lib/auth/modules";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +19,9 @@ export default async function FiscalPage() {
   } catch (error) {
     loadError = error instanceof Error ? error.message : "Não foi possível carregar as notas fiscais.";
   }
+
+  const session = await getSession();
+  const isAdmin = isAdminPerfil(session?.perfilNome ?? "");
 
   const authorized = notas.filter((n) => n.status === "AUTORIZADA");
   const totalAuthorized = authorized.reduce((sum, n) => sum + n.totalNumber, 0);
@@ -52,7 +57,7 @@ export default async function FiscalPage() {
         </div>
       )}
 
-      <NotasFiscaisList notas={notas} />
+      <NotasFiscaisList notas={notas} isAdmin={isAdmin} />
     </>
   );
 }

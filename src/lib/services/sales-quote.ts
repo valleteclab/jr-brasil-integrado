@@ -23,6 +23,8 @@ export type QuoteSummary = {
   canAprovar: boolean;
   canRejeitar: boolean;
   canConverter: boolean;
+  /** Pode ser excluído (admin): não convertido em pedido. */
+  canDelete: boolean;
 };
 
 export type QuoteDetail = QuoteSummary & {
@@ -101,6 +103,7 @@ function mapQuote(orc: {
     canAprovar: ["RASCUNHO", "EM_ANALISE", "AGUARDANDO_CLIENTE"].includes(orc.status),
     canRejeitar: !["CONVERTIDO", "REJEITADO"].includes(orc.status),
     canConverter: orc.status === "APROVADO" && !orc.pedidoGeradoId,
+    canDelete: orc.status !== "CONVERTIDO" && !orc.pedidoGeradoId,
   };
 }
 

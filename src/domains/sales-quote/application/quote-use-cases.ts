@@ -215,3 +215,32 @@ export async function convertQuoteToPedido(scope: TenantScope, id: string) {
     return { orcamento: { id, status: "CONVERTIDO" }, pedido };
   }, TX_OPTIONS);
 }
+
+/**
+ * EXCLUI (remove) um orçamento — ação ADMIN. Bloqueia se já convertido em pedido (mantém o
+ * vínculo). Remove os itens e o orçamento; eventuais pedidos que apontem para ele são desvinculados.
+ */
+export async function deleteQuote(scope: TenantScope, id: string) {
+  const orc = await prisma.orcamento.findFirst({
+    where: { id, ...scopedByTenantCompany(scope) },
+    select: { id: true, numero: true, status: true, pedidoGeradoId: true }
+  });
+  if (!orc) throw new Error("Orçamento não encontrado.");
+  if (orc.status === "CONVERTIDO" || orc.pedidoGeradoId) {
+    throw new Error("Não é possível excluir um orçamento já convertido em pedido.");
+  }
+
+  return prisma.$transaction(async (tx) => {
+    await tx.pedidoVenda.updateMany({ where: { origemOrcamentoId: id }, data: { origemOrcamentoId: null } });
+    await tx.orcamentoItem.deleteMany({ where: { orcamentoId: id } });
+    const removido = await tx.orcamento.delete({ where: { id } });
+    await createAuditLog(tx, {
+      scope,
+      entidade: "Orcamento",
+      entidadeId: id,
+      acao: "DELETE",
+      payload: { numero: orc.numero, statusAnterior: orc.status }
+    });
+    return removido;
+  }, TX_OPTIONS);
+}

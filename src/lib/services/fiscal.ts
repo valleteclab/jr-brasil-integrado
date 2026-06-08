@@ -29,6 +29,8 @@ export type NotaFiscalSummary = {
   canClone: boolean;
   /** Devolução exige NF-e autorizada com chave de acesso. */
   canDevolver: boolean;
+  /** Pode ser excluída (admin): notas SEM validade fiscal (rascunho/erro/rejeitada/denegada). */
+  canDelete: boolean;
 };
 
 const STATUS_LABEL: Record<StatusNotaFiscal, { label: string; tone: NotaFiscalSummary["statusTone"] }> = {
@@ -98,7 +100,9 @@ export async function listNotasFiscais(): Promise<NotaFiscalSummary[]> {
       // Clonar reaproveita a tela de emissão (produto e serviço).
       canClone: true,
       // Não se gera devolução de uma devolução (nem de complementar/ajuste).
-      canDevolver: nota.modelo === "NFE" && nota.status === "AUTORIZADA" && Boolean(nota.chaveAcesso) && nota.finalidade === "NORMAL"
+      canDevolver: nota.modelo === "NFE" && nota.status === "AUTORIZADA" && Boolean(nota.chaveAcesso) && nota.finalidade === "NORMAL",
+      // Excluir (admin): só notas SEM validade fiscal. NUNCA AUTORIZADA/CANCELADA (documento legal).
+      canDelete: ["RASCUNHO", "ERRO", "REJEITADA", "DENEGADA"].includes(nota.status)
     };
   });
 }

@@ -6,9 +6,11 @@ import type { NotaFiscalSummary } from "@/lib/services/fiscal";
 
 type Props = {
   notas: NotaFiscalSummary[];
+  /** Mostra a ação de EXCLUIR (apenas perfil admin). */
+  isAdmin?: boolean;
 };
 
-export function NotasFiscaisList({ notas }: Props) {
+export function NotasFiscaisList({ notas, isAdmin = false }: Props) {
   const [rows, setRows] = useState(notas);
   const [query, setQuery] = useState("");
   const [error, setError] = useState("");
@@ -70,6 +72,22 @@ export function NotasFiscaisList({ notas }: Props) {
       window.alert("Carta de correção registrada com sucesso.");
     } catch (correctError) {
       setError(correctError instanceof Error ? correctError.message : "Não foi possível registrar a carta de correção.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function excluir(nota: NotaFiscalSummary) {
+    if (!window.confirm(`Excluir a nota ${nota.modeloLabel} nº ${nota.numero}? Esta ação não pode ser desfeita.`)) return;
+    setBusyId(nota.id);
+    setError("");
+    try {
+      const res = await fetch(`/api/erp/fiscal/${nota.id}`, { method: "DELETE" });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(data.error || "Não foi possível excluir a nota.");
+      setRows((current) => current.filter((r) => r.id !== nota.id));
+    } catch (delError) {
+      setError(delError instanceof Error ? delError.message : "Não foi possível excluir a nota.");
     } finally {
       setBusyId(null);
     }
@@ -157,6 +175,11 @@ export function NotasFiscaisList({ notas }: Props) {
                   {nota.canCancel && (
                     <button className="danger-link" type="button" disabled={busyId === nota.id} onClick={() => cancel(nota)}>
                       {busyId === nota.id ? "Processando..." : "Cancelar"}
+                    </button>
+                  )}
+                  {isAdmin && nota.canDelete && (
+                    <button className="danger-link" type="button" title="Excluir nota (admin)" disabled={busyId === nota.id} onClick={() => excluir(nota)}>
+                      {busyId === nota.id ? "..." : "Excluir"}
                     </button>
                   )}
                 </td>

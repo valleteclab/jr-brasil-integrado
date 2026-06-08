@@ -818,3 +818,37 @@ export async function downloadNotaFiscalDocumento(
   const filename = `${nota.modelo}-${nota.numero}.${kind}`;
   return { contentType: result.contentType, body: result.body, filename };
 }
+
+/**
+ * EXCLUI uma nota fiscal — ação ADMIN. SOMENTE notas SEM validade fiscal (RASCUNHO, ERRO,
+ * REJEITADA, DENEGADA). Notas AUTORIZADAS/CANCELADAS são documentos legais e nunca são apagadas
+ * (use cancelamento). Remove itens/eventos e desvincula contas a receber e devoluções.
+ */
+export async function deleteNotaFiscal(scope: TenantScope, id: string) {
+  const nota = await prisma.notaFiscal.findFirst({
+    where: { id, tenantId: scope.tenantId, empresaId: scope.empresaId },
+    select: { id: true, numero: true, modelo: true, status: true }
+  });
+  if (!nota) throw new Error("Nota fiscal não encontrada.");
+  if (!["RASCUNHO", "ERRO", "REJEITADA", "DENEGADA"].includes(nota.status)) {
+    throw new Error(
+      "Só é possível excluir notas sem validade fiscal (rascunho, erro, rejeitada ou denegada). Notas autorizadas ou canceladas não podem ser excluídas."
+    );
+  }
+
+  return prisma.$transaction(async (tx) => {
+    await tx.contaReceber.updateMany({ where: { notaFiscalId: id }, data: { notaFiscalId: null } });
+    await tx.notaFiscal.updateMany({ where: { notaOrigemId: id }, data: { notaOrigemId: null } });
+    await tx.notaFiscalItem.deleteMany({ where: { notaFiscalId: id } });
+    await tx.notaFiscalEvento.deleteMany({ where: { notaFiscalId: id } });
+    const removido = await tx.notaFiscal.delete({ where: { id } });
+    await createAuditLog(tx, {
+      scope,
+      entidade: "NotaFiscal",
+      entidadeId: id,
+      acao: "DELETE",
+      payload: { numero: nota.numero, modelo: nota.modelo, statusAnterior: nota.status }
+    });
+    return removido;
+  });
+}

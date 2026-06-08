@@ -8,9 +8,11 @@ import type { QuoteSummary } from "@/lib/services/sales-quote";
 
 type Props = {
   quotes: QuoteSummary[];
+  /** Mostra a ação de EXCLUIR (apenas perfil admin). */
+  isAdmin?: boolean;
 };
 
-export function QuotesList({ quotes }: Props) {
+export function QuotesList({ quotes, isAdmin = false }: Props) {
   const [rows, setRows] = useState(quotes);
   const [query, setQuery] = useState("");
   const [error, setError] = useState("");
@@ -84,6 +86,22 @@ export function QuotesList({ quotes }: Props) {
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha na operação.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function excluir(id: string, numero: string) {
+    if (!window.confirm(`Excluir definitivamente o orçamento ${numero}? Esta ação não pode ser desfeita.`)) return;
+    setBusyId(id);
+    setError("");
+    try {
+      const res = await fetch(`/api/erp/orcamentos/${id}`, { method: "DELETE" });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(data.error || "Não foi possível excluir o orçamento.");
+      setRows((cur) => cur.filter((r) => r.id !== id));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha ao excluir orçamento.");
     } finally {
       setBusyId(null);
     }
@@ -184,6 +202,17 @@ export function QuotesList({ quotes }: Props) {
                       onClick={() => callAction(orc.id, "rejeitar")}
                     >
                       Rejeitar
+                    </button>
+                  )}
+                  {isAdmin && orc.canDelete && (
+                    <button
+                      className="danger-link"
+                      type="button"
+                      title="Excluir orçamento (admin)"
+                      disabled={busyId === orc.id}
+                      onClick={() => excluir(orc.id, orc.numero)}
+                    >
+                      Excluir
                     </button>
                   )}
                 </td>
