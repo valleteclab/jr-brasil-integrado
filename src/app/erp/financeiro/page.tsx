@@ -5,6 +5,8 @@ import { listPayables, listReceivables, listBankAccounts, getFinanceSummary } fr
 import type { PayableSummary, ReceivableSummary, BankAccountSummary, FinanceSummary } from "@/lib/services/finance";
 import { listFormasPagamentoAtivas } from "@/domains/finance/application/payment-config-use-cases";
 import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
+import { getSession } from "@/lib/auth/session";
+import { isAdminPerfil } from "@/lib/auth/modules";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +35,9 @@ export default async function FinanceiroPage() {
   } catch (error) {
     loadError = error instanceof Error ? error.message : "Não foi possível carregar o módulo financeiro.";
   }
+
+  const session = await getSession();
+  const isAdmin = isAdminPerfil(session?.perfilNome ?? "");
 
   return (
     <>
@@ -83,6 +88,7 @@ export default async function FinanceiroPage() {
           initialReceivables={receivables}
           bankAccounts={bankAccounts}
           formasPagamento={formasPagamento}
+          isAdmin={isAdmin}
         />
       )}
     </>

@@ -21,6 +21,8 @@ export type PayableSummary = {
   statusTone: StatusTone;
   formaPagamento: string;
   canSettle: boolean;
+  /** Pode ser excluída (admin): sem pagamento registrado. */
+  canDelete: boolean;
 };
 
 export type ReceivableSummary = {
@@ -164,7 +166,9 @@ export async function listPayables(filtroStatus?: string): Promise<PayableSummar
       statusLabel,
       statusTone,
       formaPagamento: c.formaPagamento ?? "—",
-      canSettle
+      canSettle,
+      // Excluir (admin): só sem pagamento registrado (evita orfanar movimentos financeiros).
+      canDelete: valorPago === 0
     };
   });
 }

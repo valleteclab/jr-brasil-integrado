@@ -10,6 +10,8 @@ type Props = {
   initialReceivables: ReceivableSummary[];
   bankAccounts: BankAccountSummary[];
   formasPagamento?: FormaPagamentoOption[];
+  /** Mostra a ação de EXCLUIR conta a pagar (apenas perfil admin). */
+  isAdmin?: boolean;
 };
 
 type Aba = "pagar" | "receber";
@@ -263,7 +265,8 @@ function NewAccountForm({ tipo, formasPagamento, onSuccess, onClose }: NewAccoun
         statusLabel: "Aberto",
         statusTone: "info",
         formaPagamento: formaPagamento || "—",
-        canSettle: true
+        canSettle: true,
+        canDelete: true
       };
       onSuccess(novoItem);
     } catch (err) {
@@ -368,7 +371,7 @@ function NewAccountForm({ tipo, formasPagamento, onSuccess, onClose }: NewAccoun
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-export function FinanceManager({ initialPayables, initialReceivables, bankAccounts, formasPagamento = [] }: Props) {
+export function FinanceManager({ initialPayables, initialReceivables, bankAccounts, formasPagamento = [], isAdmin = false }: Props) {
   const [aba, setAba] = useState<Aba>("pagar");
   const [payables, setPayables] = useState(initialPayables);
   const [receivables, setReceivables] = useState(initialReceivables);
@@ -376,6 +379,23 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
   const [settlingId, setSettlingId] = useState<string | null>(null);
   const [showNewForm, setShowNewForm] = useState(false);
   const [globalError, setGlobalError] = useState("");
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  async function excluirPagar(id: string, descricao: string) {
+    if (!window.confirm(`Excluir a conta a pagar "${descricao}"? Esta ação não pode ser desfeita.`)) return;
+    setBusyId(id);
+    setGlobalError("");
+    try {
+      const res = await fetch(`/api/erp/financeiro/contas-pagar/${id}`, { method: "DELETE" });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(data.error || "Não foi possível excluir a conta.");
+      setPayables((prev) => prev.filter((r) => r.id !== id));
+    } catch (e) {
+      setGlobalError(e instanceof Error ? e.message : "Falha ao excluir conta a pagar.");
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   const rows = aba === "pagar" ? payables : receivables;
 
@@ -516,6 +536,17 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
                     </button>
                   )}
                   <button type="button" className="btn-erp ghost xs">Boleto</button>
+                  {isAdmin && aba === "pagar" && (r as PayableSummary).canDelete && (
+                    <button
+                      type="button"
+                      className="btn-erp danger xs"
+                      title="Excluir conta a pagar (admin)"
+                      disabled={busyId === r.id}
+                      onClick={() => excluirPagar(r.id, r.descricao)}
+                    >
+                      {busyId === r.id ? "..." : "Excluir"}
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}

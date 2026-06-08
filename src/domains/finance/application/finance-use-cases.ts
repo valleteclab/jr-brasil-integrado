@@ -395,3 +395,32 @@ export async function createReceivable(scope: TenantScope, input: CreateReceivab
     return conta;
   }, TX_OPTIONS);
 }
+
+/**
+ * EXCLUI (remove) uma conta a PAGAR — ação ADMIN. Só permite quando NÃO há pagamento registrado
+ * (valorPago = 0), para não orfanar movimentos financeiros/baixas. Desvincula eventuais
+ * movimentos (FK nulável) e remove a conta.
+ */
+export async function deletePayable(scope: TenantScope, id: string) {
+  const conta = await prisma.contaPagar.findFirst({
+    where: { id, ...scopedByTenantCompany(scope) },
+    select: { id: true, descricao: true, status: true, valorPago: true }
+  });
+  if (!conta) throw new Error("Conta a pagar não encontrada.");
+  if (Number(conta.valorPago) > 0 || conta.status === "PAGO" || conta.status === "PARCIAL") {
+    throw new Error("Não é possível excluir uma conta a pagar com pagamento registrado. Estorne a baixa antes.");
+  }
+
+  return prisma.$transaction(async (tx) => {
+    await tx.movimentoFinanceiro.updateMany({ where: { contaPagarId: id }, data: { contaPagarId: null } });
+    const removido = await tx.contaPagar.delete({ where: { id } });
+    await createAuditLog(tx, {
+      scope,
+      entidade: "ContaPagar",
+      entidadeId: id,
+      acao: "DELETE",
+      payload: { descricao: conta.descricao, status: conta.status }
+    });
+    return removido;
+  });
+}
