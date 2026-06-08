@@ -426,7 +426,9 @@ export async function emitServiceInvoiceAvulsa(scope: TenantScope, input: Servic
  * genérico. Só roda em ambiente de HOMOLOGAÇÃO — recusa em produção para não gerar nota real.
  * Reusa todo o pipeline de emissão (emitProductInvoiceAvulsa).
  */
-export async function emitirNotaTesteHomologacao(scope: TenantScope) {
+export type ModeloTesteFiscal = "NFE" | "NFCE" | "NFSE";
+
+export async function emitirNotaTesteHomologacao(scope: TenantScope, modelo: ModeloTesteFiscal = "NFE") {
   const config = await getFiscalRuntimeConfig(scope);
   if (config.ambiente !== "HOMOLOGACAO") {
     throw new StandaloneEmissionError(
@@ -446,8 +448,23 @@ export async function emitirNotaTesteHomologacao(scope: TenantScope) {
     codigoMunicipioIbge: empresa.codigoMunicipioIbge ?? undefined
   };
 
+  // NFS-e: serviço de teste (LC 116 17.01 — assessoria/consultoria), empresa como tomador.
+  if (modelo === "NFSE") {
+    return emitServiceInvoiceAvulsa(scope, {
+      receiver: {
+        nome: "NFS-E EMITIDA EM AMBIENTE DE HOMOLOGACAO - SEM VALOR FISCAL",
+        documento: empresa.cnpj,
+        inscricaoEstadual: empresa.inscricaoEstadual ?? undefined,
+        endereco
+      },
+      codigoServicoLc116: "17.01",
+      servicos: [{ descricao: "SERVICO DE TESTE HOMOLOGACAO", valor: 1, codigoServicoLc116: "17.01" }]
+    });
+  }
+
+  // NF-e (55) / NFC-e (65): produto de teste.
   return emitProductInvoiceAvulsa(scope, {
-    modelo: "NFE",
+    modelo,
     naturezaOperacao: "Venda de teste (homologação)",
     // Forma de pagamento explícita (Dinheiro → tPag 01); sem isso cai em "99-outros", que a SEFAZ
     // rejeita por exigir descrição do pagamento.

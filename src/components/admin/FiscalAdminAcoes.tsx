@@ -13,7 +13,7 @@ export function FiscalAdminAcoes({ clienteId, empresaId }: Props) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [senha, setSenha] = useState("");
 
-  const [carregando, setCarregando] = useState<"" | "certificado" | "testar" | "emissao" | "sync">("");
+  const [carregando, setCarregando] = useState<string>("");
   const [resCertificado, setResCertificado] = useState<Resultado>(null);
   const [resTestar, setResTestar] = useState<Resultado>(null);
   const [resEmissao, setResEmissao] = useState<Resultado>(null);
@@ -93,28 +93,32 @@ export function FiscalAdminAcoes({ clienteId, empresaId }: Props) {
     }
   }
 
-  async function emitirTeste() {
-    setCarregando("emissao");
+  async function emitirTeste(modelo: "NFE" | "NFCE" | "NFSE") {
+    setCarregando(`emissao:${modelo}`);
     setResEmissao(null);
     try {
-      const res = await fetch(`${base}/emissao-teste`, { method: "POST" });
+      const res = await fetch(`${base}/emissao-teste`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ modelo })
+      });
       const data = (await res.json().catch(() => ({}))) as {
         status?: string;
         numero?: string | number;
         motivo?: string;
         error?: string;
       };
+      const rotulo = modelo === "NFCE" ? "NFC-e" : modelo === "NFSE" ? "NFS-e" : "NF-e";
       if (data.error) {
-        setResEmissao({ tone: "danger", texto: data.error });
+        setResEmissao({ tone: "danger", texto: `${rotulo}: ${data.error}` });
         return;
       }
       const status = data.status || "—";
-      const partes: string[] = [status];
-      if (data.numero != null) partes.push(`NF-e ${data.numero}`);
+      const partes: string[] = [`${rotulo} · ${status}`];
+      if (data.numero != null) partes.push(`nº ${data.numero}`);
       if (data.motivo) partes.push(data.motivo);
-      const texto = partes.join(" · ");
       const autorizada = /AUTORIZAD/i.test(status);
-      setResEmissao({ tone: autorizada ? "info" : "danger", texto });
+      setResEmissao({ tone: autorizada ? "info" : "danger", texto: partes.join(" · ") });
     } catch (e) {
       setResEmissao({ tone: "danger", texto: e instanceof Error ? e.message : "Falha na emissão de teste." });
     } finally {
@@ -180,14 +184,23 @@ export function FiscalAdminAcoes({ clienteId, empresaId }: Props) {
         )}
       </div>
 
-      {/* Emitir NF-e de teste */}
+      {/* Emitir nota de teste (NF-e / NFC-e / NFS-e) */}
       <div>
-        <h4 style={{ margin: "0 0 8px" }}>Emitir NF-e de teste (homologação)</h4>
-        <button type="button" className="btn-erp ghost sm" onClick={emitirTeste} disabled={carregando === "emissao"}>
-          {carregando === "emissao" ? "Emitindo…" : "Emitir NF-e de teste"}
-        </button>
+        <h4 style={{ margin: "0 0 8px" }}>Emitir nota de teste (homologação)</h4>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button type="button" className="btn-erp ghost sm" onClick={() => emitirTeste("NFE")} disabled={carregando.startsWith("emissao")}>
+            {carregando === "emissao:NFE" ? "Emitindo…" : "NF-e de teste"}
+          </button>
+          <button type="button" className="btn-erp ghost sm" onClick={() => emitirTeste("NFCE")} disabled={carregando.startsWith("emissao")}>
+            {carregando === "emissao:NFCE" ? "Emitindo…" : "NFC-e de teste"}
+          </button>
+          <button type="button" className="btn-erp ghost sm" onClick={() => emitirTeste("NFSE")} disabled={carregando.startsWith("emissao")}>
+            {carregando === "emissao:NFSE" ? "Emitindo…" : "NFS-e de teste"}
+          </button>
+        </div>
         <small className="field-hint" style={{ display: "block", marginTop: 6 }}>
-          Emite um documento fictício no ambiente de homologação para validar a configuração.
+          Emite um documento fictício no ambiente de homologação para validar a configuração. NFC-e exige
+          CSC configurado; NFS-e depende do município.
         </small>
         {resEmissao && (
           <div className={`alert ${resEmissao.tone}`} style={{ marginTop: 12 }}>
