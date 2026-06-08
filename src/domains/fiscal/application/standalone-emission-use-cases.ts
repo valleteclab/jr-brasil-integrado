@@ -448,15 +448,20 @@ export async function emitirNotaTesteHomologacao(scope: TenantScope, modelo: Mod
     codigoMunicipioIbge: empresa.codigoMunicipioIbge ?? undefined
   };
 
-  // NFS-e: serviço de teste (LC 116 17.01 — assessoria/consultoria), empresa como tomador.
+  // Destinatário/tomador de TESTE — precisa ser DIFERENTE do emitente (a SEFAZ recusa NFC-e/NFS-e
+  // com destinatário = emitente). CNPJ de teste com dígitos válidos (não é o da empresa).
+  const CNPJ_TESTE = "11222333000181";
+  const receiver = {
+    // Nome exigido pela SEFAZ em homologação (NF-e/NFC-e). NFS-e não valida este nome.
+    nome: "NF-E EMITIDA EM AMBIENTE DE HOMOLOGACAO - SEM VALOR FISCAL",
+    documento: CNPJ_TESTE,
+    endereco
+  };
+
+  // NFS-e: serviço de teste (LC 116 17.01 — assessoria/consultoria).
   if (modelo === "NFSE") {
     return emitServiceInvoiceAvulsa(scope, {
-      receiver: {
-        nome: "NFS-E EMITIDA EM AMBIENTE DE HOMOLOGACAO - SEM VALOR FISCAL",
-        documento: empresa.cnpj,
-        inscricaoEstadual: empresa.inscricaoEstadual ?? undefined,
-        endereco
-      },
+      receiver,
       codigoServicoLc116: "17.01",
       servicos: [{ descricao: "SERVICO DE TESTE HOMOLOGACAO", valor: 1, codigoServicoLc116: "17.01" }]
     });
@@ -469,13 +474,7 @@ export async function emitirNotaTesteHomologacao(scope: TenantScope, modelo: Mod
     // Forma de pagamento explícita (Dinheiro → tPag 01); sem isso cai em "99-outros", que a SEFAZ
     // rejeita por exigir descrição do pagamento.
     formaPagamento: "Dinheiro",
-    receiver: {
-      // Em homologação a SEFAZ exige este nome no destinatário; usamos o CNPJ/endereço da empresa.
-      nome: "NF-E EMITIDA EM AMBIENTE DE HOMOLOGACAO - SEM VALOR FISCAL",
-      documento: empresa.cnpj,
-      inscricaoEstadual: empresa.inscricaoEstadual ?? undefined,
-      endereco
-    },
+    receiver,
     itens: [
       { descricao: "PRODUTO TESTE HOMOLOGACAO", ncm: "84799090", cfop: "5102", origem: "0", unidade: "UN", quantidade: 1, precoUnitario: 1, desconto: 0 }
     ]
