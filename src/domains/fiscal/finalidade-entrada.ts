@@ -140,9 +140,18 @@ export function creditoPorFinalidade(
       if (tributo === "ICMS") return { recuperavel: false, observacao: "Crédito de ICMS de uso/consumo postergado para 2033." };
       return { recuperavel: false, observacao: "Uso/consumo não gera crédito de PIS/COFINS." };
     case "IMOBILIZADO":
-      // ICMS do ativo: crédito em 48 parcelas via CIAP; PIS/COFINS só no Lucro Real.
-      if (tributo === "ICMS") return { recuperavel: true, observacao: "Crédito de ICMS do ativo em 48 parcelas (CIAP)." };
-      return pisCofinsCreditavel(regime);
+      // ICMS do ativo: o DIREITO ao crédito existe, mas a apropriação é em 48 parcelas mensais
+      // via CIAP (LC 87/96, art. 20, §5º) — escriturada no bloco G da EFD, NÃO no C170 da nota.
+      // Como o controle de CIAP ainda não é gerado pelo sistema, não creditamos integral na
+      // entrada (superestimaria a apuração). PIS/COFINS de ativo também não são imediatos
+      // (depreciação/1:48 — Lei 10.833, art. 3º, §14).
+      if (tributo === "ICMS") {
+        return {
+          recuperavel: false,
+          observacao: "Crédito do ativo é em 48 parcelas via CIAP (bloco G) — não creditado integral na entrada; controle com o contador."
+        };
+      }
+      return { recuperavel: false, observacao: "PIS/COFINS de ativo creditam por depreciação/parcelas — não na entrada." };
     default:
       return SEM_CREDITO;
   }

@@ -442,3 +442,8 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 - Diagnostico da NF 431 (VERTO BRASIL, Simples): o XML traz o credito nos DOIS lugares (ICMSSN101 pCredSN 3,37 / vCredICMSSN 1.149,98 e no texto do infCpl); a importacao ja persistia os campos novos, mas a RESPOSTA do POST /entradas-fiscais/xml nao incluia impostos/infCpl — o banner so aparecia ao reabrir a conferencia. Corrigido: importNfeXml devolve infCpl + impostos por item (com credSn), e o wizard mostra o credito imediatamente apos o upload.
 - Novo scripts/backfill-credito-simples.ts: rele o XML original das importacoes existentes e preenche EntradaFiscal.informacoesComplementares + aliquotaCredSn/valorCredSn nas entradas antigas (idempotente). Executado no banco de teste: 8 entradas com infCpl preenchido; NF 431 com credito 1.149,98 (3,37%) confirmado no banco.
+
+## Atualizacao operacional - 2026-06-10 - imobilizado nao credita ICMS integral na entrada (CIAP)
+
+- Correcao de tratamento fiscal: finalidade IMOBILIZADO marcava o ICMS como recuperavel integral na entrada, superestimando creditos na apuracao e no SPED. O direito existe, mas a apropriacao e em 48 parcelas mensais via CIAP (LC 87/96 art. 20 par. 5 — bloco G da EFD, que ainda nao geramos). Agora IMOBILIZADO retorna recuperavel=false com observacao orientando o controle do CIAP com o contador; PIS/COFINS de ativo idem (Lei 10.833 art. 3 par. 14).
+- INDUSTRIALIZACAO segue creditando integral (insumo), como REVENDA. Vale para conferencia de entradas, apuracao gerencial e geracao do SPED (todos usam creditoPorFinalidade).
