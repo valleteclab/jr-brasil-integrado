@@ -308,7 +308,7 @@ function toProduct(form: ProductFormState): ProductRecord {
     id: form.id ?? `local-${Date.now()}`,
     sku,
     name,
-    brand: form.brand.trim() || "JR Brasil",
+    brand: form.brand.trim() || "Sem marca",
     category: form.category.trim() || "Sem categoria",
     price: formatBrl(priceValue),
     availableStock,

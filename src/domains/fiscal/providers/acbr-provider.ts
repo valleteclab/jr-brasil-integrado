@@ -587,7 +587,7 @@ export class AcbrFiscalProvider implements FiscalProvider {
           // Devolução é emitida como entrada (tpNF=0); demais finalidades, saída (tpNF=1).
           dhEmi: new Date().toISOString(), tpNF: input.document.finalidade === "DEVOLUCAO" ? 0 : 1, idDest, cMunFG,
           tpImp: isNfce ? 4 : 1, tpEmis: 1, finNFe: finalidade(input.document.finalidade),
-          indFinal, indPres: 1, procEmi: 0, verProc: "JR-Brasil-Integrado",
+          indFinal, indPres: 1, procEmi: 0, verProc: "XERP",
           // Referência à NF-e original (obrigatória na devolução): grupo NFref/refNFe.
           ...(refChave.length === 44 ? { NFref: [{ refNFe: refChave }] } : {})
         },

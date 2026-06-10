@@ -45,7 +45,7 @@ const onlyDigits = (v: string) => (v ?? "").replace(/\D/g, "");
 // Cloudflare (BrasilAPI) respondem 403 a UAs não-navegador. Usamos um UA de navegador.
 const LOOKUP_HEADERS = {
   Accept: "application/json",
-  "User-Agent": "Mozilla/5.0 (compatible; jr-brasil-integrado/1.0)"
+  "User-Agent": "Mozilla/5.0 (compatible; xerp/1.0)"
 };
 
 type ViaCepResponse = {

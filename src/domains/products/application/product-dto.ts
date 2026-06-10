@@ -125,7 +125,7 @@ export function validateProductPayload(payload: ProductPayload): ValidatedProduc
   return {
     sku,
     name,
-    brand: text(payload, "brand", "JR Brasil") || "JR Brasil",
+    brand: text(payload, "brand", "Sem marca") || "Sem marca",
     category: text(payload, "category", "Sem categoria") || "Sem categoria",
     type: productType(text(payload, "type")),
     originalCode: text(payload, "originalCode") || undefined,

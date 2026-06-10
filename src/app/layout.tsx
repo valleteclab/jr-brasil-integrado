@@ -4,10 +4,10 @@ import "./globals.css";
 import { RegisterSW } from "@/components/pwa/RegisterSW";
 
 export const metadata: Metadata = {
-  title: "JR Brasil Integrado",
-  description: "ERP e ecommerce B2B integrados para JR Brasil Peças & Serviços",
+  title: "XERP",
+  description: "XERP — ERP de gestão comercial para PMEs, por Valleteclab.",
   manifest: "/manifest.webmanifest",
-  appleWebApp: { capable: true, statusBarStyle: "default", title: "Gastos" },
+  appleWebApp: { capable: true, statusBarStyle: "default", title: "XERP" },
   icons: { icon: "/icons/icon.svg", apple: "/icons/icon.svg" }
 };
 

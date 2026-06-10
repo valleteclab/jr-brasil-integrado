@@ -11,7 +11,7 @@ export async function consultarImagemOpenFoodFacts(gtin: string): Promise<string
   if (ean.length < 8) return null;
   try {
     const res = await fetch(`${OFF_BASE}/${ean}.json?fields=image_front_url,image_url`, {
-      headers: { "User-Agent": "JR-Brasil-ERP/1.0 (integracao-catalogo)" }
+      headers: { "User-Agent": "XERP/1.0 (integracao-catalogo)" }
     });
     if (!res.ok) return null;
     const data = (await res.json().catch(() => ({}))) as {

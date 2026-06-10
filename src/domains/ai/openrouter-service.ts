@@ -188,7 +188,7 @@ export async function callOpenRouter(scope: TenantScope, messages: ChatMessage[]
     headers: {
       Authorization: `Bearer ${config.apiKey}`,
       "Content-Type": "application/json",
-      "X-Title": "JR Brasil ERP"
+      "X-Title": "XERP"
     },
     method: "POST"
   });
@@ -256,7 +256,7 @@ export async function callOpenRouterVision(
     headers: {
       Authorization: `Bearer ${config.apiKey}`,
       "Content-Type": "application/json",
-      "X-Title": "JR Brasil ERP"
+      "X-Title": "XERP"
     },
     method: "POST"
   });
@@ -303,7 +303,7 @@ export async function callOpenRouterWithTools(
     headers: {
       Authorization: `Bearer ${config.apiKey}`,
       "Content-Type": "application/json",
-      "X-Title": "JR Brasil ERP"
+      "X-Title": "XERP"
     },
     method: "POST"
   });

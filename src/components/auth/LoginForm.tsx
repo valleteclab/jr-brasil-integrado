@@ -38,7 +38,7 @@ export function LoginForm() {
         style={{ width: "100%", maxWidth: 380, background: "#fff", borderRadius: 12, padding: 32, boxShadow: "0 10px 40px rgba(0,0,0,.25)" }}
       >
         <div style={{ textAlign: "center", marginBottom: 20 }}>
-          <h1 style={{ fontFamily: "Barlow Condensed, sans-serif", fontWeight: 800, fontSize: 28, margin: 0 }}>JR Brasil ERP</h1>
+          <h1 style={{ fontFamily: "Barlow Condensed, sans-serif", fontWeight: 800, fontSize: 28, margin: 0 }}>XERP</h1>
           <p style={{ color: "var(--erp-slate, #64748b)", fontSize: 13, margin: "4px 0 0" }}>Acesse sua conta</p>
         </div>
 

@@ -105,7 +105,7 @@ export default async function ErpDashboardPage() {
       <>
         <div className="erp-page-head">
           <div>
-            <div className="erp-crumbs">JR Brasil ERP <span className="sep">/</span> Dashboard</div>
+            <div className="erp-crumbs">XERP <span className="sep">/</span> Dashboard</div>
             <h1 className="erp-page-title">Visão geral</h1>
             <p className="erp-page-sub">Status operacional, financeiro e comercial em tempo real.</p>
           </div>
@@ -147,7 +147,7 @@ export default async function ErpDashboardPage() {
     <>
       <div className="erp-page-head">
         <div>
-          <div className="erp-crumbs">JR Brasil ERP <span className="sep">/</span> Dashboard</div>
+          <div className="erp-crumbs">XERP <span className="sep">/</span> Dashboard</div>
           <h1 className="erp-page-title">Visão geral · {tituloData}</h1>
           <p className="erp-page-sub">Status operacional, financeiro e comercial em tempo real.</p>
         </div>

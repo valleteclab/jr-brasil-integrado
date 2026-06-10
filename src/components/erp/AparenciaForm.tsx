@@ -105,7 +105,7 @@ export function AparenciaForm({ initial, nomeSugerido }: { initial: Branding; no
             <input
               value={slug}
               onChange={(e) => setSlug(slugify(e.target.value))}
-              placeholder="ex: jr-brasil"
+              placeholder="ex: minha-loja"
               style={{ flex: 1, minWidth: 160 }}
             />
             {nomeSugerido && (

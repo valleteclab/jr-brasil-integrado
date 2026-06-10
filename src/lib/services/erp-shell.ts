@@ -37,7 +37,7 @@ function iniciais(nome: string) {
 }
 
 const SHELL_FALLBACK: ErpShellContext = {
-  empresaNome: "JR Brasil - ERP",
+  empresaNome: "XERP",
   usuarioNome: "Operador",
   usuarioIniciais: "OP",
   usuarioPerfil: "Sem vínculo",

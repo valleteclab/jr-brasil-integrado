@@ -127,7 +127,7 @@ export async function consultarGtinCosmos(scope: TenantScope, gtinInput: string)
         "X-Cosmos-Token": token,
         "Content-Type": "application/json",
         // O Cosmos exige um User-Agent; requisições sem ele são bloqueadas (403).
-        "User-Agent": "JR-Brasil-ERP/1.0"
+        "User-Agent": "XERP/1.0"
       }
     });
   } catch {
@@ -200,7 +200,7 @@ export async function buscarProdutosCosmos(scope: TenantScope, query: string, li
       headers: {
         "X-Cosmos-Token": token,
         "Content-Type": "application/json",
-        "User-Agent": "JR-Brasil-ERP/1.0"
+        "User-Agent": "XERP/1.0"
       }
     });
   } catch {

@@ -10,7 +10,7 @@ import { getTool, getToolsForRole, toMcpTools } from "@/domains/agent/tools/regi
  */
 
 const PROTOCOL_VERSION = "2024-11-05";
-const SERVER_INFO = { name: "jr-brasil-erp", version: "1.0.0" };
+const SERVER_INFO = { name: "xerp", version: "1.0.0" };
 
 export type JsonRpcRequest = {
   jsonrpc: "2.0";

@@ -213,7 +213,7 @@ export async function listStorefrontProducts(scopeArg?: TenantScope, filtro?: St
         id: product.id,
         sku: product.sku,
         name: product.nome,
-        brand: product.marca?.nome ?? "JR Brasil",
+        brand: product.marca?.nome ?? "Sem marca",
         category: product.categoria.nome,
         price: formatBrl(Number(product.precoVenda)),
         priceValue: Number(product.precoVenda),

@@ -50,12 +50,12 @@ export function ClienteEditForm({ clienteId, nome: nomeInicial, slug: slugInicia
     <div className="erp-form" style={{ gridTemplateColumns: "1fr 1fr" }}>
       <label>
         Nome do cliente
-        <input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex.: JR Brasil Peças" />
+        <input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex.: Loja do João" />
       </label>
       <label>
         Identificador (slug)
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          <input value={slug} onChange={(e) => setSlug(slugify(e.target.value))} placeholder="jr-brasil-pecas" style={{ flex: 1, minWidth: 0 }} />
+          <input value={slug} onChange={(e) => setSlug(slugify(e.target.value))} placeholder="loja-do-joao" style={{ flex: 1, minWidth: 0 }} />
           <button type="button" className="btn-erp ghost sm" style={{ whiteSpace: "nowrap" }} onClick={() => setSlug(slugify(nome))}>Gerar do nome</button>
         </div>
         <small className="field-hint">Único entre os clientes. Use letras, números e hífen.</small>
