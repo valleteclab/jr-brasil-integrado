@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
 import { requireModulo, SessionError, ForbiddenError } from "@/lib/auth/session";
-import { importarSpedXmls, listSpedXmlDocumentos, SpedError } from "@/domains/fiscal/application/sped-use-cases";
+import {
+  excluirSpedXmlsDaCompetencia,
+  importarSpedXmls,
+  listSpedXmlDocumentos,
+  SpedError
+} from "@/domains/fiscal/application/sped-use-cases";
 
 function statusDoErro(error: unknown): number {
   if (error instanceof SessionError) return 401;
@@ -19,6 +24,22 @@ export async function GET() {
     return NextResponse.json({ documentos });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro ao listar XMLs do SPED.";
+    return NextResponse.json({ error: message }, { status: statusDoErro(error) });
+  }
+}
+
+// Remove TODOS os XMLs de uma competência (?ano=2026&mes=5) — para recomeçar o mês.
+export async function DELETE(request: Request) {
+  try {
+    const session = await requireModulo("sped-fiscal");
+    const scope = await getDevelopmentTenantScope();
+    const url = new URL(request.url);
+    const ano = Number(url.searchParams.get("ano"));
+    const mes = Number(url.searchParams.get("mes"));
+    const r = await excluirSpedXmlsDaCompetencia(scope, ano, mes, session.usuarioId);
+    return NextResponse.json(r);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Erro ao limpar os XMLs da competência.";
     return NextResponse.json({ error: message }, { status: statusDoErro(error) });
   }
 }

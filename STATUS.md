@@ -405,3 +405,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Comparado nosso arquivo (competencia 05/2026, Valleteclab) com docs/sped_fiscal_15130181000148_20260609054619.txt (gerado por sistema de mercado): DEBITOS IDENTICOS ao centavo (30.833,29); estrutura equivalente (0000 leiaute 020, blocos, E110/E116). Diferenca de creditos (20.840,13 vs 15.112,30) e 100% de CLASSIFICACAO de finalidade: o contador tratou compras de material de construcao/insumos como uso-consumo/servico (CFOP 1128/CST 090, sem credito) e nossa heuristica assumiu revenda — resolvido pelo seletor de finalidade por nota.
 - Ajuste no gerador a partir da comparacao: C170/C190 de entrada agora preservam o DIGITO DE ORIGEM e o CST original do XML (ex.: 400, 220, 090) como o sistema de referencia, em vez de forcar origem 0; valores zerados continuam decidindo o credito.
 - Diferencas opcionais do sistema de referencia (nao geradas por nos, validas): 0400/0450/0500, C110, K010/K100/K200 e H005 mensal. Avisos ja orientam o caso do bloco K.
+
+## Atualizacao operacional - 2026-06-10 - SPED: limpeza de XMLs por competencia
+
+- UX do card "XMLs avulsos": filtro por competencia + botao "Remover todos da competencia" (DELETE /api/erp/sped-fiscal/xml?ano=&mes=, auditado como sped.limpar_xmls_competencia). Texto do card agora explica o vinculo XML->competencia (excluir o arquivo SPED nao apaga os XMLs; regerar a competencia substitui o arquivo).

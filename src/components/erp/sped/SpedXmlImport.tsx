@@ -21,6 +21,10 @@ export function SpedXmlImport({ documentos }: Props) {
   const [erro, setErro] = useState("");
   const [resultados, setResultados] = useState<ImportarXmlResultado[]>([]);
   const [aberto, setAberto] = useState(false);
+  const [competenciaFiltro, setCompetenciaFiltro] = useState<string>("");
+
+  const competencias = Array.from(new Set(documentos.map((d) => d.competencia)));
+  const visiveis = competenciaFiltro ? documentos.filter((d) => d.competencia === competenciaFiltro) : documentos;
 
   async function enviar(files: FileList | null) {
     if (!files || files.length === 0) return;
@@ -67,6 +71,30 @@ export function SpedXmlImport({ documentos }: Props) {
     }
   }
 
+  // Remove TODOS os XMLs de uma competência — para recomeçar o mês com outro lote.
+  async function limparCompetencia(competencia: string) {
+    const [mes, ano] = competencia.split("/").map(Number);
+    const qtd = documentos.filter((d) => d.competencia === competencia).length;
+    const ok = window.confirm(
+      `Remover TODOS os ${qtd} XMLs da competência ${competencia}?\n\n` +
+        "Depois importe o novo lote e regere o SPED da competência (o arquivo antigo é substituído)."
+    );
+    if (!ok) return;
+    setBusy(true);
+    setErro("");
+    try {
+      const res = await fetch(`/api/erp/sped-fiscal/xml?ano=${ano}&mes=${mes}`, { method: "DELETE" });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(data.error || "Não foi possível limpar a competência.");
+      setCompetenciaFiltro("");
+      router.refresh();
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Não foi possível limpar a competência.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function excluir(doc: SpedXmlSummary) {
     if (!window.confirm(`Remover o XML da nota ${doc.numero ?? doc.chaveAcesso}? Ele deixa de entrar nas próximas gerações.`)) return;
     setBusy(true);
@@ -90,7 +118,9 @@ export function SpedXmlImport({ documentos }: Props) {
           <h3 style={{ margin: 0 }}>XMLs avulsos ({documentos.length})</h3>
           <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--jr-mute)" }}>
             Notas emitidas fora do ERP ou recebidas sem o fluxo de entradas (aceita também eventos de
-            cancelamento). Elas entram na geração do SPED da competência correspondente.
+            cancelamento). Cada XML fica guardado na competência da nota e entra SEMPRE que o SPED
+            daquela competência for gerado — excluir o arquivo SPED não apaga os XMLs. Para recomeçar
+            um mês com outro lote, use “Remover todos da competência”.
           </p>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
@@ -122,6 +152,33 @@ export function SpedXmlImport({ documentos }: Props) {
       )}
 
       {aberto && documentos.length > 0 && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+          <label className="field" style={{ minWidth: 160, margin: 0 }}>
+            <span>Competência</span>
+            <select value={competenciaFiltro} onChange={(e) => setCompetenciaFiltro(e.target.value)} disabled={busy}>
+              <option value="">Todas ({documentos.length})</option>
+              {competencias.map((c) => (
+                <option key={c} value={c}>
+                  {c} ({documentos.filter((d) => d.competencia === c).length})
+                </option>
+              ))}
+            </select>
+          </label>
+          {competenciaFiltro && (
+            <button
+              type="button"
+              className="button danger sm"
+              onClick={() => limparCompetencia(competenciaFiltro)}
+              disabled={busy}
+              style={{ alignSelf: "flex-end" }}
+            >
+              Remover todos da competência {competenciaFiltro}
+            </button>
+          )}
+        </div>
+      )}
+
+      {aberto && documentos.length > 0 && (
         <div className="erp-table-wrap" style={{ marginTop: 12, maxHeight: 320, overflow: "auto" }}>
           <table className="erp-table">
             <thead>
@@ -137,7 +194,7 @@ export function SpedXmlImport({ documentos }: Props) {
               </tr>
             </thead>
             <tbody>
-              {documentos.map((d) => (
+              {visiveis.map((d) => (
                 <tr key={d.id}>
                   <td>{d.competencia}</td>
                   <td>{d.tipo === "SAIDA" ? "Saída" : "Entrada"}</td>

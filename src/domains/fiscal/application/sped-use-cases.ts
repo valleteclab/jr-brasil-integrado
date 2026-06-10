@@ -574,6 +574,39 @@ export async function listSpedXmlDocumentos(scope: TenantScope): Promise<SpedXml
   });
 }
 
+/**
+ * Remove TODOS os XMLs avulsos de uma competência (recomeçar o mês com outro lote).
+ * Não apaga o arquivo SPED já gerado — regere a competência para refletir a limpeza.
+ */
+export async function excluirSpedXmlsDaCompetencia(
+  scope: TenantScope,
+  ano: number,
+  mes: number,
+  usuarioId?: string
+): Promise<{ removidos: number }> {
+  await assertSpedHabilitado(scope);
+  if (!Number.isInteger(ano) || !Number.isInteger(mes) || mes < 1 || mes > 12) {
+    throw new SpedError("Competência inválida.");
+  }
+  const removidos = await prisma.$transaction(async (tx) => {
+    const r = await tx.spedXmlDocumento.deleteMany({
+      where: { tenantId: scope.tenantId, empresaId: scope.empresaId, competenciaAno: ano, competenciaMes: mes }
+    });
+    if (r.count > 0) {
+      await createAuditLog(tx, {
+        scope,
+        usuarioId,
+        entidade: "SpedXmlDocumento",
+        entidadeId: scope.empresaId,
+        acao: "sped.limpar_xmls_competencia",
+        payload: { ano, mes, removidos: r.count }
+      });
+    }
+    return r.count;
+  });
+  return { removidos };
+}
+
 export async function excluirSpedXmlDocumento(scope: TenantScope, id: string, usuarioId?: string) {
   await assertSpedHabilitado(scope);
   const doc = await prisma.spedXmlDocumento.findFirst({
