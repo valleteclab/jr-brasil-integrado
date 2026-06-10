@@ -416,3 +416,10 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Fonte de dados: a MESMA carga do SPED (carregarSpedInput — entradas do ERP + XMLs avulsos, creditos pela precedencia manual -> De/Para -> heuristica), garantindo que o relatorio bate com o arquivo EFD. Coluna "Origem" indica ERP ou XML. CST 40/41/30 classificados em Isentas/Nao Tributadas (mais correto que o relatorio da contabilidade de referencia, que usa Outras).
 - SpedParticipante ganhou campo uf (alimenta o relatorio; nao altera o 0150). Servico em src/lib/services/livro-entradas.ts + rota CSV /api/erp/relatorios/livro-entradas/csv.
 - Validacao: tsc (0); conferido contra docs/Entradas.pdf (estrutura/colunas) e contra os dados atuais do banco de teste.
+
+## Atualizacao operacional - 2026-06-10 - ICMS Antecipacao Parcial (BA) no SPED e relatorios
+
+- Calculo automatico da antecipacao parcial: (aliquota interna da UF da empresa - aliquota interestadual) x valor das ENTRADAS INTERESTADUAIS para REVENDA sem ST (aliquotas do baseline nacional; usa a destacada no XML quando houver). Confirmado contra o PDF da contabilidade: 14.250,00 x 8,5% = 1.211,25.
+- Escrituracao na EFD (orientacao SEFAZ-BA): E111 credito (BA020002, conta-corrente fiscal) + E111 debito especial (BA050004) + E116 com COD_OR 005 e receita 2175 (DAE, venc. dia 25 do mes seguinte); E110 recebe VL_AJ_CREDITOS e DEB_ESP. Codigos padrao embutidos para BA; demais UFs configuram em SPED -> Configuracoes (novos campos em SpedConfiguracao; migration sped_antecipacao_parcial). Sem codigos configurados, o valor fica so informativo com aviso.
+- Visual: card "ICMS Antecipacao Parcial" na apuracao do SPED (por nota, escriturada/da-guia) e coluna "ICMS Antecipacao" no Livro de Entradas (tela + CSV), como o relatorio da contabilidade (coluna ICMSA).
+- Validacao: tsc (0); fixture sintetica gera E111x2 + E116 (entrada 2102 de 1.000 -> antecip 85,00; saldo credor 48+85=133) e estrutura do arquivo segue OK; dados reais atuais sem compras interestaduais -> antecipacao 0 (esperado).

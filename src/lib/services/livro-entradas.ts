@@ -33,6 +33,9 @@ export type LivroEntradaLinha = {
   imposto: number;
   isentas: number;
   outras: number;
+  /** ICMS Antecipação Parcial da linha (compras interestaduais p/ revenda — ex.: BA). */
+  antecipacaoBase: number;
+  antecipacao: number;
   /** "XML" quando o documento veio de XML avulso (fora do fluxo de entradas do ERP). */
   origem: "ERP" | "XML";
 };
@@ -40,7 +43,7 @@ export type LivroEntradaLinha = {
 export type LivroEntradasGrupo = {
   cfop: string;
   linhas: LivroEntradaLinha[];
-  totais: { valorContabil: number; baseCalculo: number; imposto: number; isentas: number; outras: number };
+  totais: { valorContabil: number; baseCalculo: number; imposto: number; isentas: number; outras: number; antecipacao: number };
 };
 
 export type LivroEntradasReport = {
@@ -55,11 +58,13 @@ export type LivroEntradasReport = {
     imposto: number;
     isentas: number;
     outras: number;
+    antecipacao: number;
     valorContabilFmt: string;
     baseCalculoFmt: string;
     impostoFmt: string;
     isentasFmt: string;
     outrasFmt: string;
+    antecipacaoFmt: string;
   };
   avisos: string[];
 };
@@ -95,14 +100,18 @@ export async function livroEntradasReport(
     // Quebra os itens do documento por CFOP de entrada (uma linha do livro por nota×CFOP).
     const porCfop = new Map<
       string,
-      { contabil: number; base: number; imposto: number; isentas: number; aliquotas: Map<number, number> }
+      { contabil: number; base: number; imposto: number; isentas: number; antecipBase: number; antecip: number; aliquotas: Map<number, number> }
     >();
     for (const item of doc.itens) {
-      const acc = porCfop.get(item.cfop) ?? { contabil: 0, base: 0, imposto: 0, isentas: 0, aliquotas: new Map() };
+      const acc = porCfop.get(item.cfop) ?? { contabil: 0, base: 0, imposto: 0, isentas: 0, antecipBase: 0, antecip: 0, aliquotas: new Map() };
       const liquido = round2(item.valorItem - item.valorDesconto);
       acc.contabil = round2(acc.contabil + liquido + item.valorIcmsSt + item.valorIpi);
       acc.base = round2(acc.base + item.baseIcms);
       acc.imposto = round2(acc.imposto + item.valorIcms);
+      if (item.antecipacaoParcial > 0) {
+        acc.antecipBase = round2(acc.antecipBase + liquido);
+        acc.antecip = round2(acc.antecip + item.antecipacaoParcial);
+      }
       if (item.valorIcms > 0 && item.aliquotaIcms > 0) {
         acc.aliquotas.set(item.aliquotaIcms, round2((acc.aliquotas.get(item.aliquotaIcms) ?? 0) + item.valorIcms));
       }
@@ -141,12 +150,14 @@ export async function livroEntradasReport(
         imposto: acc.imposto,
         isentas: acc.isentas,
         outras,
+        antecipacaoBase: acc.antecipBase,
+        antecipacao: acc.antecip,
         origem: doc.rotulo.includes("XML avulso") ? "XML" : "ERP"
       };
       const grupo = grupos.get(cfop) ?? {
         cfop,
         linhas: [],
-        totais: { valorContabil: 0, baseCalculo: 0, imposto: 0, isentas: 0, outras: 0 }
+        totais: { valorContabil: 0, baseCalculo: 0, imposto: 0, isentas: 0, outras: 0, antecipacao: 0 }
       };
       grupo.linhas.push(linha);
       grupo.totais.valorContabil = round2(grupo.totais.valorContabil + linha.valorContabil);
@@ -154,6 +165,7 @@ export async function livroEntradasReport(
       grupo.totais.imposto = round2(grupo.totais.imposto + linha.imposto);
       grupo.totais.isentas = round2(grupo.totais.isentas + linha.isentas);
       grupo.totais.outras = round2(grupo.totais.outras + linha.outras);
+      grupo.totais.antecipacao = round2(grupo.totais.antecipacao + linha.antecipacao);
       grupos.set(cfop, grupo);
     }
   }
@@ -168,9 +180,10 @@ export async function livroEntradasReport(
       baseCalculo: round2(acc.baseCalculo + g.totais.baseCalculo),
       imposto: round2(acc.imposto + g.totais.imposto),
       isentas: round2(acc.isentas + g.totais.isentas),
-      outras: round2(acc.outras + g.totais.outras)
+      outras: round2(acc.outras + g.totais.outras),
+      antecipacao: round2(acc.antecipacao + g.totais.antecipacao)
     }),
-    { valorContabil: 0, baseCalculo: 0, imposto: 0, isentas: 0, outras: 0 }
+    { valorContabil: 0, baseCalculo: 0, imposto: 0, isentas: 0, outras: 0, antecipacao: 0 }
   );
 
   return {
@@ -185,7 +198,8 @@ export async function livroEntradasReport(
       baseCalculoFmt: formatBrl(totais.baseCalculo),
       impostoFmt: formatBrl(totais.imposto),
       isentasFmt: formatBrl(totais.isentas),
-      outrasFmt: formatBrl(totais.outras)
+      outrasFmt: formatBrl(totais.outras),
+      antecipacaoFmt: formatBrl(totais.antecipacao)
     },
     avisos: input.avisos.filter((a) => a.toLowerCase().includes("entrada") || a.includes("XML"))
   };
@@ -197,7 +211,7 @@ const num = (v: number) => v.toFixed(2).replace(".", ",");
 export function livroEntradasCsv(report: LivroEntradasReport): string {
   const linhas: string[] = [];
   linhas.push(`Acompanhamento de Entradas;Competência ${report.competencia}`);
-  linhas.push("Data;Nota;Série;Fornecedor;UF;CFOP;Origem;Valor Contábil;Base de Cálculo;Alíquota;Imposto Creditado;Isentas/Não Trib.;Outras");
+  linhas.push("Data;Nota;Série;Fornecedor;UF;CFOP;Origem;Valor Contábil;Base de Cálculo;Alíquota;Imposto Creditado;Isentas/Não Trib.;Outras;ICMS Antecipação");
   for (const grupo of report.grupos) {
     for (const l of grupo.linhas) {
       linhas.push(
@@ -214,16 +228,17 @@ export function livroEntradasCsv(report: LivroEntradasReport): string {
           l.aliquota != null ? num(l.aliquota) : "",
           num(l.imposto),
           num(l.isentas),
-          num(l.outras)
+          num(l.outras),
+          l.antecipacao > 0 ? num(l.antecipacao) : ""
         ].join(";")
       );
     }
     linhas.push(
-      `;;;;;Total CFOP ${grupo.cfop};;${num(grupo.totais.valorContabil)};${num(grupo.totais.baseCalculo)};;${num(grupo.totais.imposto)};${num(grupo.totais.isentas)};${num(grupo.totais.outras)}`
+      `;;;;;Total CFOP ${grupo.cfop};;${num(grupo.totais.valorContabil)};${num(grupo.totais.baseCalculo)};;${num(grupo.totais.imposto)};${num(grupo.totais.isentas)};${num(grupo.totais.outras)};${num(grupo.totais.antecipacao)}`
     );
   }
   linhas.push(
-    `;;;;;Total Geral;;${num(report.totais.valorContabil)};${num(report.totais.baseCalculo)};;${num(report.totais.imposto)};${num(report.totais.isentas)};${num(report.totais.outras)}`
+    `;;;;;Total Geral;;${num(report.totais.valorContabil)};${num(report.totais.baseCalculo)};;${num(report.totais.imposto)};${num(report.totais.isentas)};${num(report.totais.outras)};${num(report.totais.antecipacao)}`
   );
   return linhas.join("\r\n");
 }

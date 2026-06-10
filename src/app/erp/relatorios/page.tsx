@@ -99,11 +99,13 @@ const EMPTY_LIVRO_ENTRADAS: LivroEntradasReport = {
     imposto: 0,
     isentas: 0,
     outras: 0,
+    antecipacao: 0,
     valorContabilFmt: "R$ 0,00",
     baseCalculoFmt: "R$ 0,00",
     impostoFmt: "R$ 0,00",
     isentasFmt: "R$ 0,00",
-    outrasFmt: "R$ 0,00"
+    outrasFmt: "R$ 0,00",
+    antecipacaoFmt: "R$ 0,00"
   },
   avisos: []
 };

@@ -731,7 +731,11 @@ function AbaLivroEntradas({ data, params }: { data: LivroEntradasReport; params:
         <KpiCard label="Valor contábil" value={data.totais.valorContabilFmt} tone="info" />
         <KpiCard label="Base de cálculo" value={data.totais.baseCalculoFmt} tone="default" />
         <KpiCard label="ICMS creditado" value={data.totais.impostoFmt} tone="success" />
-        <KpiCard label="Isentas + Outras" value={`${data.totais.isentasFmt} + ${data.totais.outrasFmt}`} tone="default" />
+        <KpiCard
+          label="ICMS Antecipação Parcial"
+          value={data.totais.antecipacaoFmt}
+          tone={data.totais.antecipacao > 0 ? "warn" : "default"}
+        />
       </div>
 
       {data.grupos.length === 0 && (
@@ -756,6 +760,7 @@ function AbaLivroEntradas({ data, params }: { data: LivroEntradasReport; params:
                   <th className="num">Imposto</th>
                   <th className="num">Isentas</th>
                   <th className="num">Outras</th>
+                  <th className="num">Antecip.</th>
                 </tr>
               </thead>
               <tbody>
@@ -772,6 +777,7 @@ function AbaLivroEntradas({ data, params }: { data: LivroEntradasReport; params:
                     <td className="num">{numBr(l.imposto)}</td>
                     <td className="num">{numBr(l.isentas)}</td>
                     <td className="num">{numBr(l.outras)}</td>
+                    <td className="num">{l.antecipacao > 0 ? numBr(l.antecipacao) : "—"}</td>
                   </tr>
                 ))}
                 <tr>
@@ -782,6 +788,7 @@ function AbaLivroEntradas({ data, params }: { data: LivroEntradasReport; params:
                   <td className="num"><strong>{numBr(grupo.totais.imposto)}</strong></td>
                   <td className="num"><strong>{numBr(grupo.totais.isentas)}</strong></td>
                   <td className="num"><strong>{numBr(grupo.totais.outras)}</strong></td>
+                  <td className="num"><strong>{grupo.totais.antecipacao > 0 ? numBr(grupo.totais.antecipacao) : "—"}</strong></td>
                 </tr>
               </tbody>
             </table>
@@ -801,6 +808,7 @@ function AbaLivroEntradas({ data, params }: { data: LivroEntradasReport; params:
                   <th className="num">Imposto creditado</th>
                   <th className="num">Isentas</th>
                   <th className="num">Outras</th>
+                  <th className="num">ICMS Antecipação</th>
                 </tr>
               </thead>
               <tbody>
@@ -810,6 +818,7 @@ function AbaLivroEntradas({ data, params }: { data: LivroEntradasReport; params:
                   <td className="num"><strong>{numBr(data.totais.imposto)}</strong></td>
                   <td className="num"><strong>{numBr(data.totais.isentas)}</strong></td>
                   <td className="num"><strong>{numBr(data.totais.outras)}</strong></td>
+                  <td className="num"><strong>{numBr(data.totais.antecipacao)}</strong></td>
                 </tr>
               </tbody>
             </table>

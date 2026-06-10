@@ -188,6 +188,41 @@ export default async function SpedDetalhePage({ params }: { params: { id: string
         )}
       </div>
 
+      {r && r.antecipacaoParcial && r.antecipacaoParcial.total > 0 && (
+        <div className="card" style={{ padding: 16, marginBottom: 16 }}>
+          <h3 style={{ marginTop: 0 }}>
+            ICMS Antecipação Parcial — {formatBrl(r.antecipacaoParcial.total)}{" "}
+            <StatusBadge tone={r.antecipacaoParcial.escriturada ? "success" : "warn"}>
+              {r.antecipacaoParcial.escriturada ? "Escriturada (E111 + E116)" : "Apenas calculada"}
+            </StatusBadge>
+          </h3>
+          <p style={{ margin: "0 0 10px", fontSize: 12, color: "var(--jr-mute)" }}>
+            Compras interestaduais para revenda: (alíquota interna − interestadual) sobre a aquisição.
+            A guia é recolhida à parte (débito especial / E116) e o valor pago é creditado na apuração.
+          </p>
+          <table className="erp-table">
+            <thead>
+              <tr><th>Nota</th><th>Fornecedor</th><th style={{ textAlign: "right" }}>Base</th><th style={{ textAlign: "right" }}>Antecipação</th></tr>
+            </thead>
+            <tbody>
+              {r.antecipacaoParcial.linhas.map((l, i) => (
+                <tr key={`${l.numero}-${i}`}>
+                  <td style={{ fontFamily: "var(--font-mono, monospace)" }}>{l.numero}</td>
+                  <td>{l.fornecedor}</td>
+                  <td style={{ textAlign: "right" }}>{formatBrl(l.base)}</td>
+                  <td style={{ textAlign: "right" }}>{formatBrl(l.valor)}</td>
+                </tr>
+              ))}
+              <tr>
+                <td colSpan={2}><strong>Total</strong></td>
+                <td />
+                <td style={{ textAlign: "right" }}><strong>{formatBrl(r.antecipacaoParcial.total)}</strong></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+
       {r && r.apuracaoIcmsSt.porUf.length > 0 && (
         <div className="card" style={{ padding: 16, marginBottom: 16 }}>
           <h3 style={{ marginTop: 0 }}>ICMS-ST por UF (registros E200/E210)</h3>

@@ -54,6 +54,12 @@ export type SpedConfig = {
   diaVencimentoIcms: number;
   saldoCredorAnterior: number;
   saldoCredorAnteriorIpi: number;
+  /** ICMS Antecipação Parcial (compras interestaduais p/ revenda — ex.: BA). */
+  antecipacaoParcialAtiva: boolean;
+  codAjusteDebitoAntecipacao: string | null; // BA: BA050004 (débito especial)
+  codAjusteCreditoAntecipacao: string | null; // BA: BA020002 (crédito conta-corrente)
+  codigoReceitaAntecipacao: string | null; // BA: 2175 (DAE)
+  diaVencimentoAntecipacao: number;
 };
 
 /** Participante (registro 0150): cliente das saídas ou fornecedor das entradas. */
@@ -114,6 +120,8 @@ export type SpedDocumentoItem = {
   baseCofins: number;
   aliquotaCofins: number;
   valorCofins: number;
+  /** ICMS Antecipação Parcial do item (entrada interestadual p/ revenda, sem ST). */
+  antecipacaoParcial: number;
 };
 
 /** Documento fiscal (C100): saída emitida pela empresa ou entrada de terceiro. */
@@ -216,6 +224,16 @@ export type SpedResumo = {
   };
   apuracaoIcms: SpedApuracaoIcms;
   apuracaoIcmsSt: { total: number; porUf: Array<{ uf: string; valor: number }> };
+  /**
+   * ICMS Antecipação Parcial: guia recolhida à parte (débito especial + E116) e, no regime
+   * de conta-corrente, creditada na apuração (E111). escriturada indica se os E111/E116
+   * foram emitidos (códigos de ajuste resolvidos) ou se ficou apenas informativa.
+   */
+  antecipacaoParcial: {
+    total: number;
+    escriturada: boolean;
+    linhas: Array<{ numero: string; fornecedor: string; base: number; valor: number }>;
+  };
   apuracaoIpi: SpedApuracaoIpi | null;
   /** PIS/COFINS dos documentos — informativo (a apuração formal é na EFD Contribuições). */
   pisCofins: { debitosPis: number; creditosPis: number; debitosCofins: number; creditosCofins: number };

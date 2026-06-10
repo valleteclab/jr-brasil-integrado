@@ -18,6 +18,7 @@ import {
   type FinalidadeEntrada
 } from "@/domains/fiscal/finalidade-entrada";
 import { loadFinalidadeRules, pickFinalidadeRule } from "@/domains/fiscal/application/finalidade-regra-use-cases";
+import { aliquotaInternaIcmsSafe, aliquotaIcmsVendaSafe } from "@/domains/fiscal/national-tax-baseline";
 import { parseXmlSped, type XmlDocumentoSped, type XmlItem, type XmlParticipante } from "./xml-avulso";
 import type {
   SpedConfig,
@@ -87,6 +88,39 @@ function tipoItem0200(finalidade: string | null | undefined, tipoProduto?: strin
 }
 
 const xmlParser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "@_", parseTagValue: false, trimValues: true });
+
+function round2(v: number): number {
+  return Math.round((v + Number.EPSILON) * 100) / 100;
+}
+
+/**
+ * ICMS Antecipação Parcial (ex.: BA, Lei 7.014/96): nas COMPRAS INTERESTADUAIS de mercadoria
+ * PARA REVENDA sem ST, antecipa-se (alíquota interna da UF da empresa − alíquota interestadual)
+ * sobre o valor da aquisição. Usa a alíquota destacada no documento quando houver; sem destaque
+ * (ex.: fornecedor do Simples), cai na interestadual padrão por origem/destino (7%/12%).
+ */
+function calcularAntecipacaoParcial(args: {
+  ativa: boolean;
+  finalidade: FinalidadeEntrada;
+  cfopEntrada: string;
+  st: boolean;
+  base: number;
+  aliquotaDestacada: number;
+  ufFornecedor: string | null | undefined;
+  ufEmpresa: string | null | undefined;
+}): number {
+  if (!args.ativa || args.st || args.base <= 0) return 0;
+  if (args.finalidade !== "REVENDA") return 0;
+  if (!args.cfopEntrada.startsWith("2")) return 0; // só interestadual
+  const interna = aliquotaInternaIcmsSafe(args.ufEmpresa);
+  if (interna <= 0) return 0;
+  const interestadual =
+    args.aliquotaDestacada > 0
+      ? args.aliquotaDestacada
+      : aliquotaIcmsVendaSafe(args.ufFornecedor, args.ufEmpresa) || 12;
+  const diferenca = interna - interestadual;
+  return diferenca > 0 ? round2((args.base * diferenca) / 100) : 0;
+}
 
 type EmitenteXml = {
   inscricaoEstadual: string | null;
@@ -274,7 +308,8 @@ export async function carregarSpedInput(scope: TenantScope, params: CarregarSped
         cstCofins: item.cstCofins,
         baseCofins: valorCofins > 0 ? valorLiquido : 0,
         aliquotaCofins: num(item.aliquotaCofins),
-        valorCofins
+        valorCofins,
+        antecipacaoParcial: 0
       };
     });
 
@@ -373,6 +408,17 @@ export async function carregarSpedInput(scope: TenantScope, params: CarregarSped
       const icmsRecuperavel = Boolean(icms?.recuperavel);
       const veioComSt = icms?.cst === "60" || icms?.csosn === "500";
       const cstEntrada = icmsRecuperavel ? icms?.cst ?? "00" : veioComSt ? "60" : "90";
+      const cfopEntradaItem = (item.cfopEntradaDerivado ?? "").replace(/\D/g, "") || espelharCfopEntrada(item.cfop);
+      const antecipacaoParcial = calcularAntecipacaoParcial({
+        ativa: Boolean(spedConfig?.antecipacaoParcialAtiva),
+        finalidade: item.finalidade ?? "REVENDA",
+        cfopEntrada: cfopEntradaItem,
+        st: veioComSt,
+        base: round2(num(item.valorTotal) - num(item.valorDesconto)),
+        aliquotaDestacada: num(icms?.aliquota),
+        ufFornecedor: entrada.fornecedor?.uf ?? null,
+        ufEmpresa: empresa.enderecoUf
+      });
 
       const codigoItem = item.produto?.sku ?? `FORN-${item.codigoFornecedor}`.slice(0, 60);
       const ncm = item.produto?.ncm ?? item.ncm;
@@ -401,7 +447,7 @@ export async function carregarSpedInput(scope: TenantScope, params: CarregarSped
         valorItem: num(item.valorTotal),
         valorDesconto: num(item.valorDesconto),
         movimentaEstoque: item.movimentaEstoque,
-        cfop: (item.cfopEntradaDerivado ?? "").replace(/\D/g, "") || espelharCfopEntrada(item.cfop),
+        cfop: cfopEntradaItem,
         cstIcms: cstIcms3(null, cstEntrada, null),
         baseIcms: icmsRecuperavel ? num(icms?.baseCalculo) : 0,
         aliquotaIcms: icmsRecuperavel ? num(icms?.aliquota) : 0,
@@ -421,7 +467,8 @@ export async function carregarSpedInput(scope: TenantScope, params: CarregarSped
         cstCofins: cofins?.recuperavel ? cofins?.cst ?? null : null,
         baseCofins: cofins?.recuperavel ? num(cofins?.baseCalculo) : 0,
         aliquotaCofins: cofins?.recuperavel ? num(cofins?.aliquota) : 0,
-        valorCofins: cofins?.recuperavel ? num(cofins?.valor) : 0
+        valorCofins: cofins?.recuperavel ? num(cofins?.valor) : 0,
+        antecipacaoParcial
       };
     });
 
@@ -586,7 +633,8 @@ export async function carregarSpedInput(scope: TenantScope, params: CarregarSped
             cstCofins: item.cstCofins,
             baseCofins: item.baseCofins,
             aliquotaCofins: item.aliquotaCofins,
-            valorCofins: item.valorCofins
+            valorCofins: item.valorCofins,
+            antecipacaoParcial: 0
           };
         }
 
@@ -614,6 +662,17 @@ export async function carregarSpedInput(scope: TenantScope, params: CarregarSped
         const credIcms = cred("ICMS");
         const credPis = cred("PIS");
         const credCofins = cred("COFINS");
+        const cfopEntradaXml = resolveCfopEntrada(finalidade, { interestadual, st });
+        const antecipacaoParcial = calcularAntecipacaoParcial({
+          ativa: Boolean(spedConfig?.antecipacaoParcialAtiva),
+          finalidade,
+          cfopEntrada: cfopEntradaXml,
+          st,
+          base: round2(item.valorTotal - item.valorDesconto),
+          aliquotaDestacada: item.aliquotaIcms,
+          ufFornecedor: parsed.emitente.uf,
+          ufEmpresa: empresa.enderecoUf
+        });
 
         // CST da entrada: preserva o CST/origem do XML (como fazem os geradores de mercado);
         // o crédito é decidido pelos VALORES (zerados quando não recuperável). Sem CST no XML
@@ -645,7 +704,7 @@ export async function carregarSpedInput(scope: TenantScope, params: CarregarSped
           valorItem: item.valorTotal,
           valorDesconto: item.valorDesconto,
           movimentaEstoque: finalidadeMovimentaEstoque(finalidade),
-          cfop: resolveCfopEntrada(finalidade, { interestadual, st }),
+          cfop: cfopEntradaXml,
           cstIcms: cst3Entrada,
           baseIcms: credIcms ? item.baseIcms : 0,
           aliquotaIcms: credIcms ? item.aliquotaIcms : 0,
@@ -665,7 +724,8 @@ export async function carregarSpedInput(scope: TenantScope, params: CarregarSped
           cstCofins: credCofins ? item.cstCofins : null,
           baseCofins: credCofins ? item.baseCofins : 0,
           aliquotaCofins: credCofins ? item.aliquotaCofins : 0,
-          valorCofins: credCofins ? item.valorCofins : 0
+          valorCofins: credCofins ? item.valorCofins : 0,
+          antecipacaoParcial
         };
       });
 
@@ -767,7 +827,12 @@ export async function carregarSpedInput(scope: TenantScope, params: CarregarSped
     codigoReceitaIcms: spedConfig?.codigoReceitaIcms ?? null,
     diaVencimentoIcms: spedConfig?.diaVencimentoIcms ?? 10,
     saldoCredorAnterior,
-    saldoCredorAnteriorIpi
+    saldoCredorAnteriorIpi,
+    antecipacaoParcialAtiva: Boolean(spedConfig?.antecipacaoParcialAtiva),
+    codAjusteDebitoAntecipacao: spedConfig?.codAjusteDebitoAntecipacao ?? null,
+    codAjusteCreditoAntecipacao: spedConfig?.codAjusteCreditoAntecipacao ?? null,
+    codigoReceitaAntecipacao: spedConfig?.codigoReceitaAntecipacao ?? null,
+    diaVencimentoAntecipacao: spedConfig?.diaVencimentoAntecipacao ?? 25
   };
 
   return {

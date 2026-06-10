@@ -26,7 +26,7 @@ const CAMPOS_ESPERADOS: Record<string, number> = {
   B001: 2, B990: 2,
   C001: 2, C100: 29, C170: 38, C190: 12, C990: 2,
   D001: 2, D990: 2,
-  E001: 2, E100: 3, E110: 15, E116: 10, E200: 4, E210: 15, E500: 4, E510: 6, E520: 8, E990: 2,
+  E001: 2, E100: 3, E110: 15, E111: 4, E116: 10, E200: 4, E210: 15, E500: 4, E510: 6, E520: 8, E990: 2,
   G001: 2, G990: 2,
   H001: 2, H005: 4, H010: 11, H990: 2,
   K001: 2, K990: 2,
@@ -66,6 +66,7 @@ function inputSintetico(): SpedInput {
     baseCofins: 200,
     aliquotaCofins: 7.6,
     valorCofins: 15.2,
+    antecipacaoParcial: 0,
     ...over
   });
   const docBase = {
@@ -120,7 +121,12 @@ function inputSintetico(): SpedInput {
       codigoReceitaIcms: "046-2",
       diaVencimentoIcms: 10,
       saldoCredorAnterior: 0,
-      saldoCredorAnteriorIpi: 0
+      saldoCredorAnteriorIpi: 0,
+      antecipacaoParcialAtiva: true,
+      codAjusteDebitoAntecipacao: "BA050004",
+      codAjusteCreditoAntecipacao: "BA020002",
+      codigoReceitaAntecipacao: "2175",
+      diaVencimentoAntecipacao: 25
     },
     versaoLeiaute: "020",
     participantes: [
@@ -232,13 +238,14 @@ function inputSintetico(): SpedInput {
         itens: [
           item({
             codigoItem: "SKU-001",
-            cfop: "1102",
+            cfop: "2102",
             cstIcms: "000",
             quantidade: 10,
             valorItem: 1000,
             baseIcms: 1000,
             aliquotaIcms: 12,
             valorIcms: 120,
+            antecipacaoParcial: 85, // 1000 × (20,5% interna − 12% interestadual)
             cstPis: null,
             basePis: 0,
             aliquotaPis: 0,

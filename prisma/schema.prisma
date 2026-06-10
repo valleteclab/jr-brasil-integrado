@@ -1827,6 +1827,14 @@ model SpedConfiguracao {
   // E116 (obrigação do ICMS a recolher): código de receita estadual e dia de vencimento.
   codigoReceitaIcms           String?
   diaVencimentoIcms           Int      @default(10)
+  // ICMS Antecipação Parcial (compras interestaduais p/ revenda — ex.: BA, Lei 7.014/96).
+  // Quando ativa, o gerador calcula (alíq. interna − interestadual) × base e escritura:
+  // E111 débito especial + E111 crédito (regime conta-corrente) + E116 da guia.
+  antecipacaoParcialAtiva     Boolean  @default(false)
+  codAjusteDebitoAntecipacao  String?  // BA: BA050004
+  codAjusteCreditoAntecipacao String?  // BA: BA020002
+  codigoReceitaAntecipacao    String?  // BA: 2175 (DAE)
+  diaVencimentoAntecipacao    Int      @default(25)
   criadoEm                    DateTime @default(now())
   atualizadoEm                DateTime @updatedAt
 

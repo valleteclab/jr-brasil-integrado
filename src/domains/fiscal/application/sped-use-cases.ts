@@ -303,6 +303,11 @@ export type SpedConfiguracaoView = {
   contadorCodigoMunicipioIbge: string;
   codigoReceitaIcms: string;
   diaVencimentoIcms: number;
+  antecipacaoParcialAtiva: boolean;
+  codAjusteDebitoAntecipacao: string;
+  codAjusteCreditoAntecipacao: string;
+  codigoReceitaAntecipacao: string;
+  diaVencimentoAntecipacao: number;
 };
 
 export async function getSpedConfiguracao(scope: TenantScope): Promise<SpedConfiguracaoView> {
@@ -326,7 +331,12 @@ export async function getSpedConfiguracao(scope: TenantScope): Promise<SpedConfi
     contadorEmail: c?.contadorEmail ?? "",
     contadorCodigoMunicipioIbge: c?.contadorCodigoMunicipioIbge ?? "",
     codigoReceitaIcms: c?.codigoReceitaIcms ?? "",
-    diaVencimentoIcms: c?.diaVencimentoIcms ?? 10
+    diaVencimentoIcms: c?.diaVencimentoIcms ?? 10,
+    antecipacaoParcialAtiva: c?.antecipacaoParcialAtiva ?? false,
+    codAjusteDebitoAntecipacao: c?.codAjusteDebitoAntecipacao ?? "",
+    codAjusteCreditoAntecipacao: c?.codAjusteCreditoAntecipacao ?? "",
+    codigoReceitaAntecipacao: c?.codigoReceitaAntecipacao ?? "",
+    diaVencimentoAntecipacao: c?.diaVencimentoAntecipacao ?? 25
   };
 }
 
@@ -343,6 +353,10 @@ export async function saveSpedConfiguracao(
   const dia = Number(input.diaVencimentoIcms ?? 10);
   if (!Number.isInteger(dia) || dia < 1 || dia > 28) {
     throw new SpedError("Dia de vencimento do ICMS inválido (1 a 28).");
+  }
+  const diaAntecip = Number(input.diaVencimentoAntecipacao ?? 25);
+  if (!Number.isInteger(diaAntecip) || diaAntecip < 1 || diaAntecip > 28) {
+    throw new SpedError("Dia de vencimento da antecipação parcial inválido (1 a 28).");
   }
   const limpo = (v: string | undefined) => (v ?? "").trim() || null;
 
@@ -362,7 +376,12 @@ export async function saveSpedConfiguracao(
     contadorEmail: limpo(input.contadorEmail),
     contadorCodigoMunicipioIbge: limpo(input.contadorCodigoMunicipioIbge),
     codigoReceitaIcms: limpo(input.codigoReceitaIcms),
-    diaVencimentoIcms: dia
+    diaVencimentoIcms: dia,
+    antecipacaoParcialAtiva: Boolean(input.antecipacaoParcialAtiva),
+    codAjusteDebitoAntecipacao: limpo(input.codAjusteDebitoAntecipacao),
+    codAjusteCreditoAntecipacao: limpo(input.codAjusteCreditoAntecipacao),
+    codigoReceitaAntecipacao: limpo(input.codigoReceitaAntecipacao),
+    diaVencimentoAntecipacao: diaAntecip
   };
 
   await prisma.$transaction(async (tx) => {

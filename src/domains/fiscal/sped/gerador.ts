@@ -366,7 +366,42 @@ export function gerarSpedFiscal(input: SpedInput): SpedArquivoGerado {
   const debitosIcms = somar(analiticoSaidas.values(), "valorIcms");
   const creditosIcms = somar(analiticoEntradas.values(), "valorIcms");
   const saldoCredorAnterior = round2(config.saldoCredorAnterior);
-  const saldoBruto = round2(debitosIcms - creditosIcms - saldoCredorAnterior);
+
+  // ICMS Antecipação Parcial (ex.: BA): guia recolhida à parte (débito especial + E116) e,
+  // no regime de conta-corrente, CREDITADA na apuração via ajuste E111. Os códigos de
+  // ajuste/receita são da tabela da UF — para BA há padrão embutido; demais UFs configuram.
+  const nomePorParticipante = new Map(input.participantes.map((p) => [p.codigo, p.nome]));
+  const antecipacaoLinhas: Array<{ numero: string; fornecedor: string; base: number; valor: number }> = [];
+  for (const doc of entradas) {
+    if (doc.cancelado) continue;
+    const valor = round2(doc.itens.reduce((s, i) => s + i.antecipacaoParcial, 0));
+    if (valor <= 0) continue;
+    const base = round2(
+      doc.itens.filter((i) => i.antecipacaoParcial > 0).reduce((s, i) => s + i.valorItem - i.valorDesconto, 0)
+    );
+    antecipacaoLinhas.push({
+      numero: doc.numero ?? "—",
+      fornecedor: (doc.codigoParticipante && nomePorParticipante.get(doc.codigoParticipante)) || "—",
+      base,
+      valor
+    });
+  }
+  const antecipacaoTotal = round2(antecipacaoLinhas.reduce((s, l) => s + l.valor, 0));
+  const ehBahia = empresa.uf === "BA";
+  const codAjusteDebitoAntecip = config.codAjusteDebitoAntecipacao || (ehBahia ? "BA050004" : null);
+  const codAjusteCreditoAntecip = config.codAjusteCreditoAntecipacao || (ehBahia ? "BA020002" : null);
+  const codReceitaAntecip = config.codigoReceitaAntecipacao || (ehBahia ? "2175" : null);
+  const antecipacaoEscriturada =
+    antecipacaoTotal > 0 && Boolean(codAjusteDebitoAntecip && codAjusteCreditoAntecip);
+  if (antecipacaoTotal > 0 && !antecipacaoEscriturada) {
+    avisos.push(
+      `ICMS antecipação parcial calculada (R$ ${antecipacaoTotal.toFixed(2).replace(".", ",")}) mas NÃO escriturada: configure os códigos de ajuste da sua UF (tabela 5.1) em Configurações do SPED.`
+    );
+  }
+
+  const ajustesCredito = antecipacaoEscriturada ? antecipacaoTotal : 0;
+  const debitosEspeciais = antecipacaoEscriturada ? antecipacaoTotal : 0;
+  const saldoBruto = round2(debitosIcms - creditosIcms - ajustesCredito - saldoCredorAnterior);
   const saldoApurado = Math.max(saldoBruto, 0);
   const icmsARecolher = saldoApurado;
   const saldoCredorTransportar = saldoBruto < 0 ? round2(-saldoBruto) : 0;
@@ -376,7 +411,7 @@ export function gerarSpedFiscal(input: SpedInput): SpedArquivoGerado {
     ajustesDebito: 0,
     estornosCredito: 0,
     creditos: creditosIcms,
-    ajustesCredito: 0,
+    ajustesCredito,
     estornosDebito: 0,
     saldoCredorAnterior,
     saldoApurado,
@@ -392,7 +427,7 @@ export function gerarSpedFiscal(input: SpedInput): SpedArquivoGerado {
     campoNumero(0), // VL_TOT_AJ_DEBITOS
     campoNumero(0), // VL_ESTORNOS_CRED
     campoNumero(creditosIcms),
-    campoNumero(0), // VL_AJ_CREDITOS
+    campoNumero(ajustesCredito), // VL_AJ_CREDITOS (E111 da antecipação parcial)
     campoNumero(0), // VL_TOT_AJ_CREDITOS
     campoNumero(0), // VL_ESTORNOS_DEB
     campoNumero(saldoCredorAnterior),
@@ -400,8 +435,23 @@ export function gerarSpedFiscal(input: SpedInput): SpedArquivoGerado {
     campoNumero(0), // VL_TOT_DED
     campoNumero(icmsARecolher),
     campoNumero(saldoCredorTransportar),
-    campoNumero(0) // DEB_ESP
+    campoNumero(debitosEspeciais) // DEB_ESP (antecipação recolhida em guia própria)
   ]);
+
+  if (antecipacaoEscriturada) {
+    b.add([
+      "E111",
+      campoTexto(codAjusteCreditoAntecip),
+      "Credito do ICMS antecipacao parcial recolhido nas entradas interestaduais",
+      campoNumero(antecipacaoTotal)
+    ]);
+    b.add([
+      "E111",
+      campoTexto(codAjusteDebitoAntecip),
+      "Debito especial - ICMS antecipacao parcial das entradas interestaduais",
+      campoNumero(antecipacaoTotal)
+    ]);
+  }
 
   if (icmsARecolher > 0) {
     // E116 — obrigação do ICMS a recolher. Vencimento: dia configurado do mês seguinte.
@@ -423,6 +473,23 @@ export function gerarSpedFiscal(input: SpedInput): SpedArquivoGerado {
       "", // PROC
       "Apuracao do ICMS proprio do periodo",
       mesRef
+    ]);
+  }
+
+  if (antecipacaoEscriturada) {
+    // E116 da antecipação parcial (guia própria — BA: DAE 2175, vencimento dia 25 do mês seguinte).
+    const vencAntecip = new Date(periodo.ano, periodo.mes, Math.min(Math.max(config.diaVencimentoAntecipacao, 1), 28));
+    b.add([
+      "E116",
+      "005", // COD_OR (ICMS antecipação tributária)
+      campoNumero(antecipacaoTotal),
+      campoData(vencAntecip),
+      campoTexto(codReceitaAntecip),
+      "", // NUM_PROC
+      "", // IND_PROC
+      "", // PROC
+      "ICMS antecipacao parcial das entradas interestaduais do periodo",
+      `${String(periodo.mes).padStart(2, "0")}${periodo.ano}`
     ]);
   }
 
@@ -612,6 +679,11 @@ export function gerarSpedFiscal(input: SpedInput): SpedArquivoGerado {
     apuracaoIcmsSt: {
       total: round2(Array.from(stPorUf.values()).reduce((s, v) => s + v, 0)),
       porUf: Array.from(stPorUf.entries()).map(([uf, valor]) => ({ uf, valor }))
+    },
+    antecipacaoParcial: {
+      total: antecipacaoTotal,
+      escriturada: antecipacaoEscriturada,
+      linhas: antecipacaoLinhas
     },
     apuracaoIpi,
     pisCofins: {

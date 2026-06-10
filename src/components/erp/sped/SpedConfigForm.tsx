@@ -99,6 +99,69 @@ export function SpedConfigForm({ configuracao }: Props) {
       </section>
 
       <section className="card" style={{ padding: 16, display: "grid", gap: 12 }}>
+        <h3 style={{ margin: 0 }}>ICMS Antecipação Parcial (compras interestaduais p/ revenda)</h3>
+        <label className="field" style={{ maxWidth: 360 }}>
+          <span>Calcular e escriturar antecipação parcial</span>
+          <select
+            value={form.antecipacaoParcialAtiva ? "1" : "0"}
+            onChange={(e) => set("antecipacaoParcialAtiva", e.target.value === "1")}
+            disabled={busy}
+          >
+            <option value="0">Desativada</option>
+            <option value="1">Ativada</option>
+          </select>
+        </label>
+        {form.antecipacaoParcialAtiva && (
+          <div style={grid}>
+            <label className="field">
+              <span>Cód. ajuste do crédito (E111)</span>
+              <input
+                value={form.codAjusteCreditoAntecipacao}
+                onChange={(e) => set("codAjusteCreditoAntecipacao", e.target.value)}
+                placeholder="BA: BA020002"
+                disabled={busy}
+              />
+            </label>
+            <label className="field">
+              <span>Cód. ajuste do débito especial (E111)</span>
+              <input
+                value={form.codAjusteDebitoAntecipacao}
+                onChange={(e) => set("codAjusteDebitoAntecipacao", e.target.value)}
+                placeholder="BA: BA050004"
+                disabled={busy}
+              />
+            </label>
+            <label className="field">
+              <span>Código de receita da guia (E116)</span>
+              <input
+                value={form.codigoReceitaAntecipacao}
+                onChange={(e) => set("codigoReceitaAntecipacao", e.target.value)}
+                placeholder="BA: 2175 (DAE)"
+                disabled={busy}
+              />
+            </label>
+            <label className="field">
+              <span>Dia de vencimento</span>
+              <input
+                type="number"
+                min={1}
+                max={28}
+                value={form.diaVencimentoAntecipacao}
+                onChange={(e) => set("diaVencimentoAntecipacao", Number(e.target.value))}
+                disabled={busy}
+              />
+            </label>
+          </div>
+        )}
+        <p style={{ margin: 0, fontSize: 12, color: "var(--jr-mute)" }}>
+          Cálculo: (alíquota interna da sua UF − alíquota interestadual) sobre as entradas
+          interestaduais para revenda sem ST. Na Bahia os códigos padrão já vêm preenchidos
+          automaticamente; o valor é creditado na apuração (conta-corrente fiscal) e a guia sai
+          como débito especial no E116. Confirme códigos e prazo com o contador.
+        </p>
+      </section>
+
+      <section className="card" style={{ padding: 16, display: "grid", gap: 12 }}>
         <h3 style={{ margin: 0 }}>Guia do ICMS (registro E116)</h3>
         <div style={grid}>
           <label className="field">
