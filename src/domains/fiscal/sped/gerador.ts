@@ -194,6 +194,30 @@ export function gerarSpedFiscal(input: SpedInput): SpedArquivoGerado {
     ]);
   }
 
+  // CIAP: cadastro dos bens (0300/0305) + conta contábil (0500) e centro de custo (0600)
+  // genéricos referenciados por eles. Só quando há bem com apropriação no período.
+  if (input.ciapBens.length > 0) {
+    for (const bem of input.ciapBens) {
+      b.add([
+        "0300",
+        campoTexto(bem.codigo),
+        bem.identMerc,
+        campoTexto(bem.descricao),
+        "", // COD_PRNC (bem principal — só para componentes)
+        "IMOB", // COD_CTA (conta 0500)
+        String(bem.parcelasTotal)
+      ]);
+      b.add([
+        "0305",
+        "GERAL", // COD_CCUS (centro de custo 0600)
+        campoTexto(bem.funcao || "Uso operacional do estabelecimento"),
+        String(bem.vidaUtilAnos)
+      ]);
+    }
+    b.add(["0500", campoData(periodo.inicio), "01", "A", "1", "IMOB", "Ativo imobilizado"]);
+    b.add(["0600", campoData(periodo.inicio), "GERAL", "Centro de custo geral"]);
+  }
+
   b.add(["0990", String(b.total + 1)]);
 
   // -------------------------------------------------------------------------
@@ -399,7 +423,29 @@ export function gerarSpedFiscal(input: SpedInput): SpedArquivoGerado {
     );
   }
 
-  const ajustesCredito = antecipacaoEscriturada ? antecipacaoTotal : 0;
+  // CIAP (bloco G): parcela mensal × fator de saídas tributadas (G110). O crédito apurado
+  // entra no E110 via ajuste E111 com o código da tabela 5.1.1 da UF (configurável).
+  const vlTotalSaidas = somar(analiticoSaidas.values(), "valorOperacao");
+  const vlSaidasTributadas = round2(
+    Array.from(analiticoSaidas.values())
+      .filter((l) => l.valorIcms > 0 || l.valorIcmsSt > 0 || l.cfop.startsWith("7"))
+      .reduce((s, l) => s + l.valorOperacao, 0)
+  );
+  const fatorSaidas = vlTotalSaidas > 0 ? vlSaidasTributadas / vlTotalSaidas : 0;
+  const ciapSaldoInicial = round2(input.ciapBens.reduce((s, bem) => s + bem.saldoInicial, 0));
+  const ciapSomaParcelas = round2(input.ciapBens.reduce((s, bem) => s + bem.valorParcela, 0));
+  const ciapApropriado = round2(ciapSomaParcelas * fatorSaidas);
+  const ciapEscriturado = ciapApropriado > 0 && Boolean(config.codAjusteCreditoCiap);
+  if (ciapApropriado > 0 && !ciapEscriturado) {
+    avisos.push(
+      `CIAP: parcela do período calculada (R$ ${ciapApropriado.toFixed(2).replace(".", ",")}) mas o crédito NÃO foi levado à apuração — configure o código de ajuste E111 da sua UF (tabela 5.1.1) em Configurações do SPED.`
+    );
+  }
+  if (input.ciapBens.length > 0 && vlTotalSaidas === 0) {
+    avisos.push("CIAP: sem saídas no período — fator de apropriação 0 (parcela do mês não creditada, conforme regra do CIAP).");
+  }
+
+  const ajustesCredito = round2((antecipacaoEscriturada ? antecipacaoTotal : 0) + (ciapEscriturado ? ciapApropriado : 0));
   const debitosEspeciais = antecipacaoEscriturada ? antecipacaoTotal : 0;
   const saldoBruto = round2(debitosIcms - creditosIcms - ajustesCredito - saldoCredorAnterior);
   const saldoApurado = Math.max(saldoBruto, 0);
@@ -450,6 +496,15 @@ export function gerarSpedFiscal(input: SpedInput): SpedArquivoGerado {
       campoTexto(codAjusteDebitoAntecip),
       "Debito especial - ICMS antecipacao parcial das entradas interestaduais",
       campoNumero(antecipacaoTotal)
+    ]);
+  }
+
+  if (ciapEscriturado) {
+    b.add([
+      "E111",
+      campoTexto(config.codAjusteCreditoCiap),
+      "Apropriacao mensal do credito de ICMS do ativo imobilizado (CIAP - bloco G)",
+      campoNumero(ciapApropriado)
     ]);
   }
 
@@ -582,10 +637,65 @@ export function gerarSpedFiscal(input: SpedInput): SpedArquivoGerado {
   b.add(["E990", String(b.total - inicioE + 1)]);
 
   // -------------------------------------------------------------------------
-  // Bloco G — CIAP (crédito de ICMS do ativo imobilizado; sem movimento)
+  // Bloco G — CIAP: apropriação mensal do crédito de ICMS do ativo imobilizado
   // -------------------------------------------------------------------------
   const inicioG = b.total;
-  b.add(["G001", "1"]);
+  if (input.ciapBens.length > 0) {
+    b.add(["G001", "0"]);
+    b.add([
+      "G110",
+      campoData(periodo.inicio),
+      campoData(periodo.fim),
+      campoNumero(ciapSaldoInicial),
+      campoNumero(ciapSomaParcelas),
+      campoNumero(vlSaidasTributadas),
+      campoNumero(vlTotalSaidas),
+      campoNumero(fatorSaidas, 8), // IND_PER_SAI (VL_TRIB_EXP ÷ VL_TOTAL)
+      campoNumero(ciapApropriado),
+      campoNumero(0) // SOM_ICMS_OC (outros créditos CIAP — G126, não usado)
+    ]);
+    for (const bem of input.ciapBens) {
+      b.add([
+        "G125",
+        campoTexto(bem.codigo),
+        campoData(bem.novoNoPeriodo ? bem.docEmitidaEm ?? periodo.inicio : periodo.inicio),
+        bem.novoNoPeriodo ? "IM" : "SI", // IM = imobilizado no período; SI = saldo de períodos anteriores
+        campoNumero(bem.valorIcmsOp),
+        campoNumero(bem.valorIcmsSt),
+        campoNumero(bem.valorIcmsFrete),
+        campoNumero(bem.valorIcmsDif),
+        String(bem.parcelaNumero),
+        campoNumero(bem.valorParcela)
+      ]);
+      // Documento de aquisição (G130) e item (G140) — exigidos no mês da imobilização.
+      if (bem.novoNoPeriodo) {
+        b.add([
+          "G130",
+          "1", // IND_EMIT (terceiros)
+          campoTexto(bem.codigoParticipante),
+          bem.docModelo === "65" ? "65" : "55",
+          campoTexto(bem.docSerie),
+          campoTexto(bem.docNumero),
+          campoDocumento(bem.chaveAcesso),
+          campoData(bem.docEmitidaEm),
+          "" // NUM_DA
+        ]);
+        b.add([
+          "G140",
+          "1", // NUM_ITEM
+          campoTexto(bem.itemCodigo),
+          campoQuantidade(bem.itemQuantidade, 3),
+          campoTexto(bem.itemUnidade),
+          campoNumero(bem.valorIcmsOp),
+          campoNumero(bem.valorIcmsSt),
+          campoNumero(bem.valorIcmsFrete),
+          campoNumero(bem.valorIcmsDif)
+        ]);
+      }
+    }
+  } else {
+    b.add(["G001", "1"]);
+  }
   b.add(["G990", String(b.total - inicioG + 1)]);
 
   // -------------------------------------------------------------------------
@@ -620,14 +730,32 @@ export function gerarSpedFiscal(input: SpedInput): SpedArquivoGerado {
   b.add(["H990", String(b.total - inicioH + 1)]);
 
   // -------------------------------------------------------------------------
-  // Bloco K — controle de produção e estoque (sem movimento para comércio)
+  // Bloco K — estoque: escrituração restrita ao saldo (K010 modo 2 + K200) quando
+  // habilitada na configuração; senão, sem movimento.
   // -------------------------------------------------------------------------
   const inicioK = b.total;
-  b.add(["K001", "1"]);
-  if (config.indAtividade === "0") {
-    avisos.push(
-      "Empresa industrial/equiparada: o bloco K foi gerado sem movimento. Se a SEFAZ exigir K200/K230 do seu porte, a escrituração de produção/estoque precisa ser habilitada com o contador."
-    );
+  const estoqueK = input.estoqueFinal ?? [];
+  if (config.gerarBlocoK && estoqueK.length > 0) {
+    b.add(["K001", "0"]);
+    b.add(["K010", "2"]); // 2 = escrituração restrita ao saldo de estoque
+    b.add(["K100", campoData(periodo.inicio), campoData(periodo.fim)]);
+    for (const item of estoqueK) {
+      b.add([
+        "K200",
+        campoData(periodo.fim),
+        campoTexto(item.codigoItem),
+        campoQuantidade(item.quantidade, 3),
+        "0", // IND_EST (0 = estoque de propriedade do informante, em seu poder)
+        "" // COD_PART
+      ]);
+    }
+  } else {
+    b.add(["K001", "1"]);
+    if (config.indAtividade === "0") {
+      avisos.push(
+        "Empresa industrial/equiparada: o bloco K foi gerado sem movimento. Se a SEFAZ exigir K200/K230 do seu porte, habilite o bloco K em Configurações do SPED e valide com o contador."
+      );
+    }
   }
   b.add(["K990", String(b.total - inicioK + 1)]);
 
@@ -692,6 +820,23 @@ export function gerarSpedFiscal(input: SpedInput): SpedArquivoGerado {
         .filter((i) => i.creditoSimplesLc123)
         .reduce((s, i) => s + i.valorIcms, 0)
     ),
+    ciap:
+      input.ciapBens.length > 0
+        ? {
+            saldoInicial: ciapSaldoInicial,
+            somaParcelas: ciapSomaParcelas,
+            fatorSaidasTributadas: Math.round(fatorSaidas * 1e8) / 1e8,
+            creditoApropriado: ciapApropriado,
+            escriturado: ciapEscriturado,
+            bens: input.ciapBens.map((bem) => ({
+              codigo: bem.codigo,
+              descricao: bem.descricao,
+              parcela: `${bem.parcelaNumero}/${bem.parcelasTotal}`,
+              valorParcela: bem.valorParcela
+            }))
+          }
+        : null,
+    estoqueK200Itens: config.gerarBlocoK ? estoqueK.length : 0,
     apuracaoIpi,
     pisCofins: {
       debitosPis: round2(saidasValidas.flatMap((d) => d.itens).reduce((s, i) => s + i.valorPis, 0)),

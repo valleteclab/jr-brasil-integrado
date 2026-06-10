@@ -229,6 +229,36 @@ export default async function SpedDetalhePage({ params }: { params: { id: string
         </div>
       )}
 
+      {r && r.ciap && (
+        <div className="card" style={{ padding: 16, marginBottom: 16 }}>
+          <h3 style={{ marginTop: 0 }}>
+            CIAP — crédito do ativo imobilizado (bloco G){" "}
+            <StatusBadge tone={r.ciap.escriturado ? "success" : "warn"}>
+              {r.ciap.escriturado ? "Creditado na apuração (E111)" : "Calculado — configure o código de ajuste"}
+            </StatusBadge>
+          </h3>
+          <p style={{ margin: "0 0 10px", fontSize: 12, color: "var(--jr-mute)" }}>
+            Parcelas do mês {formatBrl(r.ciap.somaParcelas)} × fator de saídas tributadas{" "}
+            {(r.ciap.fatorSaidasTributadas * 100).toFixed(2).replace(".", ",")}% ={" "}
+            <strong>{formatBrl(r.ciap.creditoApropriado)}</strong> apropriado (saldo inicial {formatBrl(r.ciap.saldoInicial)}).
+          </p>
+          <table className="erp-table">
+            <thead>
+              <tr><th>Bem</th><th>Parcela</th><th style={{ textAlign: "right" }}>Valor da parcela</th></tr>
+            </thead>
+            <tbody>
+              {r.ciap.bens.map((bem) => (
+                <tr key={bem.codigo}>
+                  <td><span style={{ fontFamily: "var(--font-mono, monospace)" }}>{bem.codigo}</span> — {bem.descricao}</td>
+                  <td>{bem.parcela}</td>
+                  <td style={{ textAlign: "right" }}>{formatBrl(bem.valorParcela)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       {r && r.apuracaoIcmsSt.porUf.length > 0 && (
         <div className="card" style={{ padding: 16, marginBottom: 16 }}>
           <h3 style={{ marginTop: 0 }}>ICMS-ST por UF (registros E200/E210)</h3>

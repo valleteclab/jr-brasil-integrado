@@ -22,14 +22,15 @@ import { dadosDaChave, parseXmlSped } from "../src/domains/fiscal/sped/xml-avuls
 
 // Campos esperados por registro (incluindo o próprio campo REG) — leiaute 020.
 const CAMPOS_ESPERADOS: Record<string, number> = {
-  "0000": 15, "0001": 2, "0005": 10, "0100": 14, "0150": 13, "0190": 3, "0200": 13, "0990": 2,
+  "0000": 15, "0001": 2, "0005": 10, "0100": 14, "0150": 13, "0190": 3, "0200": 13,
+  "0300": 7, "0305": 4, "0500": 7, "0600": 4, "0990": 2,
   B001: 2, B990: 2,
   C001: 2, C100: 29, C170: 38, C190: 12, C990: 2,
   D001: 2, D990: 2,
   E001: 2, E100: 3, E110: 15, E111: 4, E116: 10, E200: 4, E210: 15, E500: 4, E510: 6, E520: 8, E990: 2,
-  G001: 2, G990: 2,
+  G001: 2, G110: 10, G125: 10, G130: 9, G140: 9, G990: 2,
   H001: 2, H005: 4, H010: 11, H990: 2,
-  K001: 2, K990: 2,
+  K001: 2, K010: 2, K100: 3, K200: 6, K990: 2,
   "1001": 2, "1010": 14, "1990": 2,
   "9001": 2, "9900": 3, "9990": 2, "9999": 2
 };
@@ -126,7 +127,9 @@ function inputSintetico(): SpedInput {
       codAjusteDebitoAntecipacao: "BA050004",
       codAjusteCreditoAntecipacao: "BA020002",
       codigoReceitaAntecipacao: "2175",
-      diaVencimentoAntecipacao: 25
+      diaVencimentoAntecipacao: 25,
+      codAjusteCreditoCiap: "SP020719",
+      gerarBlocoK: true
     },
     versaoLeiaute: "020",
     participantes: [
@@ -262,6 +265,64 @@ function inputSintetico(): SpedInput {
       data: new Date(2026, 4, 31),
       itens: [{ codigoItem: "SKU-001", unidade: "UN", quantidade: 50, valorUnitario: 80.5 }]
     },
+    ciapBens: [
+      {
+        // Bem novo no período: G125 IM + G130/G140 + cadastro 0300/0305/0500/0600.
+        codigo: "BEM-202605-1",
+        descricao: "Empilhadeira eletrica",
+        identMerc: "1",
+        funcao: "Movimentacao de carga",
+        vidaUtilAnos: 10,
+        valorIcmsOp: 4800,
+        valorIcmsSt: 0,
+        valorIcmsFrete: 0,
+        valorIcmsDif: 0,
+        parcelasTotal: 48,
+        parcelaNumero: 1,
+        valorParcela: 100,
+        saldoInicial: 4800,
+        novoNoPeriodo: true,
+        codigoParticipante: "FORN1",
+        docModelo: "55",
+        docSerie: "1",
+        docNumero: "888",
+        chaveAcesso: "31260611222333000144550010000008881000008885",
+        docEmitidaEm: new Date(2026, 4, 5),
+        itemCodigo: "BEM-202605-1",
+        itemQuantidade: 1,
+        itemUnidade: "UN"
+      },
+      {
+        // Bem de períodos anteriores: G125 SI (parcela 13 de 48).
+        codigo: "BEM-202504-1",
+        descricao: "Compressor industrial",
+        identMerc: "1",
+        funcao: "Suporte a producao",
+        vidaUtilAnos: 10,
+        valorIcmsOp: 2400,
+        valorIcmsSt: 0,
+        valorIcmsFrete: 0,
+        valorIcmsDif: 0,
+        parcelasTotal: 48,
+        parcelaNumero: 13,
+        valorParcela: 50,
+        saldoInicial: 1800,
+        novoNoPeriodo: false,
+        codigoParticipante: null,
+        docModelo: null,
+        docSerie: null,
+        docNumero: null,
+        chaveAcesso: null,
+        docEmitidaEm: null,
+        itemCodigo: "BEM-202504-1",
+        itemQuantidade: 1,
+        itemUnidade: "UN"
+      }
+    ],
+    estoqueFinal: [
+      { codigoItem: "SKU-001", quantidade: 50 },
+      { codigoItem: "SKU-002", quantidade: 12.5 }
+    ],
     avisos: []
   };
 }

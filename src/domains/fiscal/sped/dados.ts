@@ -850,6 +850,144 @@ export async function carregarSpedInput(scope: TenantScope, params: CarregarSped
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // CIAP (bloco G): bens do ativo com parcela de crédito a apropriar no período
+  // ---------------------------------------------------------------------------
+  const ciapBensDb = await prisma.ciapBem.findMany({
+    where: {
+      ...base,
+      imobilizadoEm: { lte: fim },
+      OR: [{ baixadoEm: null }, { baixadoEm: { gte: inicio } }]
+    },
+    orderBy: { codigo: "asc" }
+  });
+
+  const ciapBens: SpedInput["ciapBens"] = [];
+  for (const bem of ciapBensDb) {
+    const mesesDecorridos =
+      (ano - bem.imobilizadoEm.getFullYear()) * 12 + (mes - 1 - bem.imobilizadoEm.getMonth());
+    const parcelaNumero = mesesDecorridos + 1;
+    if (parcelaNumero < 1 || parcelaNumero > bem.parcelasTotal) continue; // fora da janela de 48 meses
+    if (bem.baixadoEm && bem.baixadoEm <= fim) {
+      avisos.push(
+        `CIAP: bem "${bem.descricao}" (${bem.codigo}) baixado em ${bem.baixadoEm.toLocaleDateString("pt-BR")} — a baixa (G125 tipo BA) e o tratamento do saldo devem ser ajustados com o contador; parcela do período não apropriada.`
+      );
+      continue;
+    }
+    const valorTotal = round2(num(bem.valorIcmsOp) + num(bem.valorIcmsSt) + num(bem.valorIcmsFrete) + num(bem.valorIcmsDif));
+    if (valorTotal <= 0) continue;
+    const valorParcela = round2(valorTotal / bem.parcelasTotal);
+    const novoNoPeriodo = parcelaNumero === 1;
+
+    // G130 referencia um participante do 0150 — garante o fornecedor do bem no cadastro.
+    let codigoParticipante: string | null = null;
+    if (novoNoPeriodo && bem.fornecedorDocumento) {
+      const docForn = bem.fornecedorDocumento.replace(/\D/g, "");
+      codigoParticipante = `CB-${docForn}`;
+      const jaExiste = Array.from(participantes.values()).find((p) => (p.cnpj ?? p.cpf) === docForn);
+      if (jaExiste) {
+        codigoParticipante = jaExiste.codigo;
+      } else if (!participantes.has(codigoParticipante)) {
+        participantes.set(codigoParticipante, {
+          codigo: codigoParticipante,
+          nome: bem.fornecedorNome ?? "Fornecedor do bem",
+          cnpj: docForn.length === 14 ? docForn : null,
+          cpf: docForn.length === 11 ? docForn : null,
+          inscricaoEstadual: null,
+          codigoMunicipioIbge: null,
+          logradouro: null,
+          numero: null,
+          complemento: null,
+          bairro: null,
+          uf: null
+        });
+        avisos.push(`CIAP: fornecedor do bem "${bem.descricao}" sem endereço/município no 0150 — complete se o PVA apontar.`);
+      }
+    }
+
+    // G140 referencia um item do 0200 — garante o bem no catálogo (TIPO_ITEM 08 = imobilizado).
+    const itemCodigo = bem.itemCodigo || bem.codigo;
+    if (novoNoPeriodo && !catalogo.has(itemCodigo)) {
+      catalogo.set(itemCodigo, {
+        codigo: itemCodigo,
+        descricao: bem.descricao,
+        gtin: null,
+        unidade: bem.itemUnidade || "UN",
+        tipoItem: "08",
+        ncm: null,
+        cest: null
+      });
+    }
+
+    ciapBens.push({
+      codigo: bem.codigo,
+      descricao: bem.descricao,
+      identMerc: bem.identMerc === "2" ? "2" : "1",
+      funcao: bem.funcao,
+      vidaUtilAnos: bem.vidaUtilAnos,
+      valorIcmsOp: num(bem.valorIcmsOp),
+      valorIcmsSt: num(bem.valorIcmsSt),
+      valorIcmsFrete: num(bem.valorIcmsFrete),
+      valorIcmsDif: num(bem.valorIcmsDif),
+      parcelasTotal: bem.parcelasTotal,
+      parcelaNumero,
+      valorParcela,
+      saldoInicial: round2(valorTotal - (parcelaNumero - 1) * valorParcela),
+      novoNoPeriodo,
+      codigoParticipante,
+      docModelo: bem.docModelo,
+      docSerie: bem.docSerie,
+      docNumero: bem.docNumero,
+      chaveAcesso: bem.chaveAcesso,
+      docEmitidaEm: bem.docEmitidaEm,
+      itemCodigo,
+      itemQuantidade: num(bem.itemQuantidade) || 1,
+      itemUnidade: bem.itemUnidade || "UN"
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Bloco K restrito ao saldo (K200): estoque próprio no fim do período
+  // ---------------------------------------------------------------------------
+  let estoqueFinal: SpedInput["estoqueFinal"] = null;
+  if (spedConfig?.gerarBlocoK) {
+    const saldos = await prisma.estoqueSaldo.findMany({
+      where: { ...base, quantidade: { gt: 0 } },
+      select: {
+        quantidade: true,
+        produto: { select: { sku: true, nome: true, gtin: true, unidade: true, ncm: true, cest: true, tipo: true } }
+      }
+    });
+    const porProduto = new Map<string, { quantidade: number; produto: (typeof saldos)[number]["produto"] }>();
+    for (const s of saldos) {
+      const atual = porProduto.get(s.produto.sku) ?? { quantidade: 0, produto: s.produto };
+      atual.quantidade = round2(atual.quantidade + num(s.quantidade));
+      porProduto.set(s.produto.sku, atual);
+    }
+    estoqueFinal = [];
+    for (const [sku, info] of porProduto) {
+      if (info.quantidade <= 0) continue;
+      if (!catalogo.has(sku)) {
+        catalogo.set(sku, {
+          codigo: sku,
+          descricao: info.produto.nome,
+          gtin: info.produto.gtin,
+          unidade: info.produto.unidade,
+          tipoItem: tipoItem0200(null, info.produto.tipo),
+          ncm: info.produto.ncm,
+          cest: info.produto.cest
+        });
+      }
+      estoqueFinal.push({ codigoItem: sku, quantidade: info.quantidade });
+    }
+    estoqueFinal.sort((a, b) => a.codigoItem.localeCompare(b.codigoItem));
+    if (estoqueFinal.length > 0) {
+      avisos.push(
+        `Bloco K (K200): informado o saldo ATUAL do estoque (${estoqueFinal.length} item(ns)) como posição de ${fim.toLocaleDateString("pt-BR")} — o sistema não reconstrói saldo histórico; confira ao gerar competências antigas.`
+      );
+    }
+  }
+
   const config: SpedConfig = {
     perfilArquivo: (spedConfig?.perfilArquivo === "A" || spedConfig?.perfilArquivo === "C" ? spedConfig.perfilArquivo : "B") as SpedConfig["perfilArquivo"],
     indAtividade: spedConfig?.indAtividade === "0" ? "0" : "1",
@@ -876,7 +1014,9 @@ export async function carregarSpedInput(scope: TenantScope, params: CarregarSped
     codAjusteDebitoAntecipacao: spedConfig?.codAjusteDebitoAntecipacao ?? null,
     codAjusteCreditoAntecipacao: spedConfig?.codAjusteCreditoAntecipacao ?? null,
     codigoReceitaAntecipacao: spedConfig?.codigoReceitaAntecipacao ?? null,
-    diaVencimentoAntecipacao: spedConfig?.diaVencimentoAntecipacao ?? 25
+    diaVencimentoAntecipacao: spedConfig?.diaVencimentoAntecipacao ?? 25,
+    codAjusteCreditoCiap: spedConfig?.codAjusteCreditoCiap ?? null,
+    gerarBlocoK: Boolean(spedConfig?.gerarBlocoK)
   };
 
   return {
@@ -904,6 +1044,8 @@ export async function carregarSpedInput(scope: TenantScope, params: CarregarSped
     itensCatalogo: Array.from(catalogo.values()).sort((a, b) => a.codigo.localeCompare(b.codigo)),
     documentos,
     inventario,
+    ciapBens,
+    estoqueFinal,
     avisos
   };
 }

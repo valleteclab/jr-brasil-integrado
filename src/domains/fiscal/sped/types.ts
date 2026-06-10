@@ -60,6 +60,42 @@ export type SpedConfig = {
   codAjusteCreditoAntecipacao: string | null; // BA: BA020002 (crédito conta-corrente)
   codigoReceitaAntecipacao: string | null; // BA: 2175 (DAE)
   diaVencimentoAntecipacao: number;
+  /** CIAP (bloco G): código de ajuste E111 da tabela 5.1.1 da UF para o crédito mensal. */
+  codAjusteCreditoCiap: string | null;
+  /** Bloco K restrito ao saldo de estoque (K010 modo 2 + K200). */
+  gerarBlocoK: boolean;
+};
+
+/** Bem do CIAP com a parcela do período já resolvida (bloco G). */
+export type SpedCiapBem = {
+  codigo: string; // COD_IND_BEM
+  descricao: string;
+  identMerc: string; // 1 = bem, 2 = componente
+  funcao: string | null;
+  vidaUtilAnos: number;
+  valorIcmsOp: number;
+  valorIcmsSt: number;
+  valorIcmsFrete: number;
+  valorIcmsDif: number;
+  parcelasTotal: number;
+  /** Nº da parcela apropriada NESTE período (1..parcelasTotal). */
+  parcelaNumero: number;
+  /** Valor da parcela mensal passível de apropriação (total ÷ parcelas). */
+  valorParcela: number;
+  /** Saldo de ICMS do bem no INÍCIO do período (antes desta parcela). */
+  saldoInicial: number;
+  /** true no mês da imobilização (G125 TIPO_MOV=IM, com G130/G140 do documento). */
+  novoNoPeriodo: boolean;
+  // Documento de aquisição (G130) e item (G140) — exigidos quando novoNoPeriodo.
+  codigoParticipante: string | null;
+  docModelo: string | null;
+  docSerie: string | null;
+  docNumero: string | null;
+  chaveAcesso: string | null;
+  docEmitidaEm: Date | null;
+  itemCodigo: string | null;
+  itemQuantidade: number;
+  itemUnidade: string | null;
 };
 
 /** Participante (registro 0150): cliente das saídas ou fornecedor das entradas. */
@@ -170,6 +206,10 @@ export type SpedInput = {
   itensCatalogo: SpedItemCatalogo[];
   documentos: SpedDocumento[];
   inventario: SpedInventario | null;
+  /** Bens do CIAP com apropriação no período (bloco G). Vazio → G001 sem movimento. */
+  ciapBens: SpedCiapBem[];
+  /** Saldo de estoque do fim do período (bloco K restrito — K200). null → K001 sem movimento. */
+  estoqueFinal: Array<{ codigoItem: string; quantidade: number }> | null;
   /** Avisos coletados na carga de dados (cadastros incompletos etc.). */
   avisos: string[];
 };
@@ -242,6 +282,18 @@ export type SpedResumo = {
   };
   /** Crédito de ICMS apropriado de fornecedores do Simples (art. 23 LC 123) — já dentro dos créditos. */
   creditoSimplesLc123: number;
+  /** CIAP (bloco G): apropriação mensal do crédito do ativo imobilizado. */
+  ciap: {
+    saldoInicial: number;
+    somaParcelas: number;
+    fatorSaidasTributadas: number;
+    creditoApropriado: number;
+    /** false quando o código de ajuste E111 da UF não está configurado (crédito fora do E110). */
+    escriturado: boolean;
+    bens: Array<{ codigo: string; descricao: string; parcela: string; valorParcela: number }>;
+  } | null;
+  /** Bloco K: quantidade de itens com saldo informado no K200 (0 = sem movimento). */
+  estoqueK200Itens: number;
   apuracaoIpi: SpedApuracaoIpi | null;
   /** PIS/COFINS dos documentos — informativo (a apuração formal é na EFD Contribuições). */
   pisCofins: { debitosPis: number; creditosPis: number; debitosCofins: number; creditosCofins: number };

@@ -308,6 +308,8 @@ export type SpedConfiguracaoView = {
   codAjusteCreditoAntecipacao: string;
   codigoReceitaAntecipacao: string;
   diaVencimentoAntecipacao: number;
+  codAjusteCreditoCiap: string;
+  gerarBlocoK: boolean;
 };
 
 export async function getSpedConfiguracao(scope: TenantScope): Promise<SpedConfiguracaoView> {
@@ -336,7 +338,9 @@ export async function getSpedConfiguracao(scope: TenantScope): Promise<SpedConfi
     codAjusteDebitoAntecipacao: c?.codAjusteDebitoAntecipacao ?? "",
     codAjusteCreditoAntecipacao: c?.codAjusteCreditoAntecipacao ?? "",
     codigoReceitaAntecipacao: c?.codigoReceitaAntecipacao ?? "",
-    diaVencimentoAntecipacao: c?.diaVencimentoAntecipacao ?? 25
+    diaVencimentoAntecipacao: c?.diaVencimentoAntecipacao ?? 25,
+    codAjusteCreditoCiap: c?.codAjusteCreditoCiap ?? "",
+    gerarBlocoK: c?.gerarBlocoK ?? false
   };
 }
 
@@ -381,7 +385,9 @@ export async function saveSpedConfiguracao(
     codAjusteDebitoAntecipacao: limpo(input.codAjusteDebitoAntecipacao),
     codAjusteCreditoAntecipacao: limpo(input.codAjusteCreditoAntecipacao),
     codigoReceitaAntecipacao: limpo(input.codigoReceitaAntecipacao),
-    diaVencimentoAntecipacao: diaAntecip
+    diaVencimentoAntecipacao: diaAntecip,
+    codAjusteCreditoCiap: limpo(input.codAjusteCreditoCiap),
+    gerarBlocoK: Boolean(input.gerarBlocoK)
   };
 
   await prisma.$transaction(async (tx) => {
@@ -795,6 +801,173 @@ export async function definirFinalidadesSpedXml(
   });
 
   return getSpedXmlDetalhe(scope, xmlId);
+}
+
+// ---------------------------------------------------------------------------
+// CIAP (bloco G): bens do ativo imobilizado com crédito em 48 parcelas
+// ---------------------------------------------------------------------------
+
+export type CiapBemView = {
+  id: string;
+  codigo: string;
+  descricao: string;
+  valorCredito: number;
+  parcelasTotal: number;
+  /** Parcela corrente em relação ao mês atual (ex.: "12/48"; "—" fora da janela). */
+  parcelaAtual: string;
+  valorParcela: number;
+  imobilizadoEm: string;
+  baixadoEm: string | null;
+  fornecedorNome: string | null;
+  docNumero: string | null;
+  observacoes: string | null;
+};
+
+function toCiapView(bem: {
+  id: string;
+  codigo: string;
+  descricao: string;
+  valorIcmsOp: unknown;
+  valorIcmsSt: unknown;
+  valorIcmsFrete: unknown;
+  valorIcmsDif: unknown;
+  parcelasTotal: number;
+  imobilizadoEm: Date;
+  baixadoEm: Date | null;
+  fornecedorNome: string | null;
+  docNumero: string | null;
+  observacoes: string | null;
+}): CiapBemView {
+  const total =
+    Number(bem.valorIcmsOp ?? 0) + Number(bem.valorIcmsSt ?? 0) + Number(bem.valorIcmsFrete ?? 0) + Number(bem.valorIcmsDif ?? 0);
+  const agora = new Date();
+  const parcela =
+    (agora.getFullYear() - bem.imobilizadoEm.getFullYear()) * 12 + (agora.getMonth() - bem.imobilizadoEm.getMonth()) + 1;
+  return {
+    id: bem.id,
+    codigo: bem.codigo,
+    descricao: bem.descricao,
+    valorCredito: Math.round(total * 100) / 100,
+    parcelasTotal: bem.parcelasTotal,
+    parcelaAtual:
+      bem.baixadoEm != null
+        ? "baixado"
+        : parcela >= 1 && parcela <= bem.parcelasTotal
+          ? `${parcela}/${bem.parcelasTotal}`
+          : parcela > bem.parcelasTotal
+            ? "concluído"
+            : "—",
+    valorParcela: Math.round((total / bem.parcelasTotal) * 100) / 100,
+    imobilizadoEm: bem.imobilizadoEm.toISOString(),
+    baixadoEm: bem.baixadoEm?.toISOString() ?? null,
+    fornecedorNome: bem.fornecedorNome,
+    docNumero: bem.docNumero,
+    observacoes: bem.observacoes
+  };
+}
+
+export async function listCiapBens(scope: TenantScope): Promise<CiapBemView[]> {
+  await assertSpedHabilitado(scope);
+  const bens = await prisma.ciapBem.findMany({
+    where: { tenantId: scope.tenantId, empresaId: scope.empresaId },
+    orderBy: [{ baixadoEm: "asc" }, { imobilizadoEm: "desc" }]
+  });
+  return bens.map(toCiapView);
+}
+
+export type CriarCiapBemInput = {
+  descricao: string;
+  valorIcms: number;
+  imobilizadoEm: string; // yyyy-mm-dd
+  parcelasTotal?: number;
+  fornecedorNome?: string;
+  docNumero?: string;
+  chaveAcesso?: string;
+};
+
+export async function criarCiapBem(scope: TenantScope, input: CriarCiapBemInput, usuarioId?: string) {
+  await assertSpedHabilitado(scope);
+  const descricao = input.descricao?.trim();
+  if (!descricao) throw new SpedError("Informe a descrição do bem.");
+  const valor = Number(input.valorIcms);
+  if (!Number.isFinite(valor) || valor <= 0) throw new SpedError("Informe o valor de ICMS passível de crédito (maior que zero).");
+  const imobilizadoEm = new Date(`${(input.imobilizadoEm ?? "").slice(0, 10)}T12:00:00.000Z`);
+  if (Number.isNaN(imobilizadoEm.getTime())) throw new SpedError("Informe a data de imobilização.");
+  const parcelas = Number(input.parcelasTotal ?? 48);
+  if (!Number.isInteger(parcelas) || parcelas < 1 || parcelas > 48) throw new SpedError("Parcelas: 1 a 48.");
+
+  const sufixo = `${imobilizadoEm.getFullYear()}${String(imobilizadoEm.getMonth() + 1).padStart(2, "0")}`;
+  let codigo = `BEM-${sufixo}-1`;
+  for (let i = 2; await prisma.ciapBem.findUnique({ where: { tenantId_empresaId_codigo: { tenantId: scope.tenantId, empresaId: scope.empresaId, codigo } } }); i++) {
+    codigo = `BEM-${sufixo}-${i}`;
+  }
+
+  const bem = await prisma.$transaction(async (tx) => {
+    const criado = await tx.ciapBem.create({
+      data: {
+        tenantId: scope.tenantId,
+        empresaId: scope.empresaId,
+        codigo,
+        descricao,
+        valorIcmsOp: valor,
+        parcelasTotal: parcelas,
+        imobilizadoEm,
+        fornecedorNome: input.fornecedorNome?.trim() || null,
+        docNumero: input.docNumero?.trim() || null,
+        chaveAcesso: input.chaveAcesso?.replace(/\D/g, "") || null,
+        observacoes: "Cadastrado manualmente."
+      }
+    });
+    await createAuditLog(tx, {
+      scope,
+      usuarioId,
+      entidade: "CiapBem",
+      entidadeId: criado.id,
+      acao: "sped.ciap_criar",
+      payload: { codigo, descricao, valor }
+    });
+    return criado;
+  });
+  return toCiapView(bem);
+}
+
+/** Baixa do bem (venda/perda): encerra a apropriação a partir da data informada. */
+export async function baixarCiapBem(scope: TenantScope, id: string, usuarioId?: string) {
+  await assertSpedHabilitado(scope);
+  const bem = await prisma.ciapBem.findFirst({ where: { id, tenantId: scope.tenantId, empresaId: scope.empresaId } });
+  if (!bem) throw new SpedError("Bem do CIAP não encontrado.");
+  if (bem.baixadoEm) throw new SpedError("Bem já baixado.");
+  const atualizado = await prisma.$transaction(async (tx) => {
+    const salvo = await tx.ciapBem.update({ where: { id: bem.id }, data: { baixadoEm: new Date() } });
+    await createAuditLog(tx, {
+      scope,
+      usuarioId,
+      entidade: "CiapBem",
+      entidadeId: bem.id,
+      acao: "sped.ciap_baixar",
+      payload: { codigo: bem.codigo }
+    });
+    return salvo;
+  });
+  return toCiapView(atualizado);
+}
+
+export async function excluirCiapBem(scope: TenantScope, id: string, usuarioId?: string) {
+  await assertSpedHabilitado(scope);
+  const bem = await prisma.ciapBem.findFirst({ where: { id, tenantId: scope.tenantId, empresaId: scope.empresaId } });
+  if (!bem) throw new SpedError("Bem do CIAP não encontrado.");
+  await prisma.$transaction(async (tx) => {
+    await tx.ciapBem.delete({ where: { id: bem.id } });
+    await createAuditLog(tx, {
+      scope,
+      usuarioId,
+      entidade: "CiapBem",
+      entidadeId: bem.id,
+      acao: "sped.ciap_excluir",
+      payload: { codigo: bem.codigo }
+    });
+  });
+  return { id: bem.id, ok: true };
 }
 
 // ---------------------------------------------------------------------------

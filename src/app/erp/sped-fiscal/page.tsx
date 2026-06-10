@@ -68,7 +68,12 @@ export default async function SpedFiscalPage() {
       <PageHeader
         eyebrow="Financeiro & Fiscal"
         title="SPED Fiscal (EFD ICMS/IPI)"
-        action={<Button href="/erp/sped-fiscal/configuracao" variant="light">Configurações do SPED</Button>}
+        action={
+          <>
+            <Button href="/erp/sped-fiscal/ciap" variant="light">CIAP (bloco G)</Button>
+            <Button href="/erp/sped-fiscal/configuracao" variant="light">Configurações do SPED</Button>
+          </>
+        }
       >
         <p>
           Gere o arquivo mensal da Escrituração Fiscal Digital, confira a apuração de ICMS/IPI

@@ -162,6 +162,33 @@ export function SpedConfigForm({ configuracao }: Props) {
       </section>
 
       <section className="card" style={{ padding: 16, display: "grid", gap: 12 }}>
+        <h3 style={{ margin: 0 }}>CIAP e Bloco K</h3>
+        <div style={grid}>
+          <label className="field">
+            <span>Cód. ajuste E111 do crédito CIAP</span>
+            <input
+              value={form.codAjusteCreditoCiap}
+              onChange={(e) => set("codAjusteCreditoCiap", e.target.value)}
+              placeholder="tabela 5.1.1 da UF (ex.: UF02xxxx)"
+              disabled={busy}
+            />
+          </label>
+          <label className="field">
+            <span>Bloco K (estoque)</span>
+            <select value={form.gerarBlocoK ? "1" : "0"} onChange={(e) => set("gerarBlocoK", e.target.value === "1")} disabled={busy}>
+              <option value="0">Sem movimento (K001=1)</option>
+              <option value="1">Saldo de estoque (K010 modo 2 + K200)</option>
+            </select>
+          </label>
+        </div>
+        <p style={{ margin: 0, fontSize: 12, color: "var(--jr-mute)" }}>
+          CIAP: os bens são gerenciados em SPED Fiscal → CIAP; sem o código de ajuste, o bloco G sai
+          calculado mas o crédito não entra na apuração. Bloco K: usa o saldo ATUAL do estoque como
+          posição do fim do período — peça ao contador o código da tabela 5.1.1 da sua UF.
+        </p>
+      </section>
+
+      <section className="card" style={{ padding: 16, display: "grid", gap: 12 }}>
         <h3 style={{ margin: 0 }}>Guia do ICMS (registro E116)</h3>
         <div style={grid}>
           <label className="field">

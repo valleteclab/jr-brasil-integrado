@@ -305,6 +305,7 @@ model Empresa {
   spedConfiguracao   SpedConfiguracao?
   spedArquivos       SpedArquivo[]
   spedXmlDocumentos  SpedXmlDocumento[]
+  ciapBens           CiapBem[]
   contasBancarias    ContaBancaria[]
   formasPagamento    FormaPagamento[]
   movimentosFinanceiros MovimentoFinanceiro[]
@@ -1834,6 +1835,12 @@ model SpedConfiguracao {
   // E116 (obrigação do ICMS a recolher): código de receita estadual e dia de vencimento.
   codigoReceitaIcms           String?
   diaVencimentoIcms           Int      @default(10)
+  // CIAP (bloco G): código de ajuste E111 da tabela 5.1.1 da UF para a apropriação mensal
+  // do crédito do ativo (ex.: estrutura UF02xxxx). Sem ele, o bloco G é gerado e o crédito
+  // fica de fora da apuração, com aviso.
+  codAjusteCreditoCiap        String?
+  // Bloco K restrito ao saldo de estoque (K010 modo 2 + K100 + K200 a partir do EstoqueSaldo).
+  gerarBlocoK                 Boolean  @default(false)
   // ICMS Antecipação Parcial (compras interestaduais p/ revenda — ex.: BA, Lei 7.014/96).
   // Quando ativa, o gerador calcula (alíq. interna − interestadual) × base e escritura:
   // E111 débito especial + E111 crédito (regime conta-corrente) + E116 da guia.
@@ -1846,6 +1853,52 @@ model SpedConfiguracao {
   atualizadoEm                DateTime @updatedAt
 
   @@index([tenantId, empresaId])
+}
+
+// Bem do ativo imobilizado controlado no CIAP (bloco G da EFD): o crédito de ICMS do ativo
+// é apropriado em 48 parcelas mensais × fator de saídas tributadas (LC 87/96, art. 20, §5º).
+// Criado automaticamente ao processar entrada com finalidade IMOBILIZADO, ou manualmente.
+model CiapBem {
+  id                  String    @id @default(cuid())
+  tenantId            String
+  empresaId           String
+  empresa             Empresa   @relation(fields: [empresaId], references: [id])
+  // COD_IND_BEM (0300/G125) — código único do bem na empresa.
+  codigo              String
+  descricao           String
+  // IDENT_MERC do 0300: 1 = bem, 2 = componente.
+  identMerc           String    @default("1")
+  // 0305: função do bem no estabelecimento e vida útil em anos.
+  funcao              String?
+  vidaUtilAnos        Int       @default(5)
+  // Créditos de ICMS passíveis de apropriação (G125): operação própria, ST, frete e DIFAL.
+  valorIcmsOp         Decimal   @default(0) @db.Decimal(14, 2)
+  valorIcmsSt         Decimal   @default(0) @db.Decimal(14, 2)
+  valorIcmsFrete      Decimal   @default(0) @db.Decimal(14, 2)
+  valorIcmsDif        Decimal   @default(0) @db.Decimal(14, 2)
+  parcelasTotal       Int       @default(48)
+  // Início da apropriação (mês da imobilização — TIPO_MOV IM no G125).
+  imobilizadoEm       DateTime
+  // Baixa/alienação encerra a apropriação (ajuste fino do G125 BA com o contador).
+  baixadoEm           DateTime?
+  // Documento fiscal de aquisição (G130) e item (G140).
+  fornecedorDocumento String?
+  fornecedorNome      String?
+  docModelo           String?
+  docSerie            String?
+  docNumero           String?
+  chaveAcesso         String?
+  docEmitidaEm        DateTime?
+  itemCodigo          String?
+  itemQuantidade      Decimal?  @db.Decimal(14, 4)
+  itemUnidade         String?
+  entradaFiscalItemId String?
+  observacoes         String?
+  criadoEm            DateTime  @default(now())
+  atualizadoEm        DateTime  @updatedAt
+
+  @@unique([tenantId, empresaId, codigo])
+  @@index([tenantId, empresaId, imobilizadoEm])
 }
 
 // Arquivo EFD ICMS/IPI gerado para uma competência (ano/mês). Guarda o .txt completo,

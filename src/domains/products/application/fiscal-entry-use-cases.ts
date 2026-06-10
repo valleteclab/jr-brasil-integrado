@@ -1087,6 +1087,42 @@ export async function processFiscalEntry(
       });
     }
 
+    // CIAP (bloco G do SPED): itens IMOBILIZADOS viram bem do ativo com o crédito de ICMS
+    // controlado em 48 parcelas. Cria o bem automaticamente (idempotente por código).
+    for (const item of entrada.itens) {
+      if (item.finalidade !== "IMOBILIZADO") continue;
+      const icms = item.impostos.find((imp) => imp.tributo === "ICMS");
+      // Crédito passível: ICMS destacado ou, em fornecedor do Simples, o crédito da LC 123.
+      const valorIcmsOp = Number(icms?.valor ?? 0) || Number(icms?.valorCredSn ?? 0);
+      if (valorIcmsOp <= 0) continue;
+      const codigoBem = `BEM-${(entrada.numero ?? entrada.id.slice(-6)).toString()}-${item.itemNumero}`;
+      await tx.ciapBem.upsert({
+        where: { tenantId_empresaId_codigo: { tenantId: scope.tenantId, empresaId: scope.empresaId, codigo: codigoBem } },
+        update: {},
+        create: {
+          tenantId: scope.tenantId,
+          empresaId: scope.empresaId,
+          codigo: codigoBem,
+          descricao: item.descricaoFornecedor,
+          valorIcmsOp,
+          parcelasTotal: 48,
+          imobilizadoEm: entrada.recebidaEm ?? entrada.emitidaEm ?? new Date(),
+          fornecedorDocumento: entrada.fornecedor?.documento ?? null,
+          fornecedorNome: entrada.fornecedor?.razaoSocial ?? null,
+          docModelo: entrada.modelo,
+          docSerie: entrada.serie,
+          docNumero: entrada.numero,
+          chaveAcesso: entrada.chaveAcesso,
+          docEmitidaEm: entrada.emitidaEm,
+          itemCodigo: item.codigoFornecedor,
+          itemQuantidade: item.quantidade,
+          itemUnidade: item.unidade,
+          entradaFiscalItemId: item.id,
+          observacoes: "Criado automaticamente ao processar a entrada (finalidade Imobilizado)."
+        }
+      });
+    }
+
     await tx.entradaFiscal.update({
       where: { id: entrada.id },
       data: { status: "ESTOQUE_PROCESSADO" }
