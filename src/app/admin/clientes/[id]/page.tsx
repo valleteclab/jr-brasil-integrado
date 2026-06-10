@@ -6,6 +6,7 @@ import { StatusBadge } from "@/components/shared/StatusBadge";
 import { ClienteBloqueioButton } from "@/components/admin/ClienteBloqueioButton";
 import { LojaModuloToggle } from "@/components/admin/LojaModuloToggle";
 import { IaModuloToggle } from "@/components/admin/IaModuloToggle";
+import { SpedFiscalModuloToggle } from "@/components/admin/SpedFiscalModuloToggle";
 import { EmpresaStatusActions } from "@/components/admin/EmpresaStatusActions";
 import { ResetarSenhaButton } from "@/components/admin/ResetarSenhaButton";
 import { ClientePerfisManager } from "@/components/admin/ClientePerfisManager";
@@ -84,6 +85,13 @@ export default async function AdminClienteDetalhePage({ params }: { params: { id
             <p className="block-muted" style={{ marginTop: 8, fontSize: 12 }}>
               Quando habilitada, este cliente pode usar as funções de IA (sugestão de dados/categoria,
               assistente). Desabilitada, as chamadas de IA são bloqueadas para o cliente.
+            </p>
+          </div>
+          <div>
+            <SpedFiscalModuloToggle clienteId={cliente.id} habilitado={cliente.spedFiscalHabilitado} />
+            <p className="block-muted" style={{ marginTop: 8, fontSize: 12 }}>
+              Quando habilitado, este cliente gera o SPED Fiscal (EFD ICMS/IPI) mensal: apuração de
+              ICMS/IPI na tela e arquivo .txt para o contador validar no PVA e transmitir à SEFAZ.
             </p>
           </div>
         </div>

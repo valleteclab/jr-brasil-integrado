@@ -12,3 +12,4 @@ coverage
 .prisma
 tsconfig.tsbuildinfo
 .design-ref/
+.claude/

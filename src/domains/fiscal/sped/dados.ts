@@ -1,0 +1,529 @@
+/**
+ * Carga de dados do SPED Fiscal: lê notas de saída (NotaFiscal), entradas (EntradaFiscal),
+ * participantes, itens e inventário do período e monta o SpedInput consumido pelo gerador.
+ *
+ * Todas as queries são escopadas por tenantId + empresaId (multitenancy obrigatória).
+ */
+
+import { XMLParser } from "fast-xml-parser";
+import { prisma } from "@/lib/db/prisma";
+import type { TenantScope } from "@/lib/auth/dev-session";
+import type {
+  SpedConfig,
+  SpedDocumento,
+  SpedDocumentoItem,
+  SpedInput,
+  SpedItemCatalogo,
+  SpedParticipante,
+  SpedPeriodo
+} from "./types";
+import { resolveVersaoLeiaute } from "./gerador";
+
+export class SpedError extends Error {}
+
+function num(v: unknown): number {
+  if (v == null) return 0;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * CST de 3 dígitos (origem + CST ICMS). Empresas do Simples emitem com CSOSN; quando só
+ * há CSOSN, aplica um de-para conservador para a escrituração (validar com o contador).
+ */
+function cstIcms3(origem: string | null | undefined, cst: string | null | undefined, csosn: string | null | undefined): string {
+  const o = (origem ?? "0").trim().slice(0, 1) || "0";
+  let c = (cst ?? "").replace(/\D/g, "");
+  if (c.length === 3) return c; // já veio com origem embutida
+  if (!c && csosn) {
+    const mapa: Record<string, string> = {
+      "101": "90",
+      "102": "90",
+      "103": "41",
+      "201": "10",
+      "202": "10",
+      "203": "30",
+      "300": "41",
+      "400": "41",
+      "500": "60",
+      "900": "90"
+    };
+    c = mapa[csosn.replace(/\D/g, "")] ?? "90";
+  }
+  if (!c) c = "90";
+  return `${o}${c.padStart(2, "0")}`;
+}
+
+/** Espelha um CFOP de saída do fornecedor para o CFOP de entrada do declarante. */
+function espelharCfopEntrada(cfop: string | null | undefined): string {
+  const c = (cfop ?? "").replace(/\D/g, "");
+  if (c.length !== 4) return "1102";
+  if (c.startsWith("5")) return `1${c.slice(1)}`;
+  if (c.startsWith("6")) return `2${c.slice(1)}`;
+  if (c.startsWith("7")) return `3${c.slice(1)}`;
+  return c;
+}
+
+/** TIPO_ITEM do registro 0200 conforme a finalidade da entrada / tipo do produto. */
+function tipoItem0200(finalidade: string | null | undefined, tipoProduto?: string | null): string {
+  if (finalidade === "REVENDA") return "00";
+  if (finalidade === "INDUSTRIALIZACAO") return "01";
+  if (finalidade === "USO_CONSUMO") return "07";
+  if (finalidade === "IMOBILIZADO") return "08";
+  if (tipoProduto === "SERVICO") return "09";
+  if (tipoProduto === "INSUMO") return "01";
+  return "00";
+}
+
+const xmlParser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "@_", parseTagValue: false, trimValues: true });
+
+type EmitenteXml = {
+  inscricaoEstadual: string | null;
+  logradouro: string | null;
+  numero: string | null;
+  complemento: string | null;
+  bairro: string | null;
+  codigoMunicipioIbge: string | null;
+};
+
+/** Extrai endereço/IE do emitente do XML original da NF-e de entrada (registro 0150). */
+function extrairEmitenteXml(xml: string | null | undefined): EmitenteXml | null {
+  if (!xml) return null;
+  try {
+    const parsed = xmlParser.parse(xml);
+    const emit = (parsed?.nfeProc?.NFe ?? parsed?.NFe)?.infNFe?.emit;
+    if (!emit) return null;
+    const end = emit.enderEmit ?? {};
+    const texto = (v: unknown) => (v == null ? null : String(v).trim() || null);
+    return {
+      inscricaoEstadual: texto(emit.IE),
+      logradouro: texto(end.xLgr),
+      numero: texto(end.nro),
+      complemento: texto(end.xCpl),
+      bairro: texto(end.xBairro),
+      codigoMunicipioIbge: texto(end.cMun)
+    };
+  } catch {
+    return null;
+  }
+}
+
+export type CarregarSpedParams = {
+  ano: number;
+  mes: number;
+  finalidade?: "ORIGINAL" | "RETIFICADORA";
+};
+
+export async function carregarSpedInput(scope: TenantScope, params: CarregarSpedParams): Promise<SpedInput> {
+  const { ano, mes } = params;
+  if (!Number.isInteger(ano) || ano < 2000 || ano > 2100) throw new SpedError("Ano da competência inválido.");
+  if (!Number.isInteger(mes) || mes < 1 || mes > 12) throw new SpedError("Mês da competência inválido.");
+
+  const inicio = new Date(ano, mes - 1, 1, 0, 0, 0, 0);
+  const fim = new Date(ano, mes, 0, 23, 59, 59, 999);
+  const periodo: SpedPeriodo = { ano, mes, inicio, fim };
+  const avisos: string[] = [];
+
+  const base = { tenantId: scope.tenantId, empresaId: scope.empresaId };
+
+  const [empresa, spedConfig] = await Promise.all([
+    prisma.empresa.findFirst({ where: { id: scope.empresaId, tenantId: scope.tenantId } }),
+    prisma.spedConfiguracao.findFirst({ where: { ...base } })
+  ]);
+  if (!empresa) throw new SpedError("Empresa não encontrada para o escopo atual.");
+
+  if (!empresa.inscricaoEstadual) {
+    avisos.push("Empresa sem Inscrição Estadual cadastrada — campo IE do registro 0000 ficará vazio (o PVA rejeita). Complete em Configurações → Dados da empresa.");
+  }
+  if (!empresa.codigoMunicipioIbge) {
+    avisos.push("Empresa sem código de município (IBGE) — obrigatório no registro 0000. Complete em Configurações → Dados da empresa.");
+  }
+  if (!empresa.enderecoUf) {
+    avisos.push("Empresa sem UF cadastrada — obrigatória no registro 0000.");
+  }
+  if (!spedConfig?.contadorNome || !spedConfig?.contadorCpf || !spedConfig?.contadorCrc) {
+    avisos.push("Dados do contador incompletos (registro 0100 é obrigatório: nome, CPF e CRC). Preencha em SPED Fiscal → Configurações.");
+  }
+  if (empresa.regimeTributario === "SIMPLES_NACIONAL" || empresa.regimeTributario === "MEI") {
+    avisos.push("Empresa no Simples Nacional/MEI: a EFD ICMS/IPI normalmente não é exigida nesse regime (obrigação típica do regime normal ou do Simples acima do sublimite). Confirme a obrigatoriedade com o contador.");
+  }
+
+  // Saldo credor do período anterior (ICMS e IPI), vindo do último arquivo gerado.
+  const mesAnterior = mes === 1 ? 12 : mes - 1;
+  const anoAnterior = mes === 1 ? ano - 1 : ano;
+  const arquivoAnterior = await prisma.spedArquivo.findUnique({
+    where: { tenantId_empresaId_ano_mes: { ...base, ano: anoAnterior, mes: mesAnterior } },
+    select: { resumo: true }
+  });
+  let saldoCredorAnterior = 0;
+  let saldoCredorAnteriorIpi = 0;
+  if (arquivoAnterior?.resumo && typeof arquivoAnterior.resumo === "object") {
+    const r = arquivoAnterior.resumo as Record<string, unknown>;
+    saldoCredorAnterior = num((r.apuracaoIcms as Record<string, unknown> | undefined)?.saldoCredorTransportar);
+    saldoCredorAnteriorIpi = num((r.apuracaoIpi as Record<string, unknown> | undefined)?.saldoCredorTransportar);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Saídas: NF-e/NFC-e autorizadas e canceladas do período (NFS-e fica fora da EFD ICMS/IPI)
+  // ---------------------------------------------------------------------------
+  const notasTodas = await prisma.notaFiscal.findMany({
+    where: {
+      ...base,
+      modelo: { in: ["NFE", "NFCE"] },
+      status: { in: ["AUTORIZADA", "CANCELADA"] },
+      emitidaEm: { gte: inicio, lte: fim }
+    },
+    include: {
+      itens: { orderBy: { numeroItem: "asc" }, include: { produto: { select: { sku: true } } } },
+      cliente: { include: { enderecos: { orderBy: { padrao: "desc" } } } }
+    },
+    orderBy: { emitidaEm: "asc" }
+  });
+
+  // SPED só escritura documentos de produção; em ambiente de teste, aceita homologação com aviso.
+  let notas = notasTodas.filter((n) => n.ambiente === "PRODUCAO");
+  if (notas.length === 0 && notasTodas.length > 0) {
+    notas = notasTodas;
+    avisos.push("Nenhuma nota de PRODUÇÃO no período — o arquivo foi montado com notas de HOMOLOGAÇÃO e serve apenas para teste, não para entrega.");
+  }
+
+  const documentos: SpedDocumento[] = [];
+  const participantes = new Map<string, SpedParticipante>();
+  const catalogo = new Map<string, SpedItemCatalogo>();
+
+  for (const nota of notas) {
+    const modelo = nota.modelo === "NFCE" ? "65" : "55";
+    const cancelada = nota.status === "CANCELADA";
+    const rotulo = `${nota.modelo === "NFCE" ? "NFC-e" : "NF-e"} ${nota.numero ?? "s/nº"} série ${nota.serie ?? "?"}`;
+
+    if (!cancelada && (!nota.numero || !nota.chaveAcesso)) {
+      avisos.push(`${rotulo}: autorizada sem número/chave de acesso — verifique a sincronização com o provedor antes de entregar o arquivo.`);
+    }
+
+    // Participante: somente NF-e identifica destinatário no C100 (NFC-e fica sem COD_PART).
+    let codigoParticipante: string | null = null;
+    if (modelo === "55" && nota.cliente && !cancelada) {
+      codigoParticipante = nota.cliente.id;
+      if (!participantes.has(nota.cliente.id)) {
+        const end = nota.cliente.enderecos[0] ?? null;
+        const doc = (nota.cliente.documento ?? "").replace(/\D/g, "");
+        participantes.set(nota.cliente.id, {
+          codigo: nota.cliente.id,
+          nome: nota.cliente.razaoSocial,
+          cnpj: doc.length === 14 ? doc : null,
+          cpf: doc.length === 11 ? doc : null,
+          inscricaoEstadual: nota.cliente.inscricaoEstadual,
+          codigoMunicipioIbge: end?.codigoMunicipioIbge ?? null,
+          logradouro: end?.logradouro ?? null,
+          numero: end?.numero ?? null,
+          complemento: end?.complemento ?? null,
+          bairro: end?.bairro ?? null
+        });
+        if (!end?.codigoMunicipioIbge) {
+          avisos.push(`Cliente "${nota.cliente.razaoSocial}": sem código de município no endereço — registro 0150 ficará incompleto.`);
+        }
+      }
+    }
+
+    const itens: SpedDocumentoItem[] = nota.itens.map((item) => {
+      const valorPis = num(item.valorPis);
+      const valorCofins = num(item.valorCofins);
+      const valorIpi = num(item.valorIpi);
+      const valorLiquido = num(item.valorTotal) - num(item.desconto);
+      if (!item.ncm) {
+        avisos.push(`${rotulo}, item ${item.numeroItem} (${item.codigo}): sem NCM.`);
+      }
+      return {
+        numeroItem: item.numeroItem,
+        codigoItem: item.produto?.sku ?? item.codigo,
+        descricaoComplementar: null,
+        quantidade: num(item.quantidade),
+        unidade: item.unidade,
+        valorItem: num(item.valorTotal),
+        valorDesconto: num(item.desconto),
+        movimentaEstoque: true,
+        cfop: (item.cfop ?? "").replace(/\D/g, "") || "5102",
+        cstIcms: cstIcms3(item.origem, item.cstIcms, item.csosn),
+        baseIcms: num(item.baseIcms),
+        aliquotaIcms: num(item.aliquotaIcms),
+        valorIcms: num(item.valorIcms),
+        baseIcmsSt: num(item.baseIcmsSt),
+        aliquotaIcmsSt: num(item.aliquotaIcmsSt),
+        valorIcmsSt: num(item.valorIcmsSt),
+        valorReducaoBc: 0,
+        cstIpi: item.cstIpi,
+        baseIpi: valorIpi > 0 ? valorLiquido : 0,
+        aliquotaIpi: num(item.aliquotaIpi),
+        valorIpi,
+        cstPis: item.cstPis,
+        basePis: valorPis > 0 ? valorLiquido : 0,
+        aliquotaPis: num(item.aliquotaPis),
+        valorPis,
+        cstCofins: item.cstCofins,
+        baseCofins: valorCofins > 0 ? valorLiquido : 0,
+        aliquotaCofins: num(item.aliquotaCofins),
+        valorCofins
+      };
+    });
+
+    const temSt = itens.some((i) => i.valorIcmsSt > 0);
+    const ufDestino = temSt ? nota.cliente?.enderecos[0]?.uf ?? empresa.enderecoUf ?? null : null;
+
+    documentos.push({
+      tipo: "SAIDA",
+      modelo,
+      cancelado: cancelada,
+      codigoParticipante,
+      serie: nota.serie,
+      numero: nota.numero,
+      chaveAcesso: nota.chaveAcesso,
+      dataEmissao: nota.emitidaEm,
+      dataEntradaSaida: modelo === "55" ? nota.emitidaEm : null,
+      aPrazo: Boolean(nota.condicaoPagamento),
+      valorDocumento: num(nota.total),
+      valorDesconto: num(nota.valorDesconto),
+      valorMercadorias: num(nota.valorProdutos),
+      valorFrete: num(nota.valorFrete),
+      valorSeguro: num(nota.valorSeguro),
+      outrasDespesas: num(nota.outrasDespesas),
+      ufDestino,
+      itens,
+      rotulo
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Entradas: notas de fornecedores conferidas/processadas, pela data de entrada
+  // ---------------------------------------------------------------------------
+  const entradas = await prisma.entradaFiscal.findMany({
+    where: {
+      ...base,
+      status: { in: ["CONFERIDA", "ESTOQUE_PROCESSADO"] },
+      OR: [
+        { recebidaEm: { gte: inicio, lte: fim } },
+        { recebidaEm: null, emitidaEm: { gte: inicio, lte: fim } }
+      ]
+    },
+    include: {
+      itens: {
+        orderBy: { itemNumero: "asc" },
+        include: {
+          impostos: true,
+          produto: { select: { sku: true, nome: true, unidade: true, tipo: true, ncm: true, cest: true, gtin: true } }
+        }
+      },
+      fornecedor: true,
+      parcelas: { select: { id: true } },
+      xmlImportacao: { select: { xmlOriginal: true } }
+    },
+    orderBy: { emitidaEm: "asc" }
+  });
+
+  for (const entrada of entradas) {
+    const rotulo = `Entrada NF ${entrada.numero ?? "s/nº"} (${entrada.fornecedor?.razaoSocial ?? "fornecedor não identificado"})`;
+
+    if (!entrada.fornecedorId || !entrada.fornecedor) {
+      avisos.push(`${rotulo}: sem fornecedor vinculado — documento NÃO incluído no arquivo. Vincule o fornecedor e regere.`);
+      continue;
+    }
+
+    if (!participantes.has(entrada.fornecedorId)) {
+      const doc = (entrada.fornecedor.documento ?? "").replace(/\D/g, "");
+      const emitXml = extrairEmitenteXml(entrada.xmlImportacao?.xmlOriginal);
+      participantes.set(entrada.fornecedorId, {
+        codigo: entrada.fornecedorId,
+        nome: entrada.fornecedor.razaoSocial,
+        cnpj: doc.length === 14 ? doc : null,
+        cpf: doc.length === 11 ? doc : null,
+        inscricaoEstadual: emitXml?.inscricaoEstadual ?? null,
+        codigoMunicipioIbge: emitXml?.codigoMunicipioIbge ?? null,
+        logradouro: emitXml?.logradouro ?? null,
+        numero: emitXml?.numero ?? null,
+        complemento: emitXml?.complemento ?? null,
+        bairro: emitXml?.bairro ?? null
+      });
+      if (!emitXml?.codigoMunicipioIbge) {
+        avisos.push(`Fornecedor "${entrada.fornecedor.razaoSocial}": sem código de município (não foi possível ler do XML) — registro 0150 ficará incompleto.`);
+      }
+    }
+
+    const itens: SpedDocumentoItem[] = entrada.itens.map((item) => {
+      const impostoPor = (tributo: string) => item.impostos.find((i) => i.tributo === tributo) ?? null;
+      const icms = impostoPor("ICMS");
+      const ipi = impostoPor("IPI");
+      const pis = impostoPor("PIS");
+      const cofins = impostoPor("COFINS");
+
+      // "Sob o enfoque do declarante": só escritura crédito quando o imposto é recuperável
+      // (finalidade × regime, já avaliado na conferência da entrada). Sem crédito → CST 90
+      // (ou 60 quando a mercadoria veio com ICMS-ST retido) e valores zerados.
+      const icmsRecuperavel = Boolean(icms?.recuperavel);
+      const veioComSt = icms?.cst === "60" || icms?.csosn === "500";
+      const cstEntrada = icmsRecuperavel ? icms?.cst ?? "00" : veioComSt ? "60" : "90";
+
+      const codigoItem = item.produto?.sku ?? `FORN-${item.codigoFornecedor}`.slice(0, 60);
+      const ncm = item.produto?.ncm ?? item.ncm;
+      if (!ncm) avisos.push(`${rotulo}, item ${item.itemNumero}: sem NCM.`);
+      if (!catalogo.has(codigoItem)) {
+        catalogo.set(codigoItem, {
+          codigo: codigoItem,
+          descricao: item.produto?.nome ?? item.descricaoFornecedor,
+          gtin: item.produto?.gtin ?? item.gtin,
+          unidade: item.unidade,
+          tipoItem: tipoItem0200(item.finalidade, item.produto?.tipo),
+          ncm,
+          cest: item.produto?.cest ?? item.cest
+        });
+      }
+      if (!item.finalidade) {
+        avisos.push(`${rotulo}, item ${item.itemNumero}: sem finalidade de entrada definida — classificado como revenda no 0200.`);
+      }
+
+      return {
+        numeroItem: item.itemNumero,
+        codigoItem,
+        descricaoComplementar: item.produto ? item.descricaoFornecedor : null,
+        quantidade: num(item.quantidade),
+        unidade: item.unidade,
+        valorItem: num(item.valorTotal),
+        valorDesconto: num(item.valorDesconto),
+        movimentaEstoque: item.movimentaEstoque,
+        cfop: (item.cfopEntradaDerivado ?? "").replace(/\D/g, "") || espelharCfopEntrada(item.cfop),
+        cstIcms: cstIcms3(null, cstEntrada, null),
+        baseIcms: icmsRecuperavel ? num(icms?.baseCalculo) : 0,
+        aliquotaIcms: icmsRecuperavel ? num(icms?.aliquota) : 0,
+        valorIcms: icmsRecuperavel ? num(icms?.valor) : 0,
+        baseIcmsSt: 0,
+        aliquotaIcmsSt: 0,
+        valorIcmsSt: 0,
+        valorReducaoBc: 0,
+        cstIpi: ipi?.recuperavel ? ipi?.cst ?? null : null,
+        baseIpi: ipi?.recuperavel ? num(ipi?.baseCalculo) : 0,
+        aliquotaIpi: ipi?.recuperavel ? num(ipi?.aliquota) : 0,
+        valorIpi: ipi?.recuperavel ? num(ipi?.valor) : 0,
+        cstPis: pis?.recuperavel ? pis?.cst ?? null : null,
+        basePis: pis?.recuperavel ? num(pis?.baseCalculo) : 0,
+        aliquotaPis: pis?.recuperavel ? num(pis?.aliquota) : 0,
+        valorPis: pis?.recuperavel ? num(pis?.valor) : 0,
+        cstCofins: cofins?.recuperavel ? cofins?.cst ?? null : null,
+        baseCofins: cofins?.recuperavel ? num(cofins?.baseCalculo) : 0,
+        aliquotaCofins: cofins?.recuperavel ? num(cofins?.aliquota) : 0,
+        valorCofins: cofins?.recuperavel ? num(cofins?.valor) : 0
+      };
+    });
+
+    documentos.push({
+      tipo: "ENTRADA",
+      modelo: entrada.modelo === "65" ? "65" : "55",
+      cancelado: false,
+      codigoParticipante: entrada.fornecedorId,
+      serie: entrada.serie,
+      numero: entrada.numero,
+      chaveAcesso: entrada.chaveAcesso,
+      dataEmissao: entrada.emitidaEm,
+      dataEntradaSaida: entrada.recebidaEm ?? entrada.emitidaEm,
+      aPrazo: entrada.parcelas.length > 0,
+      valorDocumento: num(entrada.totalNota),
+      valorDesconto: num(entrada.valorDesconto),
+      valorMercadorias: num(entrada.totalProdutos),
+      valorFrete: num(entrada.valorFrete),
+      valorSeguro: num(entrada.valorSeguro),
+      outrasDespesas: num(entrada.outrasDespesas),
+      ufDestino: null,
+      itens,
+      rotulo
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Inventário (bloco H): inventário FINALIZADO dentro do período
+  // ---------------------------------------------------------------------------
+  const inventarioDb = await prisma.inventario.findFirst({
+    where: { ...base, status: "FINALIZADO", finalizadoEm: { gte: inicio, lte: fim } },
+    include: {
+      itens: { include: { produto: { select: { sku: true, nome: true, unidade: true, ncm: true, cest: true, gtin: true, tipo: true } } } }
+    },
+    orderBy: { finalizadoEm: "desc" }
+  });
+
+  let inventario: SpedInput["inventario"] = null;
+  if (inventarioDb?.finalizadoEm) {
+    const itensInv = inventarioDb.itens
+      .filter((i) => num(i.saldoContado ?? i.saldoSistema) > 0)
+      .map((i) => {
+        const codigo = i.produto.sku;
+        if (!catalogo.has(codigo)) {
+          catalogo.set(codigo, {
+            codigo,
+            descricao: i.produto.nome,
+            gtin: i.produto.gtin,
+            unidade: i.produto.unidade,
+            tipoItem: tipoItem0200(null, i.produto.tipo),
+            ncm: i.produto.ncm,
+            cest: i.produto.cest
+          });
+        }
+        return {
+          codigoItem: codigo,
+          unidade: i.produto.unidade,
+          quantidade: num(i.saldoContado ?? i.saldoSistema),
+          valorUnitario: num(i.custoUnitario)
+        };
+      });
+    if (itensInv.length > 0) {
+      inventario = { data: inventarioDb.finalizadoEm, itens: itensInv };
+    }
+  }
+
+  const config: SpedConfig = {
+    perfilArquivo: (spedConfig?.perfilArquivo === "A" || spedConfig?.perfilArquivo === "C" ? spedConfig.perfilArquivo : "B") as SpedConfig["perfilArquivo"],
+    indAtividade: spedConfig?.indAtividade === "0" ? "0" : "1",
+    finalidade: params.finalidade === "RETIFICADORA" ? "RETIFICADORA" : "ORIGINAL",
+    contador: {
+      nome: spedConfig?.contadorNome ?? null,
+      cpf: spedConfig?.contadorCpf ?? null,
+      crc: spedConfig?.contadorCrc ?? null,
+      cnpj: spedConfig?.contadorCnpj ?? null,
+      cep: spedConfig?.contadorCep ?? null,
+      endereco: spedConfig?.contadorEndereco ?? null,
+      numero: spedConfig?.contadorNumero ?? null,
+      complemento: spedConfig?.contadorComplemento ?? null,
+      bairro: spedConfig?.contadorBairro ?? null,
+      telefone: spedConfig?.contadorTelefone ?? null,
+      email: spedConfig?.contadorEmail ?? null,
+      codigoMunicipioIbge: spedConfig?.contadorCodigoMunicipioIbge ?? null
+    },
+    codigoReceitaIcms: spedConfig?.codigoReceitaIcms ?? null,
+    diaVencimentoIcms: spedConfig?.diaVencimentoIcms ?? 10,
+    saldoCredorAnterior,
+    saldoCredorAnteriorIpi
+  };
+
+  return {
+    periodo,
+    empresa: {
+      razaoSocial: empresa.razaoSocial,
+      cnpj: empresa.cnpj,
+      inscricaoEstadual: empresa.inscricaoEstadual,
+      inscricaoMunicipal: empresa.inscricaoMunicipal,
+      uf: empresa.enderecoUf,
+      codigoMunicipioIbge: empresa.codigoMunicipioIbge,
+      nomeFantasia: empresa.nomeFantasia,
+      cep: empresa.enderecoCep,
+      logradouro: empresa.enderecoLogradouro,
+      numero: empresa.enderecoNumero,
+      complemento: empresa.enderecoComplemento,
+      bairro: empresa.enderecoBairro,
+      telefone: empresa.telefone,
+      email: empresa.email,
+      regimeTributario: empresa.regimeTributario
+    },
+    config,
+    versaoLeiaute: resolveVersaoLeiaute(ano),
+    participantes: Array.from(participantes.values()).sort((a, b) => a.nome.localeCompare(b.nome)),
+    itensCatalogo: Array.from(catalogo.values()).sort((a, b) => a.codigo.localeCompare(b.codigo)),
+    documentos,
+    inventario,
+    avisos
+  };
+}

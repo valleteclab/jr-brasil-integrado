@@ -79,6 +79,7 @@ const groups: ErpNavGroup[] = [
       { label: "Gastos (cupom)", href: "/erp/gastos", icon: "💸" },
       { label: "Fluxo de caixa", href: "/erp/fluxo-caixa", icon: "📈" },
       { label: "NF-e emitidas", href: "/erp/fiscal", icon: "🧾" },
+      { label: "SPED Fiscal", href: "/erp/sped-fiscal", icon: "🗂" },
       { label: "Regras tributárias", href: "/erp/regras-tributarias", icon: "⚖" },
       { label: "Regras de finalidade", href: "/erp/regras-finalidade", icon: "🏷" }
     ]
@@ -122,6 +123,8 @@ export function ErpShell({ children, context, modulos }: ErpShellProps) {
   const podeVer = (href: string) => {
     const modulo = moduloFromPath(href);
     if (!modulo) return true;
+    // SPED Fiscal é liberado por tenant pelo dono do SaaS, além do RBAC por perfil.
+    if (modulo === "sped-fiscal" && !context.spedFiscalHabilitado) return false;
     return modulos.includes(modulo) && moduloVisivelNoTipoNegocio(modulo, context.tipoNegocio);
   };
   const gruposVisiveis = groups

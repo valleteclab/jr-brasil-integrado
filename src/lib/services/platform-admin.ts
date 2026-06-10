@@ -181,6 +181,7 @@ export type ClienteDetail = {
   ativo: boolean;
   lojaHabilitada: boolean;
   iaHabilitada: boolean;
+  spedFiscalHabilitado: boolean;
   criadoEm: string;
   empresas: {
     id: string;
@@ -265,6 +266,7 @@ export async function getClienteDetail(tenantId: string): Promise<ClienteDetail 
     ativo: tenant.ativo,
     lojaHabilitada: tenant.lojaHabilitada,
     iaHabilitada: tenant.iaHabilitada,
+    spedFiscalHabilitado: tenant.spedFiscalHabilitado,
     criadoEm: tenant.criadoEm.toISOString(),
     empresas: tenant.empresas.map((e) => ({
       id: e.id,
@@ -369,6 +371,28 @@ export async function setTenantIaHabilitada(tenantId: string, habilitada: boolea
   });
 
   return { id: atualizado.id, iaHabilitada: atualizado.iaHabilitada };
+}
+
+/** Habilita/desabilita o módulo SPED Fiscal (EFD ICMS/IPI) do cliente (gate do dono do SaaS). */
+export async function setTenantSpedFiscalHabilitado(tenantId: string, habilitado: boolean) {
+  const admin = await requirePlatformAdmin();
+  assertDb();
+
+  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+  if (!tenant) throw new PlatformAdminError("Cliente não encontrado.");
+
+  const atualizado = await prisma.tenant.update({ where: { id: tenantId }, data: { spedFiscalHabilitado: habilitado } });
+
+  await audit({
+    tenantId,
+    usuarioId: admin.usuarioId,
+    entidade: "Tenant",
+    entidadeId: tenantId,
+    acao: habilitado ? "plataforma.habilitar_sped_fiscal" : "plataforma.desabilitar_sped_fiscal",
+    payload: { spedFiscalHabilitadoAnterior: tenant.spedFiscalHabilitado, spedFiscalHabilitadoNovo: habilitado }
+  });
+
+  return { id: atualizado.id, spedFiscalHabilitado: atualizado.spedFiscalHabilitado };
 }
 
 /** Edita o nome e/ou o slug (identificador) do cliente (tenant). Slug único entre clientes. */

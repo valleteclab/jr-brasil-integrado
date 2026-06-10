@@ -22,6 +22,8 @@ export type ErpShellContext = {
   /** Identidade visual da empresa (Configurações → Aparência). */
   logoSistema: string | null;
   corDestaque: string | null;
+  /** Módulo SPED Fiscal liberado pelo dono do SaaS para este tenant (esconde o item do menu). */
+  spedFiscalHabilitado: boolean;
   badges: ErpShellBadges;
 };
 
@@ -41,6 +43,7 @@ const SHELL_FALLBACK: ErpShellContext = {
   tipoNegocio: "AMBOS",
   logoSistema: null,
   corDestaque: null,
+  spedFiscalHabilitado: false,
   badges: { vendas: 0, orcamentos: 0, os: 0, compras: 0, estoque: 0, financeiro: 0 }
 };
 
@@ -58,6 +61,7 @@ export async function getErpShellContext(): Promise<ErpShellContext> {
     const [
       empresa,
       session,
+      tenant,
       configFiscal,
       vendas,
       orcamentos,
@@ -73,6 +77,10 @@ export async function getErpShellContext(): Promise<ErpShellContext> {
       }),
       // Usuário REALMENTE logado (sessão atual) — não o vínculo mais antigo da empresa.
       getSession(),
+      prisma.tenant.findUnique({
+        where: { id: scope.tenantId },
+        select: { spedFiscalHabilitado: true }
+      }),
       prisma.configuracaoFiscal.findUnique({
         where: { empresaId: scope.empresaId },
         select: { ambiente: true, ativo: true }
@@ -124,6 +132,7 @@ export async function getErpShellContext(): Promise<ErpShellContext> {
       tipoNegocio: empresa?.tipoNegocio ?? "AMBOS",
       logoSistema: empresa?.logoSistema ?? null,
       corDestaque: empresa?.corDestaque ?? null,
+      spedFiscalHabilitado: tenant?.spedFiscalHabilitado ?? false,
       badges: {
         vendas,
         orcamentos,

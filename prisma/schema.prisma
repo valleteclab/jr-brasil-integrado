@@ -251,6 +251,9 @@ model Tenant {
   // Módulo de IA liberado pelo dono do SaaS. Ligado por padrão; quando false, as funções de IA
   // (sugestões, assistente) ficam bloqueadas para este cliente.
   iaHabilitada    Boolean          @default(true)
+  // Módulo SPED Fiscal (EFD ICMS/IPI) liberado pelo dono do SaaS. Desligado por padrão;
+  // quando false, as telas e APIs de geração do SPED ficam bloqueadas para este cliente.
+  spedFiscalHabilitado Boolean     @default(false)
   empresas        Empresa[]
   vinculos        UsuarioVinculo[]
   perfis          Perfil[]
@@ -299,6 +302,8 @@ model Empresa {
   configuracoesIntegracao ConfiguracaoIntegracao[]
   configuracaoFiscal ConfiguracaoFiscal?
   sequenciasFiscais  SequenciaFiscal[]
+  spedConfiguracao   SpedConfiguracao?
+  spedArquivos       SpedArquivo[]
   contasBancarias    ContaBancaria[]
   formasPagamento    FormaPagamento[]
   movimentosFinanceiros MovimentoFinanceiro[]
@@ -1780,6 +1785,85 @@ model SequenciaFiscal {
 
   @@unique([tenantId, empresaId, modelo, serie])
   @@index([tenantId, empresaId])
+}
+
+// ---------------------------------------------------------------------------
+// SPED Fiscal (EFD ICMS/IPI) — módulo liberado por tenant pelo dono do SaaS
+// ---------------------------------------------------------------------------
+
+// Status do arquivo gerado: GERADO (pronto para download) ou ENVIADO_CONTADOR (marcado
+// pelo usuário após enviar o .txt ao contador, que valida no PVA e transmite).
+enum StatusSpedArquivo {
+  GERADO
+  ENVIADO_CONTADOR
+}
+
+// Configuração da escrituração por empresa: perfil do arquivo (0000.IND_PERFIL), atividade
+// (0000.IND_ATIV), dados do contador (registro 0100) e parâmetros do E116 (código de receita
+// e dia de vencimento do ICMS, que variam por UF).
+model SpedConfiguracao {
+  id                          String   @id @default(cuid())
+  tenantId                    String
+  empresaId                   String   @unique
+  empresa                     Empresa  @relation(fields: [empresaId], references: [id])
+  // IND_PERFIL do registro 0000: A, B ou C (definido pela SEFAZ da UF da empresa).
+  perfilArquivo               String   @default("B")
+  // IND_ATIV do registro 0000: 0 = industrial/equiparado a industrial, 1 = outros.
+  indAtividade                String   @default("1")
+  // Contador responsável (registro 0100 — obrigatório no arquivo).
+  contadorNome                String?
+  contadorCpf                 String?
+  contadorCrc                 String?
+  contadorCnpj                String?
+  contadorCep                 String?
+  contadorEndereco            String?
+  contadorNumero              String?
+  contadorComplemento         String?
+  contadorBairro              String?
+  contadorTelefone            String?
+  contadorEmail               String?
+  contadorCodigoMunicipioIbge String?
+  // E116 (obrigação do ICMS a recolher): código de receita estadual e dia de vencimento.
+  codigoReceitaIcms           String?
+  diaVencimentoIcms           Int      @default(10)
+  criadoEm                    DateTime @default(now())
+  atualizadoEm                DateTime @updatedAt
+
+  @@index([tenantId, empresaId])
+}
+
+// Arquivo EFD ICMS/IPI gerado para uma competência (ano/mês). Guarda o .txt completo,
+// o resumo estruturado da apuração (exibido na tela) e os avisos da geração. Uma
+// competência tem no máximo um arquivo por empresa — regerar substitui o anterior.
+model SpedArquivo {
+  id                  String            @id @default(cuid())
+  tenantId            String
+  empresaId           String
+  empresa             Empresa           @relation(fields: [empresaId], references: [id])
+  ano                 Int
+  mes                 Int
+  // COD_VER do registro 0000 (ex.: "020" para 2026). Versionado para suportar leiautes
+  // futuros, incluindo os registros de IBS/CBS da reforma tributária quando publicados.
+  versaoLeiaute       String
+  // COD_FIN do registro 0000: ORIGINAL (0) ou RETIFICADORA (1).
+  finalidade          String            @default("ORIGINAL")
+  perfilArquivo       String            @default("B")
+  status              StatusSpedArquivo @default(GERADO)
+  conteudo            String
+  totalLinhas         Int
+  // Resumo estruturado: apuração ICMS/ICMS-ST/IPI/PIS/COFINS, totais por CFOP,
+  // contagem de registros por tipo e documentos considerados.
+  resumo              Json
+  // Avisos e pendências detectadas na geração (cadastros incompletos, CST ausente etc.).
+  avisos              Json
+  saldoCredorAnterior Decimal           @default(0) @db.Decimal(14, 2)
+  geradoPor           String?
+  enviadoContadorEm   DateTime?
+  criadoEm            DateTime          @default(now())
+  atualizadoEm        DateTime          @updatedAt
+
+  @@unique([tenantId, empresaId, ano, mes])
+  @@index([tenantId, empresaId, status])
 }
 
 // Conta financeira (carteira) de onde o dinheiro sai/entra: caixa, conta bancária ou cartão.

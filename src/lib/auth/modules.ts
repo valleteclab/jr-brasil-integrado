@@ -25,6 +25,7 @@ export type ModuloKey =
   | "gastos"
   | "fluxo-caixa"
   | "fiscal"
+  | "sped-fiscal"
   | "relatorios"
   | "assistente"
   | "configuracoes";
@@ -50,6 +51,7 @@ export const MODULOS: Array<{ key: ModuloKey; label: string }> = [
   { key: "gastos", label: "Gastos" },
   { key: "fluxo-caixa", label: "Fluxo de caixa" },
   { key: "fiscal", label: "Notas fiscais" },
+  { key: "sped-fiscal", label: "SPED Fiscal" },
   { key: "relatorios", label: "Relatórios" },
   { key: "assistente", label: "Assistente IA" },
   { key: "configuracoes", label: "Configurações" }
@@ -96,7 +98,7 @@ export const PERFIS_PADRAO: Array<{ nome: string; descricao: string; modulos: Mo
   {
     nome: "FISCAL",
     descricao: "Notas fiscais, regras tributárias e configuração fiscal.",
-    modulos: ["dashboard", "fiscal", "regras-tributarias", "regras-finalidade", "configuracoes"]
+    modulos: ["dashboard", "fiscal", "sped-fiscal", "regras-tributarias", "regras-finalidade", "configuracoes"]
   }
 ];
 
@@ -122,8 +124,8 @@ export type TipoNegocio = "VENDA" | "SERVICO" | "AMBOS";
 const MODULOS_OCULTOS_POR_TIPO: Record<TipoNegocio, ModuloKey[]> = {
   // Só mercadoria: esconde ordens de serviço.
   VENDA: ["os"],
-  // Só serviço: esconde a cadeia de mercadoria/estoque.
-  SERVICO: ["compras", "entradas-fiscais", "estoque", "inventarios", "fornecedores", "regras-finalidade"],
+  // Só serviço: esconde a cadeia de mercadoria/estoque (e o SPED Fiscal, que é EFD ICMS/IPI).
+  SERVICO: ["compras", "entradas-fiscais", "estoque", "inventarios", "fornecedores", "regras-finalidade", "sped-fiscal"],
   // Vende e presta serviço: mostra tudo.
   AMBOS: []
 };
