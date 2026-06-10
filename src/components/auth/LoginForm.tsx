@@ -38,7 +38,15 @@ export function LoginForm() {
         style={{ width: "100%", maxWidth: 380, background: "#fff", borderRadius: 12, padding: 32, boxShadow: "0 10px 40px rgba(0,0,0,.25)" }}
       >
         <div style={{ textAlign: "center", marginBottom: 20 }}>
-          <h1 style={{ fontFamily: "Barlow Condensed, sans-serif", fontWeight: 800, fontSize: 28, margin: 0 }}>XERP</h1>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/icons/xerp-192.png"
+            alt="XERP"
+            width={64}
+            height={64}
+            style={{ borderRadius: 14, display: "block", margin: "0 auto 12px", boxShadow: "0 6px 18px rgba(11,18,32,.35)" }}
+          />
+          <h1 style={{ fontFamily: "Barlow Condensed, sans-serif", fontWeight: 800, fontSize: 28, margin: 0, letterSpacing: 1 }}>XERP</h1>
           <p style={{ color: "var(--erp-slate, #64748b)", fontSize: 13, margin: "4px 0 0" }}>Acesse sua conta</p>
         </div>
 
@@ -67,6 +75,10 @@ export function LoginForm() {
         <button type="submit" className="btn-erp primary" disabled={busy} style={{ width: "100%", height: 44 }}>
           {busy ? "Entrando…" : "Entrar"}
         </button>
+
+        <p style={{ textAlign: "center", color: "var(--erp-slate, #94a3b8)", fontSize: 11.5, margin: "18px 0 0" }}>
+          por <strong style={{ fontWeight: 700 }}>Valleteclab</strong>
+        </p>
       </form>
     </div>
   );

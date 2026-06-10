@@ -162,7 +162,9 @@ export function ErpShell({ children, context, modulos }: ErpShellProps) {
               <img src={context.logoSistema} alt={context.empresaNome} style={{ maxWidth: "100%", maxHeight: 36, objectFit: "contain", display: "block" }} />
             </span>
           ) : (
-            <div className="mark">JR</div>
+            // Sem logo do cliente: usa o ícone do XERP (marca do produto) como fallback.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src="/icons/xerp-192.png" alt="XERP" width={32} height={32} style={{ borderRadius: 7, display: "block" }} />
           )}
           {!context.logoSistema && (
             <div>

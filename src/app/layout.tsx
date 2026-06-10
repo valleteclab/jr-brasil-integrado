@@ -7,12 +7,12 @@ export const metadata: Metadata = {
   title: "XERP",
   description: "XERP — ERP de gestão comercial para PMEs, por Valleteclab.",
   manifest: "/manifest.webmanifest",
-  appleWebApp: { capable: true, statusBarStyle: "default", title: "XERP" },
-  icons: { icon: "/icons/icon.svg", apple: "/icons/icon.svg" }
+  appleWebApp: { capable: true, statusBarStyle: "default", title: "XERP" }
+  // Favicon e apple-touch-icon vêm de src/app/icon.png e src/app/apple-icon.png (App Router).
 };
 
 export const viewport: Viewport = {
-  themeColor: "#4f46e5"
+  themeColor: "#0b1220"
 };
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {

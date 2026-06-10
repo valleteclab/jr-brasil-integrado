@@ -1,15 +1,16 @@
 {
-  "name": "JR Brasil — Gastos",
-  "short_name": "Gastos",
-  "description": "Controle de gastos por foto de cupom",
-  "start_url": "/erp/gastos",
+  "name": "XERP",
+  "short_name": "XERP",
+  "description": "ERP de gestão comercial para PMEs, por Valleteclab.",
+  "start_url": "/erp",
   "scope": "/",
   "display": "standalone",
   "background_color": "#0f172a",
-  "theme_color": "#4f46e5",
+  "theme_color": "#0b1220",
   "lang": "pt-BR",
   "icons": [
-    { "src": "/icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
-    { "src": "/icons/icon-maskable.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+    { "src": "/icons/xerp-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/xerp-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/xerp-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ]
 }
