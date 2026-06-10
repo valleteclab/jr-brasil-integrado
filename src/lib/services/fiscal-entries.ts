@@ -115,7 +115,8 @@ export async function listFiscalEntrySummaries(): Promise<FiscalEntrySummary[]> 
         rawStatus: entry.status,
         linkedItems,
         totalItems,
-        canDelete: entry.status !== "ESTOQUE_PROCESSADO" && entry.status !== "ESTORNADA",
+        // Estornada já desfez o estoque → pode ser excluída (ESTOQUE_PROCESSADO exige estornar antes).
+        canDelete: entry.status !== "ESTOQUE_PROCESSADO",
         canReverse: entry.status === "ESTOQUE_PROCESSADO",
         ...status,
         ...vinculation

@@ -1294,7 +1294,7 @@ export async function deleteFiscalEntry(scope: TenantScope, entradaFiscalId: str
       },
       include: {
         itens: {
-          select: { id: true }
+          select: { id: true, produtoId: true, produtoVinculadoAutomaticamente: true }
         }
       }
     });
@@ -1308,6 +1308,15 @@ export async function deleteFiscalEntry(scope: TenantScope, entradaFiscalId: str
     }
 
     const itemIds = entrada.itens.map((item) => item.id);
+    // Produtos CRIADOS/vinculados automaticamente por esta entrada — candidatos a remover em cascata
+    // junto com a entrada (só se não tiverem nenhum outro uso; ver verificação adiante).
+    const produtoIdsCandidatos = [
+      ...new Set(
+        entrada.itens
+          .filter((i) => i.produtoVinculadoAutomaticamente && i.produtoId)
+          .map((i) => i.produtoId as string)
+      )
+    ];
 
     if (itemIds.length) {
       await tx.entradaFiscalItemImposto.deleteMany({
@@ -1346,6 +1355,36 @@ export async function deleteFiscalEntry(scope: TenantScope, entradaFiscalId: str
       where: { id: entrada.id }
     });
 
+    // Cascata dos produtos CRIADOS por esta entrada: agora que os itens dela já foram apagados,
+    // remove cada produto candidato SE não tiver nenhum outro uso (outra entrada, nota, pedido,
+    // orçamento, compra ou ordem de serviço). Caso contrário, preserva o produto.
+    let produtosRemovidos = 0;
+    for (const produtoId of produtoIdsCandidatos) {
+      const [outrasEntradas, notas, pedidos, orcamentos, compras, osPecas] = await Promise.all([
+        tx.entradaFiscalItem.count({ where: { produtoId } }),
+        tx.notaFiscalItem.count({ where: { produtoId } }),
+        tx.pedidoVendaItem.count({ where: { produtoId } }),
+        tx.orcamentoItem.count({ where: { produtoId } }),
+        tx.pedidoCompraItem.count({ where: { produtoId } }),
+        tx.ordemServicoPeca.count({ where: { produtoId } })
+      ]);
+      if (outrasEntradas || notas || pedidos || orcamentos || compras || osPecas) continue; // em uso → preserva
+
+      await tx.estoqueReserva.deleteMany({ where: { produtoId } });
+      await tx.estoqueLote.deleteMany({ where: { produtoId } });
+      await tx.estoqueSerie.deleteMany({ where: { produtoId } });
+      await tx.estoqueMovimento.deleteMany({ where: { produtoId } });
+      await tx.estoqueSaldo.deleteMany({ where: { produtoId } });
+      await tx.produtoImagem.deleteMany({ where: { produtoId } });
+      await tx.produtoFiscal.deleteMany({ where: { produtoId } });
+      await tx.produtoFornecedor.deleteMany({ where: { produtoId } });
+      await tx.produtoAplicacao.deleteMany({ where: { produtoId } });
+      await tx.tabelaPrecoItem.deleteMany({ where: { produtoId } });
+      await tx.inventarioItem.deleteMany({ where: { produtoId } });
+      await tx.produto.delete({ where: { id: produtoId } });
+      produtosRemovidos++;
+    }
+
     if (entrada.xmlImportacaoId) {
       const remainingEntries = await tx.entradaFiscal.count({
         where: {
@@ -1367,10 +1406,10 @@ export async function deleteFiscalEntry(scope: TenantScope, entradaFiscalId: str
       entidade: "EntradaFiscal",
       entidadeId: entrada.id,
       acao: "DELETE",
-      payload: { numero: entrada.numero, status: entrada.status, itens: itemIds.length }
+      payload: { numero: entrada.numero, status: entrada.status, itens: itemIds.length, produtosRemovidos }
     });
 
-    return { id: entrada.id };
+    return { id: entrada.id, produtosRemovidos };
   }, FISCAL_TRANSACTION_OPTIONS);
 }
 

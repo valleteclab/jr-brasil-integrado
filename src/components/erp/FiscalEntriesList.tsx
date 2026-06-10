@@ -119,6 +119,7 @@ export function FiscalEntriesList({ entries, receivedDocuments }: FiscalEntriesL
     setError("");
 
     try {
+      let produtosRemovidos = 0;
       for (const id of ids) {
         const entry = rows.find((row) => row.id === id);
 
@@ -127,15 +128,19 @@ export function FiscalEntriesList({ entries, receivedDocuments }: FiscalEntriesL
         }
 
         const response = await fetch(`/api/erp/entradas-fiscais/${id}`, { method: "DELETE" });
-        const data = await response.json() as { error?: string };
+        const data = await response.json() as { error?: string; produtosRemovidos?: number };
 
         if (!response.ok) {
           throw new Error(data.error || "Não foi possível excluir a nota fiscal de entrada.");
         }
+        produtosRemovidos += data.produtosRemovidos ?? 0;
       }
 
       setRows((current) => current.filter((entry) => !ids.includes(entry.id)));
       setSelectedIds((current) => current.filter((id) => !ids.includes(id)));
+      if (produtosRemovidos > 0) {
+        window.alert(`Exclusão concluída. ${produtosRemovidos} produto(s) criado(s) por essa(s) nota(s) — sem uso em outras notas/pedidos — também foram removidos.`);
+      }
     } catch (deleteError) {
       setError(deleteError instanceof Error ? deleteError.message : "Não foi possível excluir a nota fiscal de entrada.");
     } finally {
