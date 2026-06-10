@@ -35,7 +35,7 @@ export async function createOrdemServico(scope: TenantScope, input: CreateOrdemS
   if (!input.equipamento) throw new Error("Equipamento é obrigatório.");
 
   return prisma.$transaction(async (tx) => {
-    const numero = await nextDocumentNumber(tx.ordemServico, scope, "OS");
+    const numero = await nextDocumentNumber(tx, scope, "OS", tx.ordemServico);
 
     const os = await tx.ordemServico.create({
       data: {

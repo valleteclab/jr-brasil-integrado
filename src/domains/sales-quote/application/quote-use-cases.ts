@@ -30,7 +30,7 @@ export async function createQuote(scope: TenantScope, input: CreateQuoteInput) {
   if (!input.itens || input.itens.length === 0) throw new Error("O orçamento deve ter ao menos um item.");
 
   return prisma.$transaction(async (tx) => {
-    const numero = await nextDocumentNumber(tx.orcamento, scope, "ORC");
+    const numero = await nextDocumentNumber(tx, scope, "ORC", tx.orcamento);
 
     const subtotal = input.itens.reduce(
       (acc, item) => acc + item.quantidade * item.precoUnitario,
@@ -198,7 +198,7 @@ export async function convertQuoteToPedido(scope: TenantScope, id: string) {
       throw new Error("Somente orçamentos APROVADOS podem ser convertidos em pedido.");
     }
 
-    const numeroPedido = await nextDocumentNumber(tx.pedidoVenda, scope, "PV");
+    const numeroPedido = await nextDocumentNumber(tx, scope, "PV", tx.pedidoVenda);
     const deposito = await getDefaultDeposito(tx, scope);
 
     const pedido = await tx.pedidoVenda.create({

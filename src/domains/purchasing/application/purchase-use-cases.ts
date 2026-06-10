@@ -66,7 +66,7 @@ export async function createPurchaseOrder(scope: TenantScope, input: CreatePurch
       throw new PurchaseValidationError("Fornecedor não encontrado ou inativo.");
     }
 
-    const numero = await nextDocumentNumber(tx.pedidoCompra, scope, "PC");
+    const numero = await nextDocumentNumber(tx, scope, "PC", tx.pedidoCompra);
     const frete = input.frete ?? 0;
 
     const subtotal = input.itens.reduce((sum, item) => sum + item.quantidade * item.custoUnitario, 0);

@@ -1,40 +1,77 @@
 import type { Prisma } from "@prisma/client";
 import type { TenantScope } from "@/lib/auth/dev-session";
 
+/** Delegate mínimo para descobrir o maior número legado ao semear a sequência (uma vez). */
 type NumberedDelegate = {
   findFirst: (args: {
     where: { tenantId: string; empresaId: string };
-    orderBy: { criadoEm: "desc" };
+    orderBy: { numero: "desc" };
     select: { numero: true };
   }) => Promise<{ numero: string | null } | null>;
 };
 
+function formatNumero(prefix: string, n: number): string {
+  return `${prefix}-${String(n).padStart(6, "0")}`;
+}
+
+/** Extrai o valor numérico de um número de documento ("PV-000042" → 42). */
+function parseNumero(numero: string | null | undefined): number {
+  const digits = (numero ?? "").replace(/\D/g, "");
+  return digits ? Number.parseInt(digits, 10) : 0;
+}
+
 /**
- * Gera o próximo número sequencial para documentos operacionais (pedidos, orçamentos,
- * OS, compras, inventário) no formato `PREFIXO-000123`. Baseado no maior número existente
- * da empresa. Para documentos fiscais use a SequenciaFiscal (atômica).
+ * Gera o próximo número sequencial de documento operacional (PV/ORC/OS/PC/INV) de forma
+ * ATÔMICA, no formato `PREFIXO-000123`. Deve rodar dentro de uma transação (recebe `tx`).
+ *
+ * Usa a SequenciaDocumento (UPDATE com lock de linha) para que dois PDVs/operadores criando
+ * documentos ao mesmo tempo nunca recebam o mesmo número. Na primeira vez de cada
+ * empresa/tipo, semeia a sequência a partir do maior número já existente (backfill), para
+ * conviver com documentos criados antes desta tabela.
  */
 export async function nextDocumentNumber(
-  delegate: NumberedDelegate,
+  tx: Prisma.TransactionClient,
   scope: TenantScope,
-  prefix: string
-) {
-  const last = await delegate.findFirst({
-    where: { tenantId: scope.tenantId, empresaId: scope.empresaId },
-    orderBy: { criadoEm: "desc" },
-    select: { numero: true }
-  });
-
-  let next = 1;
-
-  if (last?.numero) {
-    const digits = last.numero.replace(/\D/g, "");
-    if (digits) {
-      next = Number.parseInt(digits, 10) + 1;
+  prefix: string,
+  legacyDelegate: NumberedDelegate
+): Promise<string> {
+  const where = {
+    tenantId_empresaId_tipo: {
+      tenantId: scope.tenantId,
+      empresaId: scope.empresaId,
+      tipo: prefix
     }
+  };
+
+  const existente = await tx.sequenciaDocumento.findUnique({ where });
+  if (existente) {
+    const atualizada = await tx.sequenciaDocumento.update({
+      where,
+      data: { ultimoNumero: { increment: 1 } }
+    });
+    return formatNumero(prefix, atualizada.ultimoNumero);
   }
 
-  return `${prefix}-${String(next).padStart(6, "0")}`;
+  // Primeira emissão desta empresa/tipo: semeia com o maior número legado + 1. O upsert
+  // protege contra corrida na criação — um cria, o concorrente cai no increment.
+  const ultimoLegado = await legacyDelegate.findFirst({
+    where: { tenantId: scope.tenantId, empresaId: scope.empresaId },
+    orderBy: { numero: "desc" },
+    select: { numero: true }
+  });
+  const base = parseNumero(ultimoLegado?.numero);
+
+  const seq = await tx.sequenciaDocumento.upsert({
+    where,
+    create: {
+      tenantId: scope.tenantId,
+      empresaId: scope.empresaId,
+      tipo: prefix,
+      ultimoNumero: base + 1
+    },
+    update: { ultimoNumero: { increment: 1 } }
+  });
+  return formatNumero(prefix, seq.ultimoNumero);
 }
 
 /**

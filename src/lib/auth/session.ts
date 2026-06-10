@@ -48,8 +48,11 @@ export async function createSession(
   });
   cookies().set(SESSION_COOKIE, token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
+    // Sempre Secure: o cookie de sessão nunca trafega em HTTP puro. Em dev local (HTTP), o
+    // navegador aceita Secure em localhost, então não atrapalha o desenvolvimento.
+    secure: true,
+    // Strict: o cookie não acompanha requisições cross-site, fechando CSRF nas ações de POST.
+    sameSite: "strict",
     path: "/",
     expires: expiraEm
   });

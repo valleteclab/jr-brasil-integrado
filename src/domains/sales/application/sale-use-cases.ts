@@ -47,7 +47,7 @@ export async function createSale(scope: TenantScope, input: CreateSaleInput) {
   if (!input.itens || input.itens.length === 0) throw new Error("Pedido deve ter ao menos um item.");
 
   return prisma.$transaction(async (tx) => {
-    const numero = await nextDocumentNumber(tx.pedidoVenda, scope, "PV");
+    const numero = await nextDocumentNumber(tx, scope, "PV", tx.pedidoVenda);
 
     // Deposito: usa o informado ou resolve o padrão
     let depositoId = input.depositoId;

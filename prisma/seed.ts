@@ -3,6 +3,24 @@ import { randomBytes, scryptSync } from "node:crypto";
 
 const prisma = new PrismaClient();
 
+// O seed contém dados de demonstração (tenant JR Brasil, perfis padrão, admin). NUNCA deve
+// rodar em produção — apagaria/sobrescreveria dados reais. Exige SEED_ALLOW_PRODUCTION=1 para
+// rodar com NODE_ENV=production (escape consciente; o padrão é abortar).
+if (process.env.NODE_ENV === "production" && process.env.SEED_ALLOW_PRODUCTION !== "1") {
+  console.error("[seed] BLOQUEADO: NODE_ENV=production. Defina SEED_ALLOW_PRODUCTION=1 só se tiver certeza.");
+  process.exit(1);
+}
+
+/** Senha obrigatória vinda do ambiente — sem fallback hardcoded (evita senha previsível). */
+function senhaObrigatoria(envVar: string): string {
+  const valor = process.env[envVar]?.trim();
+  if (!valor || valor.length < 8) {
+    console.error(`[seed] Defina ${envVar} (mín. 8 caracteres) antes de rodar o seed.`);
+    process.exit(1);
+  }
+  return valor;
+}
+
 // Hash scrypt no MESMO formato de src/lib/security/password.ts ("salt:hash").
 function hashPasswordSeed(senha: string): string {
   const salt = randomBytes(16).toString("hex");
@@ -31,14 +49,12 @@ const PERFIS_PADRAO: Array<{ nome: string; descricao: string; modulos: readonly 
 
 const ADMIN_EMAIL = "admin@jrbrasilpecas.com.br";
 const JR_BRASIL_CNPJ = "15130181000148";
-// Senha temporária forte do admin. Pode ser sobrescrita por ADMIN_INITIAL_PASSWORD.
-// IMPORTANTE: troque após o primeiro login.
-const ADMIN_SENHA = process.env.ADMIN_INITIAL_PASSWORD ?? "Jr#Brasil@2026!Adm7qZ";
+// Senha do admin do tenant de demonstração — obrigatória via env (sem fallback previsível).
+const ADMIN_SENHA = senhaObrigatoria("ADMIN_INITIAL_PASSWORD");
 
 // Dono da plataforma (SaaS): conta SEPARADA, sem vínculo a nenhum cliente. Acessa
-// apenas o painel /admin. Configurável por env; só é criada se PLATFORM_OWNER_EMAIL existir.
+// apenas o painel /admin. Só é criada se PLATFORM_OWNER_EMAIL existir (e exige senha por env).
 const PLATFORM_OWNER_EMAIL = process.env.PLATFORM_OWNER_EMAIL?.trim().toLowerCase();
-const PLATFORM_OWNER_SENHA = process.env.PLATFORM_OWNER_PASSWORD ?? "Plat@2026!Dono9xK";
 
 /**
  * Cria/atualiza o DONO DA PLATAFORMA como conta separada (plataformaAdmin, sem vínculo).
@@ -50,18 +66,20 @@ async function seedPlatformOwner() {
     console.log("[seed] Para criar: npm run admin-plataforma <email> [senha]\n");
     return;
   }
+  const senha = senhaObrigatoria("PLATFORM_OWNER_PASSWORD");
   await prisma.usuario.upsert({
     where: { email: PLATFORM_OWNER_EMAIL },
     update: { status: "ATIVO", plataformaAdmin: true },
     create: {
       nome: "Dono da Plataforma",
       email: PLATFORM_OWNER_EMAIL,
-      senhaHash: hashPasswordSeed(PLATFORM_OWNER_SENHA),
+      senhaHash: hashPasswordSeed(senha),
       status: "ATIVO",
       plataformaAdmin: true
     }
   });
-  console.log(`\n[seed] Dono da plataforma: ${PLATFORM_OWNER_EMAIL} | Senha: ${PLATFORM_OWNER_SENHA} (troque apos o primeiro login)\n`);
+  // Nunca imprime a senha (logs de deploy são persistidos). Use a senha que você definiu no env.
+  console.log(`\n[seed] Dono da plataforma: ${PLATFORM_OWNER_EMAIL} — use a senha de PLATFORM_OWNER_PASSWORD (troque após o 1º login).\n`);
 }
 
 /** Cria/atualiza os perfis padrão (com permissões por módulo) e o admin SUPER_ADMIN. */
@@ -99,7 +117,8 @@ async function seedPerfisEAdmin(tenantId: string, empresaId: string) {
     create: { tenantId, empresaId, usuarioId: admin.id, perfilId: superAdminId, ativo: true }
   });
 
-  console.log(`\n[seed] Admin: ${ADMIN_EMAIL} | Senha: ${ADMIN_SENHA} (troque apos o primeiro login)\n`);
+  // Nunca imprime a senha (logs de deploy são persistidos). Use a senha de ADMIN_INITIAL_PASSWORD.
+  console.log(`\n[seed] Admin do tenant demo: ${ADMIN_EMAIL} — use a senha de ADMIN_INITIAL_PASSWORD (troque após o 1º login).\n`);
 }
 
 async function main() {

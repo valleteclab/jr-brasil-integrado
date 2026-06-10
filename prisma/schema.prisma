@@ -98,6 +98,21 @@ enum StatusRetirada {
   CANCELADA
 }
 
+// Sequência atômica de documentos operacionais (PV/ORC/OS/PC/INV) por empresa, espelhando
+// a SequenciaFiscal. Incremento via UPDATE com lock de linha evita números duplicados quando
+// dois PDVs/operadores criam documentos ao mesmo tempo.
+model SequenciaDocumento {
+  id           String   @id @default(cuid())
+  tenantId     String
+  empresaId    String
+  tipo         String
+  ultimoNumero Int      @default(0)
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  @@unique([tenantId, empresaId, tipo])
+}
+
 enum StatusNotaFiscal {
   RASCUNHO
   PROCESSANDO

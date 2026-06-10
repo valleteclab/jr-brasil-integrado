@@ -25,7 +25,7 @@ export async function createInventory(scope: TenantScope, input: CreateInventory
     if (!deposito) throw new Error("Depósito não encontrado.");
 
     // Next document number
-    const numero = await nextDocumentNumber(tx.inventario, scope, "INV");
+    const numero = await nextDocumentNumber(tx, scope, "INV", tx.inventario);
 
     // Get all active products
     const produtos = await tx.produto.findMany({
