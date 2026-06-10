@@ -1564,7 +1564,11 @@ async function updateFiscalEntryItemLinkInTransaction(
     }
 
     if (item.entradaFiscal.status !== "AGUARDANDO_CONFERENCIA" && item.entradaFiscal.status !== "CONFERIDA") {
-      throw new Error("Esta entrada fiscal não permite alteração de vínculo.");
+      throw new Error(
+        "Esta entrada já processou estoque/financeiro e não permite alterar vínculo ou finalidade. " +
+          "Para corrigir: ESTORNE a entrada (desfaz estoque e contas a pagar), exclua-a e importe o XML " +
+          "novamente — aí ajuste a finalidade na conferência antes de processar."
+      );
     }
 
     // Finalidade escolhida pelo usuário (quando enviada) recalcula CFOP/estoque/crédito.
