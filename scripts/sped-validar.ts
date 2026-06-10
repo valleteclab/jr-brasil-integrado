@@ -283,8 +283,12 @@ function validarParserXml(): number {
       <imposto><ICMS><ICMS00><orig>0</orig><CST>00</CST><vBC>1000.00</vBC><pICMS>12.00</pICMS><vICMS>120.00</vICMS></ICMS00></ICMS>
       <PIS><PISAliq><CST>01</CST><vBC>1000.00</vBC><pPIS>1.65</pPIS><vPIS>16.50</vPIS></PISAliq></PIS>
       <COFINS><COFINSAliq><CST>01</CST><vBC>1000.00</vBC><pCOFINS>7.60</pCOFINS><vCOFINS>76.00</vCOFINS></COFINSAliq></COFINS></imposto></det>
-    <total><ICMSTot><vBC>1000.00</vBC><vICMS>120.00</vICMS><vProd>1000.00</vProd><vNF>1000.00</vNF></ICMSTot></total>
-    <cobr><dup><nDup>001</nDup><dVenc>2026-06-10</dVenc><vDup>1000.00</vDup></dup></cobr>
+    <det nItem="2"><prod><cProd>SN1</cProd><xProd>Item de fornecedor do Simples</xProd><cEAN>SEM GTIN</cEAN><NCM>40169300</NCM>
+      <CFOP>6102</CFOP><uCom>UN</uCom><qCom>1.0000</qCom><vUnCom>500.00</vUnCom><vProd>500.00</vProd></prod>
+      <imposto><ICMS><ICMSSN101><orig>0</orig><CSOSN>101</CSOSN><pCredSN>2.80</pCredSN><vCredICMSSN>14.00</vCredICMSSN></ICMSSN101></ICMS></imposto></det>
+    <total><ICMSTot><vBC>1000.00</vBC><vICMS>120.00</vICMS><vProd>1500.00</vProd><vNF>1500.00</vNF></ICMSTot></total>
+    <cobr><dup><nDup>001</nDup><dVenc>2026-06-10</dVenc><vDup>1500.00</vDup></dup></cobr>
+    <infAdic><infCpl>DOCUMENTO EMITIDO POR ME/EPP OPTANTE PELO SIMPLES NACIONAL. PERMITE O APROVEITAMENTO DO CREDITO DE ICMS NO VALOR DE R$ 14,00, CORRESPONDENTE A ALIQUOTA DE 2,80%, NOS TERMOS DO ART. 23 DA LC 123.</infCpl></infAdic>
   </infNFe></NFe>
   <protNFe><infProt><chNFe>${chave}</chNFe></infProt></protNFe>
 </nfeProc>`;
@@ -310,6 +314,9 @@ function validarParserXml(): number {
     checar(item.cstIcms === "00" && item.baseIcms === 1000 && item.valorIcms === 120, "ICMS do item incorreto");
     checar(item.valorPis === 16.5 && item.valorCofins === 76, "PIS/COFINS do item incorretos");
     checar(item.gtin === null, "SEM GTIN deveria virar null");
+    const itemSn = doc.itens[1];
+    checar(itemSn.csosn === "101" && itemSn.valorCredSN === 14 && itemSn.aliquotaCredSN === 2.8, "pCredSN/vCredICMSSN (Simples) não lidos");
+    checar(doc.creditoSimplesInfCpl === 14, `crédito do infCpl não lido (obtido: ${doc.creditoSimplesInfCpl})`);
   }
 
   const evento = parseXmlSped(xmlEvento);

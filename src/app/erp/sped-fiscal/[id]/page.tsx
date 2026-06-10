@@ -166,6 +166,12 @@ export default async function SpedDetalhePage({ params }: { params: { id: string
                   <td>ICMS-ST destacado (substituto)</td>
                   <td style={{ textAlign: "right" }}>{formatBrl(r.apuracaoIcmsSt.total)}</td>
                 </tr>
+                {r.creditoSimplesLc123 > 0 && (
+                  <tr>
+                    <td>Crédito ICMS do Simples (LC 123) — já nos créditos</td>
+                    <td style={{ textAlign: "right" }}>{formatBrl(r.creditoSimplesLc123)}</td>
+                  </tr>
+                )}
                 {r.apuracaoIpi ? (
                   <>
                     <tr><td>IPI — débitos</td><td style={{ textAlign: "right" }}>{formatBrl(r.apuracaoIpi.debitos)}</td></tr>

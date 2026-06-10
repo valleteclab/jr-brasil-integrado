@@ -86,6 +86,9 @@ export type XmlItem = {
   baseCofins: number;
   aliquotaCofins: number;
   valorCofins: number;
+  /** Crédito de ICMS do Simples Nacional (art. 23 LC 123): ICMSSN101/900 pCredSN/vCredICMSSN. */
+  aliquotaCredSN: number;
+  valorCredSN: number;
 };
 
 export type XmlDocumentoSped = {
@@ -107,6 +110,10 @@ export type XmlDocumentoSped = {
     outrasDespesas: number;
   };
   itens: XmlItem[];
+  /** Texto das informações complementares (infAdic/infCpl) — fonte do crédito "por extenso". */
+  informacoesComplementares: string | null;
+  /** Crédito de ICMS (LC 123) mencionado no TEXTO do infCpl, quando não vier estruturado. */
+  creditoSimplesInfCpl: number;
 };
 
 export type XmlCancelamentoSped = {
@@ -239,10 +246,22 @@ export function parseXmlSped(xmlText: string): XmlSpedParseado {
       cstCofins: texto(cofins.CST) || null,
       baseCofins: numero(cofins.vBC),
       aliquotaCofins: numero(cofins.pCOFINS),
-      valorCofins: numero(cofins.vCOFINS)
+      valorCofins: numero(cofins.vCOFINS),
+      aliquotaCredSN: numero(icms.pCredSN),
+      valorCredSN: numero(icms.vCredICMSSN)
     };
   });
   if (itens.length === 0) throw new SpedXmlError("XML sem itens de produto.");
+
+  // Informações complementares: fornecedores do Simples às vezes informam o crédito da LC 123
+  // apenas no texto ("PERMITE O APROVEITAMENTO DO CRÉDITO DE ICMS NO VALOR DE R$ 12,34 ...").
+  const infCpl = texto((infNfe.infAdic ?? {}).infCpl) || null;
+  let creditoSimplesInfCpl = 0;
+  if (infCpl && /cr[eé]dito\s+de\s+icms/i.test(infCpl)) {
+    // Ex.: "...APROVEITAMENTO DO CRÉDITO DE ICMS NO VALOR DE R$ 14,00, CORRESPONDENTE À..."
+    const m = /cr[eé]dito\s+de\s+icms.{0,60}?([\d.]*\d,\d{2})/i.exec(infCpl);
+    if (m) creditoSimplesInfCpl = numero(m[1].replace(/\./g, "").replace(",", "."));
+  }
 
   return {
     kind: "DOCUMENTO",
@@ -262,6 +281,8 @@ export function parseXmlSped(xmlText: string): XmlSpedParseado {
       valorSeguro: numero(total.vSeg),
       outrasDespesas: numero(total.vOutro)
     },
-    itens
+    itens,
+    informacoesComplementares: infCpl,
+    creditoSimplesInfCpl
   };
 }

@@ -408,6 +408,23 @@ export async function carregarSpedInput(scope: TenantScope, params: CarregarSped
       const icmsRecuperavel = Boolean(icms?.recuperavel);
       const veioComSt = icms?.cst === "60" || icms?.csosn === "500";
       const cstEntrada = icmsRecuperavel ? icms?.cst ?? "00" : veioComSt ? "60" : "90";
+
+      // Fornecedor do Simples (art. 23 LC 123): sem destaque de ICMS, mas o XML traz o crédito
+      // permitido em pCredSN/vCredICMSSN (guardados em dadosOriginais). Escritura com CST 90.
+      const dadosIcms = (icms?.dadosOriginais ?? {}) as Record<string, unknown>;
+      const credSNValor = num(dadosIcms.vCredICMSSN);
+      const credSNAliq = num(dadosIcms.pCredSN);
+      const liquidoItem = round2(num(item.valorTotal) - num(item.valorDesconto));
+      const aplicaCredSN =
+        credSNValor > 0 &&
+        num(icms?.valor) === 0 &&
+        !veioComSt &&
+        creditoPorFinalidade(item.finalidade ?? "REVENDA", empresa.regimeTributario, "ICMS", { st: false }).recuperavel;
+      if (aplicaCredSN) {
+        avisos.push(
+          `${rotulo}, item ${item.itemNumero}: crédito de ICMS do Simples Nacional (LC 123, art. 23) apropriado — R$ ${credSNValor.toFixed(2).replace(".", ",")} (${credSNAliq.toFixed(2).replace(".", ",")}%).`
+        );
+      }
       const cfopEntradaItem = (item.cfopEntradaDerivado ?? "").replace(/\D/g, "") || espelharCfopEntrada(item.cfop);
       const antecipacaoParcial = calcularAntecipacaoParcial({
         ativa: Boolean(spedConfig?.antecipacaoParcialAtiva),
@@ -448,10 +465,11 @@ export async function carregarSpedInput(scope: TenantScope, params: CarregarSped
         valorDesconto: num(item.valorDesconto),
         movimentaEstoque: item.movimentaEstoque,
         cfop: cfopEntradaItem,
-        cstIcms: cstIcms3(null, cstEntrada, null),
-        baseIcms: icmsRecuperavel ? num(icms?.baseCalculo) : 0,
-        aliquotaIcms: icmsRecuperavel ? num(icms?.aliquota) : 0,
-        valorIcms: icmsRecuperavel ? num(icms?.valor) : 0,
+        cstIcms: aplicaCredSN ? cstIcms3(null, "90", null) : cstIcms3(null, cstEntrada, null),
+        baseIcms: aplicaCredSN ? liquidoItem : icmsRecuperavel ? num(icms?.baseCalculo) : 0,
+        aliquotaIcms: aplicaCredSN ? credSNAliq : icmsRecuperavel ? num(icms?.aliquota) : 0,
+        valorIcms: aplicaCredSN ? credSNValor : icmsRecuperavel ? num(icms?.valor) : 0,
+        creditoSimplesLc123: aplicaCredSN,
         baseIcmsSt: 0,
         aliquotaIcmsSt: 0,
         valorIcmsSt: 0,
@@ -601,6 +619,13 @@ export async function carregarSpedInput(scope: TenantScope, params: CarregarSped
         codigoParticipante = participanteXml(parsed.destinatario);
       }
 
+      // Crédito do Simples (LC 123): preferir os campos estruturados (vCredICMSSN por item);
+      // sem eles, ratear pelo valor dos itens o crédito mencionado no TEXTO do infCpl.
+      const temCredEstruturado = parsed.itens.some((i) => i.valorCredSN > 0);
+      const totalLiquidoDoc = round2(parsed.itens.reduce((s, i) => s + i.valorTotal - i.valorDesconto, 0));
+      const infCplCred = entrada ? parsed.creditoSimplesInfCpl : 0;
+      let credSNDocTotal = 0;
+
       const itens: SpedDocumentoItem[] = parsed.itens.map((item: XmlItem) => {
         if (!entrada) {
           // Saída de emissão própria: escritura como destacado no documento (C100 + C190).
@@ -674,6 +699,17 @@ export async function carregarSpedInput(scope: TenantScope, params: CarregarSped
           ufEmpresa: empresa.enderecoUf
         });
 
+        // Crédito do Simples (LC 123): estruturado por item ou rateio do infCpl.
+        const liquidoXml = round2(item.valorTotal - item.valorDesconto);
+        let credSNValor = item.valorCredSN;
+        let credSNAliq = item.aliquotaCredSN;
+        if (credSNValor <= 0 && !temCredEstruturado && infCplCred > 0 && totalLiquidoDoc > 0) {
+          credSNValor = round2((liquidoXml / totalLiquidoDoc) * infCplCred);
+          credSNAliq = liquidoXml > 0 ? round2((credSNValor / liquidoXml) * 100) : 0;
+        }
+        const aplicaCredSN = entrada && credIcms && !st && item.valorIcms <= 0 && credSNValor > 0;
+        if (aplicaCredSN) credSNDocTotal = round2(credSNDocTotal + credSNValor);
+
         // CST da entrada: preserva o CST/origem do XML (como fazem os geradores de mercado);
         // o crédito é decidido pelos VALORES (zerados quando não recuperável). Sem CST no XML
         // (fornecedor do Simples emite CSOSN), o de-para de CSOSN resolve.
@@ -705,10 +741,11 @@ export async function carregarSpedInput(scope: TenantScope, params: CarregarSped
           valorDesconto: item.valorDesconto,
           movimentaEstoque: finalidadeMovimentaEstoque(finalidade),
           cfop: cfopEntradaXml,
-          cstIcms: cst3Entrada,
-          baseIcms: credIcms ? item.baseIcms : 0,
-          aliquotaIcms: credIcms ? item.aliquotaIcms : 0,
-          valorIcms: credIcms ? item.valorIcms : 0,
+          cstIcms: aplicaCredSN ? cstIcms3(item.origem, "90", null) : cst3Entrada,
+          baseIcms: aplicaCredSN ? liquidoXml : credIcms ? item.baseIcms : 0,
+          aliquotaIcms: aplicaCredSN ? credSNAliq : credIcms ? item.aliquotaIcms : 0,
+          valorIcms: aplicaCredSN ? credSNValor : credIcms ? item.valorIcms : 0,
+          creditoSimplesLc123: aplicaCredSN,
           baseIcmsSt: 0,
           aliquotaIcmsSt: 0,
           valorIcmsSt: 0,
@@ -728,6 +765,12 @@ export async function carregarSpedInput(scope: TenantScope, params: CarregarSped
           antecipacaoParcial
         };
       });
+
+      if (credSNDocTotal > 0) {
+        avisos.push(
+          `${rotulo}: crédito de ICMS do Simples Nacional (LC 123, art. 23) apropriado — R$ ${credSNDocTotal.toFixed(2).replace(".", ",")} ${temCredEstruturado ? "(campos pCredSN/vCredICMSSN do XML)" : "(rateado a partir do TEXTO das informações complementares — confirme com o contador)"}.`
+        );
+      }
 
       if (entrada && itensPorHeuristica > 0) {
         const detalhe = [

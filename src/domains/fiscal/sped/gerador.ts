@@ -685,6 +685,13 @@ export function gerarSpedFiscal(input: SpedInput): SpedArquivoGerado {
       escriturada: antecipacaoEscriturada,
       linhas: antecipacaoLinhas
     },
+    creditoSimplesLc123: round2(
+      entradas
+        .filter((d) => !d.cancelado)
+        .flatMap((d) => d.itens)
+        .filter((i) => i.creditoSimplesLc123)
+        .reduce((s, i) => s + i.valorIcms, 0)
+    ),
     apuracaoIpi,
     pisCofins: {
       debitosPis: round2(saidasValidas.flatMap((d) => d.itens).reduce((s, i) => s + i.valorPis, 0)),

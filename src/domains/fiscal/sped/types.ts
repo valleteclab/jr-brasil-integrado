@@ -122,6 +122,12 @@ export type SpedDocumentoItem = {
   valorCofins: number;
   /** ICMS Antecipação Parcial do item (entrada interestadual p/ revenda, sem ST). */
   antecipacaoParcial: number;
+  /**
+   * Crédito de ICMS de fornecedor do Simples (art. 23 LC 123) apropriado neste item:
+   * o documento vem SEM destaque e o crédito (pCredSN/vCredICMSSN ou infCpl) é escriturado
+   * em base/alíquota/valor com CST 90 sob o enfoque do declarante.
+   */
+  creditoSimplesLc123?: boolean;
 };
 
 /** Documento fiscal (C100): saída emitida pela empresa ou entrada de terceiro. */
@@ -234,6 +240,8 @@ export type SpedResumo = {
     escriturada: boolean;
     linhas: Array<{ numero: string; fornecedor: string; base: number; valor: number }>;
   };
+  /** Crédito de ICMS apropriado de fornecedores do Simples (art. 23 LC 123) — já dentro dos créditos. */
+  creditoSimplesLc123: number;
   apuracaoIpi: SpedApuracaoIpi | null;
   /** PIS/COFINS dos documentos — informativo (a apuração formal é na EFD Contribuições). */
   pisCofins: { debitosPis: number; creditosPis: number; debitosCofins: number; creditosCofins: number };
