@@ -5,6 +5,7 @@ import { createAuditLog } from "@/lib/audit/audit-service";
 import { gerarParcelas, rotuloParcela } from "@/lib/finance/condicao-pagamento";
 import { validarCredencialAdmin, type CredencialAdmin } from "@/lib/auth/admin-credential";
 import { checkoutSale } from "./sale-use-cases";
+import { criarRetiradaExpedicao } from "./expedicao-use-cases";
 import { emitServiceInvoiceAvulsa } from "@/domains/fiscal/application/standalone-emission-use-cases";
 import { getCaixaAberto, registrarRecebimentoPdv } from "@/domains/cashier/application/cashier-use-cases";
 
@@ -26,6 +27,8 @@ export type PdvCheckoutInput = {
   condicaoCrediario?: string | null;
   /** Credencial de um administrador — obrigatória quando há desconto em itens. */
   autorizacaoAdmin?: CredencialAdmin | null;
+  /** Gera recibo de retirada na expedição (exige módulo habilitado e venda com produtos). */
+  retiradaExpedicao?: boolean;
 };
 
 export type PdvNotaResultado = {
@@ -45,6 +48,8 @@ export type PdvCheckoutResult = {
   total: number;
   /** Parcelas geradas no contas a receber quando parte da venda foi em crediário. */
   crediario: { valor: number; parcelas: number; primeiroVencimento: string } | null;
+  /** Recibo de retirada na expedição (quando solicitado). */
+  retirada: { id: string; codigo: string } | null;
 };
 
 /**
@@ -288,5 +293,12 @@ export async function pdvCheckout(scope: TenantScope, input: PdvCheckoutInput): 
     };
   }
 
-  return { notas, troco, total, crediario };
+  // 5. Recibo de retirada na expedição (só faz sentido quando a venda tem produtos).
+  let retirada: PdvCheckoutResult["retirada"] = null;
+  if (input.retiradaExpedicao && pedidoVendaId) {
+    const r = await criarRetiradaExpedicao(scope, pedidoVendaId);
+    retirada = { id: r.id, codigo: r.codigo };
+  }
+
+  return { notas, troco, total, crediario, retirada };
 }

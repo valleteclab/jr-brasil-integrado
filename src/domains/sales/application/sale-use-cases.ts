@@ -504,6 +504,12 @@ export async function cancelSale(scope: TenantScope, id: string) {
     // Cancela a comissão do vendedor ainda não paga
     await cancelarComissaoPedido(tx, scope, id);
 
+    // Cancela retiradas de expedição pendentes (o recibo deixa de valer no balcão)
+    await tx.expedicaoRetirada.updateMany({
+      where: { tenantId: scope.tenantId, empresaId: scope.empresaId, pedidoVendaId: id, status: "PENDENTE" },
+      data: { status: "CANCELADA" }
+    });
+
     const updated = await tx.pedidoVenda.update({
       where: { id },
       data: {
@@ -553,6 +559,7 @@ export async function deleteSale(scope: TenantScope, id: string) {
     await tx.caixaMovimento.updateMany({ where: scoped, data: { pedidoVendaId: null } });
     await tx.contaReceber.updateMany({ where: scoped, data: { pedidoVendaId: null } });
     await tx.comissaoVenda.deleteMany({ where: { pedidoVendaId: id } });
+    await tx.expedicaoRetirada.deleteMany({ where: { pedidoVendaId: id } });
     await tx.pagamentoVenda.deleteMany({ where: { pedidoVendaId: id } });
     await tx.pedidoVendaItem.deleteMany({ where: { pedidoVendaId: id } });
     const removido = await tx.pedidoVenda.delete({ where: { id } });

@@ -122,7 +122,9 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
     notas: NotaResultado[];
     troco: number;
     crediario: { valor: number; parcelas: number; primeiroVencimento: string } | null;
+    retirada: { id: string; codigo: string } | null;
   } | null>(null);
+  const [retiradaExpedicao, setRetiradaExpedicao] = useState(false);
   const [pagamentoAberto, setPagamentoAberto] = useState(false);
   const [movimentoAberto, setMovimentoAberto] = useState(false);
 
@@ -264,7 +266,8 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
         pagamentos,
         condicaoCrediario: condicaoCrediario || null,
         // O servidor revalida a credencial do admin no checkout (a senha do modal é pré-checagem).
-        autorizacaoAdmin: temDesconto && autorizacao ? { email: autorizacao.email, senha: autorizacao.senha } : null
+        autorizacaoAdmin: temDesconto && autorizacao ? { email: autorizacao.email, senha: autorizacao.senha } : null,
+        retiradaExpedicao: retiradaExpedicao && cart.some((i) => i.kind === "produto")
       };
       const res = await fetch("/api/erp/pdv/checkout", {
         method: "POST",
@@ -275,17 +278,23 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
         notas?: NotaResultado[];
         troco?: number;
         crediario?: { valor: number; parcelas: number; primeiroVencimento: string } | null;
+        retirada?: { id: string; codigo: string } | null;
         error?: string;
       };
       if (!res.ok) throw new Error(dataRes.error || "Falha ao finalizar.");
       const notas = dataRes.notas ?? [];
-      setResultado({ notas, troco: dataRes.troco ?? 0, crediario: dataRes.crediario ?? null });
+      setResultado({ notas, troco: dataRes.troco ?? 0, crediario: dataRes.crediario ?? null, retirada: dataRes.retirada ?? null });
       setCart([]);
       setClienteId("");
+      setRetiradaExpedicao(false);
       setPagamentoAberto(false);
       // Impressão automática: abre o cupom/DANFE de cada nota autorizada.
       for (const n of notas) {
         if (n.ok && n.id) window.open(`/api/erp/fiscal/${n.id}/pdf`, "_blank", "noopener,noreferrer");
+      }
+      // Recibo de retirada: abre para imprimir junto com o cupom.
+      if (dataRes.retirada?.id) {
+        window.open(`/api/erp/expedicao/${dataRes.retirada.id}/recibo`, "_blank", "noopener,noreferrer");
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Falha ao finalizar.");
@@ -417,6 +426,17 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
                 </select>
               </label>
             )}
+            {data.expedicaoHabilitada && (
+              <label className="pdv-cliente" style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={retiradaExpedicao}
+                  onChange={(e) => setRetiradaExpedicao(e.target.checked)}
+                  style={{ width: "auto" }}
+                />
+                📤 Retirada na expedição (imprime recibo)
+              </label>
+            )}
             <div className="pdv-modelo">
               <button className={modeloProduto === "NFCE" ? "active" : ""} onClick={() => setModeloProduto("NFCE")}>NFC-e (cupom)</button>
               <button className={modeloProduto === "NFE" ? "active" : ""} onClick={() => setModeloProduto("NFE")}>NF-e</button>
@@ -432,6 +452,12 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
                   <div className="alert info">
                     Crediário: <strong>{brl(resultado.crediario.valor)}</strong> em {resultado.crediario.parcelas} parcela(s),
                     1º vencimento {new Date(resultado.crediario.primeiroVencimento).toLocaleDateString("pt-BR")}.
+                  </div>
+                )}
+                {resultado.retirada && (
+                  <div className="alert info">
+                    Retirada na expedição — recibo <strong style={{ letterSpacing: 2 }}>{resultado.retirada.codigo}</strong>.{" "}
+                    <a href={`/api/erp/expedicao/${resultado.retirada.id}/recibo`} target="_blank" rel="noopener noreferrer">Reimprimir recibo</a>
                   </div>
                 )}
                 {resultado.notas.map((n, idx) => (

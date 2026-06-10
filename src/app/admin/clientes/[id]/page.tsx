@@ -7,6 +7,7 @@ import { ClienteBloqueioButton } from "@/components/admin/ClienteBloqueioButton"
 import { LojaModuloToggle } from "@/components/admin/LojaModuloToggle";
 import { IaModuloToggle } from "@/components/admin/IaModuloToggle";
 import { SpedFiscalModuloToggle } from "@/components/admin/SpedFiscalModuloToggle";
+import { ExpedicaoModuloToggle } from "@/components/admin/ExpedicaoModuloToggle";
 import { EmpresaStatusActions } from "@/components/admin/EmpresaStatusActions";
 import { ResetarSenhaButton } from "@/components/admin/ResetarSenhaButton";
 import { ClientePerfisManager } from "@/components/admin/ClientePerfisManager";
@@ -92,6 +93,14 @@ export default async function AdminClienteDetalhePage({ params }: { params: { id
             <p className="block-muted" style={{ marginTop: 8, fontSize: 12 }}>
               Quando habilitado, este cliente gera o SPED Fiscal (EFD ICMS/IPI) mensal: apuração de
               ICMS/IPI na tela e arquivo .txt para o contador validar no PVA e transmitir à SEFAZ.
+            </p>
+          </div>
+          <div>
+            <ExpedicaoModuloToggle clienteId={cliente.id} habilitada={cliente.expedicaoHabilitada} />
+            <p className="block-muted" style={{ marginTop: 8, fontSize: 12 }}>
+              Quando habilitada, o caixa/PDV deste cliente pode emitir o recibo de retirada junto da
+              nota, e a tela Expedição confere o código e confirma a entrega da mercadoria. Indicado
+              para lojas com balcão de retirada (material de construção, autopeças).
             </p>
           </div>
         </div>

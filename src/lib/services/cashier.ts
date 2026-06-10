@@ -25,12 +25,18 @@ export type PreVendaResumo = {
 export type CaixaPageData = {
   caixa: { id: string; operador: string; abertoEm: string; resumo: ResumoCaixa } | null;
   preVendas: PreVendaResumo[];
+  /** Módulo Expedição habilitado para o tenant (mostra a opção de recibo de retirada). */
+  expedicaoHabilitada: boolean;
 };
 
 /** Dados da tela de caixa: turno aberto (com resumo) e pré-vendas aguardando pagamento. */
 export async function getCaixaPageData(): Promise<CaixaPageData> {
   const scope = await getDevelopmentTenantScope();
   const aberto = await getCaixaAberto(scope);
+  const tenant = await prisma.tenant.findUnique({
+    where: { id: scope.tenantId },
+    select: { expedicaoHabilitada: true }
+  });
 
   const pedidos = await prisma.pedidoVenda.findMany({
     where: { ...scopedByTenantCompany(scope), status: "AGUARDANDO_PAGAMENTO" },
@@ -75,6 +81,7 @@ export async function getCaixaPageData(): Promise<CaixaPageData> {
           resumo: await getResumoCaixa(scope, aberto.id)
         }
       : null,
-    preVendas
+    preVendas,
+    expedicaoHabilitada: Boolean(tenant?.expedicaoHabilitada)
   };
 }

@@ -13,6 +13,8 @@ export type PdvData = {
   nbsPadrao: string | null;
   /** Regra da empresa: permite vender produtos sem saldo (não bloqueia ao adicionar). */
   permiteVendaSemEstoque: boolean;
+  /** Módulo Expedição habilitado para o tenant (mostra a opção de recibo de retirada). */
+  expedicaoHabilitada: boolean;
   clientes: PdvCliente[];
   produtos: PdvProduto[];
   servicos: PdvServico[];
@@ -27,8 +29,9 @@ export async function getPdvData(): Promise<PdvData> {
   const scope = await getDevelopmentTenantScope();
   const base = scopedByTenantCompany(scope);
 
-  const [empresa, config, clientes, itens, vendedores] = await Promise.all([
+  const [empresa, tenant, config, clientes, itens, vendedores] = await Promise.all([
     prisma.empresa.findUnique({ where: { id: scope.empresaId }, select: { tipoNegocio: true, permiteVendaSemEstoque: true } }),
+    prisma.tenant.findUnique({ where: { id: scope.tenantId }, select: { expedicaoHabilitada: true } }),
     prisma.configuracaoFiscal.findUnique({
       where: { empresaId: scope.empresaId },
       select: { codigoServicoLc116Padrao: true, codigoNbsPadrao: true }
@@ -85,6 +88,7 @@ export async function getPdvData(): Promise<PdvData> {
     lc116Padrao: config?.codigoServicoLc116Padrao || null,
     nbsPadrao: config?.codigoNbsPadrao || null,
     permiteVendaSemEstoque: Boolean(empresa?.permiteVendaSemEstoque),
+    expedicaoHabilitada: Boolean(tenant?.expedicaoHabilitada),
     clientes: clientes.map((c) => ({
       id: c.id,
       label: c.nomeFantasia ? `${c.nomeFantasia} (${c.razaoSocial})` : c.razaoSocial,

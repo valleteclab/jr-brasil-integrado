@@ -182,6 +182,7 @@ export type ClienteDetail = {
   lojaHabilitada: boolean;
   iaHabilitada: boolean;
   spedFiscalHabilitado: boolean;
+  expedicaoHabilitada: boolean;
   criadoEm: string;
   empresas: {
     id: string;
@@ -267,6 +268,7 @@ export async function getClienteDetail(tenantId: string): Promise<ClienteDetail 
     lojaHabilitada: tenant.lojaHabilitada,
     iaHabilitada: tenant.iaHabilitada,
     spedFiscalHabilitado: tenant.spedFiscalHabilitado,
+    expedicaoHabilitada: tenant.expedicaoHabilitada,
     criadoEm: tenant.criadoEm.toISOString(),
     empresas: tenant.empresas.map((e) => ({
       id: e.id,
@@ -393,6 +395,28 @@ export async function setTenantSpedFiscalHabilitado(tenantId: string, habilitado
   });
 
   return { id: atualizado.id, spedFiscalHabilitado: atualizado.spedFiscalHabilitado };
+}
+
+/** Habilita/desabilita o módulo Expedição (recibo de retirada) do cliente (gate do dono do SaaS). */
+export async function setTenantExpedicaoHabilitada(tenantId: string, habilitada: boolean) {
+  const admin = await requirePlatformAdmin();
+  assertDb();
+
+  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+  if (!tenant) throw new PlatformAdminError("Cliente não encontrado.");
+
+  const atualizado = await prisma.tenant.update({ where: { id: tenantId }, data: { expedicaoHabilitada: habilitada } });
+
+  await audit({
+    tenantId,
+    usuarioId: admin.usuarioId,
+    entidade: "Tenant",
+    entidadeId: tenantId,
+    acao: habilitada ? "plataforma.habilitar_expedicao" : "plataforma.desabilitar_expedicao",
+    payload: { expedicaoHabilitadaAnterior: tenant.expedicaoHabilitada, expedicaoHabilitadaNova: habilitada }
+  });
+
+  return { id: atualizado.id, expedicaoHabilitada: atualizado.expedicaoHabilitada };
 }
 
 /** Edita o nome e/ou o slug (identificador) do cliente (tenant). Slug único entre clientes. */

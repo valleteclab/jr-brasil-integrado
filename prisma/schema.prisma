@@ -91,6 +91,12 @@ enum StatusComissao {
   CANCELADO
 }
 
+enum StatusRetirada {
+  PENDENTE
+  ENTREGUE
+  CANCELADA
+}
+
 enum StatusNotaFiscal {
   RASCUNHO
   PROCESSANDO
@@ -260,6 +266,9 @@ model Tenant {
   // Módulo SPED Fiscal (EFD ICMS/IPI) liberado pelo dono do SaaS. Desligado por padrão;
   // quando false, as telas e APIs de geração do SPED ficam bloqueadas para este cliente.
   spedFiscalHabilitado Boolean     @default(false)
+  // Módulo Expedição (recibo de retirada de mercadoria) liberado pelo dono do SaaS.
+  // Desligado por padrão — é para lojas com balcão de retirada (material de construção, autopeças).
+  expedicaoHabilitada Boolean      @default(false)
   empresas        Empresa[]
   vinculos        UsuarioVinculo[]
   perfis          Perfil[]
@@ -317,6 +326,7 @@ model Empresa {
   movimentosFinanceiros MovimentoFinanceiro[]
   vendedores         Vendedor[]
   comissoesVenda     ComissaoVenda[]
+  expedicaoRetiradas ExpedicaoRetirada[]
   inventarios        Inventario[]
   auditorias         Auditoria[]
   conversasAgente    ConversaAgente[]
@@ -1073,6 +1083,7 @@ model PedidoVenda {
   notasFiscais      NotaFiscal[]
   pagamentos        PagamentoVenda[]
   caixaMovimentos   CaixaMovimento[]
+  retiradas         ExpedicaoRetirada[]
   origemOrcamentoId String?
   criadoEm          DateTime          @default(now())
   atualizadoEm      DateTime          @updatedAt
@@ -2135,6 +2146,28 @@ model CaixaMovimento {
   criadoEm      DateTime           @default(now())
 
   @@index([tenantId, empresaId, caixaId])
+}
+
+// Recibo de retirada na expedição: o caixa emite o recibo (código curto), o cliente
+// apresenta no balcão de expedição, o conferente valida o código e confirma a entrega.
+model ExpedicaoRetirada {
+  id            String         @id @default(cuid())
+  tenantId      String
+  empresaId     String
+  empresa       Empresa        @relation(fields: [empresaId], references: [id])
+  // Código curto impresso no recibo (sem caracteres ambíguos), único por empresa.
+  codigo        String
+  pedidoVendaId String
+  pedidoVenda   PedidoVenda    @relation(fields: [pedidoVendaId], references: [id])
+  status        StatusRetirada @default(PENDENTE)
+  entreguePor   String?
+  entregueEm    DateTime?
+  observacoes   String?
+  criadoEm      DateTime       @default(now())
+  atualizadoEm  DateTime       @updatedAt
+
+  @@unique([tenantId, empresaId, codigo])
+  @@index([tenantId, empresaId, status])
 }
 
 model Vendedor {

@@ -5,6 +5,7 @@ import { createAuditLog } from "@/lib/audit/audit-service";
 import { commitReservationsAsExit } from "@/domains/stock/application/stock-service";
 import { buildDocumentFromPedido } from "@/domains/fiscal/document-builder";
 import { emitFiscalDocument } from "@/domains/fiscal/application/fiscal-emission-use-cases";
+import { criarRetiradaExpedicao } from "@/domains/sales/application/expedicao-use-cases";
 
 /**
  * Caixa (PDV) — turno do operador, movimentos de dinheiro e recebimento de pré-vendas.
@@ -260,6 +261,8 @@ export type ReceberPagamentoInput = {
   pedidoId: string;
   modelo: "NFE" | "NFCE";
   pagamentos: Array<{ forma: string; valor: number }>;
+  /** Gera recibo de retirada na expedição (exige módulo habilitado para o tenant). */
+  retiradaExpedicao?: boolean;
 };
 
 export type ReceberPagamentoResult = {
@@ -268,6 +271,8 @@ export type ReceberPagamentoResult = {
   troco: number;
   nota: { id: string; status: string; numero: string | null; chaveAcesso: string | null; motivo: string | null } | null;
   emitErro: string | null;
+  /** Recibo de retirada na expedição (quando solicitado). */
+  retirada: { id: string; codigo: string } | null;
 };
 
 /**
@@ -421,5 +426,12 @@ export async function receberPagamentoEEmitir(
     if (rejeitada) nota = { id: rejeitada.id, status: rejeitada.status, numero: rejeitada.numero ?? null, chaveAcesso: rejeitada.chaveAcesso ?? null, motivo: rejeitada.motivo ?? null };
   }
 
-  return { pedidoId: pedido.id, pedidoNumero: pedido.numero, troco, nota, emitErro };
+  // 4) Recibo de retirada na expedição (o pagamento já foi recebido; a nota pode reemitir depois).
+  let retirada: ReceberPagamentoResult["retirada"] = null;
+  if (input.retiradaExpedicao) {
+    const r = await criarRetiradaExpedicao(scope, pedido.id);
+    retirada = { id: r.id, codigo: r.codigo };
+  }
+
+  return { pedidoId: pedido.id, pedidoNumero: pedido.numero, troco, nota, emitErro, retirada };
 }

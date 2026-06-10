@@ -11,6 +11,7 @@ export type ModuloKey =
   | "vendas"
   | "orcamentos"
   | "os"
+  | "expedicao"
   | "compras"
   | "entradas-fiscais"
   | "estoque"
@@ -37,6 +38,7 @@ export const MODULOS: Array<{ key: ModuloKey; label: string }> = [
   { key: "vendas", label: "Vendas" },
   { key: "orcamentos", label: "Orçamentos" },
   { key: "os", label: "Ordens de Serviço" },
+  { key: "expedicao", label: "Expedição" },
   { key: "compras", label: "Compras" },
   { key: "entradas-fiscais", label: "Notas de entrada" },
   { key: "estoque", label: "Estoque" },
@@ -73,12 +75,12 @@ export const PERFIS_PADRAO: Array<{ nome: string; descricao: string; modulos: Mo
   {
     nome: "SALES",
     descricao: "Vendas, atendimento, caixa e orçamentos.",
-    modulos: ["dashboard", "atendimento", "caixa", "vendas", "orcamentos", "os", "clientes", "produtos", "assistente"]
+    modulos: ["dashboard", "atendimento", "caixa", "vendas", "orcamentos", "os", "expedicao", "clientes", "produtos", "assistente"]
   },
   {
     nome: "STOCK",
     descricao: "Estoque, inventários e produtos.",
-    modulos: ["dashboard", "estoque", "inventarios", "produtos", "compras"]
+    modulos: ["dashboard", "estoque", "inventarios", "produtos", "compras", "expedicao"]
   },
   {
     nome: "PURCHASE",

@@ -24,6 +24,8 @@ export type ErpShellContext = {
   corDestaque: string | null;
   /** Módulo SPED Fiscal liberado pelo dono do SaaS para este tenant (esconde o item do menu). */
   spedFiscalHabilitado: boolean;
+  /** Módulo Expedição (recibo de retirada) liberado pelo dono do SaaS para este tenant. */
+  expedicaoHabilitada: boolean;
   badges: ErpShellBadges;
 };
 
@@ -44,6 +46,7 @@ const SHELL_FALLBACK: ErpShellContext = {
   logoSistema: null,
   corDestaque: null,
   spedFiscalHabilitado: false,
+  expedicaoHabilitada: false,
   badges: { vendas: 0, orcamentos: 0, os: 0, compras: 0, estoque: 0, financeiro: 0 }
 };
 
@@ -79,7 +82,7 @@ export async function getErpShellContext(): Promise<ErpShellContext> {
       getSession(),
       prisma.tenant.findUnique({
         where: { id: scope.tenantId },
-        select: { spedFiscalHabilitado: true }
+        select: { spedFiscalHabilitado: true, expedicaoHabilitada: true }
       }),
       prisma.configuracaoFiscal.findUnique({
         where: { empresaId: scope.empresaId },
@@ -133,6 +136,7 @@ export async function getErpShellContext(): Promise<ErpShellContext> {
       logoSistema: empresa?.logoSistema ?? null,
       corDestaque: empresa?.corDestaque ?? null,
       spedFiscalHabilitado: tenant?.spedFiscalHabilitado ?? false,
+      expedicaoHabilitada: tenant?.expedicaoHabilitada ?? false,
       badges: {
         vendas,
         orcamentos,

@@ -34,7 +34,8 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
   const [modelo, setModelo] = useState<"NFCE" | "NFE">("NFCE");
   const [query, setQuery] = useState("");
   const [pedidoAbertoId, setPedidoAbertoId] = useState<string | null>(null);
-  const [resultado, setResultado] = useState<{ pedidoNumero: string; troco: number; notaId: string | null; notaStatus: string | null; emitErro: string | null } | null>(null);
+  const [retiradaExpedicao, setRetiradaExpedicao] = useState(false);
+  const [resultado, setResultado] = useState<{ pedidoNumero: string; troco: number; notaId: string | null; notaStatus: string | null; emitErro: string | null; retirada: { id: string; codigo: string } | null } | null>(null);
 
   const caixa = data.caixa;
 
@@ -129,6 +130,7 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
     setResultado(null);
     setError("");
     setModelo("NFCE");
+    setRetiradaExpedicao(false);
     setPagamentos([{ uid: uid(), forma: "DINHEIRO", valor: p.total }]);
   }
 
@@ -145,12 +147,17 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
       const r = await post("/api/erp/caixa/receber", {
         pedidoId: sel.id,
         modelo,
-        pagamentos: pagamentos.filter((p) => Number(p.valor) > 0).map((p) => ({ forma: p.forma, valor: Number(p.valor) }))
+        pagamentos: pagamentos.filter((p) => Number(p.valor) > 0).map((p) => ({ forma: p.forma, valor: Number(p.valor) })),
+        retiradaExpedicao: data.expedicaoHabilitada && retiradaExpedicao
       });
-      setResultado({ pedidoNumero: r.pedidoNumero, troco: r.troco, notaId: r.nota?.id ?? null, notaStatus: r.nota?.status ?? null, emitErro: r.emitErro ?? null });
+      setResultado({ pedidoNumero: r.pedidoNumero, troco: r.troco, notaId: r.nota?.id ?? null, notaStatus: r.nota?.status ?? null, emitErro: r.emitErro ?? null, retirada: r.retirada ?? null });
       // Impressão automática do cupom (DANFE/DANFCE) ao autorizar.
       if (r.nota?.status === "AUTORIZADA" && r.nota?.id) {
         window.open(`/api/erp/fiscal/${r.nota.id}/pdf`, "_blank", "noopener,noreferrer");
+      }
+      // Recibo de retirada: abre para imprimir junto com o cupom.
+      if (r.retirada?.id) {
+        window.open(`/api/erp/expedicao/${r.retirada.id}/recibo`, "_blank", "noopener,noreferrer");
       }
       router.refresh();
     } catch (e) { setError(e instanceof Error ? e.message : "Erro ao receber."); }
@@ -330,6 +337,12 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
                   <button type="button" className={`btn-erp ${modelo === "NFCE" ? "primary" : "ghost"} sm`} style={{ flex: 1 }} onClick={() => setModelo("NFCE")}>NFC-e</button>
                   <button type="button" className={`btn-erp ${modelo === "NFE" ? "primary" : "ghost"} sm`} style={{ flex: 1 }} onClick={() => setModelo("NFE")} disabled={!sel.temCliente} title={!sel.temCliente ? "Requer cliente identificado" : ""}>NF-e</button>
                 </div>
+                {data.expedicaoHabilitada && (
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, fontSize: 13 }}>
+                    <input type="checkbox" checked={retiradaExpedicao} onChange={(e) => setRetiradaExpedicao(e.target.checked)} />
+                    📤 Retirada na expedição (imprime recibo)
+                  </label>
+                )}
                 <button type="button" className="btn-erp primary lg" style={{ marginTop: 12, width: "100%" }} disabled={busy || falta > 0} onClick={receber}>
                   {busy ? "Processando…" : `Receber e emitir · ${brl(sel.total)}`}
                 </button>
@@ -343,6 +356,12 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
               <div className="erp-card-head"><h3>Recebido · {resultado.pedidoNumero}</h3></div>
               <div className="erp-card-body">
                 {resultado.troco > 0 && <div className="alert info"><span className="lead">Troco:</span> {brl(resultado.troco)}</div>}
+                {resultado.retirada && (
+                  <div className="alert info">
+                    <span className="lead">Retirada na expedição:</span> recibo <strong style={{ letterSpacing: 2 }}>{resultado.retirada.codigo}</strong>{" "}
+                    <a href={`/api/erp/expedicao/${resultado.retirada.id}/recibo`} target="_blank" rel="noopener noreferrer">(reimprimir)</a>
+                  </div>
+                )}
                 {resultado.notaStatus === "AUTORIZADA" ? (
                   <>
                     <div className="alert success"><span>Nota autorizada. O cupom foi aberto para impressão.</span></div>

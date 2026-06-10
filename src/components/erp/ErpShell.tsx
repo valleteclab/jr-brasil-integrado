@@ -52,7 +52,8 @@ const groups: ErpNavGroup[] = [
       { label: "Caixa", href: "/erp/caixa", icon: "🧮" },
       { label: "Vendas", href: "/erp/vendas", icon: "🏪", badgeKey: "vendas" },
       { label: "Orçamentos", href: "/erp/orcamentos", icon: "📄", badgeKey: "orcamentos" },
-      { label: "Ordens de Serviço", href: "/erp/os", icon: "🔧", badgeKey: "os" }
+      { label: "Ordens de Serviço", href: "/erp/os", icon: "🔧", badgeKey: "os" },
+      { label: "Expedição", href: "/erp/expedicao", icon: "📤" }
     ]
   },
   {
@@ -125,6 +126,8 @@ export function ErpShell({ children, context, modulos }: ErpShellProps) {
     if (!modulo) return true;
     // SPED Fiscal é liberado por tenant pelo dono do SaaS, além do RBAC por perfil.
     if (modulo === "sped-fiscal" && !context.spedFiscalHabilitado) return false;
+    // Expedição idem: só aparece para clientes com o módulo liberado pelo dono do SaaS.
+    if (modulo === "expedicao" && !context.expedicaoHabilitada) return false;
     return modulos.includes(modulo) && moduloVisivelNoTipoNegocio(modulo, context.tipoNegocio);
   };
   const gruposVisiveis = groups
