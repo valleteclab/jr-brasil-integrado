@@ -57,6 +57,7 @@ type FiscalEntryDraftSource = {
   valorSeguro: Prisma.Decimal;
   valorDesconto: Prisma.Decimal;
   outrasDespesas: Prisma.Decimal;
+  informacoesComplementares?: string | null;
   fornecedor: {
     documento: string;
     razaoSocial: string;
@@ -100,6 +101,8 @@ type FiscalEntryDraftSource = {
       baseCalculo: Prisma.Decimal | null;
       aliquota: Prisma.Decimal | null;
       valor: Prisma.Decimal | null;
+      aliquotaCredSn?: Prisma.Decimal | null;
+      valorCredSn?: Prisma.Decimal | null;
     }>;
   }>;
 };
@@ -153,6 +156,8 @@ function buildFiscalEntryDraft(entrada: FiscalEntryDraftSource) {
     installments,
     status: entrada.status,
     receivedAt: entrada.recebidaEm?.toISOString() ?? new Date().toISOString(),
+    // Informações complementares do XML — aqui costuma vir o crédito de ICMS do Simples (LC 123).
+    infCpl: entrada.informacoesComplementares ?? undefined,
     items: entrada.itens.map((item) => ({
       id: item.id,
       importedProduct: {
@@ -228,7 +233,10 @@ function buildFiscalEntryDraft(entrada: FiscalEntryDraftSource) {
         csosn: imp.csosn,
         base: Number(imp.baseCalculo ?? 0),
         aliquota: Number(imp.aliquota ?? 0),
-        valor: Number(imp.valor ?? 0)
+        valor: Number(imp.valor ?? 0),
+        // Crédito de ICMS de fornecedor do Simples (LC 123, art. 23).
+        credSnAliquota: Number(imp.aliquotaCredSn ?? 0),
+        credSnValor: Number(imp.valorCredSn ?? 0)
       }))
     }))
   };
@@ -505,7 +513,8 @@ export async function importNfeXml(scope: TenantScope, xmlText: string) {
         valorFrete: parsed.freightValue,
         valorSeguro: parsed.insuranceValue,
         valorDesconto: parsed.discountValue,
-        outrasDespesas: parsed.otherExpenses
+        outrasDespesas: parsed.otherExpenses,
+        informacoesComplementares: parsed.infCpl ?? null
       }
     });
 
@@ -513,6 +522,9 @@ export async function importNfeXml(scope: TenantScope, xmlText: string) {
     // Regras De/Para de finalidade: carregadas UMA vez para todos os itens (evita N queries
     // idênticas dentro da transação, principal causa de timeout em notas com muitos itens).
     const regrasFinalidade = await loadFinalidadeRules(tx, scope, agora);
+    // Rateio do crédito do Simples informado só no TEXTO (infCpl) — apenas quando NENHUM item
+    // trouxe os campos estruturados (pCredSN/vCredICMSSN).
+    const temCredSnEstruturado = parsed.items.some((i) => i.taxes.some((t) => (t.credSnValue ?? 0) > 0));
 
     for (const item of parsed.items) {
       const match = await matchProduct(tx, scope, fornecedor?.id, item);
@@ -577,6 +589,14 @@ export async function importNfeXml(scope: TenantScope, xmlText: string) {
             aliquota: tax.rate,
             valor: tax.value,
             recuperavel: creditoPorFinalidade(finalidadeRes.finalidade, regime, tax.tax, { st }).recuperavel,
+            // Crédito do Simples (LC 123): campos próprios do XML ou, sem eles, rateio do
+            // valor mencionado no texto das informações complementares.
+            aliquotaCredSn: tax.credSnRate ?? null,
+            valorCredSn:
+              tax.credSnValue ??
+              (tax.tax === "ICMS" && !temCredSnEstruturado && parsed.creditoSimplesInfCpl > 0 && parsed.totalProducts > 0
+                ? Math.round(((item.totalValue / parsed.totalProducts) * parsed.creditoSimplesInfCpl + Number.EPSILON) * 100) / 100
+                : null),
             dadosOriginais: tax.raw as Prisma.InputJsonValue
           }))
         });

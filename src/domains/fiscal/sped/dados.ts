@@ -410,10 +410,11 @@ export async function carregarSpedInput(scope: TenantScope, params: CarregarSped
       const cstEntrada = icmsRecuperavel ? icms?.cst ?? "00" : veioComSt ? "60" : "90";
 
       // Fornecedor do Simples (art. 23 LC 123): sem destaque de ICMS, mas o XML traz o crédito
-      // permitido em pCredSN/vCredICMSSN (guardados em dadosOriginais). Escritura com CST 90.
+      // permitido em pCredSN/vCredICMSSN — colunas próprias do imposto (entradas novas) ou
+      // dadosOriginais (entradas importadas antes do campo existir). Escritura com CST 90.
       const dadosIcms = (icms?.dadosOriginais ?? {}) as Record<string, unknown>;
-      const credSNValor = num(dadosIcms.vCredICMSSN);
-      const credSNAliq = num(dadosIcms.pCredSN);
+      const credSNValor = num(icms?.valorCredSn) || num(dadosIcms.vCredICMSSN);
+      const credSNAliq = num(icms?.aliquotaCredSn) || num(dadosIcms.pCredSN);
       const liquidoItem = round2(num(item.valorTotal) - num(item.valorDesconto));
       const aplicaCredSN =
         credSNValor > 0 &&

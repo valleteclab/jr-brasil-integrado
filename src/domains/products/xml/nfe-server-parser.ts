@@ -1,4 +1,5 @@
 import { XMLParser } from "fast-xml-parser";
+import { extrairCreditoSimplesDoTexto } from "@/domains/fiscal/sped/xml-avulso";
 
 export type ParsedNfeItem = {
   itemNumber: number;
@@ -29,10 +30,17 @@ export type ParsedNfeTax = {
   base?: number;
   rate?: number;
   value?: number;
+  /** Crédito de ICMS de fornecedor do Simples (LC 123, art. 23): pCredSN/vCredICMSSN. */
+  credSnRate?: number;
+  credSnValue?: number;
   raw: unknown;
 };
 
 export type ParsedNfe = {
+  /** Informações complementares do XML (infAdic/infCpl). */
+  infCpl?: string;
+  /** Crédito de ICMS (LC 123) mencionado no TEXTO do infCpl (0 quando não há). */
+  creditoSimplesInfCpl: number;
   accessKey?: string;
   number?: string;
   series?: string;
@@ -103,6 +111,9 @@ function readTax(group: unknown, tax: ParsedNfeTax["tax"]): ParsedNfeTax | undef
     base: numberValue(node.vBC) || undefined,
     rate: numberValue(node[`p${tax}`]) || numberValue(node.pICMS) || undefined,
     value: numberValue(node[`v${tax}`]) || numberValue(node.vICMS) || undefined,
+    // Fornecedor do Simples (ICMSSN101/900): crédito permitido ao adquirente (LC 123, art. 23).
+    credSnRate: tax === "ICMS" ? numberValue(node.pCredSN) || undefined : undefined,
+    credSnValue: tax === "ICMS" ? numberValue(node.vCredICMSSN) || undefined : undefined,
     raw: node
   };
 }
@@ -158,7 +169,11 @@ export function parseNfeXml(xmlText: string): ParsedNfe {
     };
   });
 
+  const infCpl = text((infNfe.infAdic ?? {}).infCpl) || undefined;
+
   return {
+    infCpl,
+    creditoSimplesInfCpl: extrairCreditoSimplesDoTexto(infCpl),
     accessKey: text(infNfe["@_Id"]).replace(/^NFe/, "") || text(parsed?.nfeProc?.protNFe?.infProt?.chNFe) || undefined,
     number: text(ide.nNF) || undefined,
     series: text(ide.serie) || undefined,

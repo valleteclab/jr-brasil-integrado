@@ -30,7 +30,17 @@ type FiscalDraftItem = {
   finalidadeOrigem?: string;
   cfopEntradaDerivado?: string;
   movimentaEstoque?: boolean;
-  impostos?: Array<{ tributo: string; cst: string | null; csosn: string | null; base: number; aliquota: number; valor: number }>;
+  impostos?: Array<{
+    tributo: string;
+    cst: string | null;
+    csosn: string | null;
+    base: number;
+    aliquota: number;
+    valor: number;
+    /** Crédito de ICMS de fornecedor do Simples (LC 123, art. 23). */
+    credSnAliquota?: number;
+    credSnValor?: number;
+  }>;
 };
 
 type FinalidadeEntrada = "REVENDA" | "USO_CONSUMO" | "IMOBILIZADO" | "INDUSTRIALIZACAO";
@@ -114,6 +124,8 @@ type FiscalDraft = {
     value: number;
   }>;
   receivedAt: string;
+  /** Informações complementares do XML — onde o fornecedor do Simples informa o crédito (LC 123). */
+  infCpl?: string;
   items: FiscalDraftItem[];
 };
 
@@ -141,11 +153,16 @@ function formatBrl(value: number) {
 
 // Resumo de um imposto do XML para conferência: "ICMS CSOSN 500 · IPI CST 53 · PIS CST 01 0,65% R$ 0,04".
 // Distingue CST (regime normal) de CSOSN (Simples Nacional) para não confundir os códigos.
-function formatImposto(imp: { tributo: string; cst: string | null; csosn: string | null; aliquota: number; valor: number }): string {
+function formatImposto(imp: { tributo: string; cst: string | null; csosn: string | null; aliquota: number; valor: number; credSnAliquota?: number; credSnValor?: number }): string {
   const situacao = imp.cst ? `CST ${imp.cst}` : imp.csosn ? `CSOSN ${imp.csosn}` : "";
   const aliq = imp.aliquota > 0 ? `${imp.aliquota.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%` : "";
   const val = imp.valor > 0 ? formatBrl(imp.valor) : "";
-  return [imp.tributo, situacao, aliq, val].filter(Boolean).join(" ");
+  // Fornecedor do Simples: nota sem destaque, mas com crédito permitido (LC 123, art. 23).
+  const credSn =
+    (imp.credSnValor ?? 0) > 0
+      ? `Créd. Simples ${formatBrl(imp.credSnValor ?? 0)}${(imp.credSnAliquota ?? 0) > 0 ? ` (${(imp.credSnAliquota ?? 0).toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%)` : ""}`
+      : "";
+  return [imp.tributo, situacao, aliq, val, credSn].filter(Boolean).join(" ");
 }
 
 // Descrições resumidas dos códigos de ICMS, para o usuário que lança a nota entender o que veio.
@@ -813,6 +830,31 @@ export function FiscalEntryWizard({ initialDraft = null, products, formasPagamen
             O CFOP de entrada é sugerido pela finalidade. Para casos especiais (devolução, remessa, importação),
             digite o CFOP correto no campo ou escolha um da lista.
           </p>
+
+          {(() => {
+            // Crédito de ICMS de fornecedor do Simples (LC 123, art. 23): destacado na conferência
+            // para o usuário saber que a nota SEM destaque ainda gera crédito aproveitável.
+            const credSnTotal = (draft?.items ?? []).reduce(
+              (total, item) => total + (item.impostos ?? []).reduce((s, imp) => s + (imp.credSnValor ?? 0), 0),
+              0
+            );
+            if (credSnTotal <= 0 && !draft?.infCpl) return null;
+            return (
+              <div className="fiscal-legenda">
+                {credSnTotal > 0 && (
+                  <strong>
+                    ✓ Crédito de ICMS do Simples Nacional nesta nota: {formatBrl(credSnTotal)} (LC 123, art. 23) —
+                    será aproveitado na apuração e no SPED Fiscal.
+                  </strong>
+                )}
+                {draft?.infCpl && (
+                  <span className="fiscal-legenda-nota" style={{ display: "block", marginTop: 6 }}>
+                    <b>Informações complementares do XML:</b> {draft.infCpl}
+                  </span>
+                )}
+              </div>
+            );
+          })()}
 
           {legendaIcms.length > 0 && (
             <div className="fiscal-legenda">

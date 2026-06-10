@@ -123,6 +123,19 @@ export type XmlCancelamentoSped = {
 
 export type XmlSpedParseado = XmlDocumentoSped | XmlCancelamentoSped;
 
+/**
+ * Extrai do TEXTO das informações complementares o crédito de ICMS permitido por fornecedor
+ * do Simples (LC 123, art. 23) — ex.: "...APROVEITAMENTO DO CRÉDITO DE ICMS NO VALOR DE
+ * R$ 14,00, CORRESPONDENTE À ALÍQUOTA DE 2,80%...". Retorna 0 quando não há menção.
+ */
+export function extrairCreditoSimplesDoTexto(textoInfCpl: string | null | undefined): number {
+  if (!textoInfCpl || !/cr[eé]dito\s+de\s+icms/i.test(textoInfCpl)) return 0;
+  const m = /cr[eé]dito\s+de\s+icms.{0,60}?([\d.]*\d,\d{2})/i.exec(textoInfCpl);
+  if (!m) return 0;
+  const n = Number(m[1].replace(/\./g, "").replace(",", "."));
+  return Number.isFinite(n) ? n : 0;
+}
+
 /** Extrai modelo/série/número/competência embutidos na chave de acesso (44 dígitos). */
 export function dadosDaChave(chave: string): {
   modelo: string;
@@ -256,12 +269,7 @@ export function parseXmlSped(xmlText: string): XmlSpedParseado {
   // Informações complementares: fornecedores do Simples às vezes informam o crédito da LC 123
   // apenas no texto ("PERMITE O APROVEITAMENTO DO CRÉDITO DE ICMS NO VALOR DE R$ 12,34 ...").
   const infCpl = texto((infNfe.infAdic ?? {}).infCpl) || null;
-  let creditoSimplesInfCpl = 0;
-  if (infCpl && /cr[eé]dito\s+de\s+icms/i.test(infCpl)) {
-    // Ex.: "...APROVEITAMENTO DO CRÉDITO DE ICMS NO VALOR DE R$ 14,00, CORRESPONDENTE À..."
-    const m = /cr[eé]dito\s+de\s+icms.{0,60}?([\d.]*\d,\d{2})/i.exec(infCpl);
-    if (m) creditoSimplesInfCpl = numero(m[1].replace(/\./g, "").replace(",", "."));
-  }
+  const creditoSimplesInfCpl = extrairCreditoSimplesDoTexto(infCpl);
 
   return {
     kind: "DOCUMENTO",

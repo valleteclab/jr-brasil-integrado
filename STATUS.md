@@ -430,3 +430,10 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Escrituracao conforme orientacao SEFAZ-SP (RC 26918/2022): o credito vai nos proprios C170/C190 da entrada com CST 90 sob o enfoque do declarante (base = valor da operacao, aliquota = pCredSN, valor = vCredICMSSN), fluindo naturalmente para os creditos do E110 — sem codigo de ajuste por UF. Gate: finalidade creditavel (revenda/industrializacao) x regime normal; mercadoria com ST nao credita.
 - Resumo do SPED ganhou "Credito ICMS do Simples (LC 123)" (linha em Outros tributos); avisos por nota indicam a origem (estruturado ou texto rateado). Livro de Entradas reflete automaticamente (mesma carga).
 - Validacao: tsc (0); smoke do parser cobre ICMSSN101 (pCredSN 2,80 / vCredICMSSN 14,00) e a extracao do credito do texto do infCpl; estrutura do arquivo OK.
+
+## Atualizacao operacional - 2026-06-10 - credito do Simples no fluxo de ENTRADAS (manual + ACBr)
+
+- O parser oficial das entradas (nfe-server-parser, usado por /erp/entradas-fiscais/nova e pela importacao das "notas recebidas" via ACBr — ambos convergem em importNfeXml) agora le: pCredSN/vCredICMSSN por item (ICMSSN101/900) e as informacoes complementares (infAdic/infCpl), com extracao do credito mencionado so no texto (rateado pelos itens quando nenhum item traz os campos estruturados; helper compartilhado extrairCreditoSimplesDoTexto).
+- Novos campos (migration entrada_credito_simples_infcpl): EntradaFiscal.informacoesComplementares; EntradaFiscalItemImposto.aliquotaCredSn/valorCredSn. Importacao persiste; SPED le das colunas novas (fallback dadosOriginais p/ entradas antigas).
+- Conferencia (/erp/entradas-fiscais/nova): banner "Credito de ICMS do Simples Nacional nesta nota: R$ X" + exibicao do infCpl; resumo de impostos por item mostra "Cred. Simples R$ X (Y%)".
+- Validacao: tsc (0), smoke do parser OK. Entradas ja importadas antes da mudanca: reimportar o XML para popular os campos (ou o SPED le do dadosOriginais quando estruturado).

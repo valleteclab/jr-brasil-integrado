@@ -1311,6 +1311,9 @@ model EntradaFiscal {
   valorSeguro     Decimal             @default(0) @db.Decimal(14, 2)
   valorDesconto   Decimal             @default(0) @db.Decimal(14, 2)
   outrasDespesas  Decimal             @default(0) @db.Decimal(14, 2)
+  // Informações complementares do XML (infAdic/infCpl) — exibidas na conferência; fornecedores
+  // do Simples costumam informar aqui o crédito de ICMS permitido (LC 123, art. 23).
+  informacoesComplementares String?
   observacoes     String?
   itens           EntradaFiscalItem[]
   parcelas        EntradaFiscalParcela[]
@@ -1439,6 +1442,10 @@ model EntradaFiscalItemImposto {
   aliquota            Decimal?          @db.Decimal(8, 4)
   valor               Decimal?          @db.Decimal(14, 2)
   recuperavel         Boolean           @default(false)
+  // Crédito de ICMS de fornecedor do Simples (LC 123, art. 23): pCredSN/vCredICMSSN do XML.
+  // A nota vem SEM destaque nos itens; este é o crédito que o adquirente pode aproveitar.
+  aliquotaCredSn      Decimal?          @db.Decimal(8, 4)
+  valorCredSn         Decimal?          @db.Decimal(14, 2)
   dadosOriginais      Json?
 
   @@index([tenantId, empresaId, tributo])
