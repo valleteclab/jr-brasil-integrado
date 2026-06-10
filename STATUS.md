@@ -387,3 +387,8 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Auditoria por IA (OpenRouter ja integrado ao ERP): botao "Analisar com IA" na tela da apuracao envia o RESUMO (nunca gera o arquivo) e devolve parecer + inconsistencias (CST x CFOP x aliquota, creditos x regime, ST) + checklist pre-envio. Persistida em `SpedArquivo.analiseIa` (invalidada ao regerar), auditada, respeitando gates `spedFiscalHabilitado` + `iaHabilitada` + config de IA da empresa.
 - APIs novas: `/api/erp/sped-fiscal/xml` (GET/POST), `/xml/{id}` (DELETE), `/{id}/analise-ia` (POST). Migration `sped-xml-avulso-e-analise-ia` aplicada no banco de teste.
 - Validacao: `tsc` (0), `build` (ok); `scripts/sped-validar.ts` ganhou smoke do parser XML (NF-e completa, cancelamento, dados da chave) — tudo OK, estrutura do arquivo segue valida.
+
+## Atualizacao operacional - 2026-06-09 - fix: service worker quebrava chunks em dev
+
+- Corrigido erro "Cannot read properties of undefined (reading 'call')" (webpack.js) que aparecia ao abrir paginas novas (ex.: /erp/sped-fiscal) em desenvolvimento: o sw.js fazia cache-first de /_next/static/, mas em DEV esses arquivos nao tem hash imutavel e mudam a cada rebuild — o SW servia chunk velho e o grafo de modulos quebrava.
+- sw.js v3: nao intercepta NADA em localhost (dev passa direto pela rede); bump do cache para "jrbrasil-gastos-v3" forca a limpeza dos caches antigos na ativacao. Producao continua com cache-first de assets imutaveis.

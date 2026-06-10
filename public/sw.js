@@ -1,7 +1,13 @@
 // Service worker mínimo para tornar o app instalável (PWA). Por segurança, só intercepta ASSETS
 // ESTÁTICOS (cache-first); páginas, RSC do Next, API e uploads passam direto pela rede. Sempre
 // devolve uma Response válida (nunca undefined).
-const CACHE = "jrbrasil-gastos-v2";
+// v3: limpa caches antigos que guardaram chunks de DEV (sem hash) e quebravam o app
+// após rebuilds ("Cannot read properties of undefined (reading 'call')" no webpack).
+const CACHE = "jrbrasil-gastos-v3";
+
+// Em desenvolvimento (localhost) os arquivos de /_next/static/ NÃO têm hash imutável e mudam a
+// cada rebuild — cache-first serviria chunk velho e quebraria o módulo. Só cacheia em produção.
+const IS_DEV = self.location.hostname === "localhost" || self.location.hostname === "127.0.0.1";
 const APP_SHELL = ["/manifest.webmanifest", "/icons/icon.svg"];
 
 self.addEventListener("install", (event) => {
@@ -19,6 +25,7 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("fetch", (event) => {
+  if (IS_DEV) return; // dev: tudo direto pela rede (assets mudam a cada rebuild)
   const req = event.request;
   if (req.method !== "GET") return;
 
