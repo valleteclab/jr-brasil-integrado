@@ -392,3 +392,10 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 - Corrigido erro "Cannot read properties of undefined (reading 'call')" (webpack.js) que aparecia ao abrir paginas novas (ex.: /erp/sped-fiscal) em desenvolvimento: o sw.js fazia cache-first de /_next/static/, mas em DEV esses arquivos nao tem hash imutavel e mudam a cada rebuild — o SW servia chunk velho e o grafo de modulos quebrava.
 - sw.js v3: nao intercepta NADA em localhost (dev passa direto pela rede); bump do cache para "jrbrasil-gastos-v3" forca a limpeza dos caches antigos na ativacao. Producao continua com cache-first de assets imutaveis.
+
+## Atualizacao operacional - 2026-06-09 - finalidade POR NOTA nos XMLs avulsos do SPED
+
+- O usuario agora define a finalidade de entrada (Revenda / Uso e consumo / Imobilizado / Industrializacao) POR NOTA no card "XMLs avulsos" (seletor na linha; "Automatica" volta ao comportamento padrao). Precedencia na geracao: MANUAL (nota "*" ou por item) -> regra De/Para (/erp/regras-finalidade, casando NCM/CFOP/fornecedor pelo CNPJ do XML) -> heuristica.
+- Persistencia em `SpedXmlDocumento.finalidadesItens` (Json; chave "*" = nota inteira; migration `sped_xml_finalidades_manuais`). APIs: GET/PUT `/api/erp/sped-fiscal/xml/{id}` (detalhe com finalidade efetiva + origem + credito por item; PUT `{finalidade}` aplica a nota). Auditado (`sped.definir_finalidades_xml`).
+- Aviso da geracao agora discrimina contagens (definidos por voce / por regra / inferidos) e so alerta quando ha item inferido por heuristica.
+- Validacao: `tsc` (0); geracao em memoria com os 41 XMLs reais da competencia 05/2026 manteve a apuracao (ICMS a recolher 9.993,16) e os avisos novos por contagem.

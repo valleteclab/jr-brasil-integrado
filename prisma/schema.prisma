@@ -1895,6 +1895,9 @@ model SpedXmlDocumento {
   destinatarioNome      String?
   valorTotal            Decimal  @default(0) @db.Decimal(14, 2)
   xml                   String
+  // Finalidade de entrada definida MANUALMENTE pelo usuário por item ({"1":"REVENDA",...}).
+  // Prevalece sobre regra De/Para e heurística na geração do SPED (créditos corretos).
+  finalidadesItens      Json?
   criadoEm              DateTime @default(now())
   atualizadoEm          DateTime @updatedAt
 

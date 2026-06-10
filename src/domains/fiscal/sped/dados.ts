@@ -12,9 +12,12 @@ import type { RegimeTributario, TipoTributo } from "@prisma/client";
 import {
   creditoPorFinalidade,
   finalidadeMovimentaEstoque,
+  isFinalidadeEntrada,
   resolveCfopEntrada,
-  sugerirFinalidadeEntrada
+  sugerirFinalidadeEntrada,
+  type FinalidadeEntrada
 } from "@/domains/fiscal/finalidade-entrada";
+import { loadFinalidadeRules, pickFinalidadeRule } from "@/domains/fiscal/application/finalidade-regra-use-cases";
 import { parseXmlSped, type XmlDocumentoSped, type XmlItem, type XmlParticipante } from "./xml-avulso";
 import type {
   SpedConfig,
@@ -454,6 +457,16 @@ export async function carregarSpedInput(scope: TenantScope, params: CarregarSped
 
   if (xmlDocs.length > 0) {
     const chavesDoBanco = new Set(documentos.map((d) => d.chaveAcesso).filter(Boolean) as string[]);
+
+    // Para a finalidade dos itens de entrada por XML: regras De/Para vigentes (uma carga só)
+    // e mapa documento→fornecedorId (permite casar regras por fornecedor pelo CNPJ do XML).
+    const [regrasFinalidade, fornecedoresDocs] = await Promise.all([
+      loadFinalidadeRules(prisma, scope, new Date()),
+      prisma.fornecedor.findMany({ where: { ...base }, select: { id: true, documento: true } })
+    ]);
+    const fornecedorPorDocumento = new Map(
+      fornecedoresDocs.map((f) => [(f.documento ?? "").replace(/\D/g, ""), f.id])
+    );
     const participanteXml = (p: XmlParticipante): string => {
       const codigo = `X-${p.documento || p.nome.slice(0, 20)}`;
       if (!participantes.has(codigo)) {
@@ -525,6 +538,11 @@ export async function carregarSpedInput(scope: TenantScope, params: CarregarSped
       const entrada = tipoXml === "ENTRADA";
       const regime = empresa.regimeTributario as RegimeTributario;
       const interestadual = Boolean(parsed.emitente.uf && empresa.enderecoUf && parsed.emitente.uf !== empresa.enderecoUf);
+      const fornecedorId = fornecedorPorDocumento.get(parsed.emitente.documento) ?? null;
+      const finalidadesManuais = (registro.finalidadesItens ?? {}) as Record<string, unknown>;
+      let itensManuais = 0;
+      let itensPorRegra = 0;
+      let itensPorHeuristica = 0;
 
       let codigoParticipante: string | null = null;
       if (entrada) {
@@ -569,13 +587,27 @@ export async function carregarSpedInput(scope: TenantScope, params: CarregarSped
           };
         }
 
-        // Entrada por XML: a finalidade (e portanto o crédito) é inferida por heurística
-        // de CFOP/descrição — mesma lógica do fluxo de entradas (finalidade-entrada.ts).
-        const sugestao = sugerirFinalidadeEntrada({ ncm: item.ncm, cfop: item.cfop, descricao: item.descricao });
+        // Entrada por XML: a finalidade (e portanto o crédito) segue a precedência
+        // MANUAL (por item ou da nota inteira, chave "*") → regra De/Para → heurística.
+        const manual = finalidadesManuais[String(item.numeroItem)] ?? finalidadesManuais["*"];
+        let finalidade: FinalidadeEntrada;
+        if (isFinalidadeEntrada(manual)) {
+          finalidade = manual;
+          itensManuais++;
+        } else {
+          const regra = pickFinalidadeRule(regrasFinalidade, { ncm: item.ncm, cfopOrigem: item.cfop, fornecedorId });
+          if (regra) {
+            finalidade = regra.finalidade;
+            itensPorRegra++;
+          } else {
+            finalidade = sugerirFinalidadeEntrada({ ncm: item.ncm, cfop: item.cfop, descricao: item.descricao }).finalidade;
+            itensPorHeuristica++;
+          }
+        }
         const st =
           ["10", "30", "60", "70"].includes(item.cstIcms ?? "") ||
           ["201", "202", "203", "500"].includes(item.csosn ?? "");
-        const cred = (tributo: TipoTributo) => creditoPorFinalidade(sugestao.finalidade, regime, tributo, { st }).recuperavel;
+        const cred = (tributo: TipoTributo) => creditoPorFinalidade(finalidade, regime, tributo, { st }).recuperavel;
         const credIcms = cred("ICMS");
         const credPis = cred("PIS");
         const credCofins = cred("COFINS");
@@ -587,7 +619,7 @@ export async function carregarSpedInput(scope: TenantScope, params: CarregarSped
             descricao: item.descricao,
             gtin: item.gtin,
             unidade: item.unidade,
-            tipoItem: tipoItem0200(sugestao.finalidade, null),
+            tipoItem: tipoItem0200(finalidade, null),
             ncm: item.ncm,
             cest: item.cest
           });
@@ -601,8 +633,8 @@ export async function carregarSpedInput(scope: TenantScope, params: CarregarSped
           unidade: item.unidade,
           valorItem: item.valorTotal,
           valorDesconto: item.valorDesconto,
-          movimentaEstoque: finalidadeMovimentaEstoque(sugestao.finalidade),
-          cfop: resolveCfopEntrada(sugestao.finalidade, { interestadual, st }),
+          movimentaEstoque: finalidadeMovimentaEstoque(finalidade),
+          cfop: resolveCfopEntrada(finalidade, { interestadual, st }),
           cstIcms: cstIcms3(null, credIcms ? item.cstIcms ?? "00" : st ? "60" : "90", null),
           baseIcms: credIcms ? item.baseIcms : 0,
           aliquotaIcms: credIcms ? item.aliquotaIcms : 0,
@@ -626,9 +658,16 @@ export async function carregarSpedInput(scope: TenantScope, params: CarregarSped
         };
       });
 
-      if (entrada) {
+      if (entrada && itensPorHeuristica > 0) {
+        const detalhe = [
+          itensManuais > 0 ? `${itensManuais} definido(s) por você` : null,
+          itensPorRegra > 0 ? `${itensPorRegra} por regra De/Para` : null,
+          `${itensPorHeuristica} INFERIDO(S) por heurística`
+        ]
+          .filter(Boolean)
+          .join(", ");
         avisos.push(
-          `${rotulo}: entrada importada por XML — finalidade e créditos foram INFERIDOS por heurística de CFOP/descrição. Revise com o contador (para controle fino, importe pelo fluxo de Notas de entrada).`
+          `${rotulo}: finalidades dos itens — ${detalhe}. Para os inferidos, defina a finalidade no card "XMLs avulsos" (ou crie uma regra em Regras de finalidade) e regere o arquivo.`
         );
       }
 

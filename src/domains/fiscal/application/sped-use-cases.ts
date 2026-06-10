@@ -13,7 +13,14 @@ import { gerarSpedFiscal } from "@/domains/fiscal/sped/gerador";
 import type { SpedResumo } from "@/domains/fiscal/sped/types";
 import { dadosDaChave, parseXmlSped, SpedXmlError } from "@/domains/fiscal/sped/xml-avulso";
 import { callOpenRouter } from "@/domains/ai/openrouter-service";
-import { Prisma } from "@prisma/client";
+import { Prisma, type RegimeTributario } from "@prisma/client";
+import {
+  creditoPorFinalidade,
+  isFinalidadeEntrada,
+  sugerirFinalidadeEntrada,
+  type FinalidadeEntrada
+} from "@/domains/fiscal/finalidade-entrada";
+import { loadFinalidadeRules, pickFinalidadeRule } from "@/domains/fiscal/application/finalidade-regra-use-cases";
 
 export { SpedError };
 
@@ -535,6 +542,8 @@ export type SpedXmlSummary = {
   emitenteNome: string | null;
   destinatarioNome: string | null;
   valorTotal: number;
+  /** Finalidade manual aplicada à nota inteira (chave "*"), quando definida. */
+  finalidadeNota: FinalidadeEntrada | null;
   criadoEm: string;
 };
 
@@ -545,20 +554,24 @@ export async function listSpedXmlDocumentos(scope: TenantScope): Promise<SpedXml
     orderBy: [{ competenciaAno: "desc" }, { competenciaMes: "desc" }, { criadoEm: "desc" }],
     take: 300
   });
-  return docs.map((d) => ({
-    id: d.id,
-    chaveAcesso: d.chaveAcesso,
-    tipo: d.tipo,
-    cancelada: d.cancelada,
-    modelo: d.modelo,
-    numero: d.numero,
-    serie: d.serie,
-    competencia: `${String(d.competenciaMes).padStart(2, "0")}/${d.competenciaAno}`,
-    emitenteNome: d.emitenteNome,
-    destinatarioNome: d.destinatarioNome,
-    valorTotal: Number(d.valorTotal),
-    criadoEm: d.criadoEm.toISOString()
-  }));
+  return docs.map((d) => {
+    const manuais = (d.finalidadesItens ?? {}) as Record<string, unknown>;
+    return {
+      id: d.id,
+      chaveAcesso: d.chaveAcesso,
+      tipo: d.tipo,
+      cancelada: d.cancelada,
+      modelo: d.modelo,
+      numero: d.numero,
+      serie: d.serie,
+      competencia: `${String(d.competenciaMes).padStart(2, "0")}/${d.competenciaAno}`,
+      emitenteNome: d.emitenteNome,
+      destinatarioNome: d.destinatarioNome,
+      valorTotal: Number(d.valorTotal),
+      finalidadeNota: isFinalidadeEntrada(manuais["*"]) ? manuais["*"] : null,
+      criadoEm: d.criadoEm.toISOString()
+    };
+  });
 }
 
 export async function excluirSpedXmlDocumento(scope: TenantScope, id: string, usuarioId?: string) {
@@ -579,6 +592,157 @@ export async function excluirSpedXmlDocumento(scope: TenantScope, id: string, us
     });
   });
   return { id: doc.id, ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// Finalidade dos itens de um XML avulso de ENTRADA (define o crédito no SPED)
+// ---------------------------------------------------------------------------
+
+export type SpedXmlItemDetalhe = {
+  numeroItem: number;
+  descricao: string;
+  ncm: string | null;
+  cfopFornecedor: string | null;
+  valorTotal: number;
+  valorIcmsDestacado: number;
+  st: boolean;
+  /** Finalidade efetiva (a que o gerador vai usar) e de onde ela veio. */
+  finalidade: FinalidadeEntrada;
+  origem: "MANUAL" | "DEPARA" | "HEURISTICA";
+  /** Crédito de ICMS que será escriturado com a finalidade efetiva. */
+  creditoIcms: number;
+};
+
+export type SpedXmlDetalhe = {
+  id: string;
+  numero: string | null;
+  emitenteNome: string | null;
+  tipo: string;
+  itens: SpedXmlItemDetalhe[];
+};
+
+/** Resolve a finalidade efetiva dos itens (manual → De/Para → heurística), para a revisão na UI. */
+export async function getSpedXmlDetalhe(scope: TenantScope, xmlId: string): Promise<SpedXmlDetalhe> {
+  await assertSpedHabilitado(scope);
+  const registro = await prisma.spedXmlDocumento.findFirst({
+    where: { id: xmlId, tenantId: scope.tenantId, empresaId: scope.empresaId }
+  });
+  if (!registro) throw new SpedError("XML não encontrado.");
+  if (registro.tipo !== "ENTRADA") throw new SpedError("Finalidade só se aplica a notas de ENTRADA.");
+  if (registro.cancelada) throw new SpedError("Nota cancelada não entra com itens no SPED.");
+
+  const parsed = parseXmlSped(registro.xml);
+  if (parsed.kind !== "DOCUMENTO") throw new SpedError("XML não contém uma NF-e válida.");
+
+  const empresa = await prisma.empresa.findFirst({
+    where: { id: scope.empresaId, tenantId: scope.tenantId },
+    select: { regimeTributario: true }
+  });
+  const regime = (empresa?.regimeTributario ?? "SIMPLES_NACIONAL") as RegimeTributario;
+
+  const [regras, fornecedor] = await Promise.all([
+    loadFinalidadeRules(prisma, scope, new Date()),
+    prisma.fornecedor.findFirst({
+      where: { tenantId: scope.tenantId, empresaId: scope.empresaId, documento: parsed.emitente.documento },
+      select: { id: true }
+    })
+  ]);
+  const manuais = (registro.finalidadesItens ?? {}) as Record<string, unknown>;
+
+  const itens: SpedXmlItemDetalhe[] = parsed.itens.map((item) => {
+    const manual = manuais[String(item.numeroItem)] ?? manuais["*"];
+    let finalidade: FinalidadeEntrada;
+    let origem: SpedXmlItemDetalhe["origem"];
+    if (isFinalidadeEntrada(manual)) {
+      finalidade = manual;
+      origem = "MANUAL";
+    } else {
+      const regra = pickFinalidadeRule(regras, {
+        ncm: item.ncm,
+        cfopOrigem: item.cfop,
+        fornecedorId: fornecedor?.id ?? null
+      });
+      if (regra) {
+        finalidade = regra.finalidade;
+        origem = "DEPARA";
+      } else {
+        finalidade = sugerirFinalidadeEntrada({ ncm: item.ncm, cfop: item.cfop, descricao: item.descricao }).finalidade;
+        origem = "HEURISTICA";
+      }
+    }
+    const st =
+      ["10", "30", "60", "70"].includes(item.cstIcms ?? "") ||
+      ["201", "202", "203", "500"].includes(item.csosn ?? "");
+    const credita = creditoPorFinalidade(finalidade, regime, "ICMS", { st }).recuperavel;
+    return {
+      numeroItem: item.numeroItem,
+      descricao: item.descricao,
+      ncm: item.ncm,
+      cfopFornecedor: item.cfop,
+      valorTotal: item.valorTotal,
+      valorIcmsDestacado: item.valorIcms,
+      st,
+      finalidade,
+      origem,
+      creditoIcms: credita ? item.valorIcms : 0
+    };
+  });
+
+  return {
+    id: registro.id,
+    numero: registro.numero,
+    emitenteNome: registro.emitenteNome,
+    tipo: registro.tipo,
+    itens
+  };
+}
+
+/**
+ * Salva as finalidades MANUAIS do XML. A chave "*" aplica a finalidade à NOTA INTEIRA
+ * (caso comum); chaves numéricas sobrepõem item a item. null/ausente volta ao automático
+ * (regra De/Para → heurística). Vale a partir da PRÓXIMA geração do SPED da competência.
+ */
+export async function definirFinalidadesSpedXml(
+  scope: TenantScope,
+  xmlId: string,
+  itens: Record<string, string | null>,
+  usuarioId?: string
+): Promise<SpedXmlDetalhe> {
+  await assertSpedHabilitado(scope);
+  const registro = await prisma.spedXmlDocumento.findFirst({
+    where: { id: xmlId, tenantId: scope.tenantId, empresaId: scope.empresaId }
+  });
+  if (!registro) throw new SpedError("XML não encontrado.");
+  if (registro.tipo !== "ENTRADA") throw new SpedError("Finalidade só se aplica a notas de ENTRADA.");
+
+  const limpas: Record<string, FinalidadeEntrada> = {};
+  for (const [numeroItem, valor] of Object.entries(itens ?? {})) {
+    if (valor == null || valor === "") continue; // automático
+    if (!isFinalidadeEntrada(valor)) {
+      throw new SpedError(`Finalidade inválida para o item ${numeroItem}: ${valor}.`);
+    }
+    if (numeroItem !== "*" && !/^\d+$/.test(numeroItem)) {
+      throw new SpedError(`Número de item inválido: ${numeroItem}.`);
+    }
+    limpas[numeroItem] = valor;
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.spedXmlDocumento.update({
+      where: { id: registro.id },
+      data: { finalidadesItens: Object.keys(limpas).length > 0 ? limpas : Prisma.JsonNull }
+    });
+    await createAuditLog(tx, {
+      scope,
+      usuarioId,
+      entidade: "SpedXmlDocumento",
+      entidadeId: registro.id,
+      acao: "sped.definir_finalidades_xml",
+      payload: { chaveAcesso: registro.chaveAcesso, itens: limpas }
+    });
+  });
+
+  return getSpedXmlDetalhe(scope, xmlId);
 }
 
 // ---------------------------------------------------------------------------

@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { StatusBadge } from "@/components/shared/StatusBadge";
+import { FINALIDADE_OPCOES } from "@/domains/fiscal/finalidade-entrada";
 import type { ImportarXmlResultado, SpedXmlSummary } from "@/domains/fiscal/application/sped-use-cases";
 
 type Props = { documentos: SpedXmlSummary[] };
@@ -42,6 +43,27 @@ export function SpedXmlImport({ documentos }: Props) {
     } finally {
       setBusy(false);
       if (inputRef.current) inputRef.current.value = "";
+    }
+  }
+
+  // Define a finalidade da NOTA inteira (entrada): decide o crédito de ICMS/PIS/COFINS no SPED.
+  // Vazio = automática (regra De/Para → heurística). Vale na próxima geração do arquivo.
+  async function definirFinalidade(doc: SpedXmlSummary, finalidade: string) {
+    setBusy(true);
+    setErro("");
+    try {
+      const res = await fetch(`/api/erp/sped-fiscal/xml/${doc.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ finalidade: finalidade || null })
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(data.error || "Não foi possível salvar a finalidade.");
+      router.refresh();
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Não foi possível salvar a finalidade.");
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -109,6 +131,7 @@ export function SpedXmlImport({ documentos }: Props) {
                 <th>Documento</th>
                 <th>Emitente / Destinatário</th>
                 <th style={{ textAlign: "right" }}>Valor</th>
+                <th>Finalidade (entrada)</th>
                 <th>Status</th>
                 <th></th>
               </tr>
@@ -123,6 +146,24 @@ export function SpedXmlImport({ documentos }: Props) {
                   </td>
                   <td>{d.tipo === "SAIDA" ? d.destinatarioNome ?? "Consumidor" : d.emitenteNome ?? "—"}</td>
                   <td style={{ textAlign: "right" }}>{formatBrl(d.valorTotal)}</td>
+                  <td>
+                    {d.tipo === "ENTRADA" && !d.cancelada ? (
+                      <select
+                        value={d.finalidadeNota ?? ""}
+                        onChange={(e) => definirFinalidade(d, e.target.value)}
+                        disabled={busy}
+                        style={{ fontSize: 12, padding: "4px 6px" }}
+                        title="Define o crédito de ICMS/PIS/COFINS desta nota no SPED. Vazio = automática (regra/heurística)."
+                      >
+                        <option value="">Automática</option>
+                        {FINALIDADE_OPCOES.map((o) => (
+                          <option key={o.value} value={o.value}>{o.label}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
                   <td>{d.cancelada ? <StatusBadge tone="danger">Cancelada</StatusBadge> : <StatusBadge tone="success">Válida</StatusBadge>}</td>
                   <td>
                     <button type="button" className="button danger sm" onClick={() => excluir(d)} disabled={busy}>
