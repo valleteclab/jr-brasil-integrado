@@ -12,6 +12,7 @@ import {
 } from "@/domains/stock/application/stock-service";
 import { buildDocumentFromPedido, type ClienteLike } from "@/domains/fiscal/document-builder";
 import { emitFiscalDocument, previewFiscalDocument } from "@/domains/fiscal/application/fiscal-emission-use-cases";
+import { gerarParcelas, rotuloParcela } from "@/lib/finance/condicao-pagamento";
 
 const TX_OPTIONS = { maxWait: 15000, timeout: 30000 };
 
@@ -137,7 +138,18 @@ export async function createSale(scope: TenantScope, input: CreateSaleInput) {
   }, TX_OPTIONS);
 }
 
-export async function confirmSale(scope: TenantScope, id: string) {
+export type ConfirmSaleOptions = {
+  /**
+   * Contas a receber geradas na confirmação:
+   *  - "AUTO" (padrão): parcelas conforme a condição de pagamento do pedido ("30/60/90",
+   *    "à vista"...; sem condição, 1 parcela em 30 dias) — apenas quando há cliente.
+   *  - "NENHUMA": não gera contas a receber (ex.: PDV, que recebe à vista no caixa e
+   *    trata o crediário por fora).
+   */
+  contasReceber?: "AUTO" | "NENHUMA";
+};
+
+export async function confirmSale(scope: TenantScope, id: string, options?: ConfirmSaleOptions) {
   const pedido = await prisma.pedidoVenda.findFirst({
     where: { id, ...scopedByTenantCompany(scope) }
   });
@@ -147,6 +159,8 @@ export async function confirmSale(scope: TenantScope, id: string) {
     throw new Error("Somente pedidos em RASCUNHO ou AGUARDANDO_PAGAMENTO podem ser confirmados.");
   }
 
+  const modoContasReceber = options?.contasReceber ?? "AUTO";
+
   return prisma.$transaction(async (tx) => {
     // Efetiva saída de estoque commitando as reservas
     await commitReservationsAsExit(tx, scope, "PEDIDO_VENDA", id, {
@@ -154,31 +168,31 @@ export async function confirmSale(scope: TenantScope, id: string) {
       documentoId: id
     });
 
-    // Cria ContaReceber (1 parcela, vencimento +30 dias) — apenas quando há cliente
+    // Contas a receber conforme a condição de pagamento — apenas quando há cliente
     // identificado (venda anônima de balcão é paga à vista, sem contas a receber).
-    if (pedido.clienteId) {
-      const vencimento = new Date();
-      vencimento.setDate(vencimento.getDate() + 30);
-
-      await tx.contaReceber.create({
-        data: {
-          tenantId: scope.tenantId,
-          empresaId: scope.empresaId,
-          clienteId: pedido.clienteId,
-          pedidoVendaId: pedido.id,
-          descricao: `Pedido ${pedido.numero}`,
-          numeroDocumento: pedido.numero,
-          origem: "VENDA",
-          formaPagamento: pedido.formaPagamento ?? null,
-          vencimento,
-          valor: pedido.total,
-          valorPago: 0,
-          juros: 0,
-          multa: 0,
-          descontoBaixa: 0,
-          status: "ABERTO"
-        }
-      });
+    if (pedido.clienteId && modoContasReceber === "AUTO") {
+      const parcelas = gerarParcelas(Number(pedido.total), pedido.condicaoPagamento);
+      for (const parcela of parcelas) {
+        await tx.contaReceber.create({
+          data: {
+            tenantId: scope.tenantId,
+            empresaId: scope.empresaId,
+            clienteId: pedido.clienteId,
+            pedidoVendaId: pedido.id,
+            descricao: `Pedido ${pedido.numero}${rotuloParcela(parcela)}`,
+            numeroDocumento: pedido.numero,
+            origem: "VENDA",
+            formaPagamento: pedido.formaPagamento ?? null,
+            vencimento: parcela.vencimento,
+            valor: parcela.valor,
+            valorPago: 0,
+            juros: 0,
+            multa: 0,
+            descontoBaixa: 0,
+            status: "ABERTO"
+          }
+        });
+      }
     }
 
     const updated = await tx.pedidoVenda.update({
@@ -369,10 +383,10 @@ export type CheckoutResult = {
 export async function checkoutSale(
   scope: TenantScope,
   input: CreateSaleInput,
-  options: { modelo: "NFE" | "NFCE" }
+  options: { modelo: "NFE" | "NFCE"; contasReceber?: ConfirmSaleOptions["contasReceber"] }
 ): Promise<CheckoutResult> {
   const pedido = await createSale(scope, input);
-  await confirmSale(scope, pedido.id);
+  await confirmSale(scope, pedido.id, { contasReceber: options.contasReceber });
 
   try {
     const nota = await invoiceSale(scope, pedido.id, { modelo: options.modelo });

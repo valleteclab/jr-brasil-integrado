@@ -35,12 +35,16 @@ export type SaleDetail = SaleSummary & {
   condicaoPagamento: string | null;
   formaPagamento: string | null;
   observacoes: string | null;
+  /** Pedido faturado com nota autorizada — pode receber devolução de itens. */
+  canReturn: boolean;
   itens: Array<{
     id: string;
     produtoId: string;
     produtoNome: string;
     produtoSku: string;
     quantidade: number;
+    /** Quantidade já devolvida (NF-e de devolução autorizada/processando). */
+    devolvido: number;
     precoUnitario: number;
     custoUnitario: number;
     desconto: number;
@@ -50,6 +54,7 @@ export type SaleDetail = SaleSummary & {
     id: string;
     numero: string | null;
     modelo: string;
+    finalidade: string;
     status: string;
     total: number;
     emitidaEm: string | null;
@@ -155,7 +160,17 @@ export async function getSaleDetail(id: string): Promise<SaleDetail | null> {
           }
         },
         notasFiscais: {
-          select: { id: true, numero: true, modelo: true, status: true, total: true, emitidaEm: true }
+          select: {
+            id: true,
+            numero: true,
+            modelo: true,
+            finalidade: true,
+            status: true,
+            total: true,
+            emitidaEm: true,
+            chaveAcesso: true,
+            itens: { select: { produtoId: true, quantidade: true } }
+          }
         }
       }
     });
@@ -163,6 +178,20 @@ export async function getSaleDetail(id: string): Promise<SaleDetail | null> {
     if (!p) return null;
 
     const temNota = p.notasFiscais.some((n) => n.status === "AUTORIZADA");
+    const temNotaVendaComChave = p.notasFiscais.some(
+      (n) => n.finalidade === "NORMAL" && n.status === "AUTORIZADA" && Boolean(n.chaveAcesso)
+    );
+
+    // Quantidades já devolvidas por produto (devoluções autorizadas ou em processamento).
+    const devolvidoPorProduto = new Map<string, number>();
+    for (const nota of p.notasFiscais) {
+      if (nota.finalidade !== "DEVOLUCAO") continue;
+      if (nota.status !== "AUTORIZADA" && nota.status !== "PROCESSANDO") continue;
+      for (const item of nota.itens) {
+        if (!item.produtoId) continue;
+        devolvidoPorProduto.set(item.produtoId, (devolvidoPorProduto.get(item.produtoId) ?? 0) + Number(item.quantidade));
+      }
+    }
 
     return {
       id: p.id,
@@ -192,21 +221,30 @@ export async function getSaleDetail(id: string): Promise<SaleDetail | null> {
       canInvoice: p.status === "AGUARDANDO_NOTA",
       canCancel: p.status !== "CANCELADO" && !temNota,
       temNotaAutorizada: temNota,
-      itens: p.itens.map((item) => ({
-        id: item.id,
-        produtoId: item.produtoId,
-        produtoNome: item.produto.nome,
-        produtoSku: item.produto.sku,
-        quantidade: item.quantidade,
-        precoUnitario: Number(item.precoUnitario),
-        custoUnitario: Number(item.custoUnitario),
-        desconto: Number(item.desconto),
-        total: Number(item.total)
-      })),
+      canReturn: temNotaVendaComChave && (p.status === "ENVIADO" || p.status === "ENTREGUE"),
+      itens: p.itens.map((item) => {
+        // Distribui o devolvido do produto pelas linhas, na ordem (cobre produto repetido).
+        const restanteDevolvido = devolvidoPorProduto.get(item.produtoId) ?? 0;
+        const devolvido = Math.min(restanteDevolvido, item.quantidade);
+        devolvidoPorProduto.set(item.produtoId, restanteDevolvido - devolvido);
+        return {
+          id: item.id,
+          produtoId: item.produtoId,
+          produtoNome: item.produto.nome,
+          produtoSku: item.produto.sku,
+          quantidade: item.quantidade,
+          devolvido,
+          precoUnitario: Number(item.precoUnitario),
+          custoUnitario: Number(item.custoUnitario),
+          desconto: Number(item.desconto),
+          total: Number(item.total)
+        };
+      }),
       notas: p.notasFiscais.map((n) => ({
         id: n.id,
         numero: n.numero,
         modelo: n.modelo,
+        finalidade: n.finalidade,
         status: n.status,
         total: Number(n.total),
         emitidaEm: formatDate(n.emitidaEm)

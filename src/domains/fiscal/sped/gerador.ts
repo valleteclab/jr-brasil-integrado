@@ -249,7 +249,7 @@ export function gerarSpedFiscal(input: SpedInput): SpedArquivoGerado {
       b.add([
         "C100",
         entrada ? "0" : "1",
-        entrada ? "1" : "0",
+        entrada && !doc.emissaoPropria ? "1" : "0",
         "",
         doc.modelo,
         codSit,
@@ -273,7 +273,9 @@ export function gerarSpedFiscal(input: SpedInput): SpedArquivoGerado {
     b.add([
       "C100",
       entrada ? "0" : "1", // IND_OPER
-      entrada ? "1" : "0", // IND_EMIT (terceiro emite a entrada; saída é emissão própria)
+      // IND_EMIT: 1 só quando um terceiro emitiu o documento; entrada de emissão própria
+      // (NF-e de devolução de venda) é 0.
+      entrada && !doc.emissaoPropria ? "1" : "0",
       campoTexto(doc.codigoParticipante),
       doc.modelo,
       codSit,
@@ -303,8 +305,9 @@ export function gerarSpedFiscal(input: SpedInput): SpedArquivoGerado {
     ]);
 
     // C170: somente para documentos de TERCEIROS (entradas). Para NF-e/NFC-e de emissão
-    // própria o Guia Prático determina apresentar apenas C100 + C190.
-    if (entrada) {
+    // própria (inclusive a entrada por devolução de venda) o Guia Prático determina
+    // apresentar apenas C100 + C190.
+    if (entrada && !doc.emissaoPropria) {
       for (const item of doc.itens) {
         b.add([
           "C170",

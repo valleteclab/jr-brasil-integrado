@@ -33,7 +33,15 @@ export default async function VendaDetalhePage({ params }: { params: { id: strin
         canConfirm={venda.canConfirm}
         canInvoice={venda.canInvoice}
         canCancel={venda.canCancel}
+        canReturn={venda.canReturn}
         temNotaAutorizada={venda.temNotaAutorizada}
+        itens={venda.itens.map((i) => ({
+          produtoId: i.produtoId,
+          produtoNome: i.produtoNome,
+          produtoSku: i.produtoSku,
+          quantidade: i.quantidade,
+          devolvido: i.devolvido
+        }))}
         isAdmin={isAdmin}
         status={venda.status}
       />
@@ -60,7 +68,10 @@ export default async function VendaDetalhePage({ params }: { params: { id: strin
                 <tr key={i.id}>
                   <td className="mono">{i.produtoSku}</td>
                   <td>{i.produtoNome}</td>
-                  <td className="num">{i.quantidade}</td>
+                  <td className="num">
+                    {i.quantidade}
+                    {i.devolvido > 0 && <small className="block-muted"> (devolvido {i.devolvido})</small>}
+                  </td>
                   <td className="num">{formatBrl(i.precoUnitario)}</td>
                   <td className="num">{i.desconto ? formatBrl(i.desconto) : "—"}</td>
                   <td className="num">{formatBrl(i.total)}</td>
@@ -87,7 +98,7 @@ export default async function VendaDetalhePage({ params }: { params: { id: strin
                 {venda.notas.map((n) => (
                   <tr key={n.id}>
                     <td className="mono">{n.numero ?? "—"}</td>
-                    <td>{n.modelo}</td>
+                    <td>{n.modelo}{n.finalidade === "DEVOLUCAO" ? " (devolução)" : ""}</td>
                     <td>{n.status}</td>
                     <td className="num">{formatBrl(n.total)}</td>
                     <td>{n.emitidaEm ?? "—"}</td>

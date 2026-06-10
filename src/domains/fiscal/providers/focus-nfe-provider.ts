@@ -124,6 +124,8 @@ function isFinalStatus(status: string | null | undefined): boolean {
 /** Forma de pagamento da NFC-e — códigos da Focz/SEFAZ (tPag): 01=dinheiro, 03=crédito... */
 function mapPaymentMethodFocus(forma: string | null): string {
   const f = (forma ?? "").toLowerCase();
+  // Crediário/fiado/a prazo = 05 (Crédito Loja) — antes do "crédito" de cartão para não colidir.
+  if (f.includes("crediario") || f.includes("crediário") || f.includes("fiado") || f.includes("prazo")) return "05";
   if (f.includes("pix")) return "17";
   if (f.includes("credito") || f.includes("crédito") || f.includes("credit")) return "03";
   if (f.includes("debito") || f.includes("débito") || f.includes("debit")) return "04";

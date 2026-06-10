@@ -170,6 +170,8 @@ export type SpedDocumentoItem = {
 export type SpedDocumento = {
   tipo: "SAIDA" | "ENTRADA";
   modelo: "55" | "65";
+  /** Entrada de emissão própria (ex.: NF-e de devolução de venda) — C100 IND_EMIT=0. */
+  emissaoPropria?: boolean;
   cancelado: boolean;
   codigoParticipante: string | null; // null para NFC-e
   serie: string | null;

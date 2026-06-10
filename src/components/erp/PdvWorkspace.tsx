@@ -38,7 +38,8 @@ const FORMAS: Array<{ value: string; label: string }> = [
   { value: "CARTAO_DEBITO", label: "Cartão débito" },
   { value: "CARTAO_CREDITO", label: "Cartão crédito" },
   { value: "BOLETO", label: "Boleto" },
-  { value: "TRANSFERENCIA", label: "Transferência" }
+  { value: "TRANSFERENCIA", label: "Transferência" },
+  { value: "CREDIARIO", label: "Crediário (a prazo)" }
 ];
 
 const brl = (v: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
@@ -109,7 +110,11 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [aviso, setAviso] = useState("");
-  const [resultado, setResultado] = useState<{ notas: NotaResultado[]; troco: number } | null>(null);
+  const [resultado, setResultado] = useState<{
+    notas: NotaResultado[];
+    troco: number;
+    crediario: { valor: number; parcelas: number; primeiroVencimento: string } | null;
+  } | null>(null);
   const [pagamentoAberto, setPagamentoAberto] = useState(false);
   const [movimentoAberto, setMovimentoAberto] = useState(false);
 
@@ -233,7 +238,7 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
     setPagamentoAberto(true);
   }
 
-  async function finalizar(pagamentos: Pagamento[]) {
+  async function finalizar(pagamentos: Pagamento[], condicaoCrediario: string) {
     setLoading(true);
     setError("");
     setResultado(null);
@@ -243,17 +248,23 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
         modeloProduto,
         produtos: cart.filter((i) => i.kind === "produto").map((i) => ({ produtoId: i.refId, quantidade: i.qtd, precoUnitario: i.preco })),
         servicos: cart.filter((i) => i.kind === "servico").map((i) => ({ descricao: i.nome, valor: i.preco * i.qtd, codigoServicoLc116: i.codigoServicoLc116, codigoNbs: i.codigoNbs })),
-        pagamentos
+        pagamentos,
+        condicaoCrediario: condicaoCrediario || null
       };
       const res = await fetch("/api/erp/pdv/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
-      const dataRes = await res.json() as { notas?: NotaResultado[]; troco?: number; error?: string };
+      const dataRes = await res.json() as {
+        notas?: NotaResultado[];
+        troco?: number;
+        crediario?: { valor: number; parcelas: number; primeiroVencimento: string } | null;
+        error?: string;
+      };
       if (!res.ok) throw new Error(dataRes.error || "Falha ao finalizar.");
       const notas = dataRes.notas ?? [];
-      setResultado({ notas, troco: dataRes.troco ?? 0 });
+      setResultado({ notas, troco: dataRes.troco ?? 0, crediario: dataRes.crediario ?? null });
       setCart([]);
       setClienteId("");
       setPagamentoAberto(false);
@@ -387,6 +398,12 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
             {resultado && (
               <div className="pdv-resultado">
                 {resultado.troco > 0 && <div className="alert info pdv-troco">Troco: <strong>{brl(resultado.troco)}</strong></div>}
+                {resultado.crediario && (
+                  <div className="alert info">
+                    Crediário: <strong>{brl(resultado.crediario.valor)}</strong> em {resultado.crediario.parcelas} parcela(s),
+                    1º vencimento {new Date(resultado.crediario.primeiroVencimento).toLocaleDateString("pt-BR")}.
+                  </div>
+                )}
                 {resultado.notas.map((n, idx) => (
                   <div key={idx} className={`alert ${n.ok ? "info" : "danger"}`}>
                     <strong>{n.tipo === "PRODUTOS" ? `Produtos (${n.modelo})` : "Serviços (NFS-e)"}:</strong>{" "}
@@ -405,7 +422,7 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
       </div>
 
       {pagamentoAberto && (
-        <PagamentoModal total={total} loading={loading} onCancel={() => setPagamentoAberto(false)} onConfirm={finalizar} />
+        <PagamentoModal total={total} loading={loading} clienteSelecionado={Boolean(clienteId)} onCancel={() => setPagamentoAberto(false)} onConfirm={finalizar} />
       )}
       {movimentoAberto && (
         <MovimentoModal onClose={() => setMovimentoAberto(false)} />
@@ -416,11 +433,16 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
 
 // ─── Modal de pagamento (múltiplas formas + troco) ──────────────────────────────
 
-function PagamentoModal({ total, loading, onCancel, onConfirm }: { total: number; loading: boolean; onCancel: () => void; onConfirm: (p: Pagamento[]) => void }) {
+function PagamentoModal({ total, loading, clienteSelecionado, onCancel, onConfirm }: { total: number; loading: boolean; clienteSelecionado: boolean; onCancel: () => void; onConfirm: (p: Pagamento[], condicaoCrediario: string) => void }) {
   const [linhas, setLinhas] = useState<Pagamento[]>([{ forma: "DINHEIRO", valor: total }]);
+  const [condicaoCrediario, setCondicaoCrediario] = useState("30");
   const pago = round2(linhas.reduce((s, l) => s + (Number(l.valor) || 0), 0));
   const troco = round2(Math.max(pago - total, 0));
   const falta = round2(Math.max(total - pago, 0));
+  const temCrediario = linhas.some((l) => l.forma === "CREDIARIO" && (Number(l.valor) || 0) > 0);
+  const crediarioSemCliente = temCrediario && !clienteSelecionado;
+  const somaDinheiro = round2(linhas.filter((l) => l.forma === "DINHEIRO").reduce((s, l) => s + (Number(l.valor) || 0), 0));
+  const trocoInvalido = temCrediario && troco > somaDinheiro;
 
   function set(idx: number, patch: Partial<Pagamento>) {
     setLinhas((cur) => cur.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
@@ -445,6 +467,20 @@ function PagamentoModal({ total, loading, onCancel, onConfirm }: { total: number
         ))}
         <button className="pdv-add-forma" onClick={() => setLinhas((cur) => [...cur, { forma: "PIX", valor: falta }])}>+ outra forma</button>
 
+        {temCrediario && (
+          <label className="pdv-cliente">
+            Condição do crediário (dias, separados por barra)
+            <input
+              inputMode="numeric"
+              value={condicaoCrediario}
+              onChange={(e) => setCondicaoCrediario(e.target.value)}
+              placeholder="Ex.: 30 ou 30/60/90"
+            />
+          </label>
+        )}
+        {crediarioSemCliente && <div className="alert danger">Crediário exige cliente identificado — selecione o cliente antes de finalizar.</div>}
+        {trocoInvalido && <div className="alert danger">O troco só pode sair do dinheiro — reduza o valor do crediário para fechar a conta.</div>}
+
         <div className="pdv-pag-resumo">
           <div><span>Pago</span><strong>{brl(pago)}</strong></div>
           {falta > 0 ? <div className="falta"><span>Falta</span><strong>{brl(falta)}</strong></div> : <div className="troco"><span>Troco</span><strong>{brl(troco)}</strong></div>}
@@ -452,7 +488,7 @@ function PagamentoModal({ total, loading, onCancel, onConfirm }: { total: number
 
         <div className="pdv-acoes">
           <button className="pdv-limpar" onClick={onCancel} disabled={loading}>Cancelar</button>
-          <button className="pdv-finalizar" onClick={() => onConfirm(linhas)} disabled={loading || falta > 0}>
+          <button className="pdv-finalizar" onClick={() => onConfirm(linhas, temCrediario ? condicaoCrediario : "")} disabled={loading || falta > 0 || crediarioSemCliente || trocoInvalido}>
             {loading ? "Emitindo..." : "Confirmar e emitir"}
           </button>
         </div>

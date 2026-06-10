@@ -239,7 +239,10 @@ export async function carregarSpedInput(scope: TenantScope, params: CarregarSped
   for (const nota of notas) {
     const modelo = nota.modelo === "NFCE" ? "65" : "55";
     const cancelada = nota.status === "CANCELADA";
-    const rotulo = `${nota.modelo === "NFCE" ? "NFC-e" : "NF-e"} ${nota.numero ?? "s/nº"} série ${nota.serie ?? "?"}`;
+    // Devolução de venda é emitida pela própria empresa como ENTRADA (tpNF=0, CFOP 1xxx/2xxx):
+    // escritura no C100 com IND_OPER=0 e IND_EMIT=0 (emissão própria), nunca como saída.
+    const devolucao = nota.finalidade === "DEVOLUCAO";
+    const rotulo = `${nota.modelo === "NFCE" ? "NFC-e" : "NF-e"} ${nota.numero ?? "s/nº"} série ${nota.serie ?? "?"}${devolucao ? " (devolução)" : ""}`;
 
     if (!cancelada && (!nota.numero || !nota.chaveAcesso)) {
       avisos.push(`${rotulo}: autorizada sem número/chave de acesso — verifique a sincronização com o provedor antes de entregar o arquivo.`);
@@ -316,9 +319,14 @@ export async function carregarSpedInput(scope: TenantScope, params: CarregarSped
     const temSt = itens.some((i) => i.valorIcmsSt > 0);
     const ufDestino = temSt ? nota.cliente?.enderecos[0]?.uf ?? empresa.enderecoUf ?? null : null;
 
+    if (devolucao && !codigoParticipante && !cancelada) {
+      avisos.push(`${rotulo}: devolução sem cliente identificado — C100 de entrada ficará sem participante (COD_PART).`);
+    }
+
     documentos.push({
-      tipo: "SAIDA",
+      tipo: devolucao ? "ENTRADA" : "SAIDA",
       modelo,
+      emissaoPropria: devolucao,
       cancelado: cancelada,
       codigoParticipante,
       serie: nota.serie,

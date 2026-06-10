@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/shared/Button";
 import { KpiCard } from "@/components/shared/KpiCard";
 import type { SaleFormData } from "@/lib/services/sales";
+import { gerarParcelas } from "@/lib/finance/condicao-pagamento";
 
 type LineItem = {
   produtoId: string;
@@ -153,10 +154,25 @@ export function SaleForm({ formData }: Props) {
             <span>Condição de pagamento</span>
             <input
               type="text"
-              placeholder="Ex.: 30/60/90"
+              placeholder="Ex.: à vista, 30, 30/60/90 (dias)"
+              list="condicoes-pagamento"
               value={condicaoPagamento}
               onChange={(e) => setCondicaoPagamento(e.target.value)}
             />
+            <datalist id="condicoes-pagamento">
+              <option value="À vista" />
+              <option value="30" />
+              <option value="30/60" />
+              <option value="30/60/90" />
+              <option value="0/30/60" />
+            </datalist>
+            <small className="block-muted">
+              {totalGeral > 0
+                ? `Ao confirmar: ${gerarParcelas(totalGeral, condicaoPagamento)
+                    .map((p) => `${formatBrl(p.valor)} em ${p.vencimento.toLocaleDateString("pt-BR")}`)
+                    .join(" · ")}`
+                : "Dias de vencimento separados por barra geram parcelas no contas a receber."}
+            </small>
           </label>
 
           <label>
