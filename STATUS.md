@@ -409,3 +409,10 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 ## Atualizacao operacional - 2026-06-10 - SPED: limpeza de XMLs por competencia
 
 - UX do card "XMLs avulsos": filtro por competencia + botao "Remover todos da competencia" (DELETE /api/erp/sped-fiscal/xml?ano=&mes=, auditado como sped.limpar_xmls_competencia). Texto do card agora explica o vinculo XML->competencia (excluir o arquivo SPED nao apaga os XMLs; regerar a competencia substitui o arquivo).
+
+## Atualizacao operacional - 2026-06-10 - relatorio Livro de Entradas (Acompanhamento de Entradas)
+
+- Nova aba "Livro de entradas" em /erp/relatorios: espelho do Livro Registro de Entradas (modelo P1) que a contabilidade entrega — notas agrupadas por CFOP de entrada com Valor Contabil / Base de Calculo / Aliquota / Imposto Creditado / Isentas / Outras, subtotais por CFOP, total geral, filtro mes/ano, CSV e impressao.
+- Fonte de dados: a MESMA carga do SPED (carregarSpedInput — entradas do ERP + XMLs avulsos, creditos pela precedencia manual -> De/Para -> heuristica), garantindo que o relatorio bate com o arquivo EFD. Coluna "Origem" indica ERP ou XML. CST 40/41/30 classificados em Isentas/Nao Tributadas (mais correto que o relatorio da contabilidade de referencia, que usa Outras).
+- SpedParticipante ganhou campo uf (alimenta o relatorio; nao altera o 0150). Servico em src/lib/services/livro-entradas.ts + rota CSV /api/erp/relatorios/livro-entradas/csv.
+- Validacao: tsc (0); conferido contra docs/Entradas.pdf (estrutura/colunas) e contra os dados atuais do banco de teste.

@@ -68,6 +68,8 @@ export type SpedParticipante = {
   numero: string | null;
   complemento: string | null;
   bairro: string | null;
+  /** UF do participante (não vai para o 0150, mas alimenta relatórios — livro de entradas). */
+  uf: string | null;
 };
 
 /** Item de catálogo (registro 0200). */

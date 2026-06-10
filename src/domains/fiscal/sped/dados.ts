@@ -228,7 +228,8 @@ export async function carregarSpedInput(scope: TenantScope, params: CarregarSped
           logradouro: end?.logradouro ?? null,
           numero: end?.numero ?? null,
           complemento: end?.complemento ?? null,
-          bairro: end?.bairro ?? null
+          bairro: end?.bairro ?? null,
+          uf: end?.uf ?? null
         });
         if (!end?.codigoMunicipioIbge) {
           avisos.push(`Cliente "${nota.cliente.razaoSocial}": sem código de município no endereço — registro 0150 ficará incompleto.`);
@@ -351,7 +352,8 @@ export async function carregarSpedInput(scope: TenantScope, params: CarregarSped
         logradouro: emitXml?.logradouro ?? null,
         numero: emitXml?.numero ?? null,
         complemento: emitXml?.complemento ?? null,
-        bairro: emitXml?.bairro ?? null
+        bairro: emitXml?.bairro ?? null,
+        uf: entrada.fornecedor.uf ?? null
       });
       if (!emitXml?.codigoMunicipioIbge) {
         avisos.push(`Fornecedor "${entrada.fornecedor.razaoSocial}": sem código de município (não foi possível ler do XML) — registro 0150 ficará incompleto.`);
@@ -480,7 +482,8 @@ export async function carregarSpedInput(scope: TenantScope, params: CarregarSped
           logradouro: p.logradouro,
           numero: p.numero,
           complemento: p.complemento,
-          bairro: p.bairro
+          bairro: p.bairro,
+          uf: p.uf
         });
       }
       return codigo;

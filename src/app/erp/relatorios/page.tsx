@@ -2,6 +2,8 @@ import { PageHeader } from "@/components/shared/PageHeader";
 import { ReportsView } from "@/components/erp/ReportsView";
 import { accountingPackageReport, apuracaoImpostosReport, salesReport, stockReport, financeReport, fiscalReport, dreSimplificado } from "@/lib/services/reports";
 import type { AccountingPackageReport, ApuracaoImpostosReport, SalesReport, StockReport, FinanceReport, FiscalReport, DreSimplificado } from "@/lib/services/reports";
+import { livroEntradasReport } from "@/lib/services/livro-entradas";
+import type { LivroEntradasReport } from "@/lib/services/livro-entradas";
 
 export const dynamic = "force-dynamic";
 
@@ -85,6 +87,27 @@ const EMPTY_ACCOUNTING: AccountingPackageReport = {
   checklist: []
 };
 
+const EMPTY_LIVRO_ENTRADAS: LivroEntradasReport = {
+  competencia: "",
+  inicio: "",
+  fim: "",
+  documentos: 0,
+  grupos: [],
+  totais: {
+    valorContabil: 0,
+    baseCalculo: 0,
+    imposto: 0,
+    isentas: 0,
+    outras: 0,
+    valorContabilFmt: "R$ 0,00",
+    baseCalculoFmt: "R$ 0,00",
+    impostoFmt: "R$ 0,00",
+    isentasFmt: "R$ 0,00",
+    outrasFmt: "R$ 0,00"
+  },
+  avisos: []
+};
+
 const EMPTY_APURACAO: ApuracaoImpostosReport = {
   competencia: "",
   inicio: "",
@@ -109,6 +132,7 @@ export default async function RelatoriosPage({ searchParams }: { searchParams?: 
   let dre: DreSimplificado = EMPTY_DRE;
   let accounting: AccountingPackageReport = EMPTY_ACCOUNTING;
   let apuracao: ApuracaoImpostosReport = EMPTY_APURACAO;
+  let livroEntradas: LivroEntradasReport = EMPTY_LIVRO_ENTRADAS;
   const errors: string[] = [];
   const mes = Number(searchParams?.mes);
   const ano = Number(searchParams?.ano);
@@ -118,14 +142,15 @@ export default async function RelatoriosPage({ searchParams }: { searchParams?: 
   };
 
   // Cada relatório isolado para não derrubar os demais
-  const [salesResult, stockResult, financeResult, fiscalResult, dreResult, accountingResult, apuracaoResult] = await Promise.allSettled([
+  const [salesResult, stockResult, financeResult, fiscalResult, dreResult, accountingResult, apuracaoResult, livroEntradasResult] = await Promise.allSettled([
     salesReport(30),
     stockReport(),
     financeReport(),
     fiscalReport(),
     dreSimplificado(30),
     accountingPackageReport(accountingParams),
-    apuracaoImpostosReport(accountingParams)
+    apuracaoImpostosReport(accountingParams),
+    livroEntradasReport(accountingParams)
   ]);
 
   if (salesResult.status === "fulfilled") {
@@ -170,6 +195,12 @@ export default async function RelatoriosPage({ searchParams }: { searchParams?: 
     errors.push(`Apuração de impostos: ${apuracaoResult.reason instanceof Error ? apuracaoResult.reason.message : "erro desconhecido"}`);
   }
 
+  if (livroEntradasResult.status === "fulfilled") {
+    livroEntradas = livroEntradasResult.value;
+  } else {
+    errors.push(`Livro de entradas: ${livroEntradasResult.reason instanceof Error ? livroEntradasResult.reason.message : "erro desconhecido"}`);
+  }
+
   return (
     <>
       <PageHeader
@@ -196,6 +227,7 @@ export default async function RelatoriosPage({ searchParams }: { searchParams?: 
         dre={dre}
         accounting={accounting}
         apuracao={apuracao}
+        livroEntradas={livroEntradas}
         accountingParams={accountingParams}
       />
     </>

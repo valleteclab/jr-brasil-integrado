@@ -134,7 +134,8 @@ function inputSintetico(): SpedInput {
         logradouro: "Av Cliente",
         numero: "200",
         complemento: null,
-        bairro: "Centro"
+        bairro: "Centro",
+        uf: "SP"
       },
       {
         codigo: "FORN1",
@@ -146,7 +147,8 @@ function inputSintetico(): SpedInput {
         logradouro: "Rua Fornecedor",
         numero: "300",
         complemento: null,
-        bairro: "Industrial"
+        bairro: "Industrial",
+        uf: "MG"
       }
     ],
     itensCatalogo: [

@@ -4,8 +4,9 @@ import { useState } from "react";
 import { KpiCard } from "@/components/shared/KpiCard";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import type { AccountingPackageReport, ApuracaoImpostosReport, SalesReport, StockReport, FinanceReport, FiscalReport, DreSimplificado } from "@/lib/services/reports";
+import type { LivroEntradasReport } from "@/lib/services/livro-entradas";
 
-type Tab = "vendas" | "estoque" | "financeiro" | "fiscal" | "dre" | "contabil" | "apuracao";
+type Tab = "vendas" | "estoque" | "financeiro" | "fiscal" | "dre" | "contabil" | "apuracao" | "entradas";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "vendas", label: "Vendas" },
@@ -14,7 +15,8 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "fiscal", label: "Fiscal" },
   { id: "dre", label: "DRE" },
   { id: "contabil", label: "Pacote contábil" },
-  { id: "apuracao", label: "Apuração de impostos" }
+  { id: "apuracao", label: "Apuração de impostos" },
+  { id: "entradas", label: "Livro de entradas" }
 ];
 
 type Props = {
@@ -25,6 +27,7 @@ type Props = {
   dre: DreSimplificado;
   accounting: AccountingPackageReport;
   apuracao: ApuracaoImpostosReport;
+  livroEntradas: LivroEntradasReport;
   accountingParams: { mes?: number; ano?: number };
 };
 
@@ -695,9 +698,141 @@ function AbaApuracao({ data, params }: { data: ApuracaoImpostosReport; params: {
   );
 }
 
+// ─── Aba Livro de entradas (Acompanhamento de Entradas — modelo P1) ─────────────
+
+const numBr = (v: number) => v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+function AbaLivroEntradas({ data, params }: { data: LivroEntradasReport; params: { mes?: number; ano?: number } }) {
+  const csvHref = (() => {
+    const qs = new URLSearchParams();
+    if (params.mes) qs.set("mes", String(params.mes));
+    if (params.ano) qs.set("ano", String(params.ano));
+    const query = qs.toString();
+    return `/api/erp/relatorios/livro-entradas/csv${query ? `?${query}` : ""}`;
+  })();
+
+  return (
+    <div>
+      <div className="alert info" style={{ marginBottom: "1rem" }}>
+        <strong>Acompanhamento de entradas — {data.competencia} · {data.documentos} documento(s).</strong>{" "}
+        Espelho do Livro Registro de Entradas (P1): notas do ERP + XMLs avulsos, agrupadas por CFOP de
+        entrada, com os MESMOS créditos do SPED Fiscal (finalidade manual → regra De/Para → heurística).
+      </div>
+
+      <form action="/erp/relatorios" style={{ display: "flex", gap: "0.75rem", alignItems: "end", marginBottom: "1rem" }}>
+        <label>Mês<br /><input name="mes" type="number" min="1" max="12" defaultValue={params.mes ?? new Date().getMonth() + 1} /></label>
+        <label>Ano<br /><input name="ano" type="number" min="2000" max="2100" defaultValue={params.ano ?? new Date().getFullYear()} /></label>
+        <button className="btn" type="submit">Filtrar</button>
+        <a className="btn light" href={csvHref}>CSV</a>
+        <button className="btn light" type="button" onClick={() => window.print()}>Imprimir / PDF</button>
+      </form>
+
+      <div className="kpi-row">
+        <KpiCard label="Valor contábil" value={data.totais.valorContabilFmt} tone="info" />
+        <KpiCard label="Base de cálculo" value={data.totais.baseCalculoFmt} tone="default" />
+        <KpiCard label="ICMS creditado" value={data.totais.impostoFmt} tone="success" />
+        <KpiCard label="Isentas + Outras" value={`${data.totais.isentasFmt} + ${data.totais.outrasFmt}`} tone="default" />
+      </div>
+
+      {data.grupos.length === 0 && (
+        <div className="empty-st" style={{ marginTop: "1.5rem" }}><span>Sem entradas na competência.</span></div>
+      )}
+
+      {data.grupos.map((grupo) => (
+        <section className="erp-card" style={{ marginTop: "1.5rem" }} key={grupo.cfop}>
+          <div className="erp-card-head"><h3>CFOP {grupo.cfop}</h3></div>
+          <div className="erp-table-wrap">
+            <table className="erp-table">
+              <thead>
+                <tr>
+                  <th>Data</th>
+                  <th>Nota</th>
+                  <th>Fornecedor</th>
+                  <th>UF</th>
+                  <th>Origem</th>
+                  <th className="num">Valor contábil</th>
+                  <th className="num">Base cálculo</th>
+                  <th className="num">Alíq.</th>
+                  <th className="num">Imposto</th>
+                  <th className="num">Isentas</th>
+                  <th className="num">Outras</th>
+                </tr>
+              </thead>
+              <tbody>
+                {grupo.linhas.map((l, i) => (
+                  <tr key={`${l.numero}-${l.cfop}-${i}`}>
+                    <td>{l.data}</td>
+                    <td className="mono">{l.numero}/{l.serie}</td>
+                    <td>{l.fornecedor}</td>
+                    <td>{l.uf}</td>
+                    <td><StatusBadge tone={l.origem === "XML" ? "info" : "mute"}>{l.origem}</StatusBadge></td>
+                    <td className="num">{numBr(l.valorContabil)}</td>
+                    <td className="num">{numBr(l.baseCalculo)}</td>
+                    <td className="num">{l.aliquota != null ? `${numBr(l.aliquota)}%` : "—"}</td>
+                    <td className="num">{numBr(l.imposto)}</td>
+                    <td className="num">{numBr(l.isentas)}</td>
+                    <td className="num">{numBr(l.outras)}</td>
+                  </tr>
+                ))}
+                <tr>
+                  <td colSpan={5}><strong>Total CFOP {grupo.cfop}</strong></td>
+                  <td className="num"><strong>{numBr(grupo.totais.valorContabil)}</strong></td>
+                  <td className="num"><strong>{numBr(grupo.totais.baseCalculo)}</strong></td>
+                  <td className="num" />
+                  <td className="num"><strong>{numBr(grupo.totais.imposto)}</strong></td>
+                  <td className="num"><strong>{numBr(grupo.totais.isentas)}</strong></td>
+                  <td className="num"><strong>{numBr(grupo.totais.outras)}</strong></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ))}
+
+      {data.grupos.length > 0 && (
+        <section className="erp-card" style={{ marginTop: "1.5rem" }}>
+          <div className="erp-card-head"><h3>Total geral — {data.competencia}</h3></div>
+          <div className="erp-table-wrap">
+            <table className="erp-table">
+              <thead>
+                <tr>
+                  <th className="num">Valor contábil</th>
+                  <th className="num">Base cálculo</th>
+                  <th className="num">Imposto creditado</th>
+                  <th className="num">Isentas</th>
+                  <th className="num">Outras</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td className="num"><strong>{numBr(data.totais.valorContabil)}</strong></td>
+                  <td className="num"><strong>{numBr(data.totais.baseCalculo)}</strong></td>
+                  <td className="num"><strong>{numBr(data.totais.imposto)}</strong></td>
+                  <td className="num"><strong>{numBr(data.totais.isentas)}</strong></td>
+                  <td className="num"><strong>{numBr(data.totais.outras)}</strong></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {data.avisos.length > 0 && (
+        <div className="alert warn" style={{ marginTop: "1rem" }}>
+          <strong>Avisos ({data.avisos.length})</strong>
+          <ul style={{ margin: "0.25rem 0 0 1rem", fontSize: "0.85em" }}>
+            {data.avisos.slice(0, 10).map((a, i) => <li key={i}>{a}</li>)}
+            {data.avisos.length > 10 && <li>… e mais {data.avisos.length - 10} aviso(s) — veja na tela do SPED Fiscal.</li>}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-export function ReportsView({ sales, stock, finance, fiscal, dre, accounting, apuracao, accountingParams }: Props) {
+export function ReportsView({ sales, stock, finance, fiscal, dre, accounting, apuracao, livroEntradas, accountingParams }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>("vendas");
 
   return (
@@ -724,6 +859,7 @@ export function ReportsView({ sales, stock, finance, fiscal, dre, accounting, ap
       {activeTab === "dre" && <AbaDre data={dre} />}
       {activeTab === "contabil" && <AbaContabil data={accounting} params={accountingParams} />}
       {activeTab === "apuracao" && <AbaApuracao data={apuracao} params={accountingParams} />}
+      {activeTab === "entradas" && <AbaLivroEntradas data={livroEntradas} params={accountingParams} />}
     </div>
   );
 }
