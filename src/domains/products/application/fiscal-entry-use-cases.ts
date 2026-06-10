@@ -525,6 +525,11 @@ export async function importNfeXml(scope: TenantScope, xmlText: string) {
     // Rateio do crédito do Simples informado só no TEXTO (infCpl) — apenas quando NENHUM item
     // trouxe os campos estruturados (pCredSN/vCredICMSSN).
     const temCredSnEstruturado = parsed.items.some((i) => i.taxes.some((t) => (t.credSnValue ?? 0) > 0));
+    const credSnDoItem = (tax: (typeof parsed.items)[number]["taxes"][number], itemTotal: number): number | null =>
+      tax.credSnValue ??
+      (tax.tax === "ICMS" && !temCredSnEstruturado && parsed.creditoSimplesInfCpl > 0 && parsed.totalProducts > 0
+        ? Math.round(((itemTotal / parsed.totalProducts) * parsed.creditoSimplesInfCpl + Number.EPSILON) * 100) / 100
+        : null);
 
     for (const item of parsed.items) {
       const match = await matchProduct(tx, scope, fornecedor?.id, item);
@@ -592,11 +597,7 @@ export async function importNfeXml(scope: TenantScope, xmlText: string) {
             // Crédito do Simples (LC 123): campos próprios do XML ou, sem eles, rateio do
             // valor mencionado no texto das informações complementares.
             aliquotaCredSn: tax.credSnRate ?? null,
-            valorCredSn:
-              tax.credSnValue ??
-              (tax.tax === "ICMS" && !temCredSnEstruturado && parsed.creditoSimplesInfCpl > 0 && parsed.totalProducts > 0
-                ? Math.round(((item.totalValue / parsed.totalProducts) * parsed.creditoSimplesInfCpl + Number.EPSILON) * 100) / 100
-                : null),
+            valorCredSn: credSnDoItem(tax, item.totalValue),
             dadosOriginais: tax.raw as Prisma.InputJsonValue
           }))
         });
@@ -666,7 +667,19 @@ export async function importNfeXml(scope: TenantScope, xmlText: string) {
         finalidade: finalidadeRes.finalidade,
         finalidadeOrigem: finalidadeRes.origem,
         cfopEntradaDerivado: cfopEntrada,
-        movimentaEstoque
+        movimentaEstoque,
+        // Impostos do XML na RESPOSTA da importação — o wizard exibe o crédito do Simples
+        // imediatamente após o upload (antes só aparecia ao reabrir a conferência).
+        impostos: item.taxes.map((tax) => ({
+          tributo: tax.tax,
+          cst: tax.cst ?? null,
+          csosn: tax.csosn ?? null,
+          base: tax.base ?? 0,
+          aliquota: tax.rate ?? 0,
+          valor: tax.value ?? 0,
+          credSnAliquota: tax.credSnRate ?? 0,
+          credSnValor: credSnDoItem(tax, item.totalValue) ?? 0
+        }))
       });
     }
 
@@ -718,6 +731,7 @@ export async function importNfeXml(scope: TenantScope, xmlText: string) {
       })),
       status: entrada.status,
       receivedAt: entrada.recebidaEm?.toISOString() ?? new Date().toISOString(),
+      infCpl: parsed.infCpl,
       items: responseItems
     };
   }, FISCAL_BATCH_TRANSACTION_OPTIONS);

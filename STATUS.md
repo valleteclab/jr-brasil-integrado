@@ -437,3 +437,8 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Novos campos (migration entrada_credito_simples_infcpl): EntradaFiscal.informacoesComplementares; EntradaFiscalItemImposto.aliquotaCredSn/valorCredSn. Importacao persiste; SPED le das colunas novas (fallback dadosOriginais p/ entradas antigas).
 - Conferencia (/erp/entradas-fiscais/nova): banner "Credito de ICMS do Simples Nacional nesta nota: R$ X" + exibicao do infCpl; resumo de impostos por item mostra "Cred. Simples R$ X (Y%)".
 - Validacao: tsc (0), smoke do parser OK. Entradas ja importadas antes da mudanca: reimportar o XML para popular os campos (ou o SPED le do dadosOriginais quando estruturado).
+
+## Atualizacao operacional - 2026-06-10 - NF 431 (VERTO): credito do Simples visivel ja no upload + backfill
+
+- Diagnostico da NF 431 (VERTO BRASIL, Simples): o XML traz o credito nos DOIS lugares (ICMSSN101 pCredSN 3,37 / vCredICMSSN 1.149,98 e no texto do infCpl); a importacao ja persistia os campos novos, mas a RESPOSTA do POST /entradas-fiscais/xml nao incluia impostos/infCpl — o banner so aparecia ao reabrir a conferencia. Corrigido: importNfeXml devolve infCpl + impostos por item (com credSn), e o wizard mostra o credito imediatamente apos o upload.
+- Novo scripts/backfill-credito-simples.ts: rele o XML original das importacoes existentes e preenche EntradaFiscal.informacoesComplementares + aliquotaCredSn/valorCredSn nas entradas antigas (idempotente). Executado no banco de teste: 8 entradas com infCpl preenchido; NF 431 com credito 1.149,98 (3,37%) confirmado no banco.
