@@ -612,6 +612,14 @@ export async function carregarSpedInput(scope: TenantScope, params: CarregarSped
         const credPis = cred("PIS");
         const credCofins = cred("COFINS");
 
+        // CST da entrada: preserva o CST/origem do XML (como fazem os geradores de mercado);
+        // o crédito é decidido pelos VALORES (zerados quando não recuperável). Sem CST no XML
+        // (fornecedor do Simples emite CSOSN), o de-para de CSOSN resolve.
+        const cstXml = (item.cstIcms ?? "").replace(/\D/g, "");
+        const cst3Entrada = cstXml
+          ? cstIcms3(item.origem, cstXml, null)
+          : cstIcms3(item.origem, credIcms ? "00" : st ? "60" : "90", item.csosn);
+
         const codigoItem = `XML-${(parsed.emitente.documento || "X").slice(-6)}-${item.codigo}`.slice(0, 60);
         if (!catalogo.has(codigoItem)) {
           catalogo.set(codigoItem, {
@@ -635,7 +643,7 @@ export async function carregarSpedInput(scope: TenantScope, params: CarregarSped
           valorDesconto: item.valorDesconto,
           movimentaEstoque: finalidadeMovimentaEstoque(finalidade),
           cfop: resolveCfopEntrada(finalidade, { interestadual, st }),
-          cstIcms: cstIcms3(null, credIcms ? item.cstIcms ?? "00" : st ? "60" : "90", null),
+          cstIcms: cst3Entrada,
           baseIcms: credIcms ? item.baseIcms : 0,
           aliquotaIcms: credIcms ? item.aliquotaIcms : 0,
           valorIcms: credIcms ? item.valorIcms : 0,

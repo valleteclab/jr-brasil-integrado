@@ -399,3 +399,9 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Persistencia em `SpedXmlDocumento.finalidadesItens` (Json; chave "*" = nota inteira; migration `sped_xml_finalidades_manuais`). APIs: GET/PUT `/api/erp/sped-fiscal/xml/{id}` (detalhe com finalidade efetiva + origem + credito por item; PUT `{finalidade}` aplica a nota). Auditado (`sped.definir_finalidades_xml`).
 - Aviso da geracao agora discrimina contagens (definidos por voce / por regra / inferidos) e so alerta quando ha item inferido por heuristica.
 - Validacao: `tsc` (0); geracao em memoria com os 41 XMLs reais da competencia 05/2026 manteve a apuracao (ICMS a recolher 9.993,16) e os avisos novos por contagem.
+
+## Atualizacao operacional - 2026-06-09 - validacao cruzada com SPED de outro sistema
+
+- Comparado nosso arquivo (competencia 05/2026, Valleteclab) com docs/sped_fiscal_15130181000148_20260609054619.txt (gerado por sistema de mercado): DEBITOS IDENTICOS ao centavo (30.833,29); estrutura equivalente (0000 leiaute 020, blocos, E110/E116). Diferenca de creditos (20.840,13 vs 15.112,30) e 100% de CLASSIFICACAO de finalidade: o contador tratou compras de material de construcao/insumos como uso-consumo/servico (CFOP 1128/CST 090, sem credito) e nossa heuristica assumiu revenda — resolvido pelo seletor de finalidade por nota.
+- Ajuste no gerador a partir da comparacao: C170/C190 de entrada agora preservam o DIGITO DE ORIGEM e o CST original do XML (ex.: 400, 220, 090) como o sistema de referencia, em vez de forcar origem 0; valores zerados continuam decidindo o credito.
+- Diferencas opcionais do sistema de referencia (nao geradas por nos, validas): 0400/0450/0500, C110, K010/K100/K200 e H005 mensal. Avisos ja orientam o caso do bloco K.
