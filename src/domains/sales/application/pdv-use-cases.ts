@@ -3,6 +3,7 @@ import type { TenantScope } from "@/lib/auth/dev-session";
 import { scopedByTenantCompany } from "@/lib/auth/dev-session";
 import { createAuditLog } from "@/lib/audit/audit-service";
 import { gerarParcelas, rotuloParcela } from "@/lib/finance/condicao-pagamento";
+import { validarCredencialAdmin, type CredencialAdmin } from "@/lib/auth/admin-credential";
 import { checkoutSale } from "./sale-use-cases";
 import { emitServiceInvoiceAvulsa } from "@/domains/fiscal/application/standalone-emission-use-cases";
 import { getCaixaAberto, registrarRecebimentoPdv } from "@/domains/cashier/application/cashier-use-cases";
@@ -13,13 +14,18 @@ const round2 = (v: number) => Math.round((v + Number.EPSILON) * 100) / 100;
 
 export type PdvCheckoutInput = {
   clienteId?: string | null;
+  /** Vendedor cadastrado (gera comissão conforme o percentual dele). */
+  vendedorId?: string | null;
   modeloProduto?: "NFE" | "NFCE";
-  produtos: Array<{ produtoId: string; quantidade: number; precoUnitario: number }>;
+  /** desconto: valor em R$ da LINHA (quantidade × preço − desconto). Exige autorização de admin. */
+  produtos: Array<{ produtoId: string; quantidade: number; precoUnitario: number; desconto?: number }>;
   servicos: Array<{ descricao: string; valor: number; codigoServicoLc116?: string | null; codigoNbs?: string | null }>;
   /** Formas de pagamento recebidas (o troco sai do dinheiro). Exigidas — o PDV opera com caixa. */
   pagamentos: Array<{ forma: string; valor: number }>;
   /** Condição do crediário ("30", "30/60/90"...) quando há forma CREDIARIO. Padrão: 30 dias. */
   condicaoCrediario?: string | null;
+  /** Credencial de um administrador — obrigatória quando há desconto em itens. */
+  autorizacaoAdmin?: CredencialAdmin | null;
 };
 
 export type PdvNotaResultado = {
@@ -73,8 +79,28 @@ export async function pdvCheckout(scope: TenantScope, input: PdvCheckoutInput): 
     throw new Error("A NFS-e dos serviços exige um cliente identificado.");
   }
 
-  // Total que o cliente paga = soma dos produtos + serviços. Valida o pagamento antes de emitir.
-  const totalProdutos = input.produtos.reduce((s, p) => s + p.precoUnitario * p.quantidade, 0);
+  // Desconto por item: só com autorização de um administrador (validada AQUI, no servidor —
+  // a senha pedida na tela é pré-checagem de UX). Auditado com quem autorizou.
+  const descontoTotal = round2(input.produtos.reduce((s, p) => s + Math.max(0, Number(p.desconto) || 0), 0));
+  let autorizadoPor: { usuarioId: string; nome: string } | null = null;
+  if (descontoTotal > 0) {
+    for (const p of input.produtos) {
+      const desconto = Math.max(0, Number(p.desconto) || 0);
+      if (desconto > p.precoUnitario * p.quantidade) {
+        throw new Error("Desconto de um item não pode ser maior que o valor do item.");
+      }
+    }
+    if (!input.autorizacaoAdmin) {
+      throw new Error("Desconto em itens exige autorização de um administrador (e-mail e senha).");
+    }
+    autorizadoPor = await validarCredencialAdmin(scope, input.autorizacaoAdmin);
+  }
+
+  // Total que o cliente paga = soma dos produtos (líquidos de desconto) + serviços.
+  const totalProdutos = input.produtos.reduce(
+    (s, p) => s + p.precoUnitario * p.quantidade - Math.max(0, Number(p.desconto) || 0),
+    0
+  );
   const totalServicos = input.servicos.reduce((s, v) => s + v.valor, 0);
   const total = round2(totalProdutos + totalServicos);
   const pagamentos = (input.pagamentos ?? []).filter((p) => Number(p.valor) > 0);
@@ -115,15 +141,41 @@ export async function pdvCheckout(scope: TenantScope, input: PdvCheckoutInput): 
         scope,
         {
           clienteId: input.clienteId ?? null,
+          vendedorId: input.vendedorId ?? null,
           canal: "PDV",
           formaPagamento: formaResumo || undefined,
           condicaoPagamento: valorCrediario > 0 ? (input.condicaoCrediario ?? "30") : undefined,
-          itens: input.produtos.map((p) => ({ produtoId: p.produtoId, quantidade: p.quantidade, precoUnitario: p.precoUnitario }))
+          itens: input.produtos.map((p) => ({
+            produtoId: p.produtoId,
+            quantidade: p.quantidade,
+            precoUnitario: p.precoUnitario,
+            desconto: Math.max(0, Number(p.desconto) || 0)
+          }))
         },
         // O PDV recebe à vista no caixa e trata o crediário aqui — a confirmação da venda
         // não deve gerar contas a receber.
         { modelo: modeloProduto, contasReceber: "NENHUMA" }
       );
+      // Auditoria do desconto autorizado (vinculada ao pedido criado).
+      const admin = autorizadoPor;
+      if (admin && descontoTotal > 0) {
+        await prisma.$transaction(async (tx) => {
+          await createAuditLog(tx, {
+            scope,
+            entidade: "PedidoVenda",
+            entidadeId: r.pedidoId,
+            acao: "PDV_DESCONTO_AUTORIZADO",
+            usuarioId: admin.usuarioId,
+            payload: {
+              autorizadoPor: admin.nome,
+              descontoTotal,
+              itens: input.produtos
+                .filter((p) => (Number(p.desconto) || 0) > 0)
+                .map((p) => ({ produtoId: p.produtoId, desconto: Number(p.desconto) }))
+            }
+          });
+        });
+      }
       pedidoVendaId = r.pedidoId;
       pedidoNumero = r.pedidoNumero;
       notas.push({

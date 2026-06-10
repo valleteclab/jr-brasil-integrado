@@ -12,7 +12,7 @@ function resolveTipo(value?: string): Tipo {
 }
 
 export default async function AtendimentoPage({ searchParams }: { searchParams: { tipo?: string } }) {
-  let data: SaleFormData = { clientes: [], produtos: [] };
+  let data: SaleFormData = { clientes: [], produtos: [], vendedores: [] };
   let loadError = "";
 
   try {

@@ -85,6 +85,12 @@ enum StatusFinanceiro {
   CANCELADO
 }
 
+enum StatusComissao {
+  A_PAGAR
+  PAGO
+  CANCELADO
+}
+
 enum StatusNotaFiscal {
   RASCUNHO
   PROCESSANDO
@@ -309,6 +315,8 @@ model Empresa {
   contasBancarias    ContaBancaria[]
   formasPagamento    FormaPagamento[]
   movimentosFinanceiros MovimentoFinanceiro[]
+  vendedores         Vendedor[]
+  comissoesVenda     ComissaoVenda[]
   inventarios        Inventario[]
   auditorias         Auditoria[]
   conversasAgente    ConversaAgente[]
@@ -1044,7 +1052,11 @@ model PedidoVenda {
   canal             String
   status            StatusPedido      @default(RASCUNHO)
   naturezaOperacao  String?
+  // Nome livre do vendedor (legado/exibição). vendedorId é o vínculo para comissão.
   vendedor          String?
+  vendedorId        String?
+  vendedorRef       Vendedor?         @relation(fields: [vendedorId], references: [id])
+  comissao          ComissaoVenda?
   subtotal          Decimal           @default(0) @db.Decimal(14, 2)
   desconto          Decimal           @default(0) @db.Decimal(14, 2)
   frete             Decimal           @default(0) @db.Decimal(14, 2)
@@ -1099,6 +1111,8 @@ model Orcamento {
   validoAte          DateTime?
   observacaoVendedor String?
   vendedor           String?
+  vendedorId         String?
+  vendedorRef        Vendedor?       @relation(fields: [vendedorId], references: [id])
   condicaoPagamento  String?
   formaPagamento     String?
   desconto           Decimal         @default(0) @db.Decimal(14, 2)
@@ -2121,6 +2135,49 @@ model CaixaMovimento {
   criadoEm      DateTime           @default(now())
 
   @@index([tenantId, empresaId, caixaId])
+}
+
+model Vendedor {
+  id                 String          @id @default(cuid())
+  tenantId           String
+  empresaId          String
+  empresa            Empresa         @relation(fields: [empresaId], references: [id])
+  nome               String
+  email              String?
+  percentualComissao Decimal         @default(0) @db.Decimal(5, 2)
+  ativo              Boolean         @default(true)
+  pedidosVenda       PedidoVenda[]
+  orcamentos         Orcamento[]
+  comissoes          ComissaoVenda[]
+  criadoEm           DateTime        @default(now())
+  atualizadoEm       DateTime        @updatedAt
+
+  @@unique([tenantId, empresaId, nome])
+  @@index([tenantId, empresaId, ativo])
+}
+
+// Comissão apurada na confirmação da venda (1:1 com o pedido). Cancelamento da venda
+// cancela a comissão; devolução abate proporcionalmente o valor a pagar.
+model ComissaoVenda {
+  id            String         @id @default(cuid())
+  tenantId      String
+  empresaId     String
+  empresa       Empresa        @relation(fields: [empresaId], references: [id])
+  vendedorId    String
+  vendedor      Vendedor       @relation(fields: [vendedorId], references: [id])
+  pedidoVendaId String         @unique
+  pedidoVenda   PedidoVenda    @relation(fields: [pedidoVendaId], references: [id])
+  base          Decimal        @db.Decimal(14, 2)
+  percentual    Decimal        @db.Decimal(5, 2)
+  valor         Decimal        @db.Decimal(14, 2)
+  status        StatusComissao @default(A_PAGAR)
+  pagoEm        DateTime?
+  observacoes   String?
+  criadoEm      DateTime       @default(now())
+  atualizadoEm  DateTime       @updatedAt
+
+  @@index([tenantId, empresaId, status])
+  @@index([tenantId, empresaId, vendedorId, status])
 }
 
 model PagamentoVenda {

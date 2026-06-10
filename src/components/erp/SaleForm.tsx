@@ -25,6 +25,7 @@ function formatBrl(value: number) {
 export function SaleForm({ formData }: Props) {
   const router = useRouter();
   const [clienteId, setClienteId] = useState("");
+  const [vendedorId, setVendedorId] = useState("");
   const [observacoes, setObservacoes] = useState("");
   const [formaPagamento, setFormaPagamento] = useState("");
   const [condicaoPagamento, setCondicaoPagamento] = useState("");
@@ -88,6 +89,7 @@ export function SaleForm({ formData }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           clienteId,
+          vendedorId: vendedorId || null,
           canal: "BALCAO",
           formaPagamento: formaPagamento || null,
           condicaoPagamento: condicaoPagamento || null,
@@ -132,6 +134,16 @@ export function SaleForm({ formData }: Props) {
                 <option key={c.id} value={c.id}>
                   {c.label}{c.documento ? ` — ${c.documento}` : ""}
                 </option>
+              ))}
+            </select>
+          </label>
+
+          <label>
+            <span>Vendedor</span>
+            <select value={vendedorId} onChange={(e) => setVendedorId(e.target.value)}>
+              <option value="">Sem vendedor</option>
+              {formData.vendedores.map((v) => (
+                <option key={v.id} value={v.id}>{v.nome}</option>
               ))}
             </select>
           </label>

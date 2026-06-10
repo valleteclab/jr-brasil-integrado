@@ -16,6 +16,8 @@ export type CreateQuoteInput = {
   }>;
   validadeDias?: number;
   vendedor?: string;
+  /** Vendedor cadastrado — propagado ao pedido na conversão (comissão na confirmação). */
+  vendedorId?: string | null;
   condicaoPagamento?: string;
   desconto?: number;
   observacaoVendedor?: string;
@@ -41,6 +43,16 @@ export async function createQuote(scope: TenantScope, input: CreateQuoteInput) {
       ? new Date(Date.now() + input.validadeDias * 24 * 60 * 60 * 1000)
       : null;
 
+    // Vendedor cadastrado: valida e usa o nome dele como rótulo quando não informado.
+    let vendedorNome = input.vendedor ?? null;
+    if (input.vendedorId) {
+      const vendedorCadastrado = await tx.vendedor.findFirst({
+        where: { id: input.vendedorId, ...scopedByTenantCompany(scope), ativo: true }
+      });
+      if (!vendedorCadastrado) throw new Error("Vendedor não encontrado ou inativo.");
+      vendedorNome = vendedorNome ?? vendedorCadastrado.nome;
+    }
+
     const orcamento = await tx.orcamento.create({
       data: {
         ...scopedByTenantCompany(scope),
@@ -49,7 +61,8 @@ export async function createQuote(scope: TenantScope, input: CreateQuoteInput) {
         canal: input.canal ?? "MANUAL",
         status: "EM_ANALISE",
         validoAte,
-        vendedor: input.vendedor ?? null,
+        vendedor: vendedorNome,
+        vendedorId: input.vendedorId ?? null,
         condicaoPagamento: input.condicaoPagamento ?? null,
         observacaoVendedor: input.observacaoVendedor ?? null,
         desconto,
@@ -80,6 +93,40 @@ export async function createQuote(scope: TenantScope, input: CreateQuoteInput) {
   }, TX_OPTIONS);
 }
 
+/** Status em que a validade ainda corre (pode expirar). */
+const STATUS_EXPIRAVEIS = ["RASCUNHO", "EM_ANALISE", "AGUARDANDO_CLIENTE"] as const;
+
+/**
+ * Marca como EXPIRADO os orçamentos vencidos (validoAte no passado) que ainda aguardam
+ * decisão. Expiração "preguiçosa": chamada na listagem e nos guards de aprovar/converter —
+ * não há job/cron; o estado converge sempre que alguém olha ou mexe nos orçamentos.
+ */
+export async function expireQuotesVencidos(scope: TenantScope): Promise<number> {
+  const { count } = await prisma.orcamento.updateMany({
+    where: {
+      ...scopedByTenantCompany(scope),
+      status: { in: [...STATUS_EXPIRAVEIS] },
+      validoAte: { lt: new Date() }
+    },
+    data: { status: "EXPIRADO" }
+  });
+  return count;
+}
+
+/** Guard: orçamento vencido é marcado EXPIRADO e a ação é bloqueada com mensagem clara. */
+async function bloquearSeVencido(
+  tx: { orcamento: { update: (args: { where: { id: string }; data: { status: "EXPIRADO" } }) => Promise<unknown> } },
+  orc: { id: string; numero: string; status: string; validoAte: Date | null }
+) {
+  if (!orc.validoAte) return;
+  if (!(STATUS_EXPIRAVEIS as readonly string[]).includes(orc.status)) return;
+  if (orc.validoAte >= new Date()) return;
+  await tx.orcamento.update({ where: { id: orc.id }, data: { status: "EXPIRADO" } });
+  throw new Error(
+    `Orçamento ${orc.numero} expirou em ${orc.validoAte.toLocaleDateString("pt-BR")}. Crie um novo orçamento com preços atualizados.`
+  );
+}
+
 export async function approveQuote(scope: TenantScope, id: string) {
   return prisma.$transaction(async (tx) => {
     const orc = await tx.orcamento.findFirst({
@@ -87,6 +134,7 @@ export async function approveQuote(scope: TenantScope, id: string) {
     });
     if (!orc) throw new Error("Orçamento não encontrado.");
     if (orc.status === "APROVADO") return orc;
+    await bloquearSeVencido(tx, orc);
     if (!["EM_ANALISE", "AGUARDANDO_CLIENTE", "RASCUNHO"].includes(orc.status)) {
       throw new Error(`Orçamento com status ${orc.status} não pode ser aprovado.`);
     }
@@ -162,6 +210,7 @@ export async function convertQuoteToPedido(scope: TenantScope, id: string) {
         canal: "ORCAMENTO",
         status: "RASCUNHO",
         vendedor: orc.vendedor ?? null,
+        vendedorId: orc.vendedorId ?? null,
         condicaoPagamento: orc.condicaoPagamento ?? null,
         subtotal: Number(orc.subtotal),
         desconto: Number(orc.desconto),

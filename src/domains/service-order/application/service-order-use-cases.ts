@@ -3,7 +3,13 @@ import type { TenantScope } from "@/lib/auth/dev-session";
 import { scopedByTenantCompany } from "@/lib/auth/dev-session";
 import { createAuditLog } from "@/lib/audit/audit-service";
 import { nextDocumentNumber } from "@/lib/numbering";
-import { exitStock, getDefaultDeposito } from "@/domains/stock/application/stock-service";
+import {
+  exitStock,
+  getDefaultDeposito,
+  reserveStock,
+  releaseReservations,
+  commitReservationsAsExit
+} from "@/domains/stock/application/stock-service";
 import { buildNfseFromOrdemServico } from "@/domains/fiscal/document-builder";
 import { emitFiscalDocument } from "@/domains/fiscal/application/fiscal-emission-use-cases";
 import { isValidLc116 } from "@/domains/fiscal/lc116";
@@ -155,6 +161,19 @@ export async function addPeca(scope: TenantScope, osId: string, input: AddPecaIn
       },
     });
 
+    // Reserva a peça no estoque (1 reserva por peça): dá visibilidade do comprometido e
+    // impede duas OS de contarem com a mesma peça. A baixa física só ocorre no faturamento.
+    const deposito = os.depositoId
+      ? { id: os.depositoId }
+      : await getDefaultDeposito(tx, scope);
+    await reserveStock(tx, scope, {
+      produtoId: input.produtoId,
+      depositoId: deposito.id,
+      quantidade: input.quantidade,
+      origemTipo: "ORDEM_SERVICO_PECA",
+      origemId: peca.id,
+    });
+
     // Recalcular totais
     const totalServicos = Number(os.totalServicos);
     const totalPecas = Number(os.totalPecas) + total;
@@ -230,6 +249,9 @@ export async function removePeca(scope: TenantScope, osId: string, pecaId: strin
     });
     if (!peca) throw new Error("Peça não encontrada.");
 
+    // Libera a reserva de estoque da peça antes de removê-la.
+    await releaseReservations(tx, scope, "ORDEM_SERVICO_PECA", pecaId);
+
     await tx.ordemServicoPeca.delete({ where: { id: pecaId } });
 
     const totalServicos = Number(os.totalServicos);
@@ -272,6 +294,17 @@ export async function updateStatus(scope: TenantScope, osId: string, status: Sta
     const allowed = VALID_STATUS_TRANSITIONS[os.status] ?? [];
     if (!allowed.includes(status)) {
       throw new Error(`Não é possível mudar status de ${os.status} para ${status}.`);
+    }
+
+    // OS cancelada devolve as peças reservadas ao saldo disponível.
+    if (status === "CANCELADA") {
+      const pecas = await tx.ordemServicoPeca.findMany({
+        where: { ordemServicoId: osId, ...scopedByTenantCompany(scope) },
+        select: { id: true },
+      });
+      for (const peca of pecas) {
+        await releaseReservations(tx, scope, "ORDEM_SERVICO_PECA", peca.id);
+      }
     }
 
     const updated = await tx.ordemServico.update({
@@ -343,19 +376,25 @@ export async function faturarOrdemServico(scope: TenantScope, id: string, input:
       ? await tx.deposito.findFirst({ where: { id: os.depositoId } }) ?? await getDefaultDeposito(tx, scope)
       : await getDefaultDeposito(tx, scope);
 
-    // Baixa de estoque das peças
-    if (os.pecas.length > 0) {
-      await exitStock(
-        tx,
-        scope,
-        os.pecas.map((p) => ({
+    // Baixa de estoque das peças: efetiva as reservas feitas no addPeca. Peças adicionadas
+    // antes do controle de reserva existir (sem reserva ativa) baixam direto, como antes.
+    const semReserva: Array<{ produtoId: string; depositoId: string; quantidade: number; custoUnitario: number }> = [];
+    for (const p of os.pecas) {
+      const reservasBaixadas = await commitReservationsAsExit(tx, scope, "ORDEM_SERVICO_PECA", p.id, {
+        documentoTipo: "ORDEM_SERVICO",
+        documentoId: id,
+      });
+      if (reservasBaixadas === 0) {
+        semReserva.push({
           produtoId: p.produtoId,
           depositoId: deposito.id,
           quantidade: p.quantidade,
           custoUnitario: Number(p.produto.custoMedio ?? p.produto.precoCusto ?? 0),
-        })),
-        { documentoTipo: "ORDEM_SERVICO", documentoId: id }
-      );
+        });
+      }
+    }
+    if (semReserva.length > 0) {
+      await exitStock(tx, scope, semReserva, { documentoTipo: "ORDEM_SERVICO", documentoId: id });
     }
 
     const vencimento = new Date();

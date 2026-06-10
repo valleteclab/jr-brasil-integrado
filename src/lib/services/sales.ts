@@ -64,6 +64,7 @@ export type SaleDetail = SaleSummary & {
 export type SaleFormData = {
   clientes: Array<{ id: string; label: string; documento: string | null }>;
   produtos: Array<{ id: string; sku: string; nome: string; gtin: string | null; codigoOriginal: string | null; codigoFabricante: string | null; preco: number; disponivel: number }>;
+  vendedores: Array<{ id: string; nome: string }>;
 };
 
 function statusLabel(status: StatusPedido): string {
@@ -264,7 +265,7 @@ export async function listSaleFormData(): Promise<SaleFormData> {
   try {
     const scope = await getDevelopmentTenantScope();
 
-    const [clientes, produtos] = await Promise.all([
+    const [clientes, produtos, vendedores] = await Promise.all([
       prisma.cliente.findMany({
         where: { ...scopedByTenantCompany(scope), status: "ATIVO" },
         select: { id: true, razaoSocial: true, nomeFantasia: true, documento: true },
@@ -284,6 +285,11 @@ export async function listSaleFormData(): Promise<SaleFormData> {
             select: { quantidade: true, reservado: true }
           }
         },
+        orderBy: { nome: "asc" }
+      }),
+      prisma.vendedor.findMany({
+        where: { ...scopedByTenantCompany(scope), ativo: true },
+        select: { id: true, nome: true },
         orderBy: { nome: "asc" }
       })
     ]);
@@ -309,7 +315,8 @@ export async function listSaleFormData(): Promise<SaleFormData> {
           preco: Number(p.precoVenda),
           disponivel
         };
-      })
+      }),
+      vendedores
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : "erro desconhecido";

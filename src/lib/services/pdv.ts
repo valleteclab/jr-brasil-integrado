@@ -16,6 +16,7 @@ export type PdvData = {
   clientes: PdvCliente[];
   produtos: PdvProduto[];
   servicos: PdvServico[];
+  vendedores: Array<{ id: string; nome: string }>;
 };
 
 /**
@@ -26,7 +27,7 @@ export async function getPdvData(): Promise<PdvData> {
   const scope = await getDevelopmentTenantScope();
   const base = scopedByTenantCompany(scope);
 
-  const [empresa, config, clientes, itens] = await Promise.all([
+  const [empresa, config, clientes, itens, vendedores] = await Promise.all([
     prisma.empresa.findUnique({ where: { id: scope.empresaId }, select: { tipoNegocio: true, permiteVendaSemEstoque: true } }),
     prisma.configuracaoFiscal.findUnique({
       where: { empresaId: scope.empresaId },
@@ -50,6 +51,11 @@ export async function getPdvData(): Promise<PdvData> {
         precoVenda: true,
         saldosEstoque: { select: { quantidade: true, reservado: true } }
       },
+      orderBy: { nome: "asc" }
+    }),
+    prisma.vendedor.findMany({
+      where: { ...base, ativo: true },
+      select: { id: true, nome: true },
       orderBy: { nome: "asc" }
     })
   ]);
@@ -85,6 +91,7 @@ export async function getPdvData(): Promise<PdvData> {
       documento: c.documento
     })),
     produtos,
-    servicos
+    servicos,
+    vendedores
   };
 }

@@ -19,7 +19,7 @@ type Props = {
 export function QuoteForm({ formData }: Props) {
   const router = useRouter();
   const [clienteId, setClienteId] = useState("");
-  const [vendedor, setVendedor] = useState("");
+  const [vendedorId, setVendedorId] = useState("");
   const [condicaoPagamento, setCondicaoPagamento] = useState("");
   const [validadeDias, setValidadeDias] = useState(30);
   const [desconto, setDesconto] = useState(0);
@@ -82,7 +82,7 @@ export function QuoteForm({ formData }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           clienteId,
-          vendedor: vendedor || undefined,
+          vendedorId: vendedorId || undefined,
           condicaoPagamento: condicaoPagamento || undefined,
           validadeDias,
           desconto,
@@ -131,13 +131,12 @@ export function QuoteForm({ formData }: Props) {
 
           <label htmlFor="vendedor">
             <span>Vendedor</span>
-            <input
-              id="vendedor"
-              type="text"
-              placeholder="Nome do vendedor"
-              value={vendedor}
-              onChange={(e) => setVendedor(e.target.value)}
-            />
+            <select id="vendedor" value={vendedorId} onChange={(e) => setVendedorId(e.target.value)}>
+              <option value="">Sem vendedor</option>
+              {formData.vendedores.map((v) => (
+                <option key={v.id} value={v.id}>{v.nome}</option>
+              ))}
+            </select>
           </label>
 
           <label htmlFor="condicaoPagamento">

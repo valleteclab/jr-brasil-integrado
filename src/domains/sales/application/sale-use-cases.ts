@@ -13,6 +13,7 @@ import {
 import { buildDocumentFromPedido, type ClienteLike } from "@/domains/fiscal/document-builder";
 import { emitFiscalDocument, previewFiscalDocument } from "@/domains/fiscal/application/fiscal-emission-use-cases";
 import { gerarParcelas, rotuloParcela } from "@/lib/finance/condicao-pagamento";
+import { criarComissaoVenda, cancelarComissaoPedido } from "./comissao-use-cases";
 
 const TX_OPTIONS = { maxWait: 15000, timeout: 30000 };
 
@@ -24,6 +25,8 @@ export type CreateSaleInput = {
   statusInicial?: "RASCUNHO" | "AGUARDANDO_PAGAMENTO";
   naturezaOperacao?: string;
   vendedor?: string;
+  /** Vendedor cadastrado (gera comissão na confirmação conforme o percentual dele). */
+  vendedorId?: string | null;
   condicaoPagamento?: string;
   formaPagamento?: string;
   observacoes?: string;
@@ -51,6 +54,16 @@ export async function createSale(scope: TenantScope, input: CreateSaleInput) {
     if (!depositoId) {
       const dep = await getDefaultDeposito(tx, scope);
       depositoId = dep.id;
+    }
+
+    // Vendedor cadastrado: valida e usa o nome dele como rótulo quando não informado.
+    let vendedorNome = input.vendedor ?? null;
+    if (input.vendedorId) {
+      const vendedorCadastrado = await tx.vendedor.findFirst({
+        where: { id: input.vendedorId, ...scopedByTenantCompany(scope), ativo: true }
+      });
+      if (!vendedorCadastrado) throw new Error("Vendedor não encontrado ou inativo.");
+      vendedorNome = vendedorNome ?? vendedorCadastrado.nome;
     }
 
     // Carrega produtos para custo médio
@@ -89,7 +102,8 @@ export async function createSale(scope: TenantScope, input: CreateSaleInput) {
         canal: input.canal ?? "BALCAO",
         status: input.statusInicial ?? "RASCUNHO",
         naturezaOperacao: input.naturezaOperacao ?? null,
-        vendedor: input.vendedor ?? null,
+        vendedor: vendedorNome,
+        vendedorId: input.vendedorId ?? null,
         condicaoPagamento: input.condicaoPagamento ?? null,
         formaPagamento: input.formaPagamento ?? null,
         observacoes: input.observacoes ?? null,
@@ -194,6 +208,9 @@ export async function confirmSale(scope: TenantScope, id: string, options?: Conf
         });
       }
     }
+
+    // Comissão do vendedor (se houver vendedor cadastrado com percentual > 0).
+    await criarComissaoVenda(tx, scope, pedido);
 
     const updated = await tx.pedidoVenda.update({
       where: { id },
@@ -484,6 +501,9 @@ export async function cancelSale(scope: TenantScope, id: string) {
       data: { status: "CANCELADO" }
     });
 
+    // Cancela a comissão do vendedor ainda não paga
+    await cancelarComissaoPedido(tx, scope, id);
+
     const updated = await tx.pedidoVenda.update({
       where: { id },
       data: {
@@ -532,6 +552,7 @@ export async function deleteSale(scope: TenantScope, id: string) {
     await tx.notaFiscal.updateMany({ where: scoped, data: { pedidoVendaId: null } });
     await tx.caixaMovimento.updateMany({ where: scoped, data: { pedidoVendaId: null } });
     await tx.contaReceber.updateMany({ where: scoped, data: { pedidoVendaId: null } });
+    await tx.comissaoVenda.deleteMany({ where: { pedidoVendaId: id } });
     await tx.pagamentoVenda.deleteMany({ where: { pedidoVendaId: id } });
     await tx.pedidoVendaItem.deleteMany({ where: { pedidoVendaId: id } });
     const removido = await tx.pedidoVenda.delete({ where: { id } });

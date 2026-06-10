@@ -37,7 +37,16 @@ export default async function VendasPage() {
 
   return (
     <>
-      <PageHeader eyebrow="Operacional" title="Vendas">
+      <PageHeader
+        eyebrow="Operacional"
+        title="Vendas"
+        action={
+          <span style={{ display: "inline-flex", gap: 8 }}>
+            <a className="btn-erp ghost sm" href="/erp/vendas/vendedores">Vendedores</a>
+            <a className="btn-erp ghost sm" href="/erp/vendas/comissoes">Comissões</a>
+          </span>
+        }
+      >
         <p>{sales.length} pedidos registrados</p>
       </PageHeader>
 

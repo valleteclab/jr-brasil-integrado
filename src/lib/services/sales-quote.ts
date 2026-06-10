@@ -1,6 +1,7 @@
 import { getDevelopmentTenantScope, scopedByTenantCompany } from "@/lib/auth/dev-session";
 import { prisma } from "@/lib/db/prisma";
 import { formatBrl } from "@/lib/formatters/currency";
+import { expireQuotesVencidos } from "@/domains/sales-quote/application/quote-use-cases";
 
 export type QuoteSummary = {
   id: string;
@@ -43,6 +44,7 @@ export type QuoteDetail = QuoteSummary & {
 export type QuoteFormData = {
   clientes: Array<{ id: string; label: string }>;
   produtos: Array<{ id: string; sku: string; nome: string; preco: number }>;
+  vendedores: Array<{ id: string; nome: string }>;
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -113,6 +115,8 @@ export async function listQuotes(): Promise<QuoteSummary[]> {
   }
   try {
     const scope = await getDevelopmentTenantScope();
+    // Expiração preguiçosa: marca vencidos como EXPIRADO antes de listar.
+    await expireQuotesVencidos(scope);
     const orcamentos = await prisma.orcamento.findMany({
       where: scopedByTenantCompany(scope),
       include: {
@@ -171,7 +175,7 @@ export async function listQuoteFormData(): Promise<QuoteFormData> {
   }
   try {
     const scope = await getDevelopmentTenantScope();
-    const [clientes, produtos] = await Promise.all([
+    const [clientes, produtos, vendedores] = await Promise.all([
       prisma.cliente.findMany({
         where: { ...scopedByTenantCompany(scope), status: "ATIVO" },
         select: { id: true, razaoSocial: true, nomeFantasia: true },
@@ -180,6 +184,11 @@ export async function listQuoteFormData(): Promise<QuoteFormData> {
       prisma.produto.findMany({
         where: { ...scopedByTenantCompany(scope), ativo: true },
         select: { id: true, sku: true, nome: true, precoVenda: true },
+        orderBy: { nome: "asc" },
+      }),
+      prisma.vendedor.findMany({
+        where: { ...scopedByTenantCompany(scope), ativo: true },
+        select: { id: true, nome: true },
         orderBy: { nome: "asc" },
       }),
     ]);
@@ -195,6 +204,7 @@ export async function listQuoteFormData(): Promise<QuoteFormData> {
         nome: p.nome,
         preco: Number(p.precoVenda),
       })),
+      vendedores,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : "erro desconhecido";

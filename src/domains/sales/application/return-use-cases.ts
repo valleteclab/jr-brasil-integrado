@@ -5,6 +5,7 @@ import { createAuditLog } from "@/lib/audit/audit-service";
 import { getDefaultDeposito, applyStockMovement } from "@/domains/stock/application/stock-service";
 import { buildDocumentFromPedido, type ClienteLike } from "@/domains/fiscal/document-builder";
 import { emitFiscalDocument } from "@/domains/fiscal/application/fiscal-emission-use-cases";
+import { abaterComissaoPorDevolucao } from "./comissao-use-cases";
 
 const TX_OPTIONS = { maxWait: 15000, timeout: 30000 };
 const round2 = (v: number) => Math.round((v + Number.EPSILON) * 100) / 100;
@@ -270,6 +271,12 @@ export async function returnSale(scope: TenantScope, pedidoId: string, input: Re
     }
 
     const abatido = round2(valorDevolvido - restante);
+
+    // Comissão do vendedor: abate proporcional ao valor devolvido (se ainda não paga).
+    const totalPedido = Number(pedido.total);
+    if (totalPedido > 0) {
+      await abaterComissaoPorDevolucao(tx, scope, pedido.id, valorDevolvido / totalPedido, `NF-e ${nota.numero ?? nota.id}`);
+    }
 
     await createAuditLog(tx, {
       scope,
