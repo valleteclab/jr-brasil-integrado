@@ -35,6 +35,7 @@ export default async function ExpedicaoPage() {
         pendentes={pendentes.map((r) => ({
           id: r.id,
           codigo: r.codigo,
+          status: r.status,
           pedidoNumero: r.pedidoVenda.numero,
           clienteNome: r.pedidoVenda.cliente
             ? (r.pedidoVenda.cliente.nomeFantasia ?? r.pedidoVenda.cliente.razaoSocial)

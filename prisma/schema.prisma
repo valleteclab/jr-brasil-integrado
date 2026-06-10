@@ -93,6 +93,7 @@ enum StatusComissao {
 
 enum StatusRetirada {
   PENDENTE
+  PARCIAL
   ENTREGUE
   CANCELADA
 }
@@ -817,6 +818,7 @@ model Produto {
   itensPreco               TabelaPrecoItem[]
   itensNotaFiscal          NotaFiscalItem[]
   itensInventario          InventarioItem[]
+  itensRetirada            ExpedicaoRetiradaItem[]
   criadoEm                 DateTime            @default(now())
   atualizadoEm             DateTime            @updatedAt
 
@@ -2160,14 +2162,32 @@ model ExpedicaoRetirada {
   pedidoVendaId String
   pedidoVenda   PedidoVenda    @relation(fields: [pedidoVendaId], references: [id])
   status        StatusRetirada @default(PENDENTE)
+  // Última entrega registrada (o histórico completo fica em observacoes + auditoria).
   entreguePor   String?
   entregueEm    DateTime?
   observacoes   String?
+  itens         ExpedicaoRetiradaItem[]
   criadoEm      DateTime       @default(now())
   atualizadoEm  DateTime       @updatedAt
 
   @@unique([tenantId, empresaId, codigo])
   @@index([tenantId, empresaId, status])
+}
+
+// Saldo de retirada por produto: permite entrega parcial (entregue acumula até quantidade).
+model ExpedicaoRetiradaItem {
+  id         String            @id @default(cuid())
+  tenantId   String
+  empresaId  String
+  retiradaId String
+  retirada   ExpedicaoRetirada @relation(fields: [retiradaId], references: [id])
+  produtoId  String
+  produto    Produto           @relation(fields: [produtoId], references: [id])
+  quantidade Int
+  entregue   Int               @default(0)
+
+  @@unique([retiradaId, produtoId])
+  @@index([tenantId, empresaId])
 }
 
 model Vendedor {

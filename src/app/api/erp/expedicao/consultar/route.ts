@@ -15,6 +15,7 @@ export async function GET(request: Request) {
       criadoEm: r.criadoEm.toISOString(),
       entreguePor: r.entreguePor,
       entregueEm: r.entregueEm?.toISOString() ?? null,
+      historico: r.observacoes,
       pedido: {
         id: r.pedidoVenda.id,
         numero: r.pedidoVenda.numero,
@@ -23,10 +24,13 @@ export async function GET(request: Request) {
           ? (r.pedidoVenda.cliente.nomeFantasia ?? r.pedidoVenda.cliente.razaoSocial)
           : "Consumidor não identificado",
         notas: r.pedidoVenda.notasFiscais.map((n) => `${n.modelo === "NFCE" ? "NFC-e" : "NF-e"} ${n.numero ?? ""}`),
-        itens: r.pedidoVenda.itens.map((i) => ({
+        itens: r.itens.map((i) => ({
+          produtoId: i.produtoId,
           produtoNome: i.produto.nome,
           produtoSku: i.produto.sku,
-          quantidade: i.quantidade
+          quantidade: i.quantidade,
+          entregue: i.entregue,
+          restante: i.quantidade - i.entregue
         }))
       }
     });
