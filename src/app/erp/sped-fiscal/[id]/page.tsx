@@ -4,6 +4,7 @@ import { KpiCard } from "@/components/shared/KpiCard";
 import { Button } from "@/components/shared/Button";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { SpedDetalheAcoes } from "@/components/erp/sped/SpedDetalheAcoes";
+import { SpedAnaliseIaCard } from "@/components/erp/sped/SpedAnaliseIaCard";
 import { requireModulo } from "@/lib/auth/session";
 import { getSpedArquivoDetalhe, isSpedHabilitado } from "@/domains/fiscal/application/sped-use-cases";
 import type { SpedLinhaCfop } from "@/domains/fiscal/sped/types";
@@ -103,6 +104,8 @@ export default async function SpedDetalhePage({ params }: { params: { id: string
           </ul>
         </div>
       )}
+
+      <SpedAnaliseIaCard arquivoId={arquivo.id} analise={arquivo.analiseIa} />
 
       {icms && (
         <div className="kpi-row">

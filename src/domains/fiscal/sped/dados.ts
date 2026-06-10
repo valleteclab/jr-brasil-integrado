@@ -8,6 +8,14 @@
 import { XMLParser } from "fast-xml-parser";
 import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
+import type { RegimeTributario, TipoTributo } from "@prisma/client";
+import {
+  creditoPorFinalidade,
+  finalidadeMovimentaEstoque,
+  resolveCfopEntrada,
+  sugerirFinalidadeEntrada
+} from "@/domains/fiscal/finalidade-entrada";
+import { parseXmlSped, type XmlDocumentoSped, type XmlItem, type XmlParticipante } from "./xml-avulso";
 import type {
   SpedConfig,
   SpedDocumento,
@@ -433,6 +441,219 @@ export async function carregarSpedInput(scope: TenantScope, params: CarregarSped
       itens,
       rotulo
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // XMLs avulsos: notas emitidas fora do ERP ou recebidas sem o fluxo de entradas.
+  // Dedupe por chave de acesso — documentos já escriturados pelo banco prevalecem.
+  // ---------------------------------------------------------------------------
+  const xmlDocs = await prisma.spedXmlDocumento.findMany({
+    where: { ...base, competenciaAno: ano, competenciaMes: mes },
+    orderBy: { emitidaEm: "asc" }
+  });
+
+  if (xmlDocs.length > 0) {
+    const chavesDoBanco = new Set(documentos.map((d) => d.chaveAcesso).filter(Boolean) as string[]);
+    const participanteXml = (p: XmlParticipante): string => {
+      const codigo = `X-${p.documento || p.nome.slice(0, 20)}`;
+      if (!participantes.has(codigo)) {
+        participantes.set(codigo, {
+          codigo,
+          nome: p.nome,
+          cnpj: p.documento.length === 14 ? p.documento : null,
+          cpf: p.documento.length === 11 ? p.documento : null,
+          inscricaoEstadual: p.inscricaoEstadual,
+          codigoMunicipioIbge: p.codigoMunicipioIbge,
+          logradouro: p.logradouro,
+          numero: p.numero,
+          complemento: p.complemento,
+          bairro: p.bairro
+        });
+      }
+      return codigo;
+    };
+
+    for (const registro of xmlDocs) {
+      if (registro.chaveAcesso && chavesDoBanco.has(registro.chaveAcesso)) {
+        avisos.push(
+          `XML avulso ${registro.numero ?? registro.chaveAcesso}: ignorado — a mesma chave já está escriturada pelas notas do sistema.`
+        );
+        continue;
+      }
+
+      const tipoXml = registro.tipo === "ENTRADA" ? "ENTRADA" : "SAIDA";
+
+      // Cancelada (inclusive stub criado só a partir do evento): C100 de identificação.
+      if (registro.cancelada) {
+        documentos.push({
+          tipo: tipoXml,
+          modelo: registro.modelo === "65" ? "65" : "55",
+          cancelado: true,
+          codigoParticipante: null,
+          serie: registro.serie,
+          numero: registro.numero,
+          chaveAcesso: registro.chaveAcesso,
+          dataEmissao: registro.emitidaEm,
+          dataEntradaSaida: null,
+          aPrazo: false,
+          valorDocumento: 0,
+          valorDesconto: 0,
+          valorMercadorias: 0,
+          valorFrete: 0,
+          valorSeguro: 0,
+          outrasDespesas: 0,
+          ufDestino: null,
+          itens: [],
+          rotulo: `XML ${registro.numero ?? registro.chaveAcesso} (cancelada)`
+        });
+        continue;
+      }
+
+      let parsed: XmlDocumentoSped;
+      try {
+        const p = parseXmlSped(registro.xml);
+        if (p.kind !== "DOCUMENTO") continue;
+        parsed = p;
+      } catch (e) {
+        avisos.push(
+          `XML avulso ${registro.numero ?? registro.chaveAcesso}: não foi possível reler o XML (${e instanceof Error ? e.message : "erro"}) — documento NÃO incluído.`
+        );
+        continue;
+      }
+
+      const rotulo = `${parsed.modelo === "65" ? "NFC-e" : "NF-e"} ${parsed.numero} (XML avulso)`;
+      const entrada = tipoXml === "ENTRADA";
+      const regime = empresa.regimeTributario as RegimeTributario;
+      const interestadual = Boolean(parsed.emitente.uf && empresa.enderecoUf && parsed.emitente.uf !== empresa.enderecoUf);
+
+      let codigoParticipante: string | null = null;
+      if (entrada) {
+        codigoParticipante = participanteXml(parsed.emitente);
+      } else if (parsed.modelo === "55" && parsed.destinatario) {
+        codigoParticipante = participanteXml(parsed.destinatario);
+      }
+
+      const itens: SpedDocumentoItem[] = parsed.itens.map((item: XmlItem) => {
+        if (!entrada) {
+          // Saída de emissão própria: escritura como destacado no documento (C100 + C190).
+          return {
+            numeroItem: item.numeroItem,
+            codigoItem: item.codigo,
+            descricaoComplementar: null,
+            quantidade: item.quantidade,
+            unidade: item.unidade,
+            valorItem: item.valorTotal,
+            valorDesconto: item.valorDesconto,
+            movimentaEstoque: true,
+            cfop: (item.cfop ?? "").replace(/\D/g, "") || "5102",
+            cstIcms: cstIcms3(item.origem, item.cstIcms, item.csosn),
+            baseIcms: item.baseIcms,
+            aliquotaIcms: item.aliquotaIcms,
+            valorIcms: item.valorIcms,
+            baseIcmsSt: item.baseIcmsSt,
+            aliquotaIcmsSt: item.aliquotaIcmsSt,
+            valorIcmsSt: item.valorIcmsSt,
+            valorReducaoBc: 0,
+            cstIpi: item.cstIpi,
+            baseIpi: item.baseIpi,
+            aliquotaIpi: item.aliquotaIpi,
+            valorIpi: item.valorIpi,
+            cstPis: item.cstPis,
+            basePis: item.basePis,
+            aliquotaPis: item.aliquotaPis,
+            valorPis: item.valorPis,
+            cstCofins: item.cstCofins,
+            baseCofins: item.baseCofins,
+            aliquotaCofins: item.aliquotaCofins,
+            valorCofins: item.valorCofins
+          };
+        }
+
+        // Entrada por XML: a finalidade (e portanto o crédito) é inferida por heurística
+        // de CFOP/descrição — mesma lógica do fluxo de entradas (finalidade-entrada.ts).
+        const sugestao = sugerirFinalidadeEntrada({ ncm: item.ncm, cfop: item.cfop, descricao: item.descricao });
+        const st =
+          ["10", "30", "60", "70"].includes(item.cstIcms ?? "") ||
+          ["201", "202", "203", "500"].includes(item.csosn ?? "");
+        const cred = (tributo: TipoTributo) => creditoPorFinalidade(sugestao.finalidade, regime, tributo, { st }).recuperavel;
+        const credIcms = cred("ICMS");
+        const credPis = cred("PIS");
+        const credCofins = cred("COFINS");
+
+        const codigoItem = `XML-${(parsed.emitente.documento || "X").slice(-6)}-${item.codigo}`.slice(0, 60);
+        if (!catalogo.has(codigoItem)) {
+          catalogo.set(codigoItem, {
+            codigo: codigoItem,
+            descricao: item.descricao,
+            gtin: item.gtin,
+            unidade: item.unidade,
+            tipoItem: tipoItem0200(sugestao.finalidade, null),
+            ncm: item.ncm,
+            cest: item.cest
+          });
+        }
+
+        return {
+          numeroItem: item.numeroItem,
+          codigoItem,
+          descricaoComplementar: null,
+          quantidade: item.quantidade,
+          unidade: item.unidade,
+          valorItem: item.valorTotal,
+          valorDesconto: item.valorDesconto,
+          movimentaEstoque: finalidadeMovimentaEstoque(sugestao.finalidade),
+          cfop: resolveCfopEntrada(sugestao.finalidade, { interestadual, st }),
+          cstIcms: cstIcms3(null, credIcms ? item.cstIcms ?? "00" : st ? "60" : "90", null),
+          baseIcms: credIcms ? item.baseIcms : 0,
+          aliquotaIcms: credIcms ? item.aliquotaIcms : 0,
+          valorIcms: credIcms ? item.valorIcms : 0,
+          baseIcmsSt: 0,
+          aliquotaIcmsSt: 0,
+          valorIcmsSt: 0,
+          valorReducaoBc: 0,
+          cstIpi: null,
+          baseIpi: 0,
+          aliquotaIpi: 0,
+          valorIpi: 0,
+          cstPis: credPis ? item.cstPis : null,
+          basePis: credPis ? item.basePis : 0,
+          aliquotaPis: credPis ? item.aliquotaPis : 0,
+          valorPis: credPis ? item.valorPis : 0,
+          cstCofins: credCofins ? item.cstCofins : null,
+          baseCofins: credCofins ? item.baseCofins : 0,
+          aliquotaCofins: credCofins ? item.aliquotaCofins : 0,
+          valorCofins: credCofins ? item.valorCofins : 0
+        };
+      });
+
+      if (entrada) {
+        avisos.push(
+          `${rotulo}: entrada importada por XML — finalidade e créditos foram INFERIDOS por heurística de CFOP/descrição. Revise com o contador (para controle fino, importe pelo fluxo de Notas de entrada).`
+        );
+      }
+
+      documentos.push({
+        tipo: tipoXml,
+        modelo: parsed.modelo,
+        cancelado: false,
+        codigoParticipante,
+        serie: parsed.serie,
+        numero: parsed.numero,
+        chaveAcesso: parsed.chaveAcesso,
+        dataEmissao: parsed.emitidaEm,
+        dataEntradaSaida: entrada ? parsed.emitidaEm : parsed.modelo === "55" ? parsed.emitidaEm : null,
+        aPrazo: parsed.aPrazo,
+        valorDocumento: parsed.totais.valorNota,
+        valorDesconto: parsed.totais.valorDesconto,
+        valorMercadorias: parsed.totais.valorProdutos,
+        valorFrete: parsed.totais.valorFrete,
+        valorSeguro: parsed.totais.valorSeguro,
+        outrasDespesas: parsed.totais.outrasDespesas,
+        ufDestino: !entrada && parsed.destinatario?.uf ? parsed.destinatario.uf : null,
+        itens,
+        rotulo
+      });
+    }
   }
 
   // ---------------------------------------------------------------------------

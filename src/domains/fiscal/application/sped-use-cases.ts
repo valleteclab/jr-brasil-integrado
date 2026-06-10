@@ -11,6 +11,9 @@ import { createAuditLog } from "@/lib/audit/audit-service";
 import { carregarSpedInput, SpedError } from "@/domains/fiscal/sped/dados";
 import { gerarSpedFiscal } from "@/domains/fiscal/sped/gerador";
 import type { SpedResumo } from "@/domains/fiscal/sped/types";
+import { dadosDaChave, parseXmlSped, SpedXmlError } from "@/domains/fiscal/sped/xml-avulso";
+import { callOpenRouter } from "@/domains/ai/openrouter-service";
+import { Prisma } from "@prisma/client";
 
 export { SpedError };
 
@@ -73,7 +76,10 @@ export async function gerarSpedArquivo(
         avisos: gerado.avisos as unknown as object,
         saldoCredorAnterior: dados.config.saldoCredorAnterior,
         geradoPor: usuarioId ?? null,
-        enviadoContadorEm: null
+        enviadoContadorEm: null,
+        // Regerar invalida a análise anterior da IA (ela se referia à apuração antiga).
+        analiseIa: Prisma.JsonNull,
+        analiseIaEm: null
       },
       create: {
         ...base,
@@ -164,6 +170,11 @@ export async function listSpedArquivos(scope: TenantScope): Promise<SpedArquivoS
   });
 }
 
+export type SpedAnaliseIa = {
+  texto: string;
+  geradoEm: string;
+};
+
 export type SpedArquivoDetalhe = {
   id: string;
   ano: number;
@@ -176,6 +187,7 @@ export type SpedArquivoDetalhe = {
   totalLinhas: number;
   resumo: SpedResumo | null;
   avisos: string[];
+  analiseIa: SpedAnaliseIa | null;
   enviadoContadorEm: string | null;
   criadoEm: string;
   atualizadoEm: string;
@@ -199,6 +211,10 @@ export async function getSpedArquivoDetalhe(scope: TenantScope, id: string): Pro
     totalLinhas: a.totalLinhas,
     resumo: resumoDe(a),
     avisos: Array.isArray(a.avisos) ? (a.avisos as string[]) : [],
+    analiseIa:
+      a.analiseIa && typeof a.analiseIa === "object" && typeof (a.analiseIa as Record<string, unknown>).texto === "string"
+        ? (a.analiseIa as SpedAnaliseIa)
+        : null,
     enviadoContadorEm: a.enviadoContadorEm?.toISOString() ?? null,
     criadoEm: a.criadoEm.toISOString(),
     atualizadoEm: a.atualizadoEm.toISOString()
@@ -361,4 +377,278 @@ export async function saveSpedConfiguracao(
   });
 
   return getSpedConfiguracao(scope);
+}
+
+// ---------------------------------------------------------------------------
+// XMLs avulsos (notas emitidas fora do ERP / recebidas sem o fluxo de entradas)
+// ---------------------------------------------------------------------------
+
+export type ImportarXmlResultado = {
+  ok: boolean;
+  chaveAcesso: string | null;
+  mensagem: string;
+};
+
+export async function importarSpedXmls(
+  scope: TenantScope,
+  xmls: string[],
+  usuarioId?: string
+): Promise<ImportarXmlResultado[]> {
+  await assertSpedHabilitado(scope);
+  if (!Array.isArray(xmls) || xmls.length === 0) throw new SpedError("Envie ao menos um XML.");
+  if (xmls.length > 200) throw new SpedError("Envie no máximo 200 XMLs por vez.");
+
+  const base = { tenantId: scope.tenantId, empresaId: scope.empresaId };
+  const empresa = await prisma.empresa.findFirst({
+    where: { id: scope.empresaId, tenantId: scope.tenantId },
+    select: { cnpj: true }
+  });
+  if (!empresa) throw new SpedError("Empresa não encontrada para o escopo atual.");
+  const cnpjEmpresa = (empresa.cnpj ?? "").replace(/\D/g, "");
+
+  const resultados: ImportarXmlResultado[] = [];
+  let importados = 0;
+
+  for (const xml of xmls) {
+    try {
+      const parsed = parseXmlSped(xml);
+
+      if (parsed.kind === "CANCELAMENTO") {
+        const chave = parsed.chaveAcesso;
+        const existente = await prisma.spedXmlDocumento.findUnique({
+          where: { tenantId_empresaId_chaveAcesso: { ...base, chaveAcesso: chave } }
+        });
+        if (existente) {
+          await prisma.spedXmlDocumento.update({ where: { id: existente.id }, data: { cancelada: true } });
+          resultados.push({ ok: true, chaveAcesso: chave, mensagem: "Cancelamento aplicado à nota já importada." });
+        } else {
+          // Sem a nota: cria um stub cancelado a partir dos dados embutidos na própria chave
+          // (o C100 de cancelada só precisa da identificação do documento).
+          const d = dadosDaChave(chave);
+          await prisma.spedXmlDocumento.create({
+            data: {
+              ...base,
+              chaveAcesso: chave,
+              tipo: d.emitenteDocumento === cnpjEmpresa ? "SAIDA" : "ENTRADA",
+              cancelada: true,
+              modelo: d.modelo,
+              numero: d.numero,
+              serie: d.serie,
+              emitidaEm: new Date(d.ano, d.mes - 1, 1),
+              competenciaAno: d.ano,
+              competenciaMes: d.mes,
+              emitenteDocumento: d.emitenteDocumento,
+              xml
+            }
+          });
+          resultados.push({
+            ok: true,
+            chaveAcesso: chave,
+            mensagem: "Cancelamento registrado (nota cancelada incluída só com a identificação)."
+          });
+        }
+        importados++;
+        continue;
+      }
+
+      const chave = parsed.chaveAcesso;
+
+      // Nota já escriturada pelo fluxo normal do ERP? Não duplica.
+      const [notaExistente, entradaExistente] = await Promise.all([
+        prisma.notaFiscal.findFirst({ where: { ...base, chaveAcesso: chave }, select: { id: true } }),
+        prisma.entradaFiscal.findFirst({ where: { ...base, chaveAcesso: chave }, select: { id: true } })
+      ]);
+      if (notaExistente || entradaExistente) {
+        resultados.push({
+          ok: false,
+          chaveAcesso: chave,
+          mensagem: "Nota já existe no sistema (emitida ou importada pelo fluxo de entradas) — XML ignorado."
+        });
+        continue;
+      }
+
+      const tipo = parsed.emitente.documento === cnpjEmpresa ? "SAIDA" : "ENTRADA";
+      const dadosChave = dadosDaChave(chave);
+      const competencia = parsed.emitidaEm ?? new Date(dadosChave.ano, dadosChave.mes - 1, 1);
+
+      const dadosDoc = {
+        tipo,
+        modelo: parsed.modelo,
+        numero: parsed.numero,
+        serie: parsed.serie,
+        emitidaEm: parsed.emitidaEm,
+        competenciaAno: competencia.getFullYear(),
+        competenciaMes: competencia.getMonth() + 1,
+        emitenteDocumento: parsed.emitente.documento,
+        emitenteNome: parsed.emitente.nome,
+        destinatarioDocumento: parsed.destinatario?.documento ?? null,
+        destinatarioNome: parsed.destinatario?.nome ?? null,
+        valorTotal: parsed.totais.valorNota,
+        xml
+      };
+      await prisma.spedXmlDocumento.upsert({
+        where: { tenantId_empresaId_chaveAcesso: { ...base, chaveAcesso: chave } },
+        update: dadosDoc,
+        create: { ...base, chaveAcesso: chave, ...dadosDoc }
+      });
+      importados++;
+      const compLabel = `${String(competencia.getMonth() + 1).padStart(2, "0")}/${competencia.getFullYear()}`;
+      resultados.push({
+        ok: true,
+        chaveAcesso: chave,
+        mensagem: `${tipo === "SAIDA" ? "Saída" : "Entrada"} ${parsed.modelo === "65" ? "NFC-e" : "NF-e"} ${parsed.numero} — competência ${compLabel}.`
+      });
+    } catch (e) {
+      resultados.push({
+        ok: false,
+        chaveAcesso: null,
+        mensagem: e instanceof SpedXmlError || e instanceof SpedError ? e.message : "Falha ao processar o XML."
+      });
+    }
+  }
+
+  if (importados > 0) {
+    await prisma.$transaction(async (tx) => {
+      await createAuditLog(tx, {
+        scope,
+        usuarioId,
+        entidade: "SpedXmlDocumento",
+        entidadeId: scope.empresaId,
+        acao: "sped.importar_xml",
+        payload: { recebidos: xmls.length, importados }
+      });
+    });
+  }
+
+  return resultados;
+}
+
+export type SpedXmlSummary = {
+  id: string;
+  chaveAcesso: string;
+  tipo: string;
+  cancelada: boolean;
+  modelo: string | null;
+  numero: string | null;
+  serie: string | null;
+  competencia: string;
+  emitenteNome: string | null;
+  destinatarioNome: string | null;
+  valorTotal: number;
+  criadoEm: string;
+};
+
+export async function listSpedXmlDocumentos(scope: TenantScope): Promise<SpedXmlSummary[]> {
+  await assertSpedHabilitado(scope);
+  const docs = await prisma.spedXmlDocumento.findMany({
+    where: { tenantId: scope.tenantId, empresaId: scope.empresaId },
+    orderBy: [{ competenciaAno: "desc" }, { competenciaMes: "desc" }, { criadoEm: "desc" }],
+    take: 300
+  });
+  return docs.map((d) => ({
+    id: d.id,
+    chaveAcesso: d.chaveAcesso,
+    tipo: d.tipo,
+    cancelada: d.cancelada,
+    modelo: d.modelo,
+    numero: d.numero,
+    serie: d.serie,
+    competencia: `${String(d.competenciaMes).padStart(2, "0")}/${d.competenciaAno}`,
+    emitenteNome: d.emitenteNome,
+    destinatarioNome: d.destinatarioNome,
+    valorTotal: Number(d.valorTotal),
+    criadoEm: d.criadoEm.toISOString()
+  }));
+}
+
+export async function excluirSpedXmlDocumento(scope: TenantScope, id: string, usuarioId?: string) {
+  await assertSpedHabilitado(scope);
+  const doc = await prisma.spedXmlDocumento.findFirst({
+    where: { id, tenantId: scope.tenantId, empresaId: scope.empresaId }
+  });
+  if (!doc) throw new SpedError("XML não encontrado.");
+  await prisma.$transaction(async (tx) => {
+    await tx.spedXmlDocumento.delete({ where: { id: doc.id } });
+    await createAuditLog(tx, {
+      scope,
+      usuarioId,
+      entidade: "SpedXmlDocumento",
+      entidadeId: doc.id,
+      acao: "sped.excluir_xml",
+      payload: { chaveAcesso: doc.chaveAcesso }
+    });
+  });
+  return { id: doc.id, ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// Análise da apuração por IA (OpenRouter) — a IA AUDITA o resumo, nunca gera o arquivo
+// ---------------------------------------------------------------------------
+
+export async function analisarSpedComIa(scope: TenantScope, id: string, usuarioId?: string): Promise<SpedAnaliseIa> {
+  await assertSpedHabilitado(scope);
+  const arquivo = await prisma.spedArquivo.findFirst({
+    where: { id, tenantId: scope.tenantId, empresaId: scope.empresaId }
+  });
+  if (!arquivo) throw new SpedError("Arquivo SPED não encontrado.");
+  const resumo = (arquivo.resumo ?? null) as SpedResumo | null;
+  if (!resumo) throw new SpedError("Arquivo sem resumo de apuração — regere o SPED.");
+  const avisos = Array.isArray(arquivo.avisos) ? (arquivo.avisos as string[]) : [];
+
+  // Compacta o resumo para o prompt (somente dados fiscais agregados, sem dados pessoais).
+  const dados = {
+    competencia: resumo.competencia,
+    regimeTributario: resumo.regimeTributario,
+    leiaute: resumo.versaoLeiaute,
+    perfil: resumo.perfilArquivo,
+    documentos: resumo.documentos,
+    apuracaoIcms: resumo.apuracaoIcms,
+    apuracaoIcmsSt: resumo.apuracaoIcmsSt,
+    apuracaoIpi: resumo.apuracaoIpi,
+    pisCofinsInformativo: resumo.pisCofins,
+    saidasPorCfop: resumo.saidasPorCfop.slice(0, 40),
+    entradasPorCfop: resumo.entradasPorCfop.slice(0, 40),
+    avisosDaGeracao: avisos.slice(0, 40)
+  };
+
+  const texto = await callOpenRouter(
+    scope,
+    [
+      {
+        role: "system",
+        content:
+          "Você é um auditor fiscal brasileiro sênior, especialista em EFD ICMS/IPI (SPED Fiscal, leiaute 020/2026) e na transição da reforma tributária (CBS/IBS informativos em 2026, fora da EFD ICMS/IPI). " +
+          "Você recebe o RESUMO da apuração de um arquivo gerado por um sistema determinístico — você NÃO gera o arquivo, apenas audita. " +
+          "Responda em português do Brasil, objetivo e didático, nesta estrutura: " +
+          "1) PARECER GERAL (2-3 frases sobre a consistência da apuração); " +
+          "2) INCONSISTÊNCIAS E RISCOS (verifique: coerência CST × CFOP × alíquota nas linhas analíticas; CFOPs de devolução/ST; créditos de entrada compatíveis com o regime tributário; ICMS-ST; alíquotas atípicas; impacto dos avisos da geração); " +
+          "3) CHECKLIST ANTES DE ENVIAR AO CONTADOR (itens acionáveis e curtos). " +
+          "Aponte SOMENTE o que os dados sustentam; quando faltar informação, diga o que verificar em vez de inventar. Não invente valores."
+      },
+      {
+        role: "user",
+        content: `Audite esta apuração do SPED Fiscal:\n\n${JSON.stringify(dados, null, 1)}`
+      }
+    ],
+    { maxTokens: 1400, temperature: 0.1 }
+  );
+
+  const analise: SpedAnaliseIa = { texto: texto.trim(), geradoEm: new Date().toISOString() };
+
+  await prisma.$transaction(async (tx) => {
+    await tx.spedArquivo.update({
+      where: { id: arquivo.id },
+      data: { analiseIa: analise as unknown as Prisma.InputJsonValue, analiseIaEm: new Date() }
+    });
+    await createAuditLog(tx, {
+      scope,
+      usuarioId,
+      entidade: "SpedArquivo",
+      entidadeId: arquivo.id,
+      acao: "sped.analise_ia",
+      payload: { ano: arquivo.ano, mes: arquivo.mes }
+    });
+  });
+
+  return analise;
 }

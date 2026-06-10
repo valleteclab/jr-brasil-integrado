@@ -304,6 +304,7 @@ model Empresa {
   sequenciasFiscais  SequenciaFiscal[]
   spedConfiguracao   SpedConfiguracao?
   spedArquivos       SpedArquivo[]
+  spedXmlDocumentos  SpedXmlDocumento[]
   contasBancarias    ContaBancaria[]
   formasPagamento    FormaPagamento[]
   movimentosFinanceiros MovimentoFinanceiro[]
@@ -1859,11 +1860,46 @@ model SpedArquivo {
   saldoCredorAnterior Decimal           @default(0) @db.Decimal(14, 2)
   geradoPor           String?
   enviadoContadorEm   DateTime?
+  // Análise da apuração feita pela IA (OpenRouter): parecer, inconsistências e checklist.
+  // A IA NUNCA gera o arquivo — só audita o resumo produzido pelo gerador determinístico.
+  analiseIa           Json?
+  analiseIaEm         DateTime?
   criadoEm            DateTime          @default(now())
   atualizadoEm        DateTime          @updatedAt
 
   @@unique([tenantId, empresaId, ano, mes])
   @@index([tenantId, empresaId, status])
+}
+
+// XML avulso importado só para o SPED: notas emitidas fora do ERP (outro emissor) ou
+// recebidas sem passar pelo fluxo de entradas. Entram na geração do arquivo junto com as
+// notas do banco, com deduplicação por chave de acesso (a nota do ERP prevalece).
+model SpedXmlDocumento {
+  id                    String   @id @default(cuid())
+  tenantId              String
+  empresaId             String
+  empresa               Empresa  @relation(fields: [empresaId], references: [id])
+  chaveAcesso           String
+  // SAIDA quando o emitente do XML é a própria empresa; ENTRADA quando é terceiro.
+  tipo                  String
+  cancelada             Boolean  @default(false)
+  modelo                String?
+  numero                String?
+  serie                 String?
+  emitidaEm             DateTime?
+  competenciaAno        Int
+  competenciaMes        Int
+  emitenteDocumento     String?
+  emitenteNome          String?
+  destinatarioDocumento String?
+  destinatarioNome      String?
+  valorTotal            Decimal  @default(0) @db.Decimal(14, 2)
+  xml                   String
+  criadoEm              DateTime @default(now())
+  atualizadoEm          DateTime @updatedAt
+
+  @@unique([tenantId, empresaId, chaveAcesso])
+  @@index([tenantId, empresaId, competenciaAno, competenciaMes])
 }
 
 // Conta financeira (carteira) de onde o dinheiro sai/entra: caixa, conta bancária ou cartão.

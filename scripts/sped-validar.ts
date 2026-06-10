@@ -18,6 +18,7 @@ import { prisma } from "../src/lib/db/prisma";
 import { carregarSpedInput } from "../src/domains/fiscal/sped/dados";
 import { gerarSpedFiscal } from "../src/domains/fiscal/sped/gerador";
 import type { SpedInput } from "../src/domains/fiscal/sped/types";
+import { dadosDaChave, parseXmlSped } from "../src/domains/fiscal/sped/xml-avulso";
 
 // Campos esperados por registro (incluindo o próprio campo REG) — leiaute 020.
 const CAMPOS_ESPERADOS: Record<string, number> = {
@@ -256,7 +257,68 @@ function inputSintetico(): SpedInput {
   };
 }
 
+/** Smoke test do parser de XML avulso (NF-e completa + evento de cancelamento). */
+function validarParserXml(): number {
+  let erros = 0;
+  const chave = "35260611222333000144550010000007771000007779";
+  const xmlNfe = `<?xml version="1.0" encoding="UTF-8"?>
+<nfeProc xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00">
+  <NFe><infNFe Id="NFe${chave}" versao="4.00">
+    <ide><mod>55</mod><serie>1</serie><nNF>777</nNF><dhEmi>2026-05-10T10:00:00-03:00</dhEmi></ide>
+    <emit><CNPJ>11222333000144</CNPJ><xNome>Fornecedor XML LTDA</xNome><IE>112233445</IE>
+      <enderEmit><xLgr>Rua F</xLgr><nro>30</nro><xBairro>Industrial</xBairro><cMun>3106200</cMun><UF>MG</UF></enderEmit></emit>
+    <dest><CNPJ>12345678000195</CNPJ><xNome>Empresa Teste LTDA</xNome>
+      <enderDest><xLgr>Rua T</xLgr><nro>100</nro><xBairro>Centro</xBairro><cMun>3550308</cMun><UF>SP</UF></enderDest></dest>
+    <det nItem="1"><prod><cProd>ABC1</cProd><xProd>Peca para revenda</xProd><cEAN>SEM GTIN</cEAN><NCM>84099999</NCM>
+      <CFOP>6102</CFOP><uCom>UN</uCom><qCom>10.0000</qCom><vUnCom>100.00</vUnCom><vProd>1000.00</vProd></prod>
+      <imposto><ICMS><ICMS00><orig>0</orig><CST>00</CST><vBC>1000.00</vBC><pICMS>12.00</pICMS><vICMS>120.00</vICMS></ICMS00></ICMS>
+      <PIS><PISAliq><CST>01</CST><vBC>1000.00</vBC><pPIS>1.65</pPIS><vPIS>16.50</vPIS></PISAliq></PIS>
+      <COFINS><COFINSAliq><CST>01</CST><vBC>1000.00</vBC><pCOFINS>7.60</pCOFINS><vCOFINS>76.00</vCOFINS></COFINSAliq></COFINS></imposto></det>
+    <total><ICMSTot><vBC>1000.00</vBC><vICMS>120.00</vICMS><vProd>1000.00</vProd><vNF>1000.00</vNF></ICMSTot></total>
+    <cobr><dup><nDup>001</nDup><dVenc>2026-06-10</dVenc><vDup>1000.00</vDup></dup></cobr>
+  </infNFe></NFe>
+  <protNFe><infProt><chNFe>${chave}</chNFe></infProt></protNFe>
+</nfeProc>`;
+  const xmlEvento = `<?xml version="1.0"?><procEventoNFe xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00">
+  <evento><infEvento><chNFe>${chave}</chNFe><tpEvento>110111</tpEvento></infEvento></evento></procEventoNFe>`;
+
+  const checar = (cond: boolean, msg: string) => {
+    if (!cond) {
+      erros++;
+      console.log(`  ✗ parser XML: ${msg}`);
+    }
+  };
+
+  const doc = parseXmlSped(xmlNfe);
+  checar(doc.kind === "DOCUMENTO", "NF-e não reconhecida como documento");
+  if (doc.kind === "DOCUMENTO") {
+    checar(doc.chaveAcesso === chave, "chave de acesso incorreta");
+    checar(doc.modelo === "55" && doc.numero === "777" && doc.serie === "1", "mod/numero/serie incorretos");
+    checar(doc.emitente.documento === "11222333000144" && doc.emitente.uf === "MG", "emitente incorreto");
+    checar(doc.destinatario?.codigoMunicipioIbge === "3550308", "destinatário incorreto");
+    checar(doc.aPrazo, "duplicata não marcou a prazo");
+    const item = doc.itens[0];
+    checar(item.cstIcms === "00" && item.baseIcms === 1000 && item.valorIcms === 120, "ICMS do item incorreto");
+    checar(item.valorPis === 16.5 && item.valorCofins === 76, "PIS/COFINS do item incorretos");
+    checar(item.gtin === null, "SEM GTIN deveria virar null");
+  }
+
+  const evento = parseXmlSped(xmlEvento);
+  checar(evento.kind === "CANCELAMENTO" && evento.chaveAcesso === chave, "evento de cancelamento não reconhecido");
+
+  const dc = dadosDaChave(chave);
+  checar(dc.modelo === "55" && dc.serie === "1" && dc.numero === "777" && dc.ano === 2026 && dc.mes === 6, "dadosDaChave incorreto");
+  checar(dc.emitenteDocumento === "11222333000144", "CNPJ da chave incorreto");
+
+  console.log(erros === 0 ? "✓ Parser de XML avulso OK (NF-e completa + cancelamento + dados da chave)" : `${erros} erro(s) no parser XML`);
+  return erros;
+}
+
 async function main() {
+  const errosParser = validarParserXml();
+  if (errosParser > 0) process.exitCode = 1;
+  console.log("");
+
   const [empresaIdArg, anoArg, mesArg] = process.argv.slice(2);
 
   let empresaId = empresaIdArg ?? null;

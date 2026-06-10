@@ -3,13 +3,16 @@ import { KpiCard } from "@/components/shared/KpiCard";
 import { Button } from "@/components/shared/Button";
 import { SpedGerarForm } from "@/components/erp/sped/SpedGerarForm";
 import { SpedArquivosList } from "@/components/erp/sped/SpedArquivosList";
+import { SpedXmlImport } from "@/components/erp/sped/SpedXmlImport";
 import { requireModulo } from "@/lib/auth/session";
 import { isAdminPerfil } from "@/lib/auth/modules";
 import {
   getSpedConfiguracao,
   isSpedHabilitado,
   listSpedArquivos,
-  type SpedArquivoSummary
+  listSpedXmlDocumentos,
+  type SpedArquivoSummary,
+  type SpedXmlSummary
 } from "@/domains/fiscal/application/sped-use-cases";
 import { formatBrl } from "@/lib/formatters/currency";
 
@@ -36,14 +39,17 @@ export default async function SpedFiscalPage() {
   }
 
   let arquivos: SpedArquivoSummary[] = [];
+  let xmlDocs: SpedXmlSummary[] = [];
   let contadorOk = true;
   let loadError = "";
   try {
-    const [lista, config] = await Promise.all([
+    const [lista, config, xmls] = await Promise.all([
       listSpedArquivos(session.scope),
-      getSpedConfiguracao(session.scope)
+      getSpedConfiguracao(session.scope),
+      listSpedXmlDocumentos(session.scope)
     ]);
     arquivos = lista;
+    xmlDocs = xmls;
     contadorOk = Boolean(config.contadorNome && config.contadorCpf && config.contadorCrc);
   } catch (error) {
     loadError = error instanceof Error ? error.message : "Não foi possível carregar os arquivos SPED.";
@@ -110,6 +116,8 @@ export default async function SpedFiscalPage() {
           arquivo original já foi transmitido à SEFAZ pelo contador.
         </p>
       </div>
+
+      <SpedXmlImport documentos={xmlDocs} />
 
       <SpedArquivosList arquivos={arquivos} isAdmin={isAdmin} />
     </>
