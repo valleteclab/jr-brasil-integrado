@@ -697,7 +697,7 @@ export async function cancelNotaFiscal(scope: TenantScope, notaId: string, justi
     }
   );
 
-  return runInTransaction(async (tx) => {
+  const cancelamento = await runInTransaction(async (tx) => {
     const authorized = result.status === "AUTORIZADO";
     const evento = await tx.notaFiscalEvento.create({
       data: {
@@ -736,6 +736,20 @@ export async function cancelNotaFiscal(scope: TenantScope, notaId: string, justi
 
     return { id: nota.id, status: "CANCELADA" as const, eventoId: evento.id };
   }, TX_OPTIONS);
+
+  // CASCATA: nota cancelada e vinculada a um pedido de venda → estorna a venda (devolve estoque,
+  // cancela as contas a receber em aberto e marca o pedido como CANCELADO). Import dinâmico para
+  // evitar dependência circular (sales → fiscal). Não derruba o cancelamento da nota se falhar.
+  if (nota.pedidoVendaId) {
+    try {
+      const { cancelSale } = await import("@/domains/sales/application/sale-use-cases");
+      await cancelSale(scope, nota.pedidoVendaId);
+    } catch {
+      /* pedido já cancelado / sem reversão necessária — ignora */
+    }
+  }
+
+  return cancelamento;
 }
 
 export async function createCartaCorrecao(scope: TenantScope, notaId: string, correcao: string) {

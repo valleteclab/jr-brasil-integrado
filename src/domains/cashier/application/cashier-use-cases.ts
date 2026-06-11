@@ -140,6 +140,11 @@ export async function registrarRecebimentoPdv(
     }
   });
 
+  // Tempo real: o resumo do caixa (e a lista de vendas) refletem o recebimento na hora — inclusive
+  // PIX/cartão, não só dinheiro. Sem isto, vendas feitas no PDV não atualizavam o /erp/caixa aberto.
+  publishRealtime(scope, "caixa");
+  publishRealtime(scope, "vendas");
+
   return { troco, caixaId: caixa.id };
 }
 
