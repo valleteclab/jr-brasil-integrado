@@ -6,6 +6,7 @@ import { correspondeBusca } from "@/lib/search/normalize";
 import type { EmissaoFormData } from "@/lib/services/fiscal-emit";
 import type { EmissaoPrefill } from "@/lib/services/fiscal";
 import { useCadastroLookup } from "./useCadastroLookup";
+import { ClienteCadastroDrawer, type ClienteCriado } from "./ClienteCadastroDrawer";
 import { EspelhoFiscalModal, CalculoImpostoPanel, type FiscalPreview } from "./EspelhoFiscal";
 
 type DocTipo = "NFE" | "NFCE" | "NFSE";
@@ -127,10 +128,14 @@ export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormDat
   const [origem] = useState(initial ?? null);
 
   // Destinatário
+  const [clientes, setClientes] = useState<Cliente[]>(data.clientes);
   const [modoDest, setModoDest] = useState<"cadastrado" | "avulso">(
     initial && !initial.clienteId ? "avulso" : "cadastrado"
   );
   const [clienteId, setClienteId] = useState<string>(initial?.clienteId ?? "");
+  // NFC-e: CPF do consumidor na nota (opcional, sem precisar cadastrar) e drawer de cadastro.
+  const [cpfConsumidor, setCpfConsumidor] = useState("");
+  const [cadastroAberto, setCadastroAberto] = useState(false);
   const [avNome, setAvNome] = useState(initial?.destinatario.nome ?? "");
   const [avDocumento, setAvDocumento] = useState(initial?.destinatario.documento ?? "");
   const [avIe, setAvIe] = useState(initial?.destinatario.inscricaoEstadual ?? "");
@@ -293,8 +298,11 @@ export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormDat
 
   function buildReceiver(): { clienteId?: string } | Record<string, unknown> | null {
     if (modoDest === "cadastrado") {
-      if (!clienteId) return null;
-      return { clienteId };
+      if (clienteId) return { clienteId };
+      // NFC-e a consumidor não identificado, mas com CPF informado na nota (sem cadastro).
+      const cpf = cpfConsumidor.replace(/\D/g, "");
+      if (isNfce && cpf) return { documento: cpf };
+      return null;
     }
     const nome = avNome.trim();
     if (!nome) return null;
@@ -523,13 +531,14 @@ export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormDat
     setResultado(null);
   }
 
-  const clienteSel = data.clientes.find((c) => c.id === clienteId) ?? null;
+  const clienteSel = clientes.find((c) => c.id === clienteId) ?? null;
+  const cpfDigitado = cpfConsumidor.replace(/\D/g, "");
   const destResumo: string =
-    modoDest === "cadastrado"
+    (modoDest === "cadastrado" || isNfce)
       ? clienteSel
         ? `${clienteSel.documento ?? "sem documento"}${clienteSel.uf ? ` · ${clienteSel.uf}` : ""}`
         : isNfce
-          ? "Consumidor não identificado (opcional)"
+          ? (cpfDigitado ? `CPF ${cpfDigitado} na nota` : "Consumidor não identificado (opcional)")
           : "Selecione o cliente"
       : avNome.trim() || (isNfce ? "Consumidor não identificado (opcional)" : "Informe o destinatário");
 
@@ -587,50 +596,69 @@ export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormDat
                 Destinatário{" "}
                 {isNfce && <span style={{ color: "var(--erp-mute)", fontSize: 11, marginLeft: 4 }}>(opcional para NFC-e)</span>}
               </h3>
-              <div className="actions" role="radiogroup" aria-label="Tipo de destinatário">
-                <button
-                  type="button"
-                  className={`btn-erp ${modoDest === "cadastrado" ? "primary" : "ghost"} xs`}
-                  aria-pressed={modoDest === "cadastrado"}
-                  onClick={() => setModoDest("cadastrado")}
-                >
-                  Cliente cadastrado
-                </button>
-                <button
-                  type="button"
-                  className={`btn-erp ${modoDest === "avulso" ? "primary" : "ghost"} xs`}
-                  aria-pressed={modoDest === "avulso"}
-                  onClick={() => setModoDest("avulso")}
-                >
-                  Destinatário avulso
-                </button>
-              </div>
+              {/* NFC-e não precisa do destinatário avulso completo: o bloco simples (cliente +
+                  cadastrar + CPF opcional) cobre tudo. Os modos só aparecem na NF-e. */}
+              {!isNfce && (
+                <div className="actions" role="radiogroup" aria-label="Tipo de destinatário">
+                  <button
+                    type="button"
+                    className={`btn-erp ${modoDest === "cadastrado" ? "primary" : "ghost"} xs`}
+                    aria-pressed={modoDest === "cadastrado"}
+                    onClick={() => setModoDest("cadastrado")}
+                  >
+                    Cliente cadastrado
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn-erp ${modoDest === "avulso" ? "primary" : "ghost"} xs`}
+                    aria-pressed={modoDest === "avulso"}
+                    onClick={() => setModoDest("avulso")}
+                  >
+                    Destinatário avulso
+                  </button>
+                </div>
+              )}
             </div>
 
             <div className="atend-client">
-              <span className="avatar" aria-hidden="true">{modoDest === "cadastrado" && clienteSel ? "👤" : "👥"}</span>
+              <span className="avatar" aria-hidden="true">{(modoDest === "cadastrado" || isNfce) && clienteSel ? "👤" : "👥"}</span>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <strong>{modoDest === "cadastrado" ? clienteSel?.label ?? "Consumidor final" : avNome.trim() || "Destinatário avulso"}</strong>
+                <strong>{(modoDest === "cadastrado" || isNfce) ? clienteSel?.label ?? "Consumidor final" : avNome.trim() || "Destinatário avulso"}</strong>
                 <small>{destResumo}</small>
               </div>
             </div>
 
-            {modoDest === "cadastrado" ? (
+            {(modoDest === "cadastrado" || isNfce) ? (
               <div className="erp-card-body">
                 <label style={{ display: "block", fontSize: 11.5, fontWeight: 600, marginBottom: 4 }} htmlFor="cli-select">Cliente</label>
-                <select
-                  id="cli-select"
-                  value={clienteId}
-                  onChange={(e) => setClienteId(e.target.value)}
-                  style={{ width: "100%", height: 36, border: "1px solid var(--erp-line)", borderRadius: 5, padding: "0 10px", fontSize: 13 }}
-                >
-                  <option value="">{isNfce ? "Consumidor não identificado" : "Selecione um cliente…"}</option>
-                  {data.clientes.map((c: Cliente) => (
-                    <option key={c.id} value={c.id}>
-                      {c.label}{c.documento ? ` · ${c.documento}` : ""}{c.uf ? ` (${c.uf})` : ""}
-                    </option>
-                  ))}
-                </select>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <select
+                    id="cli-select"
+                    value={clienteId}
+                    onChange={(e) => setClienteId(e.target.value)}
+                    style={{ flex: 1, height: 36, border: "1px solid var(--erp-line)", borderRadius: 5, padding: "0 10px", fontSize: 13 }}
+                  >
+                    <option value="">{isNfce ? "Consumidor não identificado" : "Selecione um cliente…"}</option>
+                    {clientes.map((c: Cliente) => (
+                      <option key={c.id} value={c.id}>
+                        {c.label}{c.documento ? ` · ${c.documento}` : ""}{c.uf ? ` (${c.uf})` : ""}
+                      </option>
+                    ))}
+                  </select>
+                  <button type="button" className="btn-erp light sm" style={{ flexShrink: 0, whiteSpace: "nowrap" }} onClick={() => setCadastroAberto(true)}>+ Cadastrar</button>
+                </div>
+                {isNfce && !clienteId && (
+                  <label style={{ display: "block", marginTop: 10, fontSize: 11.5, fontWeight: 600 }}>
+                    CPF na nota <span style={{ color: "var(--erp-mute)", fontWeight: 400 }}>(opcional — se o consumidor quiser)</span>
+                    <input
+                      value={cpfConsumidor}
+                      onChange={(e) => setCpfConsumidor(e.target.value)}
+                      inputMode="numeric"
+                      placeholder="Somente números"
+                      style={{ width: "100%", height: 36, border: "1px solid var(--erp-line)", borderRadius: 5, padding: "0 10px", fontSize: 13, marginTop: 4 }}
+                    />
+                  </label>
+                )}
               </div>
             ) : (
               <div className="erp-form" style={{ gridTemplateColumns: "2fr 1fr 1fr" }}>
@@ -1047,6 +1075,22 @@ export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormDat
         </div>
       );
       })()}
+
+      {cadastroAberto && (
+        <ClienteCadastroDrawer
+          documentoInicial={cpfConsumidor}
+          onClose={() => setCadastroAberto(false)}
+          onCreated={(c: ClienteCriado) => {
+            setClientes((cur) => [
+              { id: c.id, label: c.label, documento: c.documento, inscricaoEstadual: null, email: null, uf: c.uf, cidade: null },
+              ...cur
+            ]);
+            setClienteId(c.id);
+            setCpfConsumidor("");
+            setCadastroAberto(false);
+          }}
+        />
+      )}
     </div>
   );
 }
