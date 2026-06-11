@@ -38,16 +38,23 @@ function resolveUfDestino(modelo: ModeloFiscal, ufEmitente: string | null, ufDes
 }
 
 /**
- * CFOP de uma venda de SAÍDA, respeitando o CFOP do cadastro do produto SOMENTE quando ele é
- * um CFOP de saída válido para o modelo:
- *  - NF-e (55): 5xxx (interna) ou 6xxx (interestadual).
- *  - NFC-e (65): 5xxx apenas (nunca interestadual).
- * Caso contrário deriva pelo contexto. Isso evita herdar CFOP de ENTRADA (1xxx/2xxx — comum em
- * produtos importados de XML do fornecedor) ou interestadual numa NFC-e, que a SEFAZ rejeita.
+ * CFOP de uma venda de SAÍDA, respeitando o CFOP do cadastro do produto SOMENTE quando o PREFIXO
+ * dele bate com a operação efetiva:
+ *  - operação interna (mesma UF, ou NFC-e que é sempre interna): exige 5xxx;
+ *  - operação interestadual (UF emitente ≠ UF destino): exige 6xxx.
+ * Quando o prefixo não bate (ex.: produto cadastrado com 6102 vendido dentro do estado, ou CFOP de
+ * ENTRADA 1xxx/2xxx herdado do XML do fornecedor), deriva pelo contexto — que já respeita ST e
+ * produção própria. Isso evita a rejeição da SEFAZ "CFOP não é de Operação Estadual e UF emitente
+ * igual a UF destinatário" (e o caso inverso), porque um simples swap de prefixo erraria os CFOPs
+ * de ST (5405 interno ↔ 6404 interestadual, não 6405).
  */
 function resolveCfopSaida(modelo: ModeloFiscal, cfopItem: string | null | undefined, ctx: Parameters<typeof resolveCfopVenda>[0]): string {
   const cfop = onlyDigits(cfopItem);
-  const valido = modelo === "NFCE" ? /^5\d{3}$/.test(cfop) : /^[56]\d{3}$/.test(cfop);
+  const origem = ctx.ufOrigem?.trim().toUpperCase();
+  const destino = ctx.ufDestino?.trim().toUpperCase();
+  const interestadual = Boolean(origem && destino && origem !== destino);
+  const prefixoEsperado = interestadual ? "6" : "5";
+  const valido = new RegExp(`^${prefixoEsperado}\\d{3}$`).test(cfop);
   return valido ? cfop : resolveCfopVenda(ctx);
 }
 
