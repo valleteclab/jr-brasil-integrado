@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { PdvData, PdvProduto, PdvServico } from "@/lib/services/pdv";
+import type { PdvData, PdvProduto, PdvServico, PdvCliente } from "@/lib/services/pdv";
 import { correspondeBusca } from "@/lib/search/normalize";
 
 type CartItem = {
@@ -109,7 +109,10 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
   const [aba, setAba] = useState<"produtos" | "servicos">(mostraProdutos ? "produtos" : "servicos");
   const [busca, setBusca] = useState("");
   const [cart, setCart] = useState<CartItem[]>([]);
+  const [clientes, setClientes] = useState(data.clientes);
   const [clienteId, setClienteId] = useState("");
+  const [clienteModalAberto, setClienteModalAberto] = useState(false);
+  const [novoClienteAberto, setNovoClienteAberto] = useState(false);
   const [vendedorId, setVendedorId] = useState("");
   const [modeloProduto, setModeloProduto] = useState<"NFCE" | "NFE">("NFCE");
   /** Última credencial de admin validada (enviada no checkout p/ revalidação no servidor). */
@@ -129,11 +132,11 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
   const [movimentoAberto, setMovimentoAberto] = useState(false);
 
   const buscaRef = useRef<HTMLInputElement>(null);
-  const clienteRef = useRef<HTMLSelectElement>(null);
 
   const total = useMemo(() => round2(cart.reduce((sum, i) => sum + i.preco * i.qtd - i.desconto, 0)), [cart]);
   const temServicoNoCart = cart.some((i) => i.kind === "servico");
   const precisaCliente = temServicoNoCart || modeloProduto === "NFE";
+  const clienteSelecionado = clientes.find((c) => c.id === clienteId) ?? null;
 
   const produtosFiltrados = useMemo(() => {
     if (!busca.trim()) return data.produtos.slice(0, 60);
@@ -243,7 +246,7 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
     if (cart.length === 0) { setError("Carrinho vazio."); return; }
     if (precisaCliente && !clienteId) {
       setError(temServicoNoCart ? "Serviços (NFS-e) exigem cliente." : "NF-e exige cliente.");
-      clienteRef.current?.focus();
+      setClienteModalAberto(true);
       return;
     }
     setError("");
@@ -308,10 +311,12 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
     function onKey(e: KeyboardEvent) {
       if (e.key === "F2") { e.preventDefault(); buscaRef.current?.focus(); }
       else if (e.key === "F4") { e.preventDefault(); if (!pagamentoAberto && !movimentoAberto) abrirPagamento(); }
-      else if (e.key === "F6") { e.preventDefault(); clienteRef.current?.focus(); }
+      else if (e.key === "F6") { e.preventDefault(); setClienteModalAberto(true); }
       else if (e.key === "F8") { e.preventDefault(); setMovimentoAberto(true); }
       else if (e.key === "Escape") {
-        if (pagamentoAberto) setPagamentoAberto(false);
+        if (novoClienteAberto) setNovoClienteAberto(false);
+        else if (clienteModalAberto) setClienteModalAberto(false);
+        else if (pagamentoAberto) setPagamentoAberto(false);
         else if (movimentoAberto) setMovimentoAberto(false);
         else limpar();
       }
@@ -388,35 +393,34 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
             {cart.length === 0 && <p className="pdv-vazio">Clique ou escaneie itens para adicionar.</p>}
             {cart.map((i) => (
               <div key={i.key} className="pdv-item">
-                <div className="pdv-item-nome">
-                  <strong>{i.nome}</strong>
-                  <small>
-                    {i.kind === "servico" ? "Serviço" : "Produto"} · {brl(i.preco)}
-                    {i.desconto > 0 && <> · desconto {brl(i.desconto)}</>}
-                  </small>
+                <div className="pdv-item-top">
+                  <span className="pdv-item-nome">{i.nome}</span>
+                  <span className="pdv-item-total">{brl(i.preco * i.qtd - i.desconto)}</span>
                 </div>
-                <div className="pdv-item-qtd">
-                  <button onClick={() => mudarQtd(i.key, -1)}>−</button>
-                  <span>{i.qtd}</span>
-                  <button onClick={() => mudarQtd(i.key, 1)}>+</button>
+                <div className="pdv-item-bot">
+                  <div className="pdv-item-qtd">
+                    <button onClick={() => mudarQtd(i.key, -1)}>−</button>
+                    <span>{i.qtd}</span>
+                    <button onClick={() => mudarQtd(i.key, 1)}>+</button>
+                  </div>
+                  <span className="pdv-item-unit">× {brl(i.preco)}{i.desconto > 0 ? ` − ${brl(i.desconto)} desc.` : ""}</span>
+                  {i.kind === "produto" && (
+                    <button className="pdv-item-pct" title="Desconto no item (exige administrador)" onClick={() => setDescontoItem(i)}>%</button>
+                  )}
+                  <button className="pdv-item-x" onClick={() => removerItem(i.key)}>×</button>
                 </div>
-                <div className="pdv-item-total">{brl(i.preco * i.qtd - i.desconto)}</div>
-                {i.kind === "produto" && (
-                  <button className="pdv-mini" title="Desconto no item (exige administrador)" onClick={() => setDescontoItem(i)}>%</button>
-                )}
-                <button className="pdv-item-x" onClick={() => removerItem(i.key)}>×</button>
               </div>
             ))}
           </div>
 
           <div className="pdv-fechamento">
-            <label className="pdv-cliente">
-              Cliente {precisaCliente ? <span className="req">(obrigatório)</span> : "(opcional)"}
-              <select ref={clienteRef} value={clienteId} onChange={(e) => setClienteId(e.target.value)}>
-                <option value="">Consumidor / não identificado</option>
-                {data.clientes.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
-              </select>
-            </label>
+            <div className="pdv-cliente">
+              <span>Cliente {precisaCliente ? <span className="req">(obrigatório)</span> : "(opcional)"}</span>
+              <button type="button" className="pdv-cliente-btn" onClick={() => setClienteModalAberto(true)}>
+                <span className="pdv-cliente-nome">{clienteSelecionado ? clienteSelecionado.label : "Consumidor / não identificado"}</span>
+                <span className="pdv-cliente-acao">{clienteSelecionado ? "trocar" : "🔍 F6"}</span>
+              </button>
+            </div>
             {data.vendedores.length > 0 && (
               <label className="pdv-cliente">
                 Vendedor (comissão)
@@ -495,6 +499,148 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
           }}
         />
       )}
+      {clienteModalAberto && (
+        <ClienteModal
+          clientes={clientes}
+          selecionadoId={clienteId}
+          onSelecionar={(id) => { setClienteId(id); setClienteModalAberto(false); }}
+          onNovo={() => { setClienteModalAberto(false); setNovoClienteAberto(true); }}
+          onClose={() => setClienteModalAberto(false)}
+        />
+      )}
+      {novoClienteAberto && (
+        <NovoClientePdvModal
+          onCriado={(c) => {
+            setClientes((cur) => [c, ...cur.filter((x) => x.id !== c.id)]);
+            setClienteId(c.id);
+            setNovoClienteAberto(false);
+          }}
+          onClose={() => setNovoClienteAberto(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── Modal de seleção de cliente (busca + atalho para cadastrar) ─────────────────
+
+function ClienteModal({
+  clientes,
+  selecionadoId,
+  onSelecionar,
+  onNovo,
+  onClose
+}: {
+  clientes: PdvCliente[];
+  selecionadoId: string;
+  onSelecionar: (id: string) => void;
+  onNovo: () => void;
+  onClose: () => void;
+}) {
+  const [q, setQ] = useState("");
+  const filtrados = useMemo(() => {
+    const termo = q.trim().toLowerCase();
+    const base = termo
+      ? clientes.filter((c) => c.label.toLowerCase().includes(termo) || (c.documento ?? "").includes(termo.replace(/\D/g, "")))
+      : clientes;
+    return base.slice(0, 50);
+  }, [q, clientes]);
+
+  return (
+    <div className="pdv-modal-bg" onClick={onClose}>
+      <div className="pdv-modal pdv-modal-cliente" onClick={(e) => e.stopPropagation()}>
+        <h2>Cliente</h2>
+        <input
+          autoFocus
+          className="pdv-cliente-busca"
+          placeholder="Buscar por nome ou documento…"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+        />
+        <div className="pdv-cliente-lista">
+          <button type="button" className={`pdv-cliente-opt ${!selecionadoId ? "active" : ""}`} onClick={() => onSelecionar("")}>
+            <span>Consumidor / não identificado</span>
+            <small>venda sem cliente (NFC-e)</small>
+          </button>
+          {filtrados.map((c) => (
+            <button key={c.id} type="button" className={`pdv-cliente-opt ${c.id === selecionadoId ? "active" : ""}`} onClick={() => onSelecionar(c.id)}>
+              <span>{c.label}</span>
+              {c.documento && <small>{c.documento}</small>}
+            </button>
+          ))}
+          {filtrados.length === 0 && <p className="pdv-vazio">Nenhum cliente encontrado.</p>}
+        </div>
+        <div className="pdv-acoes">
+          <button className="pdv-limpar" onClick={onClose}>Fechar</button>
+          <button className="pdv-finalizar" onClick={onNovo}>+ Cadastrar novo</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Modal de cadastro rápido de cliente (no PDV) ────────────────────────────────
+
+function NovoClientePdvModal({ onCriado, onClose }: { onCriado: (c: PdvCliente) => void; onClose: () => void }) {
+  const [pj, setPj] = useState(false);
+  const [documento, setDocumento] = useState("");
+  const [nome, setNome] = useState("");
+  const [telefone, setTelefone] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  async function salvar() {
+    if (!nome.trim()) { setError(pj ? "Informe a razão social." : "Informe o nome."); return; }
+    setLoading(true);
+    setError("");
+    try {
+      const payload = {
+        razaoSocial: nome.trim(),
+        documento: documento.replace(/\D/g, ""),
+        status: "ATIVO",
+        contatos: telefone.trim() ? [{ nome: nome.trim(), telefone: telefone.trim(), principal: true }] : [],
+        enderecos: []
+      };
+      const res = await fetch("/api/erp/clientes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const d = (await res.json()) as { id?: string; error?: string };
+      if (!res.ok) throw new Error(d.error || "Não foi possível cadastrar o cliente.");
+      onCriado({ id: d.id ?? `tmp-${Date.now()}`, label: nome.trim(), documento: documento.replace(/\D/g, "") || null });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Não foi possível cadastrar o cliente.");
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="pdv-modal-bg" onClick={onClose}>
+      <div className="pdv-modal" onClick={(e) => e.stopPropagation()}>
+        <h2>Cadastro rápido de cliente</h2>
+        {error && <div className="alert danger">{error}</div>}
+        <div className="pdv-modelo">
+          <button className={!pj ? "active" : ""} onClick={() => setPj(false)}>Pessoa física</button>
+          <button className={pj ? "active" : ""} onClick={() => setPj(true)}>Pessoa jurídica</button>
+        </div>
+        <label className="pdv-cliente">{pj ? "Razão social" : "Nome completo"}
+          <input autoFocus value={nome} onChange={(e) => setNome(e.target.value)} placeholder={pj ? "Empresa LTDA" : "Nome do cliente"} />
+        </label>
+        <label className="pdv-cliente">{pj ? "CNPJ" : "CPF"} (opcional)
+          <input inputMode="numeric" value={documento} onChange={(e) => setDocumento(e.target.value)} placeholder="Somente números" />
+        </label>
+        <label className="pdv-cliente">Telefone (opcional)
+          <input inputMode="tel" value={telefone} onChange={(e) => setTelefone(e.target.value)} placeholder="(00) 00000-0000" />
+        </label>
+        <p className="block-muted" style={{ fontSize: 11, margin: "2px 0 0" }}>
+          Para NF-e (modelo 55), complete o endereço depois em Clientes — a NFC-e não exige.
+        </p>
+        <div className="pdv-acoes">
+          <button className="pdv-limpar" onClick={onClose} disabled={loading}>Cancelar</button>
+          <button className="pdv-finalizar" onClick={salvar} disabled={loading}>{loading ? "Salvando…" : "Cadastrar e usar"}</button>
+        </div>
+      </div>
     </div>
   );
 }
