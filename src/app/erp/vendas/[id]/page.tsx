@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/shared/PageHeader";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { getSaleDetail } from "@/lib/services/sales";
 import { SaleDetailActions } from "@/components/erp/SaleDetailActions";
+import { NotaFiscalRowActions } from "@/components/erp/NotaFiscalRowActions";
 import { getSession } from "@/lib/auth/session";
 import { isAdminPerfil } from "@/lib/auth/modules";
 import { VendaCalculoImposto } from "@/components/erp/VendaCalculoImposto";
@@ -94,15 +95,16 @@ export default async function VendaDetalhePage({ params }: { params: { id: strin
           <div className="erp-card-head"><div><h3>Notas fiscais</h3></div></div>
           <div className="erp-table-wrap">
             <table className="erp-table">
-              <thead><tr><th>Número</th><th>Modelo</th><th>Situação</th><th className="num">Total</th><th>Emitida</th></tr></thead>
+              <thead><tr><th>Número</th><th>Modelo</th><th>Situação</th><th className="num">Total</th><th>Emitida</th><th className="actions">Ações</th></tr></thead>
               <tbody>
                 {venda.notas.map((n) => (
                   <tr key={n.id}>
                     <td className="mono">{n.numero ?? "—"}</td>
-                    <td>{n.modelo}{n.finalidade === "DEVOLUCAO" ? " (devolução)" : ""}</td>
-                    <td>{n.status}</td>
+                    <td>{n.modeloLabel}{n.finalidadeLabel ? ` (${n.finalidadeLabel.toLowerCase()})` : ""}</td>
+                    <td><StatusBadge tone={n.statusTone}>{n.statusLabel}</StatusBadge></td>
                     <td className="num">{formatBrl(n.total)}</td>
                     <td>{n.emitidaEm ?? "—"}</td>
+                    <td className="actions"><NotaFiscalRowActions nota={n} /></td>
                   </tr>
                 ))}
               </tbody>

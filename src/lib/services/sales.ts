@@ -1,7 +1,21 @@
 import { getDevelopmentTenantScope, scopedByTenantCompany } from "@/lib/auth/dev-session";
 import { prisma } from "@/lib/db/prisma";
 import { formatBrl } from "@/lib/formatters/currency";
-import type { StatusPedido } from "@prisma/client";
+import type { StatusPedido, ModeloFiscal, FinalidadeNfe, StatusNotaFiscal } from "@prisma/client";
+
+const MODELO_NOTA_LABEL: Record<ModeloFiscal, string> = { NFE: "NF-e", NFCE: "NFC-e", NFSE: "NFS-e" };
+const FINALIDADE_NOTA_LABEL: Record<FinalidadeNfe, string> = {
+  NORMAL: "Normal", COMPLEMENTAR: "Complementar", AJUSTE: "Ajuste", DEVOLUCAO: "Devolução"
+};
+const STATUS_NOTA_LABEL: Record<StatusNotaFiscal, { label: string; tone: SaleSummary["statusTone"] }> = {
+  RASCUNHO: { label: "Rascunho", tone: "mute" },
+  PROCESSANDO: { label: "Processando", tone: "warn" },
+  AUTORIZADA: { label: "Autorizada", tone: "success" },
+  CANCELADA: { label: "Cancelada", tone: "danger" },
+  REJEITADA: { label: "Rejeitada", tone: "danger" },
+  DENEGADA: { label: "Denegada", tone: "danger" },
+  ERRO: { label: "Erro", tone: "danger" }
+};
 
 export type SaleSummary = {
   id: string;
@@ -22,6 +36,9 @@ export type SaleSummary = {
   canInvoice: boolean;
   canCancel: boolean;
   temNotaAutorizada: boolean;
+  /** NF-e/NFC-e de venda autorizada (para atalho de PDF/XML direto na lista). */
+  notaFiscalId: string | null;
+  notaCanDownload: boolean;
 };
 
 export type SaleDetail = SaleSummary & {
@@ -54,10 +71,21 @@ export type SaleDetail = SaleSummary & {
     id: string;
     numero: string | null;
     modelo: string;
+    modeloLabel: string;
     finalidade: string;
+    finalidadeLabel: string | null;
     status: string;
+    statusLabel: string;
+    statusTone: SaleSummary["statusTone"];
     total: number;
     emitidaEm: string | null;
+    chaveAcesso: string;
+    // Mesmas ações da tela de Notas Emitidas, disponíveis direto na venda.
+    canDownload: boolean;
+    canClone: boolean;
+    canDevolver: boolean;
+    canCorrect: boolean;
+    canCancel: boolean;
   }>;
 };
 
@@ -110,13 +138,18 @@ export async function listSales(): Promise<SaleSummary[]> {
       include: {
         cliente: { select: { razaoSocial: true, nomeFantasia: true } },
         itens: { select: { id: true } },
-        notasFiscais: { where: { status: "AUTORIZADA" }, select: { id: true } }
+        notasFiscais: {
+          where: { status: "AUTORIZADA" },
+          select: { id: true, finalidade: true, providerRef: true }
+        }
       },
       orderBy: { criadoEm: "desc" }
     });
 
     return pedidos.map((p) => {
       const temNota = p.notasFiscais.length > 0;
+      // Nota de VENDA (finalidade Normal) para o atalho de impressão; ignora devoluções.
+      const notaVenda = p.notasFiscais.find((n) => n.finalidade === "NORMAL") ?? null;
       return {
         id: p.id,
         numero: p.numero,
@@ -135,7 +168,9 @@ export async function listSales(): Promise<SaleSummary[]> {
         canConfirm: p.status === "RASCUNHO" || p.status === "AGUARDANDO_PAGAMENTO",
         canInvoice: p.status === "AGUARDANDO_NOTA",
         canCancel: p.status !== "CANCELADO" && !temNota,
-        temNotaAutorizada: temNota
+        temNotaAutorizada: temNota,
+        notaFiscalId: notaVenda?.id ?? null,
+        notaCanDownload: Boolean(notaVenda?.providerRef)
       };
     });
   } catch (error) {
@@ -170,6 +205,7 @@ export async function getSaleDetail(id: string): Promise<SaleDetail | null> {
             total: true,
             emitidaEm: true,
             chaveAcesso: true,
+            providerRef: true,
             itens: { select: { produtoId: true, quantidade: true } }
           }
         }
@@ -182,6 +218,8 @@ export async function getSaleDetail(id: string): Promise<SaleDetail | null> {
     const temNotaVendaComChave = p.notasFiscais.some(
       (n) => n.finalidade === "NORMAL" && n.status === "AUTORIZADA" && Boolean(n.chaveAcesso)
     );
+    // NF-e de venda (Normal) autorizada — usada no atalho de impressão da lista/detalhe.
+    const notaVendaPrincipal = p.notasFiscais.find((n) => n.finalidade === "NORMAL" && n.status === "AUTORIZADA") ?? null;
 
     // Quantidades já devolvidas por produto (devoluções autorizadas ou em processamento).
     const devolvidoPorProduto = new Map<string, number>();
@@ -222,6 +260,8 @@ export async function getSaleDetail(id: string): Promise<SaleDetail | null> {
       canInvoice: p.status === "AGUARDANDO_NOTA",
       canCancel: p.status !== "CANCELADO" && !temNota,
       temNotaAutorizada: temNota,
+      notaFiscalId: notaVendaPrincipal?.id ?? null,
+      notaCanDownload: Boolean(notaVendaPrincipal?.providerRef),
       canReturn: temNotaVendaComChave && (p.status === "ENVIADO" || p.status === "ENTREGUE"),
       itens: p.itens.map((item) => {
         // Distribui o devolvido do produto pelas linhas, na ordem (cobre produto repetido).
@@ -241,15 +281,33 @@ export async function getSaleDetail(id: string): Promise<SaleDetail | null> {
           total: Number(item.total)
         };
       }),
-      notas: p.notasFiscais.map((n) => ({
-        id: n.id,
-        numero: n.numero,
-        modelo: n.modelo,
-        finalidade: n.finalidade,
-        status: n.status,
-        total: Number(n.total),
-        emitidaEm: formatDate(n.emitidaEm)
-      }))
+      notas: p.notasFiscais.map((n) => {
+        const st = STATUS_NOTA_LABEL[n.status];
+        const podeBaixar = Boolean(n.providerRef) && (n.status === "AUTORIZADA" || n.status === "CANCELADA");
+        return {
+          id: n.id,
+          numero: n.numero,
+          modelo: n.modelo,
+          modeloLabel: MODELO_NOTA_LABEL[n.modelo],
+          finalidade: n.finalidade,
+          finalidadeLabel: n.finalidade === "NORMAL" ? null : FINALIDADE_NOTA_LABEL[n.finalidade],
+          status: n.status,
+          statusLabel: st.label,
+          statusTone: st.tone,
+          total: Number(n.total),
+          emitidaEm: formatDate(n.emitidaEm),
+          chaveAcesso: n.chaveAcesso ?? "",
+          canDownload: podeBaixar,
+          canClone: true,
+          canDevolver:
+            (n.modelo === "NFE" || n.modelo === "NFCE") &&
+            n.status === "AUTORIZADA" &&
+            Boolean(n.chaveAcesso) &&
+            n.finalidade === "NORMAL",
+          canCorrect: n.status === "AUTORIZADA" && n.modelo === "NFE",
+          canCancel: n.status === "AUTORIZADA"
+        };
+      })
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : "erro desconhecido";
