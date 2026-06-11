@@ -100,7 +100,7 @@ export async function listNotasFiscais(): Promise<NotaFiscalSummary[]> {
       // Clonar reaproveita a tela de emissão (produto e serviço).
       canClone: true,
       // Não se gera devolução de uma devolução (nem de complementar/ajuste).
-      canDevolver: nota.modelo === "NFE" && nota.status === "AUTORIZADA" && Boolean(nota.chaveAcesso) && nota.finalidade === "NORMAL",
+      canDevolver: (nota.modelo === "NFE" || nota.modelo === "NFCE") && nota.status === "AUTORIZADA" && Boolean(nota.chaveAcesso) && nota.finalidade === "NORMAL",
       // Excluir (admin): só notas SEM validade fiscal. NUNCA AUTORIZADA/CANCELADA (documento legal).
       canDelete: ["RASCUNHO", "ERRO", "REJEITADA", "DENEGADA"].includes(nota.status)
     };
@@ -256,7 +256,7 @@ export async function getNotaFiscalDetalhe(id: string): Promise<NotaFiscalDetalh
     canDownload: Boolean(nota.providerRef) && (nota.status === "AUTORIZADA" || nota.status === "CANCELADA"),
     canSync: Boolean(nota.providerRef) && (nota.status === "PROCESSANDO" || nota.status === "AUTORIZADA"),
     canClone: true,
-    canDevolver: nota.modelo === "NFE" && nota.status === "AUTORIZADA" && Boolean(nota.chaveAcesso) && nota.finalidade === "NORMAL"
+    canDevolver: (nota.modelo === "NFE" || nota.modelo === "NFCE") && nota.status === "AUTORIZADA" && Boolean(nota.chaveAcesso) && nota.finalidade === "NORMAL"
   };
 }
 
@@ -294,7 +294,23 @@ export type EmissaoPrefill = {
   chaveReferenciada: string | null;
   notaOrigemId: string | null;
   clienteId: string | null;
-  destinatario: { nome: string; documento: string; inscricaoEstadual: string; email: string };
+  destinatario: {
+    nome: string;
+    documento: string;
+    inscricaoEstadual: string;
+    email: string;
+    /** Endereço pré-preenchido (ex.: empresa como destinatário na devolução de NFC-e anônima). */
+    endereco?: {
+      logradouro: string;
+      numero: string;
+      complemento: string;
+      bairro: string;
+      cep: string;
+      cidade: string;
+      uf: string;
+      codigoMunicipioIbge: string;
+    };
+  };
   formaPagamento: string;
   condicaoPagamento: string;
   observacoes: string;
@@ -327,18 +343,53 @@ export async function getNotaFiscalPrefill(
   if (!nota) throw new Error("Nota fiscal não encontrada.");
 
   const isServico = nota.modelo === "NFSE";
-  const tipo: EmissaoPrefill["tipo"] = isServico ? "NFSE" : nota.modelo === "NFCE" ? "NFCE" : "NFE";
+  const isDevolucao = modo === "DEVOLUCAO";
 
-  if (modo === "DEVOLUCAO") {
-    if (nota.modelo !== "NFE") {
-      throw new Error("A devolução só é aplicável a NF-e (modelo 55).");
+  if (isDevolucao) {
+    if (nota.modelo === "NFSE") {
+      throw new Error("Devolução não se aplica a NFS-e (serviço).");
     }
     if (nota.status !== "AUTORIZADA" || !nota.chaveAcesso) {
-      throw new Error("Só é possível gerar devolução de uma NF-e autorizada (com chave de acesso).");
+      throw new Error("Só é possível gerar devolução de uma nota autorizada (com chave de acesso).");
     }
   }
 
-  const isDevolucao = modo === "DEVOLUCAO";
+  // A nota de devolução é sempre uma NF-e (mod 55) de ENTRADA — não existe NFC-e de entrada.
+  // Mesmo devolvendo uma NFC-e, o documento gerado é NF-e referenciando a chave da NFC-e.
+  const tipo: EmissaoPrefill["tipo"] = isServico ? "NFSE" : isDevolucao ? "NFE" : nota.modelo === "NFCE" ? "NFCE" : "NFE";
+
+  // Devolução de NFC-e a consumidor não identificado (sem cliente): o destinatário da NF-e de
+  // devolução passa a ser a própria empresa (entrada por devolução de consumidor anônimo).
+  let destinatarioNome = nota.destinatarioNome ?? "";
+  let destinatarioDocumento = nota.destinatarioDocumento ?? "";
+  let destinatarioIe = nota.destinatarioIe ?? "";
+  let destinatarioEmail = nota.destinatarioEmail ?? "";
+  let destinatarioEndereco: EmissaoPrefill["destinatario"]["endereco"] = undefined;
+  let clienteIdPrefill = nota.clienteId ?? null;
+
+  if (isDevolucao && !nota.clienteId) {
+    const empresa = await prisma.empresa.findFirst({
+      where: { id: scope.empresaId, tenantId: scope.tenantId }
+    });
+    if (empresa) {
+      clienteIdPrefill = null;
+      destinatarioNome = empresa.razaoSocial;
+      destinatarioDocumento = empresa.cnpj;
+      destinatarioIe = empresa.inscricaoEstadual ?? "";
+      destinatarioEmail = empresa.email ?? "";
+      destinatarioEndereco = {
+        logradouro: empresa.enderecoLogradouro ?? "",
+        numero: empresa.enderecoNumero ?? "",
+        complemento: empresa.enderecoComplemento ?? "",
+        bairro: empresa.enderecoBairro ?? "",
+        cep: empresa.enderecoCep ?? "",
+        cidade: empresa.enderecoCidade ?? "",
+        uf: empresa.enderecoUf ?? "",
+        codigoMunicipioIbge: empresa.codigoMunicipioIbge ?? ""
+      };
+    }
+  }
+
   const label = `${MODELO_LABEL[nota.modelo]} ${nota.numero ?? "-"}`;
 
   // NFS-e: reconstrói os serviços a partir dos itens persistidos da nota.
@@ -361,12 +412,13 @@ export async function getNotaFiscalPrefill(
     naturezaOperacao: isDevolucao ? "Devolução de venda" : (nota.naturezaOperacao ?? "Venda de mercadoria"),
     chaveReferenciada: isDevolucao ? (nota.chaveAcesso ?? null) : null,
     notaOrigemId: isDevolucao ? nota.id : null,
-    clienteId: nota.clienteId ?? null,
+    clienteId: clienteIdPrefill,
     destinatario: {
-      nome: nota.destinatarioNome ?? "",
-      documento: nota.destinatarioDocumento ?? "",
-      inscricaoEstadual: nota.destinatarioIe ?? "",
-      email: nota.destinatarioEmail ?? ""
+      nome: destinatarioNome,
+      documento: destinatarioDocumento,
+      inscricaoEstadual: destinatarioIe,
+      email: destinatarioEmail,
+      endereco: destinatarioEndereco
     },
     // Devolução não tem contraprestação financeira → "Sem pagamento" (tPag=90 na SEFAZ).
     formaPagamento: isDevolucao ? "Sem pagamento" : (nota.formaPagamento ?? ""),

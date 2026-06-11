@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import { scopedByTenantCompany } from "@/lib/auth/dev-session";
 import { createAuditLog } from "@/lib/audit/audit-service";
-import { exitStock, getDefaultDeposito } from "@/domains/stock/application/stock-service";
+import { exitStock, getDefaultDeposito, applyStockMovement } from "@/domains/stock/application/stock-service";
 import { buildDocumentFromPedido, buildNfseFromOrdemServico } from "@/domains/fiscal/document-builder";
 import { emitFiscalDocument, previewFiscalDocument } from "@/domains/fiscal/application/fiscal-emission-use-cases";
 import { getFiscalRuntimeConfig } from "@/domains/fiscal/application/fiscal-config-use-cases";
@@ -351,23 +351,39 @@ export async function emitProductInvoiceAvulsa(scope: TenantScope, input: Produc
     retryNotaId: input.retryNotaId ?? null
   });
 
-  // Baixa de estoque opcional (somente itens de catálogo) após autorização.
+  // Movimento de estoque opcional (somente itens de catálogo) após autorização. Devolução
+  // (finalidade DEVOLUCAO) faz ENTRADA — a mercadoria volta ao estoque; demais fazem SAÍDA.
   if (input.baixarEstoque && nota.status === "AUTORIZADA") {
     const itensCatalogo = input.itens.filter((i) => i.produtoId);
     if (itensCatalogo.length) {
+      const isDevolucao = (input.finalidade ?? "NORMAL") === "DEVOLUCAO";
       await prisma.$transaction(async (tx) => {
         const deposito = await getDefaultDeposito(tx, scope);
-        await exitStock(
-          tx,
-          scope,
-          itensCatalogo.map((i) => ({ produtoId: i.produtoId as string, depositoId: deposito.id, quantidade: i.quantidade })),
-          { documentoTipo: "NOTA_FISCAL_AVULSA", documentoId: nota.id, observacoes: `Baixa por emissão avulsa ${modelo} ${nota.numero ?? ""}`.trim() }
-        );
+        if (isDevolucao) {
+          for (const i of itensCatalogo) {
+            await applyStockMovement(tx, scope, {
+              produtoId: i.produtoId as string,
+              depositoId: deposito.id,
+              tipo: "ENTRADA",
+              quantidade: i.quantidade,
+              documentoTipo: "NOTA_FISCAL_AVULSA",
+              documentoId: nota.id,
+              observacoes: `Devolução por NF-e avulsa ${nota.numero ?? ""}`.trim()
+            });
+          }
+        } else {
+          await exitStock(
+            tx,
+            scope,
+            itensCatalogo.map((i) => ({ produtoId: i.produtoId as string, depositoId: deposito.id, quantidade: i.quantidade })),
+            { documentoTipo: "NOTA_FISCAL_AVULSA", documentoId: nota.id, observacoes: `Baixa por emissão avulsa ${modelo} ${nota.numero ?? ""}`.trim() }
+          );
+        }
         await createAuditLog(tx, {
           scope,
           entidade: "NotaFiscal",
           entidadeId: nota.id,
-          acao: "AVULSA_STOCK_EXIT",
+          acao: isDevolucao ? "AVULSA_STOCK_ENTRY" : "AVULSA_STOCK_EXIT",
           payload: { modelo, itens: itensCatalogo.length }
         });
       });

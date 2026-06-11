@@ -140,14 +140,14 @@ export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormDat
   const [avDocumento, setAvDocumento] = useState(initial?.destinatario.documento ?? "");
   const [avIe, setAvIe] = useState(initial?.destinatario.inscricaoEstadual ?? "");
   const [avEmail, setAvEmail] = useState(initial?.destinatario.email ?? "");
-  const [avLogradouro, setAvLogradouro] = useState("");
-  const [avNumero, setAvNumero] = useState("");
-  const [avComplemento, setAvComplemento] = useState("");
-  const [avBairro, setAvBairro] = useState("");
-  const [avCep, setAvCep] = useState("");
-  const [avCidade, setAvCidade] = useState("");
-  const [avUf, setAvUf] = useState(data.emitterUf ?? "");
-  const [avIbge, setAvIbge] = useState("");
+  const [avLogradouro, setAvLogradouro] = useState(initial?.destinatario.endereco?.logradouro ?? "");
+  const [avNumero, setAvNumero] = useState(initial?.destinatario.endereco?.numero ?? "");
+  const [avComplemento, setAvComplemento] = useState(initial?.destinatario.endereco?.complemento ?? "");
+  const [avBairro, setAvBairro] = useState(initial?.destinatario.endereco?.bairro ?? "");
+  const [avCep, setAvCep] = useState(initial?.destinatario.endereco?.cep ?? "");
+  const [avCidade, setAvCidade] = useState(initial?.destinatario.endereco?.cidade ?? "");
+  const [avUf, setAvUf] = useState(initial?.destinatario.endereco?.uf || data.emitterUf || "");
+  const [avIbge, setAvIbge] = useState(initial?.destinatario.endereco?.codigoMunicipioIbge ?? "");
   const { buscarCep: lkCep, buscarCnpj: lkCnpj, buscandoCep, buscandoCnpj, erro: lookupErro } = useCadastroLookup();
 
   async function preencherDestPorCnpj() {
@@ -185,7 +185,8 @@ export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormDat
   const [finalidade, setFinalidade] = useState<Finalidade>(initial?.finalidade ?? "NORMAL");
   const [formaPagamento, setFormaPagamento] = useState(initial?.formaPagamento || FORMAS_PAGAMENTO[0]);
   const [condicaoPagamento, setCondicaoPagamento] = useState(initial?.condicaoPagamento ?? "");
-  const [baixarEstoque, setBaixarEstoque] = useState(false);
+  // Devolução já marca para reentrar o estoque (a mercadoria voltou); emissão normal vem desmarcado.
+  const [baixarEstoque, setBaixarEstoque] = useState(initial?.modo === "DEVOLUCAO");
   const [codigoLc116Doc, setCodigoLc116Doc] = useState(initial?.codigoServicoLc116 ?? "");
 
   // ISS (NFS-e): natureza/exigibilidade, alíquota informada, deduções e base de cálculo
@@ -903,7 +904,11 @@ export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormDat
                 <label>Condição de pagamento<input value={condicaoPagamento} onChange={(e) => setCondicaoPagamento(e.target.value)} placeholder="Ex.: à vista, 30/60/90" /></label>
                 <label style={{ flexDirection: "row", alignItems: "center", gap: 10, cursor: "pointer" }}>
                   <input type="checkbox" checked={baixarEstoque} onChange={(e) => setBaixarEstoque(e.target.checked)} style={{ accentColor: "var(--erp-yellow-dk)", width: 16, height: 16 }} />
-                  <span style={{ fontSize: 12.5 }}>Baixar estoque dos itens de catálogo após autorização</span>
+                  <span style={{ fontSize: 12.5 }}>
+                    {finalidade === "DEVOLUCAO"
+                      ? "Reentrar no estoque os itens de catálogo (mercadoria devolvida) após autorização"
+                      : "Baixar estoque dos itens de catálogo após autorização"}
+                  </span>
                 </label>
               </div>
             ) : (
