@@ -62,15 +62,16 @@ export function SalesList({ sales, isAdmin = false }: Props) {
     }
   }
 
-  async function faturar(row: SaleSummary) {
-    if (!window.confirm(`Emitir NF-e para o pedido ${row.numero}?`)) return;
+  async function faturar(row: SaleSummary, modelo: "NFE" | "NFCE" = "NFE") {
+    const label = modelo === "NFCE" ? "NFC-e" : "NF-e";
+    if (!window.confirm(`Emitir ${label} para o pedido ${row.numero}?`)) return;
     setBusyId(row.id);
     setError("");
     try {
       const res = await fetch(`/api/erp/vendas/${row.id}/faturar`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ modelo: "NFE" })
+        body: JSON.stringify({ modelo })
       });
       const data = (await res.json()) as { error?: string; status?: string; numero?: string };
       if (!res.ok) throw new Error(data.error || "Não foi possível emitir a nota fiscal.");
@@ -223,9 +224,19 @@ export function SalesList({ sales, isAdmin = false }: Props) {
                       className="btn-erp ghost xs"
                       type="button"
                       disabled={busyId === row.id}
-                      onClick={() => faturar(row)}
+                      onClick={() => faturar(row, "NFE")}
                     >
                       {busyId === row.id ? "Processando..." : "Emitir NF-e"}
+                    </button>
+                  )}
+                  {row.canInvoice && (
+                    <button
+                      className="btn-erp ghost xs"
+                      type="button"
+                      disabled={busyId === row.id}
+                      onClick={() => faturar(row, "NFCE")}
+                    >
+                      {busyId === row.id ? "Processando..." : "Emitir NFC-e"}
                     </button>
                   )}
                   {row.canCancel && (
