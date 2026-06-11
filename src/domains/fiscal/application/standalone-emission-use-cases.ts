@@ -309,7 +309,8 @@ export async function buildProductInvoiceDocument(scope: TenantScope, input: Pro
  */
 function validateProductInvoiceForSefaz(
   linhas: Awaited<ReturnType<typeof buildProductInvoiceDocument>>["linhas"],
-  cliente: Awaited<ReturnType<typeof buildProductInvoiceDocument>>["cliente"]
+  cliente: Awaited<ReturnType<typeof buildProductInvoiceDocument>>["cliente"],
+  modelo: "NFE" | "NFCE" | "NFSE"
 ) {
   linhas.forEach((linha, index) => {
     const ncm = (linha.produto.ncm ?? "").replace(/\D/g, "");
@@ -317,6 +318,11 @@ function validateProductInvoiceForSefaz(
       throw new StandaloneEmissionError(`Item ${index + 1} (${linha.produto.nome}): informe o NCM com 8 dígitos (obrigatório na NF-e/NFC-e).`);
     }
   });
+
+  // Endereço do destinatário só é exigido na NF-e (mod 55). A NFC-e (mod 65) é venda a
+  // consumidor presencial: o endereço do destinatário é opcional e normalmente nem vai na nota.
+  if (modelo !== "NFE") return;
+
   const end = cliente.enderecos[0];
   if (!end || (end.logradouro ?? "").trim().length < 2) {
     throw new StandaloneEmissionError("Endereço do destinatário incompleto: o logradouro deve ter ao menos 2 caracteres (exigência da SEFAZ).");
@@ -337,7 +343,7 @@ export async function previewProductInvoiceAvulsa(scope: TenantScope, input: Pro
 
 export async function emitProductInvoiceAvulsa(scope: TenantScope, input: ProductInvoiceAvulsaInput) {
   const { doc, modelo, cliente, linhas } = await buildProductInvoiceDocument(scope, input);
-  validateProductInvoiceForSefaz(linhas, cliente);
+  validateProductInvoiceForSefaz(linhas, cliente, modelo);
 
   const nota = await emitFiscalDocument(scope, doc, {
     clienteId: input.receiver.clienteId ?? null,
