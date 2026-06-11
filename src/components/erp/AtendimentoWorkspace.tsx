@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { correspondeBusca } from "@/lib/search/normalize";
 import type { SaleFormData } from "@/lib/services/sales";
 import { useCadastroLookup } from "./useCadastroLookup";
+import { useRealtime } from "@/lib/realtime/useRealtime";
 
 type Tipo = "VENDA_BALCAO" | "PEDIDO_FATURADO" | "ORCAMENTO" | "OS";
 type Produto = SaleFormData["produtos"][number];
@@ -63,6 +64,14 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO" }: { d
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState<SuccessState | null>(null);
+
+  // Tempo real: atualiza o estoque disponível dos produtos enquanto o vendedor monta a venda
+  // (outra venda/caixa baixou ou reservou saldo). router.refresh() só re-busca os dados do
+  // servidor — o carrinho, o cliente e os modais (estado local) são preservados pelo React.
+  // Não atualiza no meio de um envio (saving) para não competir com a operação em curso.
+  useRealtime(["vendas"], () => {
+    if (!saving) router.refresh();
+  });
 
   const isOs = tipo === "OS";
   const isOrcamento = tipo === "ORCAMENTO";
