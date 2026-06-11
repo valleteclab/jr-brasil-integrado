@@ -99,6 +99,7 @@ const groups: ErpNavGroup[] = [
       { label: "Aparência", href: "/erp/configuracoes/aparencia", icon: "🎨" },
       { label: "Contas financeiras", href: "/erp/configuracoes/contas-financeiras", icon: "🏦" },
       { label: "Formas de pagamento", href: "/erp/configuracoes/formas-pagamento", icon: "💳" },
+      { label: "Máquinas de cartão", href: "/erp/configuracoes/maquinas-cartao", icon: "💳" },
       { label: "Emissão fiscal", href: "/erp/configuracoes/fiscal", icon: "⚙" },
       { label: "Catálogo Cosmos", href: "/erp/configuracoes/cosmos", icon: "🔎" },
       { label: "IA do ERP", href: "/erp/configuracoes/ia", icon: "✦" },

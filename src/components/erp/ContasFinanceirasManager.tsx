@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Button } from "@/components/shared/Button";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 
-type Conta = { id: string; nome: string; tipo: string; banco: string; agencia: string; conta: string; saldoInicial: number; ativo: boolean };
+type Conta = { id: string; nome: string; tipo: string; banco: string; agencia: string; conta: string; chavePix: string; tipoChavePix: string; saldoInicial: number; ativo: boolean };
 
 const TIPOS = [
   { value: "CAIXA", label: "Caixa (dinheiro)" },
@@ -13,9 +13,17 @@ const TIPOS = [
   { value: "CARTAO", label: "Cartão" }
 ];
 
+const TIPOS_CHAVE_PIX = [
+  { value: "CPF", label: "CPF" },
+  { value: "CNPJ", label: "CNPJ" },
+  { value: "EMAIL", label: "E-mail" },
+  { value: "TELEFONE", label: "Telefone" },
+  { value: "ALEATORIA", label: "Aleatória" }
+];
+
 const TIPO_LABEL: Record<string, string> = Object.fromEntries(TIPOS.map((t) => [t.value, t.label]));
 
-const VAZIO = { nome: "", tipo: "CAIXA", banco: "", agencia: "", conta: "", saldoInicial: "0" };
+const VAZIO = { nome: "", tipo: "CAIXA", banco: "", agencia: "", conta: "", chavePix: "", tipoChavePix: "", saldoInicial: "0" };
 
 export function ContasFinanceirasManager({ initial }: { initial: Conta[] }) {
   const [contas, setContas] = useState(initial);
@@ -40,6 +48,8 @@ export function ContasFinanceirasManager({ initial }: { initial: Conta[] }) {
       banco: conta.banco,
       agencia: conta.agencia,
       conta: conta.conta,
+      chavePix: conta.chavePix,
+      tipoChavePix: conta.tipoChavePix,
       saldoInicial: String(conta.saldoInicial)
     });
     setMessage("");
@@ -111,6 +121,17 @@ export function ContasFinanceirasManager({ initial }: { initial: Conta[] }) {
             <label>Conta<input value={form.conta} onChange={(e) => setForm({ ...form, conta: e.target.value })} /></label>
           </>
         )}
+        <label>
+          Chave PIX (opcional)
+          <input value={form.chavePix} onChange={(e) => setForm({ ...form, chavePix: e.target.value })} placeholder="Ex: CNPJ, e-mail, telefone ou chave aleatória" />
+        </label>
+        <label>
+          Tipo da chave PIX (opcional)
+          <select value={form.tipoChavePix} onChange={(e) => setForm({ ...form, tipoChavePix: e.target.value })}>
+            <option value="">— Nenhum —</option>
+            {TIPOS_CHAVE_PIX.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+          </select>
+        </label>
         {!editingId && (
           <label>Saldo inicial<input value={form.saldoInicial} onChange={(e) => setForm({ ...form, saldoInicial: e.target.value })} /></label>
         )}
@@ -126,7 +147,7 @@ export function ContasFinanceirasManager({ initial }: { initial: Conta[] }) {
       <div className="erp-table-wrap">
         <table className="erp-table">
           <thead>
-            <tr><th>Nome</th><th>Tipo</th><th>Banco/Conta</th><th>Situação</th><th className="actions">Ações</th></tr>
+            <tr><th>Nome</th><th>Tipo</th><th>Banco/Conta</th><th>Chave PIX</th><th>Situação</th><th className="actions">Ações</th></tr>
           </thead>
           <tbody>
             {contas.map((conta) => (
@@ -134,6 +155,7 @@ export function ContasFinanceirasManager({ initial }: { initial: Conta[] }) {
                 <td><strong>{conta.nome}</strong></td>
                 <td>{TIPO_LABEL[conta.tipo] ?? conta.tipo}</td>
                 <td>{[conta.banco, conta.agencia, conta.conta].filter(Boolean).join(" · ") || "-"}</td>
+                <td>{conta.chavePix ? `${conta.chavePix}${conta.tipoChavePix ? ` (${conta.tipoChavePix})` : ""}` : "-"}</td>
                 <td><StatusBadge tone={conta.ativo ? "success" : "mute"}>{conta.ativo ? "Ativa" : "Inativa"}</StatusBadge></td>
                 <td className="actions">
                   <button type="button" className="btn-erp ghost xs" onClick={() => editar(conta)}>Editar</button>
@@ -141,7 +163,7 @@ export function ContasFinanceirasManager({ initial }: { initial: Conta[] }) {
                 </td>
               </tr>
             ))}
-            {!contas.length && <tr><td colSpan={5}><div className="empty-st">Nenhuma conta cadastrada.</div></td></tr>}
+            {!contas.length && <tr><td colSpan={6}><div className="empty-st">Nenhuma conta cadastrada.</div></td></tr>}
           </tbody>
         </table>
       </div>

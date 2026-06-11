@@ -41,12 +41,16 @@ function required(value: unknown, label: string): string {
 
 // ─── Contas financeiras (ContaBancaria) ───────────────────────────────────────────
 
+export const TIPOS_CHAVE_PIX = ["CPF", "CNPJ", "EMAIL", "TELEFONE", "ALEATORIA"] as const;
+
 export type ContaFinanceiraInput = {
   nome?: string;
   tipo?: string;
   banco?: string | null;
   agencia?: string | null;
   conta?: string | null;
+  chavePix?: string | null;
+  tipoChavePix?: string | null;
   saldoInicial?: number | null;
   ativo?: boolean;
 };
@@ -78,6 +82,8 @@ export async function createContaFinanceira(scope: TenantScope, input: ContaFina
       banco: clean(input.banco) || null,
       agencia: clean(input.agencia) || null,
       conta: clean(input.conta) || null,
+      chavePix: clean(input.chavePix) || null,
+      tipoChavePix: clean(input.tipoChavePix).toUpperCase() || null,
       saldoInicial,
       saldoAtual: saldoInicial,
       ativo: input.ativo ?? true
@@ -99,6 +105,8 @@ export async function updateContaFinanceira(scope: TenantScope, id: string, inpu
       ...(input.banco !== undefined ? { banco: clean(input.banco) || null } : {}),
       ...(input.agencia !== undefined ? { agencia: clean(input.agencia) || null } : {}),
       ...(input.conta !== undefined ? { conta: clean(input.conta) || null } : {}),
+      ...(input.chavePix !== undefined ? { chavePix: clean(input.chavePix) || null } : {}),
+      ...(input.tipoChavePix !== undefined ? { tipoChavePix: clean(input.tipoChavePix).toUpperCase() || null } : {}),
       ...(input.ativo !== undefined ? { ativo: input.ativo } : {})
     }
   });
@@ -199,4 +207,78 @@ export async function archiveFormaPagamento(scope: TenantScope, id: string) {
   const forma = await prisma.formaPagamento.update({ where: { id }, data: { ativo: false } });
   await createAuditLog(prisma, { scope, entidade: "FormaPagamento", entidadeId: id, acao: "ARCHIVE", payload: { nome: forma.nome } });
   return forma;
+}
+
+// ─── Máquinas de cartão (MaquinaCartao) ───────────────────────────────────────────
+
+export type MaquinaCartaoInput = {
+  nome?: string;
+  adquirente?: string | null;
+  contaBancariaId?: string | null;
+  taxaDebito?: number | null;
+  taxaCredito?: number | null;
+  taxaCreditoParcelado?: number | null;
+  prazoDebitoDias?: number | null;
+  prazoCreditoDias?: number | null;
+  ativo?: boolean;
+};
+
+const num = (v: unknown, def = 0) => (Number.isFinite(Number(v)) ? Number(v) : def);
+const int = (v: unknown, def = 0) => Math.max(0, Math.round(num(v, def)));
+
+export async function listMaquinasCartao(scope: TenantScope) {
+  return prisma.maquinaCartao.findMany({
+    where: { tenantId: scope.tenantId, empresaId: scope.empresaId },
+    orderBy: [{ ativo: "desc" }, { nome: "asc" }]
+  });
+}
+
+export async function createMaquinaCartao(scope: TenantScope, input: MaquinaCartaoInput) {
+  const nome = required(input.nome, "Nome da máquina");
+  const m = await prisma.maquinaCartao.create({
+    data: {
+      tenantId: scope.tenantId,
+      empresaId: scope.empresaId,
+      nome,
+      adquirente: clean(input.adquirente) || null,
+      contaBancariaId: clean(input.contaBancariaId) || null,
+      taxaDebito: num(input.taxaDebito),
+      taxaCredito: num(input.taxaCredito),
+      taxaCreditoParcelado: num(input.taxaCreditoParcelado),
+      prazoDebitoDias: int(input.prazoDebitoDias, 1),
+      prazoCreditoDias: int(input.prazoCreditoDias, 30),
+      ativo: input.ativo ?? true
+    }
+  });
+  await createAuditLog(prisma, { scope, entidade: "MaquinaCartao", entidadeId: m.id, acao: "CREATE", payload: { nome } });
+  return m;
+}
+
+export async function updateMaquinaCartao(scope: TenantScope, id: string, input: MaquinaCartaoInput) {
+  const existente = await prisma.maquinaCartao.findFirst({ where: { id, tenantId: scope.tenantId, empresaId: scope.empresaId } });
+  if (!existente) throw new PaymentConfigError("Máquina de cartão não encontrada.");
+  const m = await prisma.maquinaCartao.update({
+    where: { id },
+    data: {
+      ...(input.nome !== undefined ? { nome: required(input.nome, "Nome da máquina") } : {}),
+      ...(input.adquirente !== undefined ? { adquirente: clean(input.adquirente) || null } : {}),
+      ...(input.contaBancariaId !== undefined ? { contaBancariaId: clean(input.contaBancariaId) || null } : {}),
+      ...(input.taxaDebito !== undefined ? { taxaDebito: num(input.taxaDebito) } : {}),
+      ...(input.taxaCredito !== undefined ? { taxaCredito: num(input.taxaCredito) } : {}),
+      ...(input.taxaCreditoParcelado !== undefined ? { taxaCreditoParcelado: num(input.taxaCreditoParcelado) } : {}),
+      ...(input.prazoDebitoDias !== undefined ? { prazoDebitoDias: int(input.prazoDebitoDias, 1) } : {}),
+      ...(input.prazoCreditoDias !== undefined ? { prazoCreditoDias: int(input.prazoCreditoDias, 30) } : {}),
+      ...(input.ativo !== undefined ? { ativo: input.ativo } : {})
+    }
+  });
+  await createAuditLog(prisma, { scope, entidade: "MaquinaCartao", entidadeId: m.id, acao: "UPDATE", payload: { nome: m.nome } });
+  return m;
+}
+
+export async function archiveMaquinaCartao(scope: TenantScope, id: string) {
+  const existente = await prisma.maquinaCartao.findFirst({ where: { id, tenantId: scope.tenantId, empresaId: scope.empresaId } });
+  if (!existente) throw new PaymentConfigError("Máquina de cartão não encontrada.");
+  const m = await prisma.maquinaCartao.update({ where: { id }, data: { ativo: false } });
+  await createAuditLog(prisma, { scope, entidade: "MaquinaCartao", entidadeId: id, acao: "ARCHIVE", payload: { nome: m.nome } });
+  return m;
 }

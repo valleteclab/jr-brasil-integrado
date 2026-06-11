@@ -6,7 +6,7 @@ import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
 export const dynamic = "force-dynamic";
 
 export default async function ContasFinanceirasPage() {
-  let contas: Array<{ id: string; nome: string; tipo: string; banco: string; agencia: string; conta: string; saldoInicial: number; ativo: boolean }> = [];
+  let contas: Array<{ id: string; nome: string; tipo: string; banco: string; agencia: string; conta: string; chavePix: string; tipoChavePix: string; saldoInicial: number; ativo: boolean }> = [];
   let loadError = "";
 
   try {
@@ -19,6 +19,8 @@ export default async function ContasFinanceirasPage() {
       banco: c.banco ?? "",
       agencia: c.agencia ?? "",
       conta: c.conta ?? "",
+      chavePix: c.chavePix ?? "",
+      tipoChavePix: c.tipoChavePix ?? "",
       saldoInicial: Number(c.saldoInicial),
       ativo: c.ativo
     }));

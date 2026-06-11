@@ -338,6 +338,7 @@ model Empresa {
   spedXmlDocumentos  SpedXmlDocumento[]
   ciapBens           CiapBem[]
   contasBancarias    ContaBancaria[]
+  maquinasCartao     MaquinaCartao[]
   formasPagamento    FormaPagamento[]
   movimentosFinanceiros MovimentoFinanceiro[]
   vendedores         Vendedor[]
@@ -2028,6 +2029,9 @@ model ContaBancaria {
   agencia        String?
   conta          String?
   tipo           String                @default("CORRENTE")
+  // Chave PIX recebedora desta conta (para escolher no recebimento). tipoChavePix: CPF|CNPJ|EMAIL|TELEFONE|ALEATORIA.
+  chavePix       String?
+  tipoChavePix   String?
   saldoInicial   Decimal               @default(0) @db.Decimal(14, 2)
   saldoAtual     Decimal               @default(0) @db.Decimal(14, 2)
   ativo          Boolean               @default(true)
@@ -2257,9 +2261,39 @@ model PagamentoVenda {
   forma         String
   valor         Decimal     @db.Decimal(14, 2)
   troco         Decimal     @default(0) @db.Decimal(14, 2)
+  // Detalhe do recebimento: destino e dados da transação.
+  contaBancariaId String?   // conta/chave PIX (ou transferência) que recebeu
+  maquinaCartaoId String?   // máquina de cartão usada
+  nsu           String?     // NSU/identificador da transação do cartão
+  bandeira      String?     // VISA, MASTERCARD, ELO...
+  parcelas      Int?        // nº de parcelas (cartão crédito)
+  autorizacao   String?     // código de autorização
   criadoEm      DateTime    @default(now())
 
   @@index([tenantId, empresaId, pedidoVendaId])
+}
+
+/// Máquina de cartão (maquininha) da empresa. Define a adquirente, a conta de liquidação e as
+/// taxas/prazos usados para gerar o recebível (conta a receber da adquirente) no recebimento.
+model MaquinaCartao {
+  id                   String   @id @default(cuid())
+  tenantId             String
+  empresaId            String
+  empresa              Empresa  @relation(fields: [empresaId], references: [id])
+  nome                 String
+  adquirente           String?
+  contaBancariaId      String?  // conta onde os recebíveis liquidam
+  taxaDebito           Decimal  @default(0) @db.Decimal(6, 3)
+  taxaCredito          Decimal  @default(0) @db.Decimal(6, 3)
+  taxaCreditoParcelado Decimal  @default(0) @db.Decimal(6, 3)
+  prazoDebitoDias      Int      @default(1)
+  prazoCreditoDias     Int      @default(30)
+  ativo                Boolean  @default(true)
+  criadoEm             DateTime @default(now())
+  atualizadoEm         DateTime @updatedAt
+
+  @@unique([tenantId, empresaId, nome])
+  @@index([tenantId, empresaId])
 }
 
 model ConversaAgente {
