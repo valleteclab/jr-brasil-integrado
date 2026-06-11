@@ -16,6 +16,7 @@ import type { ProviderContext } from "../providers/types";
 import { getFiscalRuntimeConfig } from "./fiscal-config-use-cases";
 import { lookupCep } from "@/lib/lookup/cadastro-lookup";
 import { isValidCnpj } from "@/lib/fiscal/documento";
+import { publishRealtime } from "@/lib/realtime/broker";
 
 const TX_OPTIONS = { maxWait: 10000, timeout: 30000 };
 
@@ -633,6 +634,9 @@ export async function emitFiscalDocument(
     return nota;
   }, TX_OPTIONS);
 
+  // Tempo real: a lista de notas (/erp/fiscal) reflete a nova nota sem F5.
+  publishRealtime(scope, "fiscal");
+
   return updated;
 }
 
@@ -718,6 +722,9 @@ export async function cancelNotaFiscal(scope: TenantScope, notaId: string, justi
     if (!authorized) {
       throw new Error(result.motivo || "Provedor rejeitou o cancelamento da nota fiscal.");
     }
+
+    // Tempo real: a lista de notas reflete o cancelamento.
+    publishRealtime(scope, "fiscal");
 
     return { id: nota.id, status: "CANCELADA" as const, eventoId: evento.id };
   }, TX_OPTIONS);

@@ -485,6 +485,10 @@ export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormDat
         chaveAcesso: payload.chaveAcesso ?? null,
         motivo: payload.motivo ?? null
       });
+      // Impressão automática: abre o DANFE/cupom quando a nota é autorizada (igual ao caixa/PDV).
+      if (payload.status === "AUTORIZADA" && payload.id) {
+        window.open(`/api/erp/fiscal/${payload.id}/pdf`, "_blank", "noopener,noreferrer");
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível emitir a nota fiscal.");
     } finally {

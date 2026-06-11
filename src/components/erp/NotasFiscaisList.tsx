@@ -1,8 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type { NotaFiscalSummary } from "@/lib/services/fiscal";
+import { useRealtime } from "@/lib/realtime/useRealtime";
 
 type Props = {
   notas: NotaFiscalSummary[];
@@ -11,10 +13,28 @@ type Props = {
 };
 
 export function NotasFiscaisList({ notas, isAdmin = false }: Props) {
+  const router = useRouter();
   const [rows, setRows] = useState(notas);
   const [query, setQuery] = useState("");
   const [error, setError] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
+
+  // Mantém a lista em dia com o servidor após cada refresh.
+  useEffect(() => setRows(notas), [notas]);
+
+  // Ao entrar/voltar para a tela (ex.: vindo da emissão), busca a última nota — o cache do
+  // router poderia servir uma versão antiga sem a nota recém-emitida.
+  useEffect(() => {
+    router.refresh();
+    const onFocus = () => router.refresh();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [router]);
+
+  // Tempo real: notas emitidas/canceladas (aqui ou por outro operador) aparecem sem F5.
+  useRealtime(["fiscal"], () => {
+    if (!busyId) router.refresh();
+  });
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
