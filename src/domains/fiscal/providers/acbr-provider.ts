@@ -247,8 +247,13 @@ function icmsGroup(
   if (simples) {
     const csosn = (taxes?.csosn ?? "102").padStart(3, "0");
     if (csosn === "500") {
-      // Substituído: ICMS retido na operação anterior (vBCSTRet/vICMSSTRet, podem ser 0).
-      return { ICMSSN500: { orig, CSOSN: csosn, vBCSTRet: round2(taxes?.baseIcmsSt ?? 0), vICMSSTRet: round2(taxes?.valorIcmsSt ?? 0) } };
+      // Substituído: ICMS retido na operação anterior. A ordem do schema é
+      // vBCSTRet → pST → vICMSSTRet (pST = alíquota suportada pelo consumidor final). Todos
+      // podem ser 0 quando o valor de ST não está disponível (apenas informativo).
+      const vBCSTRet = round2(taxes?.baseIcmsSt ?? 0);
+      const vICMSSTRet = round2(taxes?.valorIcmsSt ?? 0);
+      const pST = vBCSTRet > 0 ? round2((vICMSSTRet / vBCSTRet) * 100) : 0;
+      return { ICMSSN500: { orig, CSOSN: csosn, vBCSTRet, pST, vICMSSTRet } };
     }
     if (csosn === "101") {
       return { ICMSSN101: { orig, CSOSN: csosn, pCredSN: taxes?.aliquotaIcms ?? 0, vCredICMSSN: round2(taxes?.valorIcms ?? 0) } };
@@ -261,8 +266,13 @@ function icmsGroup(
 
   const cst = (taxes?.cstIcms ?? "00").padStart(2, "0");
   if (cst === "60") {
-    // Revenda de mercadoria com ICMS-ST recolhido: sem ICMS próprio; informa o retido (pode ser 0).
-    return { ICMS60: { orig, CST: cst, vBCSTRet: round2(taxes?.baseIcmsSt ?? 0), vICMSSTRet: round2(taxes?.valorIcmsSt ?? 0) } };
+    // Revenda de mercadoria com ICMS-ST recolhido: sem ICMS próprio. A ordem exigida pelo
+    // schema é vBCSTRet → pST → vICMSSTRet (pST = alíquota suportada pelo consumidor final).
+    // Valores podem ser 0 quando o ST retido não está disponível (apenas informativo).
+    const vBCSTRet = round2(taxes?.baseIcmsSt ?? 0);
+    const vICMSSTRet = round2(taxes?.valorIcmsSt ?? 0);
+    const pST = vBCSTRet > 0 ? round2((vICMSSTRet / vBCSTRet) * 100) : 0;
+    return { ICMS60: { orig, CST: cst, vBCSTRet, pST, vICMSSTRet } };
   }
   if (["40", "41", "50"].includes(cst)) {
     return { ICMS40: { orig, CST: cst } };
