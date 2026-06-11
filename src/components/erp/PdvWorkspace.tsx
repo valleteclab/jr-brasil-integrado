@@ -340,7 +340,18 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
   }
 
   return (
-    <div className="pdv">
+    <div className="pdv" aria-busy={loading}>
+      {loading && (
+        <div className="fiscal-busy" role="alertdialog" aria-live="assertive" aria-label="Emitindo">
+          <div className="fiscal-busy-card">
+            <div className="fiscal-spinner" aria-hidden="true" />
+            <div>
+              <strong>Emitindo {modeloProduto === "NFE" ? "NF-e" : "NFC-e"}…</strong>
+              <small>Enviando à SEFAZ pela ACBr. Pode levar alguns segundos — não feche a tela.</small>
+            </div>
+          </div>
+        </div>
+      )}
       <header className="pdv-top">
         <div className="pdv-brand">🛒 PDV</div>
         <input
