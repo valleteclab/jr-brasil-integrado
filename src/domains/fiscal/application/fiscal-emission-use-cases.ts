@@ -1,5 +1,6 @@
 import type { ModeloFiscal, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
+import { runInTransaction } from "@/lib/db/with-tx-retry";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import { createAuditLog } from "@/lib/audit/audit-service";
 import { nextFiscalNumber } from "@/lib/numbering";
@@ -508,7 +509,7 @@ export async function emitFiscalDocument(
     cClassTrib: taxes.cClassTrib
   }));
 
-  const created = await prisma.$transaction(async (tx) => {
+  const created = await runInTransaction(async (tx) => {
     // Reenvio: se for indicada uma nota anterior rejeitada/erro (mesmo modelo), reaproveita
     // o registro e a numeração já atribuída (não autorizada) em vez de criar uma nova nota.
     const retry = links.retryNotaId
@@ -602,7 +603,7 @@ export async function emitFiscalDocument(
     );
   } catch (error) {
     const motivo = error instanceof Error ? error.message : "Falha de comunicação com o provedor fiscal.";
-    await prisma.$transaction(async (tx) => {
+    await runInTransaction(async (tx) => {
       await tx.notaFiscal.update({ where: { id: created.id }, data: { status: "ERRO", motivo } });
       await createAuditLog(tx, { scope, entidade: "NotaFiscal", entidadeId: created.id, acao: "EMIT_ERROR", payload: { motivo } });
     });
@@ -610,7 +611,7 @@ export async function emitFiscalDocument(
   }
 
   // 3) Atualiza com o resultado do provedor.
-  const updated = await prisma.$transaction(async (tx) => {
+  const updated = await runInTransaction(async (tx) => {
     const authorized = emitResult.status === "AUTORIZADA";
     const nota = await tx.notaFiscal.update({
       where: { id: created.id },
@@ -696,7 +697,7 @@ export async function cancelNotaFiscal(scope: TenantScope, notaId: string, justi
     }
   );
 
-  return prisma.$transaction(async (tx) => {
+  return runInTransaction(async (tx) => {
     const authorized = result.status === "AUTORIZADO";
     const evento = await tx.notaFiscalEvento.create({
       data: {
@@ -779,7 +780,7 @@ export async function createCartaCorrecao(scope: TenantScope, notaId: string, co
     }
   );
 
-  return prisma.$transaction(async (tx) => {
+  return runInTransaction(async (tx) => {
     const authorized = result.status === "AUTORIZADO";
     const evento = await tx.notaFiscalEvento.create({
       data: {
@@ -877,7 +878,7 @@ export async function deleteNotaFiscal(scope: TenantScope, id: string) {
     );
   }
 
-  return prisma.$transaction(async (tx) => {
+  return runInTransaction(async (tx) => {
     await tx.contaReceber.updateMany({ where: { notaFiscalId: id }, data: { notaFiscalId: null } });
     await tx.notaFiscal.updateMany({ where: { notaOrigemId: id }, data: { notaOrigemId: null } });
     await tx.notaFiscalItem.deleteMany({ where: { notaFiscalId: id } });

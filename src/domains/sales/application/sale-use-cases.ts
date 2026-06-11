@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db/prisma";
+import { runInTransaction } from "@/lib/db/with-tx-retry";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import { scopedByTenantCompany } from "@/lib/auth/dev-session";
 import { createAuditLog } from "@/lib/audit/audit-service";
@@ -47,7 +48,7 @@ export type CreateSaleInput = {
 export async function createSale(scope: TenantScope, input: CreateSaleInput) {
   if (!input.itens || input.itens.length === 0) throw new Error("Pedido deve ter ao menos um item.");
 
-  const pedidoCriado = await prisma.$transaction(async (tx) => {
+  const pedidoCriado = await runInTransaction(async (tx) => {
     const numero = await nextDocumentNumber(tx, scope, "PV", tx.pedidoVenda);
 
     // Deposito: usa o informado ou resolve o padrão
@@ -182,7 +183,7 @@ export async function confirmSale(scope: TenantScope, id: string, options?: Conf
 
   const modoContasReceber = options?.contasReceber ?? "AUTO";
 
-  const confirmado = await prisma.$transaction(async (tx) => {
+  const confirmado = await runInTransaction(async (tx) => {
     // Efetiva saída de estoque commitando as reservas
     await commitReservationsAsExit(tx, scope, "PEDIDO_VENDA", id, {
       documentoTipo: "PEDIDO_VENDA",
@@ -311,7 +312,7 @@ export async function editConfirmedSale(scope: TenantScope, id: string, input: E
       where: { tenantId: scope.tenantId, empresaId: scope.empresaId, pedidoVendaId: id }
     })) > 0;
 
-  const atualizado = await prisma.$transaction(async (tx) => {
+  const atualizado = await runInTransaction(async (tx) => {
     const depositoId = pedido.depositoId ?? (await getDefaultDeposito(tx, scope)).id;
 
     // 1. Estorna o estoque dos itens atuais devolvendo ao saldo. Usa ENTRADA (mesmo padrão da
@@ -587,7 +588,7 @@ export async function invoiceSale(scope: TenantScope, id: string, options?: { mo
   }
 
   // Atualiza pedido e ContaReceber em transação separada após retorno
-  await prisma.$transaction(async (tx) => {
+  await runInTransaction(async (tx) => {
     await tx.pedidoVenda.update({
       where: { id },
       data: {
@@ -710,7 +711,7 @@ export async function cancelSale(scope: TenantScope, id: string) {
     );
   }
 
-  const cancelado = await prisma.$transaction(async (tx) => {
+  const cancelado = await runInTransaction(async (tx) => {
     const statusFaturados = ["ENVIADO", "ENTREGUE"];
     const jaFaturado = statusFaturados.includes(pedido.status);
 
@@ -805,7 +806,7 @@ export async function deleteSale(scope: TenantScope, id: string) {
     throw new Error("Há nota fiscal autorizada vinculada. Cancele a nota antes de excluir o pedido.");
   }
 
-  return prisma.$transaction(async (tx) => {
+  return runInTransaction(async (tx) => {
     // Libera reservas de estoque que ainda existam (rascunho).
     await releaseReservations(tx, scope, "PEDIDO_VENDA", id);
 
