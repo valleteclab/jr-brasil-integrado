@@ -27,6 +27,29 @@ function onlyDigits(value: string | null | undefined): string {
   return (value ?? "").replace(/\D/g, "");
 }
 
+/**
+ * UF de destino EFETIVA para CFOP/tributação. A NFC-e (mod 65) é sempre operação interna
+ * (consumidor final presencial): a SEFAZ exige idDest=1 e CFOP 5xxx, então o destino efetivo
+ * é a UF do próprio emitente — independentemente de o cliente ter endereço em outra UF.
+ */
+function resolveUfDestino(modelo: ModeloFiscal, ufEmitente: string | null, ufDestinatario: string | null): string | null {
+  return modelo === "NFCE" ? ufEmitente : ufDestinatario;
+}
+
+/**
+ * CFOP de uma venda de SAÍDA, respeitando o CFOP do cadastro do produto SOMENTE quando ele é
+ * um CFOP de saída válido para o modelo:
+ *  - NF-e (55): 5xxx (interna) ou 6xxx (interestadual).
+ *  - NFC-e (65): 5xxx apenas (nunca interestadual).
+ * Caso contrário deriva pelo contexto. Isso evita herdar CFOP de ENTRADA (1xxx/2xxx — comum em
+ * produtos importados de XML do fornecedor) ou interestadual numa NFC-e, que a SEFAZ rejeita.
+ */
+function resolveCfopSaida(modelo: ModeloFiscal, cfopItem: string | null | undefined, ctx: Parameters<typeof resolveCfopVenda>[0]): string {
+  const cfop = onlyDigits(cfopItem);
+  const valido = modelo === "NFCE" ? /^5\d{3}$/.test(cfop) : /^[56]\d{3}$/.test(cfop);
+  return valido ? cfop : resolveCfopVenda(ctx);
+}
+
 function isIbgeMunicipio(value: string | null | undefined): boolean {
   return /^\d{7}$/.test(onlyDigits(value));
 }
@@ -200,17 +223,19 @@ export async function previewFiscalDocument(
     (document.modelo === "NFE" ? config.serieNfe : document.modelo === "NFCE" ? config.serieNfce : config.serieNfse);
 
   const rules = await loadSalesTaxRules(prisma, scope);
+  // NFC-e é sempre interna: destino efetivo = UF do emitente (espelha a emissão real).
+  const ufDestino = resolveUfDestino(document.modelo, config.emitter.uf, document.destinatario.uf);
   const totals = emptyTotals();
   const itens: FiscalPreviewItem[] = document.itens.map((item, index) => {
     const taxes = computeItemTaxes(item, rules, {
       regime: config.regime,
       ufOrigem: config.emitter.uf,
-      ufDestino: document.destinatario.uf,
+      ufDestino,
       servico: item.servico
     });
     const cfopCtx = {
       ufOrigem: config.emitter.uf,
-      ufDestino: document.destinatario.uf,
+      ufDestino,
       substituicaoTributaria: isSubstituicaoTributaria(taxes)
     };
     let cfop: string | null;
@@ -218,7 +243,7 @@ export async function previewFiscalDocument(
     else if (document.finalidade === "DEVOLUCAO") {
       const explicitoEntrada = item.cfop && /^[12]/.test(item.cfop) ? item.cfop : null;
       cfop = explicitoEntrada ?? resolveCfopDevolucao(cfopCtx);
-    } else cfop = item.cfop ?? resolveCfopVenda(cfopCtx);
+    } else cfop = resolveCfopSaida(document.modelo, item.cfop, cfopCtx);
     accumulateTotals(totals, item, taxes);
     return {
       numeroItem: index + 1,
@@ -337,19 +362,21 @@ export async function emitFiscalDocument(
     (modelo === "NFE" ? config.serieNfe : modelo === "NFCE" ? config.serieNfce : config.serieNfse);
 
   const rules = await loadSalesTaxRules(prisma, scope);
+  // NFC-e é sempre interna: o destino efetivo para CFOP e tributação é a UF do emitente.
+  const ufDestino = resolveUfDestino(document.modelo, config.emitter.uf, document.destinatario.uf);
   const totals = emptyTotals();
   const computedItems = document.itens.map((item, index) => {
     const taxes = computeItemTaxes(item, rules, {
       regime: config.regime,
       ufOrigem: config.emitter.uf,
-      ufDestino: document.destinatario.uf,
+      ufDestino,
       servico: item.servico
     });
     // CFOP automático para mercadorias: respeita CFOP explícito do item; senão deriva de
     // origem/destino e da existência de substituição tributária nos tributos calculados.
     const cfopCtx = {
       ufOrigem: config.emitter.uf,
-      ufDestino: document.destinatario.uf,
+      ufDestino,
       substituicaoTributaria: isSubstituicaoTributaria(taxes)
     };
     let cfop: string | null;
@@ -361,7 +388,7 @@ export async function emitFiscalDocument(
       const explicitoEntrada = item.cfop && /^[12]/.test(item.cfop) ? item.cfop : null;
       cfop = explicitoEntrada ?? resolveCfopDevolucao(cfopCtx);
     } else {
-      cfop = item.cfop ?? resolveCfopVenda(cfopCtx);
+      cfop = resolveCfopSaida(document.modelo, item.cfop, cfopCtx);
     }
     accumulateTotals(totals, item, taxes);
     return { item, taxes, cfop, numeroItem: index + 1 };
