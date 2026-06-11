@@ -34,7 +34,10 @@ export async function runInTransaction<T>(
   fn: (tx: Prisma.TransactionClient) => Promise<T>,
   options?: { maxWait?: number; timeout?: number; retries?: number }
 ): Promise<T> {
-  const retries = options?.retries ?? 2;
+  // Mais tentativas: o proxy do Railway pode manter VÁRIAS conexões ociosas mortas no pool; cada
+  // erro evicta uma, então pode levar algumas tentativas (com intervalo p/ reconectar) até pegar
+  // uma conexão viva. O backoff cresce até ~2s.
+  const retries = options?.retries ?? 4;
   let lastError: unknown;
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
@@ -45,7 +48,7 @@ export async function runInTransaction<T>(
     } catch (error) {
       lastError = error;
       if (!isTransient(error) || attempt === retries) throw error;
-      await delay(300 * (attempt + 1)); // backoff curto antes de reexecutar
+      await delay(Math.min(2000, 300 * 2 ** attempt)); // 300, 600, 1200, 2000…
     }
   }
   throw lastError;

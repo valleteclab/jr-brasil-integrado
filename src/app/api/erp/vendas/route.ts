@@ -7,7 +7,10 @@ export async function POST(request: Request) {
     const scope = await getDevelopmentTenantScope();
     const body = await request.json();
 
-    if (!body.clienteId) {
+    // Venda de balcão/PDV admite consumidor não identificado (emite NFC-e). Demais canais
+    // (faturado/delivery) exigem cliente, pois costumam emitir NF-e (destinatário obrigatório).
+    const canalSemCliente = ["BALCAO", "PDV"].includes(String(body.canal ?? "").toUpperCase());
+    if (!body.clienteId && !canalSemCliente) {
       return NextResponse.json({ error: "Cliente é obrigatório." }, { status: 400 });
     }
     if (!body.itens || !Array.isArray(body.itens) || body.itens.length === 0) {
