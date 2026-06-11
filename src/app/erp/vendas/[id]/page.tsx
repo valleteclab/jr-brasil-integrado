@@ -34,6 +34,7 @@ export default async function VendaDetalhePage({ params }: { params: { id: strin
         canInvoice={venda.canInvoice}
         canCancel={venda.canCancel}
         canReturn={venda.canReturn}
+        canEdit={venda.status === "AGUARDANDO_NOTA" && !venda.temNotaAutorizada}
         temNotaAutorizada={venda.temNotaAutorizada}
         itens={venda.itens.map((i) => ({
           produtoId: i.produtoId,

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { EspelhoFiscalModal, type FiscalPreview } from "./EspelhoFiscal";
@@ -19,6 +20,8 @@ type Props = {
   canInvoice: boolean;
   canCancel: boolean;
   canReturn?: boolean;
+  /** Pedido confirmado, sem nota: pode ser editado (itens/condições) antes de faturar. */
+  canEdit?: boolean;
   temNotaAutorizada: boolean;
   /** Itens do pedido (para a devolução parcial). */
   itens?: ItemDevolucao[];
@@ -27,7 +30,7 @@ type Props = {
   status?: string;
 };
 
-export function SaleDetailActions({ id, numero, canConfirm, canInvoice, canCancel, canReturn = false, temNotaAutorizada, itens = [], isAdmin = false, status }: Props) {
+export function SaleDetailActions({ id, numero, canConfirm, canInvoice, canCancel, canReturn = false, canEdit = false, temNotaAutorizada, itens = [], isAdmin = false, status }: Props) {
   const router = useRouter();
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
@@ -110,7 +113,7 @@ export function SaleDetailActions({ id, numero, canConfirm, canInvoice, canCance
   }
 
   const podeExcluir = isAdmin && (status === "RASCUNHO" || status === "CANCELADO");
-  const semAcoes = !canConfirm && !canInvoice && !canCancel && !podeExcluir;
+  const semAcoes = !canConfirm && !canInvoice && !canCancel && !canEdit && !podeExcluir;
 
   return (
     <section className="erp-card">
@@ -119,6 +122,7 @@ export function SaleDetailActions({ id, numero, canConfirm, canInvoice, canCance
         {canConfirm && <button type="button" className="btn-erp primary sm" onClick={confirmar} disabled={!!busy}>{busy === "confirmar" ? "Confirmando…" : "Confirmar pedido"}</button>}
         {canInvoice && <button type="button" className="btn-erp primary sm" onClick={() => faturar("NFE")} disabled={!!busy}>{busy === "faturar" ? "Emitindo…" : "Emitir NF-e"}</button>}
         {canInvoice && <button type="button" className="btn-erp ghost sm" onClick={() => faturar("NFCE")} disabled={!!busy}>Emitir NFC-e</button>}
+        {canEdit && <Link className="btn-erp light sm" href={`/erp/vendas/${id}/editar`}>✏️ Editar pedido</Link>}
         <button type="button" className="btn-erp light sm" onClick={() => espelho("NFE")} disabled={!!busy}>{busy === "espelho" ? "Calculando…" : "🔍 Espelho fiscal"}</button>
         {canReturn && <button type="button" className="btn-erp ghost sm" onClick={() => setDevolucaoAberta(true)} disabled={!!busy}>↩ Devolver itens</button>}
         {canCancel && <button type="button" className="btn-erp danger sm" onClick={cancelar} disabled={!!busy}>{busy === "cancelar" ? "Cancelando…" : "Cancelar pedido"}</button>}

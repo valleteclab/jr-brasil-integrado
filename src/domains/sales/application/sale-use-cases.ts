@@ -245,6 +245,236 @@ export async function confirmSale(scope: TenantScope, id: string, options?: Conf
   return confirmado;
 }
 
+export type EditSaleInput = {
+  /** Quando informado, troca o cliente do pedido (null = consumidor anônimo). */
+  clienteId?: string | null;
+  condicaoPagamento?: string | null;
+  formaPagamento?: string | null;
+  observacoes?: string | null;
+  vendedorId?: string | null;
+  desconto?: number;
+  frete?: number;
+  itens: Array<{
+    produtoId: string;
+    quantidade: number;
+    precoUnitario: number;
+    desconto?: number;
+  }>;
+};
+
+/**
+ * Edita um pedido JÁ CONFIRMADO (AGUARDANDO_NOTA) antes de emitir a nota — acrescentar/
+ * remover itens, mudar quantidade/preço/desconto, cliente, condição e vendedor.
+ *
+ * Como o pedido já efetivou estoque e financeiro na confirmação, a edição é transacional e
+ * desfaz-e-refaz: estorna o estoque dos itens atuais, cancela as contas a receber em aberto e a
+ * comissão, troca os itens, e então reaplica tudo (nova saída de estoque, novas parcelas, nova
+ * comissão) com os totais recalculados. Bloqueia se já houver nota autorizada ou recebimento
+ * registrado — nesses casos o caminho correto é cancelar a nota / estornar o recebimento, ou usar
+ * a devolução depois de faturado.
+ */
+export async function editConfirmedSale(scope: TenantScope, id: string, input: EditSaleInput) {
+  if (!input.itens || input.itens.length === 0) throw new Error("Pedido deve ter ao menos um item.");
+
+  const pedido = await prisma.pedidoVenda.findFirst({
+    where: { id, ...scopedByTenantCompany(scope) },
+    include: {
+      itens: true,
+      notasFiscais: { where: { status: "AUTORIZADA" }, select: { id: true } }
+    }
+  });
+  if (!pedido) throw new Error("Pedido de venda não encontrado.");
+  if (pedido.status !== "AGUARDANDO_NOTA") {
+    throw new Error(
+      "Somente pedidos em 'Aguardando nota' podem ser editados aqui. Pedidos faturados usam devolução; pedidos em rascunho são editados antes da confirmação."
+    );
+  }
+  if (pedido.notasFiscais.length > 0) {
+    throw new Error("Há nota fiscal autorizada vinculada — cancele a nota antes de editar o pedido.");
+  }
+
+  // Bloqueia se já houve recebimento no contas a receber (não dá para reescrever parcelas pagas).
+  const jaRecebido = await prisma.contaReceber.findFirst({
+    where: { tenantId: scope.tenantId, empresaId: scope.empresaId, pedidoVendaId: id, valorPago: { gt: 0 } },
+    select: { id: true }
+  });
+  if (jaRecebido) {
+    throw new Error(
+      "Há recebimento registrado no contas a receber deste pedido. Estorne o recebimento antes de editar os itens."
+    );
+  }
+
+  // Preserva o modo financeiro original: se o pedido tinha contas a receber (venda a prazo),
+  // regenera-as; se não tinha (balcão/PDV à vista), não cria dívida surpresa na edição.
+  const tinhaContasReceber =
+    (await prisma.contaReceber.count({
+      where: { tenantId: scope.tenantId, empresaId: scope.empresaId, pedidoVendaId: id }
+    })) > 0;
+
+  const atualizado = await prisma.$transaction(async (tx) => {
+    const depositoId = pedido.depositoId ?? (await getDefaultDeposito(tx, scope)).id;
+
+    // 1. Estorna o estoque dos itens atuais devolvendo ao saldo. Usa ENTRADA (mesmo padrão da
+    //    devolução): no provedor de estoque, ESTORNO conta como saída — quem REPÕE saldo é a ENTRADA.
+    //    O custo do item é reaplicado para não distorcer o custo médio.
+    for (const item of pedido.itens) {
+      await applyStockMovement(tx, scope, {
+        produtoId: item.produtoId,
+        depositoId,
+        tipo: "ENTRADA",
+        quantidade: Number(item.quantidade),
+        custoUnitario: Number(item.custoUnitario),
+        documentoTipo: "PEDIDO_VENDA",
+        documentoId: id,
+        observacoes: `Estorno de estoque por edição do pedido ${pedido.numero}`
+      });
+    }
+
+    // 2. Cancela contas a receber em aberto e a comissão a pagar.
+    await tx.contaReceber.updateMany({
+      where: {
+        tenantId: scope.tenantId,
+        empresaId: scope.empresaId,
+        pedidoVendaId: id,
+        status: { in: ["ABERTO", "PARCIAL", "VENCIDO"] }
+      },
+      data: { status: "CANCELADO" }
+    });
+    await cancelarComissaoPedido(tx, scope, id);
+
+    // 3. Recalcula os itens com o custo médio atual dos produtos.
+    const produtoIds = input.itens.map((i) => i.produtoId);
+    const produtos = await tx.produto.findMany({
+      where: { id: { in: produtoIds }, ...scopedByTenantCompany(scope), ativo: true },
+      select: { id: true, custoMedio: true, precoCusto: true }
+    });
+    if (produtos.length !== new Set(produtoIds).size) {
+      throw new Error("Produto não encontrado ou inativo entre os itens informados.");
+    }
+    const custoMap = new Map(produtos.map((p) => [p.id, Number(p.custoMedio ?? p.precoCusto ?? 0)]));
+
+    const descontoGlobal = input.desconto ?? Number(pedido.desconto);
+    const freteGlobal = input.frete ?? Number(pedido.frete);
+    const itensMapped = input.itens.map((item) => {
+      const descItem = item.desconto ?? 0;
+      const total = item.quantidade * item.precoUnitario - descItem;
+      return { ...item, desconto: descItem, custoUnitario: custoMap.get(item.produtoId) ?? 0, total };
+    });
+    const subtotal = itensMapped.reduce((sum, i) => sum + i.total, 0);
+    const total = subtotal - descontoGlobal + freteGlobal;
+
+    // 4. Substitui os itens do pedido.
+    await tx.pedidoVendaItem.deleteMany({ where: { pedidoVendaId: id } });
+    await tx.pedidoVendaItem.createMany({
+      data: itensMapped.map((item) => ({
+        tenantId: scope.tenantId,
+        empresaId: scope.empresaId,
+        pedidoVendaId: id,
+        produtoId: item.produtoId,
+        quantidade: item.quantidade,
+        precoUnitario: item.precoUnitario,
+        custoUnitario: item.custoUnitario,
+        desconto: item.desconto,
+        total: item.total
+      }))
+    });
+
+    // 5. Resolve vendedor e cliente finais (mantém o atual quando o campo não vier no input).
+    let vendedorId = pedido.vendedorId;
+    let vendedorNome = pedido.vendedor;
+    if (input.vendedorId !== undefined) {
+      vendedorId = input.vendedorId;
+      if (input.vendedorId) {
+        const v = await tx.vendedor.findFirst({
+          where: { id: input.vendedorId, ...scopedByTenantCompany(scope), ativo: true }
+        });
+        if (!v) throw new Error("Vendedor não encontrado ou inativo.");
+        vendedorNome = v.nome;
+      } else {
+        vendedorNome = null;
+      }
+    }
+    const clienteId = input.clienteId !== undefined ? input.clienteId : pedido.clienteId;
+    const condicaoPagamento =
+      input.condicaoPagamento !== undefined ? input.condicaoPagamento : pedido.condicaoPagamento;
+
+    // 6. Atualiza o pedido com novos totais/dados.
+    const updated = await tx.pedidoVenda.update({
+      where: { id },
+      data: {
+        clienteId,
+        condicaoPagamento,
+        formaPagamento: input.formaPagamento !== undefined ? input.formaPagamento : pedido.formaPagamento,
+        observacoes: input.observacoes !== undefined ? input.observacoes : pedido.observacoes,
+        vendedorId,
+        vendedor: vendedorNome,
+        desconto: descontoGlobal,
+        frete: freteGlobal,
+        subtotal,
+        total
+      }
+    });
+
+    // 7. Nova saída de estoque para os itens vigentes.
+    for (const item of itensMapped) {
+      await applyStockMovement(tx, scope, {
+        produtoId: item.produtoId,
+        depositoId,
+        tipo: "SAIDA",
+        quantidade: item.quantidade,
+        custoUnitario: item.custoUnitario,
+        documentoTipo: "PEDIDO_VENDA",
+        documentoId: id,
+        observacoes: `Saída por edição do pedido ${pedido.numero}`
+      });
+    }
+
+    // 8. Regenera as contas a receber (mesma regra do confirmSale), preservando o modo original.
+    if (clienteId && tinhaContasReceber) {
+      const parcelas = gerarParcelas(total, condicaoPagamento);
+      for (const parcela of parcelas) {
+        await tx.contaReceber.create({
+          data: {
+            tenantId: scope.tenantId,
+            empresaId: scope.empresaId,
+            clienteId,
+            pedidoVendaId: id,
+            descricao: `Pedido ${pedido.numero}${rotuloParcela(parcela)}`,
+            numeroDocumento: pedido.numero,
+            origem: "VENDA",
+            formaPagamento: updated.formaPagamento ?? null,
+            vencimento: parcela.vencimento,
+            valor: parcela.valor,
+            valorPago: 0,
+            juros: 0,
+            multa: 0,
+            descontoBaixa: 0,
+            status: "ABERTO"
+          }
+        });
+      }
+    }
+
+    // 9. Recria a comissão com o novo total.
+    await criarComissaoVenda(tx, scope, updated);
+
+    await createAuditLog(tx, {
+      scope,
+      entidade: "PedidoVenda",
+      entidadeId: id,
+      acao: "EDIT",
+      payload: { numero: pedido.numero, total, itens: itensMapped.length }
+    });
+
+    return updated;
+  }, TX_OPTIONS);
+
+  publishRealtime(scope, "vendas");
+  publishRealtime(scope, "caixa");
+
+  return atualizado;
+}
+
 /** Carrega o pedido com cliente/endereços e itens/ficha fiscal — base para emitir/pré-visualizar. */
 async function loadPedidoParaNota(scope: TenantScope, id: string) {
   return prisma.pedidoVenda.findFirst({
@@ -485,7 +715,9 @@ export async function cancelSale(scope: TenantScope, id: string) {
     const jaFaturado = statusFaturados.includes(pedido.status);
 
     if (jaFaturado) {
-      // Estorno de estoque por item
+      // Estorno de estoque por item: repõe o saldo via ENTRADA (no provedor de estoque, ESTORNO
+      // conta como saída — quem devolve saldo é a ENTRADA). Reaplica o custo para não distorcer
+      // o custo médio.
       const depositoId =
         pedido.depositoId ??
         (await getDefaultDeposito(tx, scope)).id;
@@ -494,8 +726,9 @@ export async function cancelSale(scope: TenantScope, id: string) {
         await applyStockMovement(tx, scope, {
           produtoId: item.produtoId,
           depositoId,
-          tipo: "ESTORNO",
-          quantidade: item.quantidade,
+          tipo: "ENTRADA",
+          quantidade: Number(item.quantidade),
+          custoUnitario: Number(item.custoUnitario),
           documentoTipo: "PEDIDO_VENDA",
           documentoId: id,
           observacoes: `Estorno por cancelamento do pedido ${pedido.numero}`
