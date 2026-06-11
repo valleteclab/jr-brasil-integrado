@@ -132,8 +132,16 @@ type ClienteLike = {
   contatos: Array<{ email: string | null; principal: boolean }>;
 };
 
-/** Resolve o destinatário: cliente cadastrado (carrega do banco) ou destinatário avulso. */
-async function resolveReceiver(scope: TenantScope, receiver: ReceiverInput): Promise<ClienteLike> {
+/**
+ * Resolve o destinatário: cliente cadastrado (carrega do banco) ou destinatário avulso.
+ * NFC-e (mod 65) admite venda a consumidor final NÃO identificado — sem cliente nem nome —,
+ * então nesse caso devolve um destinatário genérico (CPF opcional) em vez de exigir.
+ */
+async function resolveReceiver(
+  scope: TenantScope,
+  receiver: ReceiverInput,
+  modelo: "NFE" | "NFCE" | "NFSE"
+): Promise<ClienteLike> {
   if (receiver.clienteId) {
     const cliente = await prisma.cliente.findFirst({
       where: { id: receiver.clienteId, ...scopedByTenantCompany(scope) },
@@ -160,7 +168,19 @@ async function resolveReceiver(scope: TenantScope, receiver: ReceiverInput): Pro
   }
 
   const nome = receiver.nome?.trim();
-  if (!nome) throw new StandaloneEmissionError("Informe o destinatário (cliente cadastrado ou nome do destinatário avulso).");
+  if (!nome) {
+    // NFC-e a consumidor final não identificado: destinatário genérico, com CPF opcional na nota.
+    if (modelo === "NFCE") {
+      return {
+        razaoSocial: "Consumidor não identificado",
+        documento: receiver.documento?.replace(/\D/g, "") || null,
+        inscricaoEstadual: null,
+        enderecos: [],
+        contatos: receiver.email?.trim() ? [{ email: receiver.email.trim(), principal: true }] : []
+      };
+    }
+    throw new StandaloneEmissionError("Informe o destinatário (cliente cadastrado ou nome do destinatário avulso).");
+  }
   const end = receiver.endereco ?? null;
   return {
     razaoSocial: nome,
@@ -195,8 +215,8 @@ async function resolveReceiver(scope: TenantScope, receiver: ReceiverInput): Pro
 export async function buildProductInvoiceDocument(scope: TenantScope, input: ProductInvoiceAvulsaInput) {
   if (!input.itens?.length) throw new StandaloneEmissionError("Informe ao menos um item.");
 
-  const cliente = await resolveReceiver(scope, input.receiver);
   const modelo = input.modelo ?? "NFE";
+  const cliente = await resolveReceiver(scope, input.receiver, modelo);
 
   // Carrega produtos de catálogo (com ficha fiscal) referenciados pelos itens.
   const produtoIds = Array.from(new Set(input.itens.map((i) => i.produtoId).filter((id): id is string => Boolean(id))));
@@ -360,7 +380,7 @@ export async function emitServiceInvoiceAvulsa(scope: TenantScope, input: Servic
     throw new StandaloneEmissionError("Código de serviço LC 116 inválido.");
   }
 
-  const cliente = await resolveReceiver(scope, input.receiver);
+  const cliente = await resolveReceiver(scope, input.receiver, "NFSE");
 
   const config = await prisma.configuracaoFiscal.findUnique({
     where: { empresaId: scope.empresaId },
