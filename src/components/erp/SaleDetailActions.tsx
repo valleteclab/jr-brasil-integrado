@@ -83,9 +83,31 @@ export function SaleDetailActions({ id, numero, canConfirm, canInvoice, canCance
     if (!window.confirm(`Confirmar o pedido ${numero}? Isso efetiva a saída de estoque e gera as parcelas no contas a receber conforme a condição de pagamento.`)) return;
     executar("confirmar", `/api/erp/vendas/${id}/confirmar`);
   }
-  function faturar(modelo: "NFE" | "NFCE") {
+  async function faturar(modelo: "NFE" | "NFCE") {
     if (!window.confirm(`Emitir ${modelo === "NFE" ? "NF-e" : "NFC-e"} para o pedido ${numero}?`)) return;
-    executar("faturar", `/api/erp/vendas/${id}/faturar`, { modelo });
+    setBusy("faturar");
+    setError("");
+    setMessage("");
+    try {
+      const res = await fetch(`/api/erp/vendas/${id}/faturar`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ modelo })
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string; notaFiscalId?: string; status?: string };
+      if (!res.ok) throw new Error(data.error || "Não foi possível emitir a nota fiscal.");
+      // Nota autorizada: abre o cupom/DANFE para impressão imediata. O link na seção
+      // "Notas fiscais" continua disponível caso o navegador bloqueie o pop-up.
+      if (data.status === "AUTORIZADA" && data.notaFiscalId) {
+        window.open(`/api/erp/fiscal/${data.notaFiscalId}/pdf`, "_blank", "noopener,noreferrer");
+      }
+      setMessage("Nota emitida.");
+      router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Não foi possível emitir a nota fiscal.");
+    } finally {
+      setBusy("");
+    }
   }
   function cancelar() {
     if (temNotaAutorizada) {

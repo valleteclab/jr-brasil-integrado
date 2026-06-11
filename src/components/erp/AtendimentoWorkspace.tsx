@@ -183,6 +183,11 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO" }: { d
           : null,
         emitErro: p.emitErro ?? null
       });
+      // Nota autorizada: abre o cupom/DANFE para impressão imediata (o painel de sucesso
+      // mantém o link "Baixar PDF" caso o navegador bloqueie o pop-up).
+      if (p.nota?.status === "AUTORIZADA" && p.nota?.id) {
+        window.open(`/api/erp/fiscal/${p.nota.id}/pdf`, "_blank", "noopener,noreferrer");
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível finalizar a venda.");
     } finally {
