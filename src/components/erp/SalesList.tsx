@@ -1,8 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type { SaleSummary } from "@/lib/services/sales";
+import { useRealtime } from "@/lib/realtime/useRealtime";
 
 type Props = {
   sales: SaleSummary[];
@@ -11,10 +13,19 @@ type Props = {
 };
 
 export function SalesList({ sales, isAdmin = false }: Props) {
+  const router = useRouter();
   const [rows, setRows] = useState(sales);
   const [query, setQuery] = useState("");
   const [error, setError] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
+
+  // Ressincroniza com os dados do servidor após um refresh (tempo real ou navegação).
+  useEffect(() => setRows(sales), [sales]);
+
+  // Tempo real: confirmação/faturamento/cancelamento de venda reflete sem F5.
+  useRealtime(["vendas"], () => {
+    if (!busyId) router.refresh();
+  });
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();

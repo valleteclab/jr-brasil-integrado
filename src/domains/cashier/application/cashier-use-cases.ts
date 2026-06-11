@@ -6,6 +6,7 @@ import { commitReservationsAsExit } from "@/domains/stock/application/stock-serv
 import { buildDocumentFromPedido } from "@/domains/fiscal/document-builder";
 import { emitFiscalDocument } from "@/domains/fiscal/application/fiscal-emission-use-cases";
 import { criarRetiradaExpedicao } from "@/domains/sales/application/expedicao-use-cases";
+import { publishRealtime } from "@/lib/realtime/broker";
 
 /**
  * Caixa (PDV) — turno do operador, movimentos de dinheiro e recebimento de pré-vendas.
@@ -432,6 +433,10 @@ export async function receberPagamentoEEmitir(
     const r = await criarRetiradaExpedicao(scope, pedido.id);
     retirada = { id: r.id, codigo: r.codigo };
   }
+
+  // Tempo real: a pré-venda saiu da fila do caixa; vendas refletem o novo status.
+  publishRealtime(scope, "caixa");
+  publishRealtime(scope, "vendas");
 
   return { pedidoId: pedido.id, pedidoNumero: pedido.numero, troco, nota, emitErro, retirada };
 }

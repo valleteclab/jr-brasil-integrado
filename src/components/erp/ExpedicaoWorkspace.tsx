@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useRealtime } from "@/lib/realtime/useRealtime";
 
 export type RetiradaPendente = {
   id: string;
@@ -57,6 +58,13 @@ export function ExpedicaoWorkspace({ pendentes }: { pendentes: RetiradaPendente[
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [sucesso, setSucesso] = useState("");
+
+  // Tempo real: novo recibo emitido no caixa/PDV entra na fila na hora. Não recarrega
+  // enquanto o conferente está com um recibo aberto/ocupado, para não atrapalhar a conferência.
+  useRealtime(["expedicao"], () => {
+    if (busy || retirada) return;
+    router.refresh();
+  });
 
   async function consultar(codigoBusca?: string) {
     const c = (codigoBusca ?? codigo).trim();

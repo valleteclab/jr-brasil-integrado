@@ -14,6 +14,7 @@ import { buildDocumentFromPedido, type ClienteLike } from "@/domains/fiscal/docu
 import { emitFiscalDocument, previewFiscalDocument } from "@/domains/fiscal/application/fiscal-emission-use-cases";
 import { gerarParcelas, rotuloParcela } from "@/lib/finance/condicao-pagamento";
 import { criarComissaoVenda, cancelarComissaoPedido } from "./comissao-use-cases";
+import { publishRealtime } from "@/lib/realtime/broker";
 
 const TX_OPTIONS = { maxWait: 15000, timeout: 30000 };
 
@@ -46,7 +47,7 @@ export type CreateSaleInput = {
 export async function createSale(scope: TenantScope, input: CreateSaleInput) {
   if (!input.itens || input.itens.length === 0) throw new Error("Pedido deve ter ao menos um item.");
 
-  return prisma.$transaction(async (tx) => {
+  const pedidoCriado = await prisma.$transaction(async (tx) => {
     const numero = await nextDocumentNumber(tx, scope, "PV", tx.pedidoVenda);
 
     // Deposito: usa o informado ou resolve o padrão
@@ -150,6 +151,12 @@ export async function createSale(scope: TenantScope, input: CreateSaleInput) {
 
     return pedido;
   }, TX_OPTIONS);
+
+  // Tempo real: lista de vendas sempre; fila do caixa quando nasce uma pré-venda (balcão).
+  publishRealtime(scope, "vendas");
+  if ((input.statusInicial ?? "RASCUNHO") === "AGUARDANDO_PAGAMENTO") publishRealtime(scope, "caixa");
+
+  return pedidoCriado;
 }
 
 export type ConfirmSaleOptions = {
@@ -175,7 +182,7 @@ export async function confirmSale(scope: TenantScope, id: string, options?: Conf
 
   const modoContasReceber = options?.contasReceber ?? "AUTO";
 
-  return prisma.$transaction(async (tx) => {
+  const confirmado = await prisma.$transaction(async (tx) => {
     // Efetiva saída de estoque commitando as reservas
     await commitReservationsAsExit(tx, scope, "PEDIDO_VENDA", id, {
       documentoTipo: "PEDIDO_VENDA",
@@ -230,6 +237,12 @@ export async function confirmSale(scope: TenantScope, id: string, options?: Conf
 
     return updated;
   }, TX_OPTIONS);
+
+  // Tempo real: saiu da fila de pré-vendas do caixa e mudou na lista de vendas.
+  publishRealtime(scope, "caixa");
+  publishRealtime(scope, "vendas");
+
+  return confirmado;
 }
 
 /** Carrega o pedido com cliente/endereços e itens/ficha fiscal — base para emitir/pré-visualizar. */
@@ -373,6 +386,9 @@ export async function invoiceSale(scope: TenantScope, id: string, options?: { mo
     });
   }, TX_OPTIONS);
 
+  // Tempo real: pedido faturado mudou de status na lista de vendas.
+  publishRealtime(scope, "vendas");
+
   return nota;
 }
 
@@ -464,7 +480,7 @@ export async function cancelSale(scope: TenantScope, id: string) {
     );
   }
 
-  return prisma.$transaction(async (tx) => {
+  const cancelado = await prisma.$transaction(async (tx) => {
     const statusFaturados = ["ENVIADO", "ENTREGUE"];
     const jaFaturado = statusFaturados.includes(pedido.status);
 
@@ -528,6 +544,13 @@ export async function cancelSale(scope: TenantScope, id: string) {
 
     return updated;
   }, TX_OPTIONS);
+
+  // Tempo real: cancelamento reflete no caixa (pré-venda), na expedição (retirada) e nas vendas.
+  publishRealtime(scope, "caixa");
+  publishRealtime(scope, "expedicao");
+  publishRealtime(scope, "vendas");
+
+  return cancelado;
 }
 
 /**

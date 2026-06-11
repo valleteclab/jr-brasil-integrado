@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import { scopedByTenantCompany } from "@/lib/auth/dev-session";
 import { createAuditLog } from "@/lib/audit/audit-service";
+import { publishRealtime } from "@/lib/realtime/broker";
 
 /**
  * Expedição (balcão de retirada): o caixa emite um recibo com código curto junto da nota;
@@ -67,7 +68,10 @@ export async function criarRetiradaExpedicao(scope: TenantScope, pedidoVendaId: 
   const existente = await prisma.expedicaoRetirada.findFirst({
     where: { ...scopedByTenantCompany(scope), pedidoVendaId, status: { in: ["PENDENTE", "PARCIAL"] } }
   });
-  if (existente) return existente;
+  if (existente) {
+    publishRealtime(scope, "expedicao");
+    return existente;
+  }
 
   const itensCreate = Array.from(quantidadesPorProduto(pedido.itens).entries()).map(([produtoId, quantidade]) => ({
     tenantId: scope.tenantId,
@@ -81,7 +85,7 @@ export async function criarRetiradaExpedicao(scope: TenantScope, pedidoVendaId: 
   for (let tentativa = 0; tentativa < 5; tentativa++) {
     const codigo = gerarCodigo();
     try {
-      return await prisma.$transaction(async (tx) => {
+      const criada = await prisma.$transaction(async (tx) => {
         const retirada = await tx.expedicaoRetirada.create({
           data: {
             ...scopedByTenantCompany(scope),
@@ -100,6 +104,9 @@ export async function criarRetiradaExpedicao(scope: TenantScope, pedidoVendaId: 
         });
         return retirada;
       });
+      // Tempo real: nova retirada entra na fila da expedição.
+      publishRealtime(scope, "expedicao");
+      return criada;
     } catch (error) {
       const unique = error instanceof Error && error.message.includes("Unique constraint");
       if (!unique || tentativa === 4) throw error;
@@ -210,7 +217,7 @@ export async function confirmarEntregaRetirada(
     }
   }
 
-  return prisma.$transaction(async (tx) => {
+  const resultado = await prisma.$transaction(async (tx) => {
     for (const entrega of entregas) {
       await tx.expedicaoRetiradaItem.updateMany({
         where: { retiradaId: retirada.id, produtoId: entrega.produtoId },
@@ -254,6 +261,13 @@ export async function confirmarEntregaRetirada(
 
     return { retirada: atualizada, completo };
   });
+
+  // Tempo real: a fila da expedição mudou (item baixado ou retirada concluída); se o pedido
+  // foi para ENTREGUE, a lista de vendas também reflete.
+  publishRealtime(scope, "expedicao");
+  if (resultado.completo) publishRealtime(scope, "vendas");
+
+  return resultado;
 }
 
 /** Retiradas em aberto (fila da expedição) — pendentes e parciais. */

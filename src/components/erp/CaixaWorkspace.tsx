@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { CaixaPageData, PreVendaResumo } from "@/lib/services/cashier";
+import { useRealtime } from "@/lib/realtime/useRealtime";
 
 const brl = (v: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
 
@@ -39,23 +40,29 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
 
   const caixa = data.caixa;
 
+  // Atualiza a lista, mas nunca atrapalha quem está no meio de um recebimento.
+  function refreshIfIdle() {
+    if (busy || sel || resultado || document.hidden) return;
+    lastAutoRefreshRef.current = Date.now();
+    router.refresh();
+  }
+
+  // Tempo real: nova pré-venda enviada pelo balcão aparece na hora (sem F5).
+  useRealtime(["caixa"], refreshIfIdle);
+
+  // Fallback lento (30s): cobre o caso de o SSE cair (proxy, rede) sem martelar o servidor.
   useEffect(() => {
-    const refreshIfIdle = () => {
+    const refreshFallback = () => {
       if (busy || sel || resultado || document.hidden) return;
-      const now = Date.now();
-      if (now - lastAutoRefreshRef.current < 8000) return;
-      lastAutoRefreshRef.current = now;
+      if (Date.now() - lastAutoRefreshRef.current < 25000) return;
+      lastAutoRefreshRef.current = Date.now();
       router.refresh();
     };
-
-    const intervalId = window.setInterval(refreshIfIdle, 8000);
-    window.addEventListener("focus", refreshIfIdle);
-    document.addEventListener("visibilitychange", refreshIfIdle);
-
+    const intervalId = window.setInterval(refreshFallback, 30000);
+    window.addEventListener("focus", refreshFallback);
     return () => {
       window.clearInterval(intervalId);
-      window.removeEventListener("focus", refreshIfIdle);
-      document.removeEventListener("visibilitychange", refreshIfIdle);
+      window.removeEventListener("focus", refreshFallback);
     };
   }, [busy, router, resultado, sel]);
 
