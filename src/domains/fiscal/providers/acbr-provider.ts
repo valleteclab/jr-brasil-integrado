@@ -187,6 +187,60 @@ function mapTpPag(forma: string | null): string {
   return "99";
 }
 
+/** tBand (bandeira do cartão, SEFAZ): 01=Visa 02=Master 03=Amex 04=Sorocred 05=Diners 06=Elo 07=Hipercard 99=Outros. */
+function mapTBand(bandeira: string | null | undefined): string | undefined {
+  const b = (bandeira ?? "").toLowerCase();
+  if (!b) return undefined;
+  if (b.includes("visa")) return "01";
+  if (b.includes("master")) return "02";
+  if (b.includes("amex") || b.includes("express")) return "03";
+  if (b.includes("sorocred")) return "04";
+  if (b.includes("diners")) return "05";
+  if (b.includes("elo")) return "06";
+  if (b.includes("hipercard") || b.includes("hiper")) return "07";
+  if (b.includes("aura")) return "08";
+  if (b.includes("cabal")) return "09";
+  return "99";
+}
+
+/** tPag de cartão (crédito 03 / débito 04) exige o grupo `card` na SEFAZ (Rejeição 1 sem ele). */
+function isTpPagCartao(tPag: string): boolean {
+  return tPag === "03" || tPag === "04";
+}
+
+/** Grupo card (tpIntegra=2: pagamento NÃO integrado/POS — sem TEF). tBand opcional nesse modo. */
+function cardGroup(bandeira: string | null | undefined): Record<string, unknown> {
+  const tBand = mapTBand(bandeira);
+  return { tpIntegra: 2, ...(tBand ? { tBand } : {}) };
+}
+
+/**
+ * Monta o grupo `pag` (NFC-e/NF-e): um detPag por forma de pagamento, com o grupo `card` nos
+ * cartões. Quando o recebido excede o total (troco em dinheiro), informa `vTroco` para a SEFAZ
+ * validar sum(vPag) - vTroco == vNF. Sem array detalhado, cai no pagamento único pelo total.
+ */
+function buildPag(input: EmitInput, tpPagFallback: string): Record<string, unknown> {
+  if (tpPagFallback === "90") return { detPag: [{ tPag: "90", vPag: 0 }] };
+
+  const lista = (input.document.pagamentos ?? []).filter((p) => Number(p.valor) > 0);
+  if (lista.length) {
+    const detPag = lista.map((p) => {
+      const tPag = mapTpPag(p.forma);
+      const det: Record<string, unknown> = { tPag, vPag: round2(Number(p.valor)) };
+      if (isTpPagCartao(tPag)) det.card = cardGroup(p.bandeira);
+      return det;
+    });
+    const recebido = round2(lista.reduce((s, p) => s + Number(p.valor), 0));
+    const troco = round2(Math.max(recebido - input.total, 0));
+    return troco > 0 ? { detPag, vTroco: troco } : { detPag };
+  }
+
+  // Fallback: pagamento único pelo total exato (sem troco), com card se for cartão.
+  const det: Record<string, unknown> = { tPag: tpPagFallback, vPag: input.total };
+  if (isTpPagCartao(tpPagFallback)) det.card = cardGroup(null);
+  return { detPag: [det] };
+}
+
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -618,8 +672,9 @@ export class AcbrFiscalProvider implements FiscalProvider {
         },
         // modFrete: usa a modalidade informada; senão deriva (9=sem transporte se frete=0, senão 0=CIF).
         transp: { modFrete: input.document.modalidadeFrete ?? (input.document.valorFrete > 0 ? 0 : 9) },
-        // Devolução não tem contraprestação financeira → tPag=90 (Sem Pagamento), vPag=0.
-        pag: { detPag: [tpPag === "90" ? { tPag: "90", vPag: 0 } : { tPag: tpPag, vPag: input.total }] }
+        // Devolução: sem contraprestação (tPag=90). Demais: um detPag por forma informada,
+        // com o grupo `card` (tpIntegra=2, não integrado/POS) nos cartões — exigido pela SEFAZ.
+        pag: buildPag(input, tpPag)
       }
     };
   }

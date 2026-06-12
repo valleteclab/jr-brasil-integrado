@@ -88,6 +88,8 @@ export type PedidoFiscalInput = {
   cliente: ClienteLike;
   naturezaOperacao?: string;
   formaPagamento?: string | null;
+  /** Pagamentos detalhados (com bandeira do cartão) — geram um detPag por forma na nota. */
+  pagamentos?: Array<{ forma: string; valor: number; bandeira?: string | null }> | null;
   condicaoPagamento?: string | null;
   observacoes?: string | null;
   frete?: number;
@@ -121,6 +123,7 @@ export function buildDocumentFromPedido(input: PedidoFiscalInput): NormalizedFis
     chaveReferenciada: input.chaveReferenciada ?? null,
     destinatario: destinatarioFromCliente(input.cliente),
     formaPagamento: input.formaPagamento ?? null,
+    pagamentos: input.pagamentos ?? null,
     condicaoPagamento: input.condicaoPagamento ?? null,
     informacoesComplementares: input.observacoes ?? null,
     valorFrete: input.frete ?? 0,

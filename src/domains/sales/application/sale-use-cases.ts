@@ -482,7 +482,8 @@ async function loadPedidoParaNota(scope: TenantScope, id: string) {
     where: { id, ...scopedByTenantCompany(scope) },
     include: {
       cliente: { include: { enderecos: true, contatos: true } },
-      itens: { include: { produto: { include: { fiscal: true } } } }
+      itens: { include: { produto: { include: { fiscal: true } } } },
+      pagamentos: { select: { forma: true, valor: true, bandeira: true } }
     }
   });
 }
@@ -501,6 +502,7 @@ function buildDocumentoVenda(pedido: PedidoParaNota, modelo: "NFE" | "NFCE") {
   return buildDocumentFromPedido({
     cliente: clienteDoc,
     formaPagamento: pedido.formaPagamento,
+    pagamentos: pedido.pagamentos.map((p) => ({ forma: p.forma, valor: Number(p.valor), bandeira: p.bandeira })),
     condicaoPagamento: pedido.condicaoPagamento,
     observacoes: pedido.observacoes,
     frete: Number(pedido.frete),
@@ -750,6 +752,19 @@ export async function cancelSale(scope: TenantScope, id: string) {
       },
       data: { status: "CANCELADO" }
     });
+
+    // Estorna os lançamentos da venda no caixa ABERTO: sem isto, o resumo (Vendas / por forma /
+    // esperado em dinheiro) continuaria contando uma venda cancelada. Só mexe no turno aberto —
+    // turnos já fechados são históricos (já conferidos) e não são alterados.
+    const caixaAberto = await tx.caixa.findFirst({
+      where: { ...scopedByTenantCompany(scope), status: "ABERTO" },
+      select: { id: true }
+    });
+    if (caixaAberto) {
+      await tx.caixaMovimento.deleteMany({
+        where: { caixaId: caixaAberto.id, pedidoVendaId: id, tipo: "VENDA" }
+      });
+    }
 
     // Cancela a comissão do vendedor ainda não paga
     await cancelarComissaoPedido(tx, scope, id);

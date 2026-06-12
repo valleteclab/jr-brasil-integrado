@@ -102,8 +102,9 @@ export type NormalizedFiscalDocument = {
   formaPagamento: string | null;
   condicaoPagamento: string | null;
   /** Pagamentos do documento (NFC-e/NF-e): múltiplas formas → vários detPag. Quando ausente,
-   *  o provedor usa formaPagamento como pagamento único pelo valor total. */
-  pagamentos?: Array<{ forma: string; valor: number }> | null;
+   *  o provedor usa formaPagamento como pagamento único pelo valor total. A bandeira (cartão)
+   *  alimenta o grupo `card` exigido pela SEFAZ em tPag 03/04. */
+  pagamentos?: Array<{ forma: string; valor: number; bandeira?: string | null }> | null;
   informacoesComplementares: string | null;
   valorFrete: number;
   /**
