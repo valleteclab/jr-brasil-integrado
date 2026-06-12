@@ -203,9 +203,13 @@ function mapTBand(bandeira: string | null | undefined): string | undefined {
   return "99";
 }
 
-/** tPag de cartão (crédito 03 / débito 04) exige o grupo `card` na SEFAZ (Rejeição 1 sem ele). */
-function isTpPagCartao(tPag: string): boolean {
-  return tPag === "03" || tPag === "04";
+/**
+ * tPag que exige o grupo `card`/integração na SEFAZ (Rejeição 871 sem ele): cartão crédito (03),
+ * débito (04) E PIX (17). As NTs de pagamento eletrônico estenderam o grupo de integração ao PIX —
+ * sem ele, a SEFAZ rejeita o PIX com "Não informados os dados do cartão...".
+ */
+function tpPagExigeCard(tPag: string): boolean {
+  return tPag === "03" || tPag === "04" || tPag === "17";
 }
 
 /** Grupo card (tpIntegra=2: pagamento NÃO integrado/POS — sem TEF). tBand opcional nesse modo. */
@@ -227,7 +231,7 @@ function buildPag(input: EmitInput, tpPagFallback: string): Record<string, unkno
     const detPag = lista.map((p) => {
       const tPag = mapTpPag(p.forma);
       const det: Record<string, unknown> = { tPag, vPag: round2(Number(p.valor)) };
-      if (isTpPagCartao(tPag)) det.card = cardGroup(p.bandeira);
+      if (tpPagExigeCard(tPag)) det.card = cardGroup(p.bandeira);
       // tPag 99 (forma não mapeável) exige xPag com a descrição da forma — senão a SEFAZ rejeita.
       if (tPag === "99") det.xPag = (p.forma ?? "").trim() || "Outros";
       return det;
@@ -239,7 +243,7 @@ function buildPag(input: EmitInput, tpPagFallback: string): Record<string, unkno
 
   // Fallback: pagamento único pelo total exato (sem troco), com card se for cartão.
   const det: Record<string, unknown> = { tPag: tpPagFallback, vPag: input.total };
-  if (isTpPagCartao(tpPagFallback)) det.card = cardGroup(null);
+  if (tpPagExigeCard(tpPagFallback)) det.card = cardGroup(null);
   // tPag 99 também exige xPag no fallback: usa a forma original do documento (ou "Outros").
   if (tpPagFallback === "99") det.xPag = (input.document.formaPagamento ?? "").trim() || "Outros";
   return { detPag: [det] };
