@@ -8,6 +8,7 @@ import { PROVEDORES_FISCAIS, defaultBaseUrl, getProvedorFiscalAtivo, getCredenci
 import { resolveFiscalProvider } from "@/domains/fiscal/providers";
 import { formatBrl } from "@/lib/formatters/currency";
 import { PERFIS_PADRAO, TODOS_MODULOS, isAdminPerfil, type ModuloKey } from "@/lib/auth/modules";
+import { TENANT_FEATURE_FLAGS, type TenantFeatureKey, type TenantFeatures } from "@/lib/auth/feature-flags";
 
 /**
  * Camada de serviço do PAINEL DA PLATAFORMA (dono do SaaS).
@@ -183,6 +184,8 @@ export type ClienteDetail = {
   iaHabilitada: boolean;
   spedFiscalHabilitado: boolean;
   expedicaoHabilitada: boolean;
+  /** Todas as flags de módulo por tenant (inclui as 4 acima) para os toggles do painel. */
+  features: TenantFeatures;
   criadoEm: string;
   empresas: {
     id: string;
@@ -269,6 +272,9 @@ export async function getClienteDetail(tenantId: string): Promise<ClienteDetail 
     iaHabilitada: tenant.iaHabilitada,
     spedFiscalHabilitado: tenant.spedFiscalHabilitado,
     expedicaoHabilitada: tenant.expedicaoHabilitada,
+    features: Object.fromEntries(
+      TENANT_FEATURE_FLAGS.map((f) => [f, (tenant as unknown as Record<string, boolean>)[f] ?? true])
+    ) as TenantFeatures,
     criadoEm: tenant.criadoEm.toISOString(),
     empresas: tenant.empresas.map((e) => ({
       id: e.id,
@@ -417,6 +423,33 @@ export async function setTenantExpedicaoHabilitada(tenantId: string, habilitada:
   });
 
   return { id: atualizado.id, expedicaoHabilitada: atualizado.expedicaoHabilitada };
+}
+
+/**
+ * Liga/desliga uma flag de módulo do tenant (gate genérico do dono do SaaS). A coluna é validada
+ * contra a whitelist TENANT_FEATURE_FLAGS — nunca grava um nome de coluna arbitrário.
+ */
+export async function setTenantModulo(tenantId: string, flag: TenantFeatureKey, habilitado: boolean) {
+  const admin = await requirePlatformAdmin();
+  assertDb();
+  if (!TENANT_FEATURE_FLAGS.includes(flag)) throw new PlatformAdminError("Módulo inválido.");
+
+  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+  if (!tenant) throw new PlatformAdminError("Cliente não encontrado.");
+
+  const anterior = (tenant as unknown as Record<string, boolean>)[flag];
+  const atualizado = await prisma.tenant.update({ where: { id: tenantId }, data: { [flag]: habilitado } });
+
+  await audit({
+    tenantId,
+    usuarioId: admin.usuarioId,
+    entidade: "Tenant",
+    entidadeId: tenantId,
+    acao: habilitado ? `plataforma.habilitar_modulo.${flag}` : `plataforma.desabilitar_modulo.${flag}`,
+    payload: { flag, anterior, novo: habilitado }
+  });
+
+  return { id: atualizado.id, flag, habilitado: (atualizado as unknown as Record<string, boolean>)[flag] };
 }
 
 /** Edita o nome e/ou o slug (identificador) do cliente (tenant). Slug único entre clientes. */

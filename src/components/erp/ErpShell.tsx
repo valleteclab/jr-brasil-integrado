@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import type { CSSProperties, ReactNode } from "react";
 import type { ErpShellBadges, ErpShellContext } from "@/lib/services/erp-shell";
 import { moduloFromPath, moduloVisivelNoTipoNegocio } from "@/lib/auth/modules";
+import { HREF_FLAG, TIPO_VENDA_FLAG } from "@/lib/auth/feature-flags";
 
 // Escurece um hex #rrggbb (para a variante "dark" usada em hovers/bordas da cor de destaque).
 function darken(hex: string, amount = 0.14): string {
@@ -120,15 +121,19 @@ export function ErpShell({ children, context, modulos }: ErpShellProps) {
   const router = useRouter();
   const producao = context.ambiente === "PRODUCAO";
 
-  // Gate por módulo: item visível se o módulo do href estiver liberado ao perfil E for
-  // relevante para o tipo de negócio da empresa (esconde o que ela não usa).
+  // "Novo atendimento" só aparece se houver ao menos um tipo de venda liberado pelo dono do SaaS.
+  const algumTipoVenda = Object.values(TIPO_VENDA_FLAG).some((flag) => context.features[flag]);
+
+  // Gate por módulo: item visível se (1) a flag por tenant do dono do SaaS estiver ligada,
+  // (2) o módulo for liberado ao perfil (RBAC) e (3) relevante para o tipo de negócio da empresa.
   const podeVer = (href: string) => {
+    // Gate por tenant (dono do SaaS): href mapeado em HREF_FLAG → respeita a flag liberada.
+    const flag = HREF_FLAG[href];
+    if (flag && !context.features[flag]) return false;
+    // "Novo atendimento" não tem flag própria — depende de existir algum tipo de venda liberado.
+    if (href === "/erp/atendimento" && !algumTipoVenda) return false;
     const modulo = moduloFromPath(href);
     if (!modulo) return true;
-    // SPED Fiscal é liberado por tenant pelo dono do SaaS, além do RBAC por perfil.
-    if (modulo === "sped-fiscal" && !context.spedFiscalHabilitado) return false;
-    // Expedição idem: só aparece para clientes com o módulo liberado pelo dono do SaaS.
-    if (modulo === "expedicao" && !context.expedicaoHabilitada) return false;
     return modulos.includes(modulo) && moduloVisivelNoTipoNegocio(modulo, context.tipoNegocio);
   };
   const gruposVisiveis = groups

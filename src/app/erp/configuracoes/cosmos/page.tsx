@@ -2,10 +2,14 @@ import { PageHeader } from "@/components/shared/PageHeader";
 import { CosmosConfigForm } from "@/components/erp/CosmosConfigForm";
 import { getCosmosConfig } from "@/domains/products/application/cosmos-service";
 import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
+import { ModuloBloqueado } from "@/components/erp/ModuloBloqueado";
+import { moduloLiberadoNoScope } from "@/lib/auth/tenant-features";
 
 export const dynamic = "force-dynamic";
 
 export default async function CosmosConfigPage() {
+  if (!(await moduloLiberadoNoScope("cosmosHabilitado"))) return <ModuloBloqueado titulo="Catálogo Cosmos indisponível" />;
+
   let initial = { configurado: false, ativo: false, chaveFinal: null as string | null };
   let loadError = "";
 

@@ -4,10 +4,14 @@ import { PageHeader } from "@/components/shared/PageHeader";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { getQuoteDetail } from "@/lib/services/sales-quote";
 import { QuoteDetailActions } from "@/components/erp/QuoteDetailActions";
+import { ModuloBloqueado } from "@/components/erp/ModuloBloqueado";
+import { moduloLiberadoNoScope } from "@/lib/auth/tenant-features";
 
 export const dynamic = "force-dynamic";
 
 export default async function OrcamentoDetalhePage({ params }: { params: { id: string } }) {
+  if (!(await moduloLiberadoNoScope("orcamentoHabilitado"))) return <ModuloBloqueado titulo="Orçamentos indisponível" />;
+
   const orc = await getQuoteDetail(params.id);
   if (!orc) notFound();
 

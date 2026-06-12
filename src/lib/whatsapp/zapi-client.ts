@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import { decryptSecret, encryptSecret } from "@/lib/security/secret-crypto";
+import { assertModuloLiberado } from "@/lib/auth/tenant-features";
 
 /**
  * Cliente da Z-API (https://www.z-api.io). Credenciais (instanceId, token e
@@ -39,6 +40,7 @@ export type SaveWhatsappInput = {
 
 /** Salva a config Z-API criptografando token e client-token quando informados. */
 export async function saveWhatsappConfig(scope: TenantScope, input: SaveWhatsappInput) {
+  await assertModuloLiberado(scope, "whatsappHabilitado");
   const tokenData = input.token?.trim() ? { tokenCripto: encryptSecret(input.token.trim()) } : {};
   const clientData = input.clientToken?.trim() ? { clientTokenCripto: encryptSecret(input.clientToken.trim()) } : {};
   return prisma.configuracaoWhatsapp.upsert({

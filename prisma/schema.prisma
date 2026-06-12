@@ -285,6 +285,19 @@ model Tenant {
   // Módulo Expedição (recibo de retirada de mercadoria) liberado pelo dono do SaaS.
   // Desligado por padrão — é para lojas com balcão de retirada (material de construção, autopeças).
   expedicaoHabilitada Boolean      @default(false)
+  // Módulos liberáveis pelo dono do SaaS (painel /admin). LIGADOS por padrão (true) para não
+  // tirar acesso de quem já usa — o dono DESLIGA o que cada cliente não contrata. Cada um esconde
+  // o item no menu (ErpShell.podeVer via HREF_FLAG) e bloqueia o acesso direto pela URL.
+  pdvTelaCheiaHabilitado   Boolean @default(true) // /pdv (PDV em tela cheia)
+  vendaBalcaoHabilitada    Boolean @default(true) // atendimento: tipo Venda balcão
+  pedidoFaturadoHabilitado Boolean @default(true) // atendimento: tipo Pedido faturado
+  ordemServicoHabilitada   Boolean @default(true) // atendimento OS + menu Ordens de Serviço (/erp/os)
+  orcamentoHabilitado      Boolean @default(true) // atendimento Orçamento + menu Orçamentos
+  financeiroHabilitado     Boolean @default(true) // /erp/financeiro (contas a pagar/receber)
+  fiscalHabilitado         Boolean @default(true) // /erp/fiscal (NF-e emitidas)
+  gastosHabilitado         Boolean @default(true) // /erp/gastos (gastos por cupom)
+  cosmosHabilitado         Boolean @default(true) // /erp/configuracoes/cosmos (catálogo Cosmos)
+  whatsappHabilitado       Boolean @default(true) // /erp/configuracoes/whatsapp
   empresas        Empresa[]
   vinculos        UsuarioVinculo[]
   perfis          Perfil[]

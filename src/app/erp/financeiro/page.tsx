@@ -7,10 +7,14 @@ import { listFormasPagamentoAtivas } from "@/domains/finance/application/payment
 import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
 import { getSession } from "@/lib/auth/session";
 import { isAdminPerfil } from "@/lib/auth/modules";
+import { ModuloBloqueado } from "@/components/erp/ModuloBloqueado";
+import { moduloLiberadoNoScope } from "@/lib/auth/tenant-features";
 
 export const dynamic = "force-dynamic";
 
 export default async function FinanceiroPage() {
+  if (!(await moduloLiberadoNoScope("financeiroHabilitado"))) return <ModuloBloqueado titulo="Financeiro indisponível" />;
+
   let payables: PayableSummary[] = [];
   let receivables: ReceivableSummary[] = [];
   let bankAccounts: BankAccountSummary[] = [];

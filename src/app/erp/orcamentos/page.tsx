@@ -6,10 +6,14 @@ import { listQuotes } from "@/lib/services/sales-quote";
 import type { QuoteSummary } from "@/lib/services/sales-quote";
 import { getSession } from "@/lib/auth/session";
 import { isAdminPerfil } from "@/lib/auth/modules";
+import { ModuloBloqueado } from "@/components/erp/ModuloBloqueado";
+import { moduloLiberadoNoScope } from "@/lib/auth/tenant-features";
 
 export const dynamic = "force-dynamic";
 
 export default async function OrcamentosPage() {
+  if (!(await moduloLiberadoNoScope("orcamentoHabilitado"))) return <ModuloBloqueado titulo="Orçamentos indisponível" />;
+
   let quotes: QuoteSummary[] = [];
   let loadError = "";
 

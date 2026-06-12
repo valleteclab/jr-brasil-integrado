@@ -2,6 +2,8 @@ import { getDevelopmentTenantScope, scopedByTenantCompany } from "@/lib/auth/dev
 import { getSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/db/prisma";
 import type { TipoNegocio } from "@/lib/auth/modules";
+import { getTenantFeatures } from "@/lib/auth/tenant-features";
+import { allFeaturesEnabled, type TenantFeatures } from "@/lib/auth/feature-flags";
 
 export type ErpShellBadges = {
   vendas: number;
@@ -26,6 +28,8 @@ export type ErpShellContext = {
   spedFiscalHabilitado: boolean;
   /** Módulo Expedição (recibo de retirada) liberado pelo dono do SaaS para este tenant. */
   expedicaoHabilitada: boolean;
+  /** Flags de módulo liberadas pelo dono do SaaS (esconde itens do menu e bloqueia URLs). */
+  features: TenantFeatures;
   badges: ErpShellBadges;
 };
 
@@ -47,6 +51,8 @@ const SHELL_FALLBACK: ErpShellContext = {
   corDestaque: null,
   spedFiscalHabilitado: false,
   expedicaoHabilitada: false,
+  // Fail-open: em fallback (banco indisponível) não escondemos módulos.
+  features: allFeaturesEnabled(),
   badges: { vendas: 0, orcamentos: 0, os: 0, compras: 0, estoque: 0, financeiro: 0 }
 };
 
@@ -64,7 +70,7 @@ export async function getErpShellContext(): Promise<ErpShellContext> {
     const [
       empresa,
       session,
-      tenant,
+      features,
       configFiscal,
       vendas,
       orcamentos,
@@ -80,10 +86,8 @@ export async function getErpShellContext(): Promise<ErpShellContext> {
       }),
       // Usuário REALMENTE logado (sessão atual) — não o vínculo mais antigo da empresa.
       getSession(),
-      prisma.tenant.findUnique({
-        where: { id: scope.tenantId },
-        select: { spedFiscalHabilitado: true, expedicaoHabilitada: true }
-      }),
+      // Todas as flags de módulo liberadas pelo dono do SaaS (gate de menu + URL).
+      getTenantFeatures(scope.tenantId),
       prisma.configuracaoFiscal.findUnique({
         where: { empresaId: scope.empresaId },
         select: { ambiente: true, ativo: true }
@@ -135,8 +139,9 @@ export async function getErpShellContext(): Promise<ErpShellContext> {
       tipoNegocio: empresa?.tipoNegocio ?? "AMBOS",
       logoSistema: empresa?.logoSistema ?? null,
       corDestaque: empresa?.corDestaque ?? null,
-      spedFiscalHabilitado: tenant?.spedFiscalHabilitado ?? false,
-      expedicaoHabilitada: tenant?.expedicaoHabilitada ?? false,
+      spedFiscalHabilitado: features.spedFiscalHabilitado,
+      expedicaoHabilitada: features.expedicaoHabilitada,
+      features,
       badges: {
         vendas,
         orcamentos,

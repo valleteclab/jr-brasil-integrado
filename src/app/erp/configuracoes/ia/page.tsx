@@ -3,11 +3,15 @@ import { AgentApiKeys } from "@/components/erp/AgentApiKeys";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { getAiConfig } from "@/domains/ai/openrouter-service";
 import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
+import { ModuloBloqueado } from "@/components/erp/ModuloBloqueado";
+import { moduloLiberado } from "@/lib/auth/tenant-features";
 
 export const dynamic = "force-dynamic";
 
 export default async function AiSettingsPage() {
   const scope = await getDevelopmentTenantScope();
+  if (!(await moduloLiberado(scope, "iaHabilitada"))) return <ModuloBloqueado titulo="IA do ERP indisponível" />;
+
   const config = await getAiConfig(scope);
 
   return (

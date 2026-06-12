@@ -3,10 +3,14 @@ import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { NotaFiscalActions } from "@/components/erp/NotaFiscalActions";
 import { getNotaFiscalDetalhe, type NotaFiscalItemDetalhe } from "@/lib/services/fiscal";
+import { ModuloBloqueado } from "@/components/erp/ModuloBloqueado";
+import { moduloLiberadoNoScope } from "@/lib/auth/tenant-features";
 
 export const dynamic = "force-dynamic";
 
 export default async function NotaFiscalDetalhePage({ params }: { params: { id: string } }) {
+  if (!(await moduloLiberadoNoScope("fiscalHabilitado"))) return <ModuloBloqueado titulo="Notas fiscais indisponível" />;
+
   const nota = await getNotaFiscalDetalhe(params.id);
   if (!nota) notFound();
 

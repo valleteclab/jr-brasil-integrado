@@ -6,6 +6,7 @@
 import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import { encryptSecret, decryptSecret, secretLastChars } from "@/lib/security/secret-crypto";
+import { assertModuloLiberado } from "@/lib/auth/tenant-features";
 
 const PROVEDOR = "COSMOS";
 const COSMOS_BASE_URL = "https://api.cosmos.bluesoft.com.br";
@@ -102,6 +103,7 @@ const COSMOS_CACHE_TTL_MS = 180 * 24 * 60 * 60 * 1000;
 
 /** Consulta um produto por GTIN no Cosmos e devolve os campos para preencher o cadastro. */
 export async function consultarGtinCosmos(scope: TenantScope, gtinInput: string): Promise<GtinLookupResult> {
+  await assertModuloLiberado(scope, "cosmosHabilitado");
   const gtin = onlyDigits(gtinInput);
   if (gtin.length < 8) throw new CosmosError("Código de barras (GTIN/EAN) inválido.");
 
@@ -189,6 +191,7 @@ function normalizeProduct(p: CosmosProduct, fallbackGtin = ""): GtinLookupResult
 
 /** Busca produtos no Cosmos por descrição (texto livre). Devolve os primeiros resultados. */
 export async function buscarProdutosCosmos(scope: TenantScope, query: string, limite = 15): Promise<GtinLookupResult[]> {
+  await assertModuloLiberado(scope, "cosmosHabilitado");
   const termo = (query ?? "").trim();
   if (termo.length < 3) throw new CosmosError("Informe ao menos 3 caracteres para buscar.");
 

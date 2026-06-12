@@ -17,6 +17,7 @@ import { computeRetencoes, issPorServico } from "@/domains/fiscal/nfse-tax";
 import type { RetencoesInput } from "@/domains/fiscal/nfse-tax";
 import type { StatusOrdemServico } from "@prisma/client";
 import type { TaxationTypeIss } from "@/domains/fiscal/types";
+import { assertModuloLiberado } from "@/lib/auth/tenant-features";
 
 const TX_OPTIONS = { maxWait: 10000, timeout: 30000 };
 
@@ -31,6 +32,7 @@ export type CreateOrdemServicoInput = {
 };
 
 export async function createOrdemServico(scope: TenantScope, input: CreateOrdemServicoInput) {
+  await assertModuloLiberado(scope, "ordemServicoHabilitada");
   if (!input.clienteId) throw new Error("Cliente é obrigatório.");
   if (!input.equipamento) throw new Error("Equipamento é obrigatório.");
 

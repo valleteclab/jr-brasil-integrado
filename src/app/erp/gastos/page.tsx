@@ -5,10 +5,14 @@ import type { GastoRow, GastosResumo } from "@/lib/services/gastos";
 import { getSession } from "@/lib/auth/session";
 import { isAdminPerfil } from "@/lib/auth/modules";
 import { DESPESA_CATEGORIAS } from "@/domains/expenses/categorias";
+import { ModuloBloqueado } from "@/components/erp/ModuloBloqueado";
+import { moduloLiberadoNoScope } from "@/lib/auth/tenant-features";
 
 export const dynamic = "force-dynamic";
 
 export default async function GastosPage() {
+  if (!(await moduloLiberadoNoScope("gastosHabilitado"))) return <ModuloBloqueado titulo="Gastos indisponível" />;
+
   let gastos: GastoRow[] = [];
   let resumo: GastosResumo | null = null;
   let loadError = "";

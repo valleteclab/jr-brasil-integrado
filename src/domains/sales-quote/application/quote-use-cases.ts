@@ -4,6 +4,7 @@ import { scopedByTenantCompany } from "@/lib/auth/dev-session";
 import { createAuditLog } from "@/lib/audit/audit-service";
 import { nextDocumentNumber } from "@/lib/numbering";
 import { getDefaultDeposito, reserveStock } from "@/domains/stock/application/stock-service";
+import { assertModuloLiberado } from "@/lib/auth/tenant-features";
 
 const TX_OPTIONS = { maxWait: 10000, timeout: 30000 };
 
@@ -26,6 +27,7 @@ export type CreateQuoteInput = {
 };
 
 export async function createQuote(scope: TenantScope, input: CreateQuoteInput) {
+  await assertModuloLiberado(scope, "orcamentoHabilitado");
   if (!input.clienteId) throw new Error("Cliente é obrigatório.");
   if (!input.itens || input.itens.length === 0) throw new Error("O orçamento deve ter ao menos um item.");
 

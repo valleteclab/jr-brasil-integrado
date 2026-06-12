@@ -5,6 +5,7 @@ import { createAuditLog } from "@/lib/audit/audit-service";
 import { createPayable, settlePayable } from "@/domains/finance/application/finance-use-cases";
 import { extrairCupomComIa } from "./cupom-ia";
 import { canonizarCategoria } from "../categorias";
+import { assertModuloLiberado } from "@/lib/auth/tenant-features";
 
 type GastoItemInput = { descricao: string; quantidade?: number | null; valor: number };
 
@@ -18,6 +19,7 @@ export async function criarGastoDeCupom(
   scope: TenantScope,
   input: { imagem: string; origem: "PWA" | "WHATSAPP"; criadoPor?: string | null }
 ) {
+  await assertModuloLiberado(scope, "gastosHabilitado");
   const extraido = await extrairCupomComIa(scope, input.imagem);
 
   const gasto = await prisma.$transaction(async (tx) => {
@@ -77,6 +79,7 @@ export async function criarGastoManual(
     criadoPor?: string | null;
   }
 ) {
+  await assertModuloLiberado(scope, "gastosHabilitado");
   if (!input.estabelecimento?.trim()) throw new Error("Informe o estabelecimento.");
   if (!(input.valorTotal > 0)) throw new Error("Informe um valor maior que zero.");
 

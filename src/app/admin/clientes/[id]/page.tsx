@@ -8,6 +8,7 @@ import { LojaModuloToggle } from "@/components/admin/LojaModuloToggle";
 import { IaModuloToggle } from "@/components/admin/IaModuloToggle";
 import { SpedFiscalModuloToggle } from "@/components/admin/SpedFiscalModuloToggle";
 import { ExpedicaoModuloToggle } from "@/components/admin/ExpedicaoModuloToggle";
+import { ModuloToggle } from "@/components/admin/ModuloToggle";
 import { EmpresaStatusActions } from "@/components/admin/EmpresaStatusActions";
 import { ResetarSenhaButton } from "@/components/admin/ResetarSenhaButton";
 import { ClientePerfisManager } from "@/components/admin/ClientePerfisManager";
@@ -102,6 +103,28 @@ export default async function AdminClienteDetalhePage({ params }: { params: { id
               nota, e a tela Expedição confere o código e confirma a entrega da mercadoria. Indicado
               para lojas com balcão de retirada (material de construção, autopeças).
             </p>
+          </div>
+
+          <div style={{ marginTop: 6 }}>
+            <h4 style={{ margin: "10px 0 2px", fontSize: 12, textTransform: "uppercase", letterSpacing: ".5px", color: "var(--erp-mute)" }}>Operação</h4>
+            <ModuloToggle clienteId={cliente.id} flag="pdvTelaCheiaHabilitado" habilitado={cliente.features.pdvTelaCheiaHabilitado} label="PDV (tela cheia)" descricao="Frente de caixa em tela cheia (/pdv)." />
+            <ModuloToggle clienteId={cliente.id} flag="vendaBalcaoHabilitada" habilitado={cliente.features.vendaBalcaoHabilitada} label="Venda balcão" descricao="Tipo de atendimento: saída imediata com NF + pagamento à vista." />
+            <ModuloToggle clienteId={cliente.id} flag="pedidoFaturadoHabilitado" habilitado={cliente.features.pedidoFaturadoHabilitado} label="Pedido faturado" descricao="Tipo de atendimento: faturamento com prazo, entrega ou retirada." />
+            <ModuloToggle clienteId={cliente.id} flag="ordemServicoHabilitada" habilitado={cliente.features.ordemServicoHabilitada} label="Ordem de Serviço" descricao="Atendimento de OS + menu Ordens de Serviço." />
+            <ModuloToggle clienteId={cliente.id} flag="orcamentoHabilitado" habilitado={cliente.features.orcamentoHabilitado} label="Orçamento" descricao="Atendimento de orçamento + menu Orçamentos." />
+          </div>
+
+          <div>
+            <h4 style={{ margin: "10px 0 2px", fontSize: 12, textTransform: "uppercase", letterSpacing: ".5px", color: "var(--erp-mute)" }}>Financeiro &amp; Fiscal</h4>
+            <ModuloToggle clienteId={cliente.id} flag="financeiroHabilitado" habilitado={cliente.features.financeiroHabilitado} label="Financeiro" descricao="Contas a pagar/receber (/erp/financeiro)." />
+            <ModuloToggle clienteId={cliente.id} flag="fiscalHabilitado" habilitado={cliente.features.fiscalHabilitado} label="Notas fiscais" descricao="NF-e emitidas e ações fiscais (/erp/fiscal)." />
+            <ModuloToggle clienteId={cliente.id} flag="gastosHabilitado" habilitado={cliente.features.gastosHabilitado} label="Gastos (cupom)" descricao="Lançamento de gastos por foto do cupom (/erp/gastos)." />
+          </div>
+
+          <div>
+            <h4 style={{ margin: "10px 0 2px", fontSize: 12, textTransform: "uppercase", letterSpacing: ".5px", color: "var(--erp-mute)" }}>Integrações</h4>
+            <ModuloToggle clienteId={cliente.id} flag="cosmosHabilitado" habilitado={cliente.features.cosmosHabilitado} label="Catálogo Cosmos" descricao="Consulta de produto por GTIN no catálogo Cosmos (Bluesoft)." />
+            <ModuloToggle clienteId={cliente.id} flag="whatsappHabilitado" habilitado={cliente.features.whatsappHabilitado} label="WhatsApp" descricao="Integração Z-API e agente pelo WhatsApp." />
           </div>
         </div>
       </Card>

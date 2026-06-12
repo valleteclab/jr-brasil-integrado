@@ -7,10 +7,14 @@ import type { NotaFiscalSummary } from "@/lib/services/fiscal";
 import { formatBrl } from "@/lib/formatters/currency";
 import { getSession } from "@/lib/auth/session";
 import { isAdminPerfil } from "@/lib/auth/modules";
+import { ModuloBloqueado } from "@/components/erp/ModuloBloqueado";
+import { moduloLiberadoNoScope } from "@/lib/auth/tenant-features";
 
 export const dynamic = "force-dynamic";
 
 export default async function FiscalPage() {
+  if (!(await moduloLiberadoNoScope("fiscalHabilitado"))) return <ModuloBloqueado titulo="Notas fiscais indisponível" />;
+
   let notas: NotaFiscalSummary[] = [];
   let loadError = "";
 

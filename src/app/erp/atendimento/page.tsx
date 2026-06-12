@@ -1,17 +1,34 @@
 import { AtendimentoWorkspace } from "@/components/erp/AtendimentoWorkspace";
+import { ModuloBloqueado } from "@/components/erp/ModuloBloqueado";
 import { listSaleFormData } from "@/lib/services/sales";
 import type { SaleFormData } from "@/lib/services/sales";
+import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
+import { getTenantFeatures } from "@/lib/auth/tenant-features";
+import { TIPO_VENDA_FLAG, type TipoVenda } from "@/lib/auth/feature-flags";
 
 export const dynamic = "force-dynamic";
 
 const TIPOS = ["VENDA_BALCAO", "PEDIDO_FATURADO", "ORCAMENTO", "OS"] as const;
-type Tipo = (typeof TIPOS)[number];
-
-function resolveTipo(value?: string): Tipo {
-  return TIPOS.includes(value as Tipo) ? (value as Tipo) : "VENDA_BALCAO";
-}
 
 export default async function AtendimentoPage({ searchParams }: { searchParams: { tipo?: string } }) {
+  const scope = await getDevelopmentTenantScope();
+  const features = await getTenantFeatures(scope.tenantId);
+  // Só os tipos de venda liberados pelo dono do SaaS aparecem (na ordem do seletor).
+  const allowedTipos = TIPOS.filter((t) => features[TIPO_VENDA_FLAG[t]]) as TipoVenda[];
+
+  if (allowedTipos.length === 0) {
+    return (
+      <ModuloBloqueado
+        titulo="Atendimento indisponível"
+        descricao="Nenhum tipo de venda está liberado para a sua conta. Fale com o suporte."
+      />
+    );
+  }
+
+  // O tipo pedido na URL só vale se estiver liberado; senão cai no primeiro permitido.
+  const pedido = searchParams.tipo as TipoVenda | undefined;
+  const defaultTipo = pedido && allowedTipos.includes(pedido) ? pedido : allowedTipos[0];
+
   let data: SaleFormData = { clientes: [], produtos: [], vendedores: [] };
   let loadError = "";
 
@@ -29,7 +46,7 @@ export default async function AtendimentoPage({ searchParams }: { searchParams: 
           <span>{loadError}</span>
         </div>
       )}
-      <AtendimentoWorkspace data={data} defaultTipo={resolveTipo(searchParams.tipo)} />
+      <AtendimentoWorkspace data={data} defaultTipo={defaultTipo} allowedTipos={allowedTipos} />
     </>
   );
 }

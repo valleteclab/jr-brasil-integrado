@@ -4,10 +4,14 @@ import { Button } from "@/components/shared/Button";
 import { KpiCard } from "@/components/shared/KpiCard";
 import { listOrdensServico } from "@/lib/services/service-order";
 import type { OrdemServicoSummary } from "@/lib/services/service-order";
+import { ModuloBloqueado } from "@/components/erp/ModuloBloqueado";
+import { moduloLiberadoNoScope } from "@/lib/auth/tenant-features";
 
 export const dynamic = "force-dynamic";
 
 export default async function OrdensServicoPage() {
+  if (!(await moduloLiberadoNoScope("ordemServicoHabilitada"))) return <ModuloBloqueado titulo="Ordens de Serviço indisponível" />;
+
   let oss: OrdemServicoSummary[] = [];
   let loadError = "";
 

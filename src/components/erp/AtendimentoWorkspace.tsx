@@ -42,7 +42,9 @@ const PAGAMENTOS = [
 
 const brl = (v: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
 
-export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO" }: { data: SaleFormData; defaultTipo?: Tipo }) {
+export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO", allowedTipos }: { data: SaleFormData; defaultTipo?: Tipo; allowedTipos?: Tipo[] }) {
+  // Só os tipos liberados pelo dono do SaaS aparecem no seletor (default: todos).
+  const tiposVisiveis = allowedTipos ? TIPOS.filter((t) => allowedTipos.includes(t.id)) : TIPOS;
   const router = useRouter();
   const [tipo, setTipo] = useState<Tipo>(defaultTipo);
   const [clientes, setClientes] = useState<Cliente[]>(data.clientes);
@@ -265,7 +267,7 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO" }: { d
       </div>
 
       <div className="atend-types">
-        {TIPOS.map((t) => (
+        {tiposVisiveis.map((t) => (
           <button key={t.id} type="button" className={`atend-type${tipo === t.id ? " active" : ""}`} onClick={() => setTipo(t.id)}>
             <span className="ic" aria-hidden="true">{t.icon}</span>
             <span><strong>{t.label}</strong><small>{t.desc}</small></span>

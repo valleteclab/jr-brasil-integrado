@@ -8,6 +8,7 @@ import { checkoutSale } from "./sale-use-cases";
 import { criarRetiradaExpedicao } from "./expedicao-use-cases";
 import { emitServiceInvoiceAvulsa } from "@/domains/fiscal/application/standalone-emission-use-cases";
 import { getCaixaAberto, registrarRecebimentoPdv, type PagamentoDetalhado } from "@/domains/cashier/application/cashier-use-cases";
+import { assertModuloLiberado } from "@/lib/auth/tenant-features";
 
 const FORMA_CREDIARIO = "CREDIARIO";
 const FORMA_DINHEIRO = "DINHEIRO";
@@ -64,6 +65,7 @@ export type PdvCheckoutResult = {
  * a condição informada. O PDV não gera contas a receber pelas formas à vista.
  */
 export async function pdvCheckout(scope: TenantScope, input: PdvCheckoutInput): Promise<PdvCheckoutResult> {
+  await assertModuloLiberado(scope, "pdvTelaCheiaHabilitado");
   const temProdutos = input.produtos.length > 0;
   const temServicos = input.servicos.length > 0;
   if (!temProdutos && !temServicos) {
