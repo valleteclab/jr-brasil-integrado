@@ -351,6 +351,39 @@ export async function getResumoCaixa(scope: TenantScope, caixaId: string): Promi
   };
 }
 
+/**
+ * Espelho do caixa para o recibo de fechamento (a antiga "Redução Z") ou leitura parcial ("X"
+ * com o caixa ainda aberto). Funciona em qualquer status — permite reimprimir um turno fechado.
+ */
+export async function getCaixaReciboData(scope: TenantScope, caixaId: string) {
+  const caixa = await prisma.caixa.findFirst({
+    where: { id: caixaId, ...scopedByTenantCompany(scope) }
+  });
+  if (!caixa) throw new CaixaError("Caixa não encontrado.");
+  const [resumo, empresa] = await Promise.all([
+    getResumoCaixa(scope, caixa.id),
+    prisma.empresa.findUnique({
+      where: { id: scope.empresaId },
+      select: { razaoSocial: true, nomeFantasia: true, cnpj: true }
+    })
+  ]);
+  const informado = caixa.saldoFinalInformado != null ? Number(caixa.saldoFinalInformado) : null;
+  return {
+    empresa,
+    caixa: {
+      id: caixa.id,
+      operador: caixa.operador,
+      status: caixa.status,
+      abertoEm: caixa.abertoEm,
+      fechadoEm: caixa.fechadoEm,
+      observacaoFechamento: caixa.observacaoFechamento,
+      saldoFinalInformado: informado
+    },
+    resumo,
+    diferenca: informado != null ? round2(informado - resumo.esperadoDinheiro) : null
+  };
+}
+
 export async function fecharCaixa(
   scope: TenantScope,
   input: { saldoFinalInformado?: number; observacao?: string }

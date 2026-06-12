@@ -123,9 +123,12 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
     if (v === null) return;
     setBusy(true);
     try {
+      const caixaId = caixa?.id;
       const r = await post("/api/erp/caixa/fechar", { saldoFinalInformado: v.trim() ? Number(v.replace(",", ".")) : undefined });
       const dif = r.diferenca as number | null;
       setInfo(dif == null ? "Caixa fechado." : `Caixa fechado. Diferença: ${brl(dif)} (${dif === 0 ? "conferido" : dif > 0 ? "sobra" : "falta"}).`);
+      // Recibo de fechamento (Z) abre para impressão na térmica, como o cupom.
+      if (caixaId) window.open(`/api/erp/caixa/${caixaId}/recibo`, "_blank", "noopener,noreferrer");
       router.refresh();
     } catch (e) { setError(e instanceof Error ? e.message : "Erro ao fechar."); }
     finally { setBusy(false); }
@@ -309,7 +312,10 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
 
         <aside className="atend-rail">
           <div className="erp-card">
-            <div className="erp-card-head"><h3>Resumo do caixa</h3></div>
+            <div className="erp-card-head" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <h3>Resumo do caixa</h3>
+              <a className="btn-erp ghost xs" href={`/api/erp/caixa/${caixa.id}/recibo`} target="_blank" rel="noopener noreferrer" title="Imprimir o espelho do caixa sem fechar (leitura X)">🖨 Espelho (X)</a>
+            </div>
             <div className="erp-card-body">
               <div className="atend-total-row"><span>Fundo de troco</span><b>{brl(r.saldoInicial)}</b></div>
               <div className="atend-total-row"><span>Vendas</span><b>{brl(r.totalVendas)}</b></div>
