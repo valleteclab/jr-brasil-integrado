@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { requireModulo } from "@/lib/auth/session";
+import { authErrorStatus } from "@/lib/auth/http";
 import { accountingPackageCsv } from "@/lib/services/accounting-package-export";
 import { accountingPackageReport } from "@/lib/services/reports";
 
@@ -11,6 +13,7 @@ function paramsFromUrl(request: Request): { mes?: number; ano?: number } {
 
 export async function GET(request: Request) {
   try {
+    await requireModulo("relatorios");
     const report = await accountingPackageReport(paramsFromUrl(request));
     const csv = accountingPackageCsv(report);
     return new NextResponse(`\ufeff${csv}`, {
@@ -22,6 +25,6 @@ export async function GET(request: Request) {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro ao gerar pacote contábil em CSV.";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: message }, { status: authErrorStatus(error, 500) });
   }
 }

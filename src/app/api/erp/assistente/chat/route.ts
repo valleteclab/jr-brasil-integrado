@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
+import { requireModulo } from "@/lib/auth/session";
+import { authErrorStatus } from "@/lib/auth/http";
 import { prisma } from "@/lib/db/prisma";
 import { runAgentTurn } from "@/domains/agent/runtime/run-agent-turn";
 import type { AgentRole } from "@/domains/agent/types";
@@ -10,6 +12,7 @@ const ROLES: AgentRole[] = ["GESTOR", "VENDEDOR"];
 // Um turno do chat do assistente: cria/continua conversa, roda o agente e persiste.
 export async function POST(request: Request) {
   try {
+    await requireModulo("assistente");
     const scope = await getDevelopmentTenantScope();
     const body = (await request.json()) as { conversaId?: string; role?: string; mensagem?: string };
 
@@ -88,6 +91,6 @@ export async function POST(request: Request) {
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro ao processar a mensagem.";
     const isConfig = message.includes("IA não configurada") || message.includes("desativada");
-    return NextResponse.json({ error: message }, { status: isConfig ? 400 : 500 });
+    return NextResponse.json({ error: message }, { status: authErrorStatus(error, isConfig ? 400 : 500) });
   }
 }

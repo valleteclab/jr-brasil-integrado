@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { requireModulo } from "@/lib/auth/session";
+import { authErrorStatus } from "@/lib/auth/http";
 import { buildOutboundXmlPackage } from "@/lib/services/accounting-xml-package";
 
 function paramsFromUrl(request: Request): { mes?: number; ano?: number } {
@@ -11,6 +13,7 @@ function paramsFromUrl(request: Request): { mes?: number; ano?: number } {
 // ZIP com os XMLs das notas de saída (NF-e/NFC-e/NFS-e) do mês, para o contador.
 export async function GET(request: Request) {
   try {
+    await requireModulo("relatorios");
     const pkg = await buildOutboundXmlPackage(paramsFromUrl(request));
     return new NextResponse(new Uint8Array(pkg.zip), {
       status: 200,
@@ -24,6 +27,6 @@ export async function GET(request: Request) {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro ao gerar o pacote de XMLs.";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: message }, { status: authErrorStatus(error, 500) });
   }
 }
