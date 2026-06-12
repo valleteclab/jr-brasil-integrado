@@ -91,7 +91,7 @@ export type SaleDetail = SaleSummary & {
 
 export type SaleFormData = {
   clientes: Array<{ id: string; label: string; documento: string | null }>;
-  produtos: Array<{ id: string; sku: string; nome: string; gtin: string | null; codigoOriginal: string | null; codigoFabricante: string | null; preco: number; disponivel: number }>;
+  produtos: Array<{ id: string; sku: string; nome: string; descricao: string | null; descricaoComercial: string | null; gtin: string | null; codigoOriginal: string | null; codigoFabricante: string | null; preco: number; disponivel: number }>;
   vendedores: Array<{ id: string; nome: string }>;
 };
 
@@ -335,6 +335,8 @@ export async function listSaleFormData(): Promise<SaleFormData> {
           id: true,
           sku: true,
           nome: true,
+          descricao: true,
+          descricaoComercial: true,
           gtin: true,
           codigoOriginal: true,
           codigoFabricante: true,
@@ -367,6 +369,8 @@ export async function listSaleFormData(): Promise<SaleFormData> {
           id: p.id,
           sku: p.sku,
           nome: p.nome,
+          descricao: p.descricao,
+          descricaoComercial: p.descricaoComercial,
           gtin: p.gtin,
           codigoOriginal: p.codigoOriginal,
           codigoFabricante: p.codigoFabricante,

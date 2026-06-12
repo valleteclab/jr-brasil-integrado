@@ -609,7 +609,7 @@ function ProdutoPickerMulti({ produtos, items, onAdd, onRemove, onClose }: {
   const [q, setQ] = useState("");
   const qtyById = new Map(items.map((it) => [it.produto.id, it.quantidade]));
   const list = produtos
-    .filter((p) => correspondeBusca(q, p.sku, p.nome, p.gtin, p.codigoOriginal, p.codigoFabricante))
+    .filter((p) => correspondeBusca(q, p.sku, p.nome, p.descricao, p.descricaoComercial, p.gtin, p.codigoOriginal, p.codigoFabricante))
     .slice(0, 50);
   const totalItens = items.reduce((s, it) => s + it.quantidade, 0);
   return (
@@ -621,7 +621,7 @@ function ProdutoPickerMulti({ produtos, items, onAdd, onRemove, onClose }: {
           <button type="button" className="btn-erp primary sm" onClick={onClose}>Concluir ({totalItens})</button>
         </header>
         <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--erp-line)" }}>
-          <input autoFocus placeholder="Busque por código ou nome e clique para adicionar (pode adicionar vários)…" value={q} onChange={(e) => setQ(e.target.value)} style={{ width: "100%", height: 38, padding: "0 12px", border: "1px solid var(--erp-line)", borderRadius: 6, fontSize: 13 }} />
+          <input autoFocus placeholder="Busque por SKU, código de barras, código interno/fabricante, nome ou descrição…" value={q} onChange={(e) => setQ(e.target.value)} style={{ width: "100%", height: 38, padding: "0 12px", border: "1px solid var(--erp-line)", borderRadius: 6, fontSize: 13 }} />
         </div>
         <div className="drawer-body">
           <table className="erp-table">
@@ -632,7 +632,16 @@ function ProdutoPickerMulti({ produtos, items, onAdd, onRemove, onClose }: {
                 return (
                   <tr key={p.id} style={{ cursor: "pointer", background: qty > 0 ? "rgba(255,193,7,.06)" : undefined }} onClick={() => onAdd(p)}>
                     <td className="mono bold">{p.sku}</td>
-                    <td><div style={{ fontWeight: 600 }}>{p.nome}</div></td>
+                    <td>
+                      <div style={{ fontWeight: 600 }}>{p.nome}</div>
+                      {(() => {
+                        // Descrição técnica (ou comercial) — ajuda a identificar o item certo
+                        // (ex.: parafuso por bitola/rosca/material). Só mostra se acrescentar algo ao nome.
+                        const desc = (p.descricao || p.descricaoComercial || "").trim();
+                        if (!desc || desc.toLowerCase() === p.nome.trim().toLowerCase()) return null;
+                        return <div style={{ fontSize: 11, color: "var(--erp-mute)", marginTop: 2, lineHeight: 1.35 }}>{desc}</div>;
+                      })()}
+                    </td>
                     <td className="num bold" style={{ color: p.disponivel <= 0 ? "var(--erp-danger)" : p.disponivel <= 5 ? "var(--erp-warn)" : "var(--erp-success)" }}>{p.disponivel}</td>
                     <td className="num bold">{brl(p.preco)}</td>
                     <td className="num bold">{qty > 0 ? `${qty}×` : "—"}</td>

@@ -152,7 +152,7 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
 
   const produtosFiltrados = useMemo(() => {
     if (!busca.trim()) return data.produtos.slice(0, 60);
-    return data.produtos.filter((p) => correspondeBusca(busca, p.nome, p.sku, p.gtin, p.codigoOriginal, p.codigoFabricante)).slice(0, 60);
+    return data.produtos.filter((p) => correspondeBusca(busca, p.nome, p.sku, p.descricao, p.descricaoComercial, p.gtin, p.codigoOriginal, p.codigoFabricante)).slice(0, 60);
   }, [busca, data.produtos]);
 
   const servicosFiltrados = useMemo(() => {
@@ -394,6 +394,12 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
               <button key={p.id} className="pdv-card" onClick={() => addProduto(p)}>
                 <strong>{p.nome}</strong>
                 <small>{p.sku}{p.gtin ? ` · ${p.gtin}` : ""} · estoque {p.disponivel}</small>
+                {(() => {
+                  // Descrição técnica (ex.: parafuso por bitola/material), truncada em 1 linha.
+                  const desc = (p.descricao || p.descricaoComercial || "").trim();
+                  if (!desc || desc.toLowerCase() === p.nome.trim().toLowerCase()) return null;
+                  return <small style={{ color: "var(--erp-mute)", display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={desc}>{desc}</small>;
+                })()}
                 <span className="pdv-preco">{brl(p.preco)}</span>
               </button>
             ))}
