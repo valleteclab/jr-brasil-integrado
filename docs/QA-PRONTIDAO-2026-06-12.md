@@ -119,3 +119,10 @@ Os bloqueadores e a maioria dos itens de Atenção foram corrigidos por agentes 
 **Atenção corrigidos:** guard de nota duplicada em `invoiceSale`; consumidor padrão por empresa; sangria valida saldo; troco só do dinheiro em todas as formas; OS faturamento com trava otimista + vencimento pela condição de pagamento; conta bancária obrigatória na baixa; inventário recalcula contra saldo atual + `cancelInventory`; recebimento de compra com limite; alíquota 4% para importado interestadual.
 
 **Pendências (próximo passo):** devolução espelhar tributos (item 7); ICMS-ST por MVA no XML; `requireModulo` nas demais rotas ERP (lista no relatório do agente); UI do PDV exibir `avisoRecebimento`; rota para `cancelInventory`; forma de pagamento detalhada no contas a pagar (agenda 13/06).
+
+### Validação fiscal ao vivo na SEFAZ (homologação) — 2026-06-12
+Ciclo completo emitido e autorizado, fechando o fix #5 (desconto por item):
+- **NFC-e com desconto por item AUTORIZADA** (nº 29) — totais coerentes `vProd 259,80 − vDesc 30,00 = vNF 229,80` (cenário que antes era rejeitado por `vProd-vDesc ≠ vNF`).
+- `dhEmi −03:00` exercitado (toda emissão) — autorizado.
+- Cancelamento da NFC-e → CANCELADA, com **estoque reposto 33→33** (valida o fix do cancelamento com nota real). 
+- (O usuário já havia validado anteriormente a emissão de NF-e, NFC-e e NFS-e.)
