@@ -293,3 +293,35 @@ export async function deleteQuote(scope: TenantScope, id: string) {
     return removido;
   }, TX_OPTIONS);
 }
+
+/**
+ * Carrega o orçamento com tudo que o documento imprimível (A4) precisa: emitente (empresa + logo),
+ * destinatário (cliente + endereço/contato), itens e condições. Usado pela rota de impressão.
+ */
+export async function getOrcamentoParaImpressao(scope: TenantScope, id: string) {
+  const orcamento = await prisma.orcamento.findFirst({
+    where: { id, ...scopedByTenantCompany(scope) },
+    include: {
+      cliente: {
+        include: {
+          enderecos: { orderBy: { padrao: "desc" } },
+          contatos: true
+        }
+      },
+      itens: { include: { produto: { select: { nome: true, sku: true, unidade: true } } } }
+    }
+  });
+  if (!orcamento) throw new Error("Orçamento não encontrado.");
+
+  const empresa = await prisma.empresa.findUnique({
+    where: { id: scope.empresaId },
+    select: {
+      razaoSocial: true, nomeFantasia: true, cnpj: true, inscricaoEstadual: true,
+      enderecoLogradouro: true, enderecoNumero: true, enderecoBairro: true,
+      enderecoCidade: true, enderecoUf: true, enderecoCep: true,
+      telefone: true, email: true, logoSistema: true, corDestaque: true
+    }
+  });
+
+  return { orcamento, empresa };
+}

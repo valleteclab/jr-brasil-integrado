@@ -169,6 +169,15 @@ export function QuotesList({ quotes, isAdmin = false }: Props) {
                   )}
                 </td>
                 <td className="actions">
+                  <a
+                    className="btn-erp ghost xs"
+                    href={`/api/erp/orcamentos/${orc.id}/imprimir`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title="Imprimir / salvar em PDF"
+                  >
+                    🖨 PDF
+                  </a>
                   {orc.canAprovar && (
                     <Button
                       variant="light"

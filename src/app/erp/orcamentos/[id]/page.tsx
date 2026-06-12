@@ -13,7 +13,16 @@ export default async function OrcamentoDetalhePage({ params }: { params: { id: s
 
   return (
     <>
-      <PageHeader eyebrow="Orçamentos" title={`Orçamento ${orc.numero}`} action={<Link className="btn-erp ghost sm" href="/erp/orcamentos">← Voltar</Link>}>
+      <PageHeader
+        eyebrow="Orçamentos"
+        title={`Orçamento ${orc.numero}`}
+        action={
+          <div style={{ display: "flex", gap: 8 }}>
+            <a className="btn-erp primary sm" href={`/api/erp/orcamentos/${orc.id}/imprimir`} target="_blank" rel="noopener noreferrer">🖨 Imprimir / PDF</a>
+            <Link className="btn-erp ghost sm" href="/erp/orcamentos">← Voltar</Link>
+          </div>
+        }
+      >
         <p>
           <StatusBadge tone={orc.statusTone}>{orc.statusLabel}</StatusBadge>{" "}
           {orc.canal === "LOJA" && <span className="canal-loja">🛒 Loja</span>} · Criado em {orc.criadoEm}
