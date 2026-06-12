@@ -1,0 +1,63 @@
+# Stack do ERP para Docker Swarm + Traefik (mesmo padrão do Chatwoot na VPS).
+# Deploy:  set -a; . ./erp.env; set +a; docker stack deploy -c deploy/erp-stack.yml erp
+# Requer a rede overlay externa "LomeServer" (a mesma do Traefik) já existente.
+
+version: "3.8"
+
+services:
+  erp:
+    image: jrb-erp:latest          # build local na VPS:  docker build -t jrb-erp:latest .
+    networks:
+      - LomeServer                  # rede do Traefik (ingress)
+      - erp_internal                # rede privada ERP <-> Postgres
+    environment:
+      NODE_ENV: production
+      # Banco dedicado (serviço erp_postgres abaixo) — nunca exposto na internet.
+      DATABASE_URL: "postgresql://erp:${ERP_DB_PASSWORD}@erp_postgres:5432/erp?schema=public"
+      ERP_BASE: "https://erp.sisgov.app.br"
+      AI_CONFIG_SECRET: "${AI_CONFIG_SECRET}"
+      ACBR_CLIENT_ID: "${ACBR_CLIENT_ID}"
+      ACBR_CLIENT_SECRET: "${ACBR_CLIENT_SECRET}"
+      PLATFORM_OWNER_EMAIL: "${PLATFORM_OWNER_EMAIL}"
+      ADMIN_EMAIL: "${ADMIN_EMAIL}"
+      DATALOAD_BASE_URL: "${DATALOAD_BASE_URL}"
+      DATALOAD_DADOS_URL: "${DATALOAD_DADOS_URL}"
+      JRB_AGENT_API_KEY: "${JRB_AGENT_API_KEY}"
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+      labels:
+        - "traefik.enable=true"
+        - "traefik.docker.network=LomeServer"
+        - "traefik.http.routers.erp.rule=Host(`erp.sisgov.app.br`)"
+        - "traefik.http.routers.erp.entrypoints=websecure"
+        - "traefik.http.routers.erp.tls=true"
+        - "traefik.http.routers.erp.tls.certresolver=letsencryptresolver"
+        - "traefik.http.services.erp.loadbalancer.server.port=3000"
+
+  erp_postgres:
+    image: postgres:16-alpine
+    networks:
+      - erp_internal
+    environment:
+      POSTGRES_USER: erp
+      POSTGRES_PASSWORD: "${ERP_DB_PASSWORD}"
+      POSTGRES_DB: erp
+    volumes:
+      - erp_pgdata:/var/lib/postgresql/data
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+
+networks:
+  LomeServer:
+    external: true
+  erp_internal:
+    driver: overlay
+    # attachable: permite rodar tarefas one-off (seed/admin) num container avulso na mesma rede.
+    attachable: true
+
+volumes:
+  erp_pgdata:
