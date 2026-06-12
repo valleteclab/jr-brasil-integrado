@@ -468,6 +468,47 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
     }
   }
 
+  async function estornarBaixa(id: string, descricao: string) {
+    if (!window.confirm(`Estornar a baixa de "${descricao}"? Isso desfaz o pagamento e ajusta o saldo bancário.`)) return;
+    setBusyId(id);
+    setGlobalError("");
+    const endpoint =
+      aba === "pagar"
+        ? `/api/erp/financeiro/contas-pagar/${id}/estornar`
+        : `/api/erp/financeiro/contas-receber/${id}/estornar`;
+    try {
+      const res = await fetch(endpoint, { method: "POST" });
+      const data = (await res.json().catch(() => ({}))) as { status?: string; error?: string };
+      if (!res.ok) throw new Error(data.error || "Não foi possível estornar a baixa.");
+      // Volta a linha ao estado "em aberto" (sem pagamento): atualiza sem reload.
+      function reverterRow<T extends PayableSummary | ReceivableSummary>(items: T[]): T[] {
+        return items.map((r) => {
+          if (r.id !== id) return r;
+          const venc = new Date(r.vencimentoRaw);
+          const hoje = new Date();
+          hoje.setHours(0, 0, 0, 0);
+          const vencido = venc < hoje;
+          return {
+            ...r,
+            statusLabel: vencido ? "Vencido" : "Aberto",
+            statusTone: vencido ? ("danger" as const) : ("info" as const),
+            canSettle: true,
+            canEstornar: false,
+            valorPago: "R$ 0,00",
+            saldo: r.valor,
+            saldoNumber: Number(r.valor.replace(/[^\d,-]/g, "").replace(".", "").replace(",", ".")) || 0
+          };
+        });
+      }
+      if (aba === "pagar") setPayables((prev) => reverterRow(prev));
+      else setReceivables((prev) => reverterRow(prev));
+    } catch (e) {
+      setGlobalError(e instanceof Error ? e.message : "Falha ao estornar baixa.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   const rows = aba === "pagar" ? payables : receivables;
 
   const filtered = useMemo(() => {
@@ -608,6 +649,17 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
                       onClick={() => { setGlobalError(""); setSettlingId(r.id); }}
                     >
                       Baixar
+                    </button>
+                  )}
+                  {r.canEstornar && (
+                    <button
+                      type="button"
+                      className="btn-erp ghost xs"
+                      title="Estornar baixa (desfaz o pagamento)"
+                      disabled={busyId === r.id}
+                      onClick={() => estornarBaixa(r.id, r.descricao)}
+                    >
+                      {busyId === r.id ? "..." : "Estornar baixa"}
                     </button>
                   )}
                   {isAdmin && aba === "pagar" && (r as PayableSummary).canDelete && (

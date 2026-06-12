@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
+import { requireModulo } from "@/lib/auth/session";
+import { authErrorStatus } from "@/lib/auth/http";
 import { getPurchaseOrderDetail } from "@/lib/services/purchasing";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
 export async function GET(_request: Request, context: RouteContext) {
   try {
+    await requireModulo("compras");
     const { id } = await context.params;
     const scope = await getDevelopmentTenantScope();
     const detail = await getPurchaseOrderDetail(id);
@@ -19,6 +22,6 @@ export async function GET(_request: Request, context: RouteContext) {
     return NextResponse.json(detail);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro ao carregar pedido.";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: message }, { status: authErrorStatus(error) });
   }
 }

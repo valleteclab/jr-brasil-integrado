@@ -31,6 +31,7 @@ export function InventoryCount({ inventory: initial }: Props) {
   });
   const [saving, setSaving] = useState<string | null>(null);
   const [finalizing, setFinalizing] = useState(false);
+  const [canceling, setCanceling] = useState(false);
   const [error, setError] = useState("");
   const [flash, setFlash] = useState("");
 
@@ -101,6 +102,31 @@ export function InventoryCount({ inventory: initial }: Props) {
     }
   }
 
+  async function cancel() {
+    if (!window.confirm("Cancelar inventário? Esta ação não pode ser desfeita e nenhum ajuste de estoque será aplicado.")) return;
+
+    setCanceling(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/erp/inventarios/${inventory.id}/cancelar`, {
+        method: "POST"
+      });
+      const data = (await res.json()) as { error?: string };
+      if (!res.ok) throw new Error(data.error ?? "Erro ao cancelar.");
+
+      setInventory((prev) => ({
+        ...prev,
+        statusLabel: "Cancelado",
+        statusTone: "danger"
+      }));
+      setFlash("Inventário cancelado.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao cancelar inventário.");
+    } finally {
+      setCanceling(false);
+    }
+  }
+
   const contados = inventory.itens.filter((it) => it.contado).length;
   const divergencias = inventory.itens.filter(
     (it) => it.contado && it.diferenca !== null && it.diferenca !== 0
@@ -129,11 +155,20 @@ export function InventoryCount({ inventory: initial }: Props) {
       {!isReadOnly && (
         <div className="erp-toolbar product-toolbar">
           <div className="toolbar-grow" />
+          {/* Cancelar inventário ainda não finalizado/cancelado: não aplica ajustes de estoque. */}
+          <button
+            type="button"
+            className="btn-erp ghost sm"
+            onClick={cancel}
+            disabled={canceling || finalizing}
+          >
+            {canceling ? "Cancelando..." : "Cancelar inventário"}
+          </button>
           <button
             type="button"
             className="btn-erp primary sm"
             onClick={finalize}
-            disabled={finalizing || contados === 0}
+            disabled={finalizing || canceling || contados === 0}
           >
             {finalizing ? "Finalizando..." : "Finalizar inventário"}
           </button>

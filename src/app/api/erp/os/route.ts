@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
 import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
+import { requireModulo } from "@/lib/auth/session";
+import { authErrorStatus } from "@/lib/auth/http";
 import { createOrdemServico } from "@/domains/service-order/application/service-order-use-cases";
 
 export async function POST(request: Request) {
   try {
+    await requireModulo("os");
     const scope = await getDevelopmentTenantScope();
     const body = await request.json();
 
@@ -19,6 +22,6 @@ export async function POST(request: Request) {
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro ao criar ordem de serviço.";
     const isValidation = message.includes("obrigatório");
-    return NextResponse.json({ error: message }, { status: isValidation ? 400 : 500 });
+    return NextResponse.json({ error: message }, { status: authErrorStatus(error, isValidation ? 400 : 500) });
   }
 }

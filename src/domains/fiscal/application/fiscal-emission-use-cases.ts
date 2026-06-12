@@ -1,4 +1,4 @@
-import type { ModeloFiscal, Prisma } from "@prisma/client";
+import type { ModeloFiscal, NotaFiscalItem, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 import { runInTransaction } from "@/lib/db/with-tx-retry";
 import type { TenantScope } from "@/lib/auth/dev-session";
@@ -11,7 +11,7 @@ import {
   loadSalesTaxRules
 } from "../tax-engine";
 import { isSubstituicaoTributaria, resolveCfopDevolucao, resolveCfopVenda } from "../cfop";
-import type { NormalizedFiscalDocument } from "../types";
+import type { ItemTaxResult, NormalizedFiscalDocument, NormalizedFiscalItem } from "../types";
 import { resolveFiscalProvider } from "../providers";
 import type { ProviderContext } from "../providers/types";
 import { getFiscalRuntimeConfig } from "./fiscal-config-use-cases";
@@ -27,6 +27,117 @@ function round2(value: number) {
 
 function onlyDigits(value: string | null | undefined): string {
   return (value ?? "").replace(/\D/g, "");
+}
+
+function num(value: Prisma.Decimal | number | null | undefined): number {
+  return value === null || value === undefined ? 0 : Number(value);
+}
+
+/** Item persistido da nota original carregado para espelhar a devolução. */
+type NotaOriginalItem = NotaFiscalItem;
+
+/**
+ * DEVOLUÇÃO — espelha os tributos PERSISTIDOS de um item da nota original, rateados pela fração
+ * devolvida (quantidade devolvida / quantidade original). Em devolução total a fração é 1
+ * (valores idênticos aos da original); em parcial, rateia base/valores monetários e preserva
+ * alíquotas, CST/CSOSN, FCP e ST exatamente como na emissão original — em vez de recalcular pelas
+ * regras atuais. Isso garante que o crédito de ICMS da devolução case com o débito da venda.
+ */
+function mirrorTaxesFromOriginal(
+  devItem: NormalizedFiscalItem,
+  original: NotaOriginalItem
+): ItemTaxResult {
+  const qtdOriginal = num(original.quantidade);
+  const qtdDevolvida = devItem.quantidade;
+  // Fração devolvida: total (1) quando devolve tudo; proporcional na parcial. Nunca > 1.
+  const fracao = qtdOriginal > 0 ? Math.min(qtdDevolvida / qtdOriginal, 1) : 1;
+  const rateia = (valor: number) => round2(valor * fracao);
+
+  return {
+    origem: original.origem ?? devItem.origem ?? "0",
+    cstIcms: original.cstIcms,
+    csosn: original.csosn,
+    // Base e valores monetários rateados; alíquotas/percentuais preservados (não dependem da qtd).
+    baseIcms: rateia(num(original.baseIcms)),
+    aliquotaIcms: num(original.aliquotaIcms),
+    valorIcms: rateia(num(original.valorIcms)),
+    percentualFcp: num(original.percentualFcp),
+    valorFcp: rateia(num(original.valorFcp)),
+    modalidadeBcSt: original.modalidadeBcSt,
+    percentualMva: num(original.percentualMva),
+    baseIcmsSt: rateia(num(original.baseIcmsSt)),
+    aliquotaIcmsSt: num(original.aliquotaIcmsSt),
+    valorIcmsSt: rateia(num(original.valorIcmsSt)),
+    cstIpi: original.cstIpi,
+    aliquotaIpi: num(original.aliquotaIpi),
+    valorIpi: rateia(num(original.valorIpi)),
+    cstPis: original.cstPis,
+    aliquotaPis: num(original.aliquotaPis),
+    valorPis: rateia(num(original.valorPis)),
+    cstCofins: original.cstCofins,
+    aliquotaCofins: num(original.aliquotaCofins),
+    valorCofins: rateia(num(original.valorCofins)),
+    itemListaServico: original.itemListaServico,
+    aliquotaIss: num(original.aliquotaIss),
+    valorIss: rateia(num(original.valorIss)),
+    // Reforma Tributária (IBS/CBS/IS): a original não persiste estes campos; mantém zerado
+    // (informativo, não vai no XML em 2026). Devolução não destaca IBS/CBS adicionais.
+    baseIbsCbs: 0,
+    aliquotaIbs: 0,
+    valorIbs: 0,
+    aliquotaCbs: 0,
+    valorCbs: 0,
+    aliquotaIs: 0,
+    valorIs: 0,
+    valorTributos: rateia(num(original.valorTributos)),
+    cClassTrib: original.cClassTrib
+  };
+}
+
+/**
+ * Casa cada item da DEVOLUÇÃO com o item correspondente da nota original (por produtoId e/ou
+ * código). Retorna um Map por índice do item da devolução → item original. Itens sem
+ * correspondência lançam erro claro (não se pode devolver o que não estava na nota original).
+ */
+function matchDevolucaoItems(
+  itens: NormalizedFiscalItem[],
+  originais: NotaOriginalItem[]
+): Map<number, NotaOriginalItem> {
+  const result = new Map<number, NotaOriginalItem>();
+  const usados = new Set<string>();
+
+  const acharOriginal = (dev: NormalizedFiscalItem): NotaOriginalItem | undefined => {
+    // 1) Match forte por produtoId (quando ambos têm), priorizando um ainda não usado.
+    if (dev.produtoId) {
+      const porProduto = originais.filter((o) => o.produtoId && o.produtoId === dev.produtoId);
+      const livre = porProduto.find((o) => !usados.has(o.id));
+      if (livre) return livre;
+      if (porProduto.length) return porProduto[0];
+    }
+    // 2) Match por código do item (fallback quando não há produtoId, ou item avulso).
+    const codigoDev = (dev.codigo ?? "").trim();
+    if (codigoDev) {
+      const porCodigo = originais.filter((o) => (o.codigo ?? "").trim() === codigoDev);
+      const livre = porCodigo.find((o) => !usados.has(o.id));
+      if (livre) return livre;
+      if (porCodigo.length) return porCodigo[0];
+    }
+    return undefined;
+  };
+
+  itens.forEach((dev, index) => {
+    const original = acharOriginal(dev);
+    if (!original) {
+      throw new Error(
+        `Não foi possível espelhar a devolução: o item ${index + 1} (${dev.descricao}) não foi encontrado na nota original referenciada. ` +
+          "Confira se o produto/código corresponde a um item da nota que está sendo devolvida."
+      );
+    }
+    usados.add(original.id);
+    result.set(index, original);
+  });
+
+  return result;
 }
 
 /**
@@ -378,14 +489,37 @@ export async function emitFiscalDocument(
   const rules = await loadSalesTaxRules(prisma, scope);
   // NFC-e é sempre interna: o destino efetivo para CFOP e tributação é a UF do emitente.
   const ufDestino = resolveUfDestino(document.modelo, config.emitter.uf, document.destinatario.uf);
+
+  // DEVOLUÇÃO espelhada: quando há nota original referenciada (notaOrigemId) E ela tem itens
+  // persistidos (foi emitida por este ERP), copiamos os tributos PERSISTIDOS dela (base/alíquota/
+  // valor de ICMS/FCP/ST, CST/CSOSN) em vez de recalcular pelas regras atuais — evitando crédito
+  // de ICMS incorreto se a regra mudou desde a emissão. Devolução PARCIAL é rateada por item.
+  // Fallback ao recálculo (comportamento de hoje) quando: não é devolução, sem notaOrigemId,
+  // ou a original não tem itens no banco (não emitida por este ERP).
+  let devolucaoMatch: Map<number, NotaOriginalItem> | null = null;
+  if (document.finalidade === "DEVOLUCAO" && links.notaOrigemId) {
+    const notaOriginal = await prisma.notaFiscal.findFirst({
+      where: { id: links.notaOrigemId, tenantId: scope.tenantId, empresaId: scope.empresaId },
+      include: { itens: true }
+    });
+    if (notaOriginal && notaOriginal.itens.length > 0) {
+      // Itens sem correspondência na original lançam erro claro aqui (antes de persistir).
+      devolucaoMatch = matchDevolucaoItems(document.itens, notaOriginal.itens);
+    }
+  }
+
   const totals = emptyTotals();
   const computedItems = document.itens.map((item, index) => {
-    const taxes = computeItemTaxes(item, rules, {
-      regime: config.regime,
-      ufOrigem: config.emitter.uf,
-      ufDestino,
-      servico: item.servico
-    });
+    // Espelha os tributos da original quando casado (devolução); senão recalcula pelas regras.
+    const original = devolucaoMatch?.get(index);
+    const taxes = original
+      ? mirrorTaxesFromOriginal(item, original)
+      : computeItemTaxes(item, rules, {
+          regime: config.regime,
+          ufOrigem: config.emitter.uf,
+          ufDestino,
+          servico: item.servico
+        });
     // CFOP automático para mercadorias: respeita CFOP explícito do item; senão deriva de
     // origem/destino e da existência de substituição tributária nos tributos calculados.
     const cfopCtx = {
@@ -397,10 +531,9 @@ export async function emitFiscalDocument(
     if (item.servico) {
       cfop = null;
     } else if (document.finalidade === "DEVOLUCAO") {
-      // TODO (QA 2026-06-12): devolução deveria espelhar tributos da nota original (notaOrigemId),
-      // hoje recalcula. computeItemTaxes acima reaplica as regras atuais (alíquota/base/CST/CSOSN)
-      // em vez de copiar baseIcms/aliquotaIcms/valorIcms/CST dos itens da nota referenciada — pode
-      // divergir da original se a regra mudou desde a emissão, gerando crédito de ICMS incorreto.
+      // Tributos da devolução: quando a nota original referenciada tem itens persistidos, os
+      // tributos acima (taxes) já foram ESPELHADOS da original (mirrorTaxesFromOriginal),
+      // rateados na devolução parcial; sem original no banco, caem no recálculo (fallback).
       // Devolução é emitida como entrada (tpNF=0): exige CFOP de entrada (1xxx/2xxx). Um CFOP
       // de saída (5/6) herdado do produto não vale — só respeitamos um CFOP explícito de entrada.
       const explicitoEntrada = item.cfop && /^[12]/.test(item.cfop) ? item.cfop : null;

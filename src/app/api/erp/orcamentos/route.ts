@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
 import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
+import { requireModulo } from "@/lib/auth/session";
+import { authErrorStatus } from "@/lib/auth/http";
 import { createQuote } from "@/domains/sales-quote/application/quote-use-cases";
 
 export async function POST(request: Request) {
   try {
+    await requireModulo("orcamentos");
     const scope = await getDevelopmentTenantScope();
     const body = await request.json();
 
@@ -19,6 +22,6 @@ export async function POST(request: Request) {
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro ao criar orçamento.";
     const isValidation = message.includes("obrigatório") || message.includes("ao menos");
-    return NextResponse.json({ error: message }, { status: isValidation ? 400 : 500 });
+    return NextResponse.json({ error: message }, { status: authErrorStatus(error, isValidation ? 400 : 500) });
   }
 }

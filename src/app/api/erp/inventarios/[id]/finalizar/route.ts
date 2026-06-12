@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
+import { requireModulo } from "@/lib/auth/session";
+import { authErrorStatus } from "@/lib/auth/http";
 import { finalizeInventory } from "@/domains/stock/application/inventory-use-cases";
 
 export async function POST(
@@ -7,6 +9,7 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
+    await requireModulo("inventarios");
     const scope = await getDevelopmentTenantScope();
     const { id } = params;
 
@@ -19,6 +22,6 @@ export async function POST(
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro ao finalizar inventário.";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: message }, { status: authErrorStatus(error) });
   }
 }

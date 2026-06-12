@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
+import { requireModulo } from "@/lib/auth/session";
+import { authErrorStatus } from "@/lib/auth/http";
 import { checkoutSale, type CreateSaleInput } from "@/domains/sales/application/sale-use-cases";
 
 // Checkout de balcão em um clique: cria + confirma + emite a nota (NFC-e/NF-e).
 // Erros de emissão NÃO derrubam a requisição — voltam em `emitErro`, com a venda preservada.
 export async function POST(request: Request) {
   try {
+    await requireModulo("vendas");
     const scope = await getDevelopmentTenantScope();
     const body = (await request.json()) as CreateSaleInput & { modelo?: "NFE" | "NFCE" };
     const { modelo, ...sale } = body;
@@ -19,6 +22,6 @@ export async function POST(request: Request) {
       message.includes("não encontrado") ||
       message.includes("Somente") ||
       message.includes("estoque");
-    return NextResponse.json({ error: message }, { status: isValidation ? 400 : 500 });
+    return NextResponse.json({ error: message }, { status: authErrorStatus(error, isValidation ? 400 : 500) });
   }
 }

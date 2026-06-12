@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
 import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
+import { requireModulo } from "@/lib/auth/session";
+import { authErrorStatus } from "@/lib/auth/http";
 import { createSale } from "@/domains/sales/application/sale-use-cases";
 
 export async function POST(request: Request) {
   try {
+    await requireModulo("vendas");
     const scope = await getDevelopmentTenantScope();
     const body = await request.json();
 
@@ -22,6 +25,6 @@ export async function POST(request: Request) {
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro ao criar venda.";
     const isValidation = message.includes("obrigatório") || message.includes("inválido") || message.includes("ao menos");
-    return NextResponse.json({ error: message }, { status: isValidation ? 400 : 500 });
+    return NextResponse.json({ error: message }, { status: authErrorStatus(error, isValidation ? 400 : 500) });
   }
 }

@@ -25,6 +25,8 @@ export type PayableSummary = {
   canSettle: boolean;
   /** Pode ser excluída (admin): sem pagamento registrado. */
   canDelete: boolean;
+  /** Tem baixa estornável: valorPago > 0 e status PAGO/PARCIAL. Opcional para não quebrar objetos otimistas. */
+  canEstornar?: boolean;
 };
 
 export type ReceivableSummary = {
@@ -42,6 +44,8 @@ export type ReceivableSummary = {
   statusTone: StatusTone;
   formaPagamento: string;
   canSettle: boolean;
+  /** Tem baixa estornável: valorPago > 0 e status PAGO/PARCIAL. Opcional para não quebrar objetos otimistas. */
+  canEstornar?: boolean;
 };
 
 export type BankAccountSummary = {
@@ -217,7 +221,9 @@ export async function listPayables(filtroStatus?: string): Promise<PayableSummar
       })(),
       canSettle,
       // Excluir (admin): só sem pagamento registrado (evita orfanar movimentos financeiros).
-      canDelete: valorPago === 0
+      canDelete: valorPago === 0,
+      // Estornar baixa: há pagamento registrado e a conta está quitada/parcial.
+      canEstornar: valorPago > 0 && (c.status === "PAGO" || c.status === "PARCIAL")
     };
   });
 }
@@ -270,7 +276,9 @@ export async function listReceivables(filtroStatus?: string): Promise<Receivable
       statusLabel,
       statusTone,
       formaPagamento: c.formaPagamento ?? "—",
-      canSettle
+      canSettle,
+      // Estornar baixa: há recebimento registrado e a conta está quitada/parcial.
+      canEstornar: valorPago > 0 && (c.status === "PAGO" || c.status === "PARCIAL")
     };
   });
 }

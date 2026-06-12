@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
+import { requireModulo } from "@/lib/auth/session";
+import { authErrorStatus } from "@/lib/auth/http";
 import { countInventoryItem } from "@/domains/stock/application/inventory-use-cases";
 
 export async function POST(
@@ -7,6 +9,7 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
+    await requireModulo("inventarios");
     const scope = await getDevelopmentTenantScope();
     const { id: inventarioId } = params;
 
@@ -32,6 +35,6 @@ export async function POST(
     return NextResponse.json({ id: item.id, contado: item.contado, saldoContado: item.saldoContado });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro ao registrar contagem.";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: message }, { status: authErrorStatus(error) });
   }
 }

@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
+import { requireModulo } from "@/lib/auth/session";
+import { authErrorStatus } from "@/lib/auth/http";
 import { confirmSale } from "@/domains/sales/application/sale-use-cases";
 
 export async function POST(
@@ -7,6 +9,7 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
+    await requireModulo("vendas");
     const scope = await getDevelopmentTenantScope();
     const pedido = await confirmSale(scope, params.id);
     return NextResponse.json({ id: pedido.id, status: pedido.status });
@@ -16,6 +19,6 @@ export async function POST(
       message.includes("não encontrado") ||
       message.includes("Somente") ||
       message.includes("não pode");
-    return NextResponse.json({ error: message }, { status: isValidation ? 400 : 500 });
+    return NextResponse.json({ error: message }, { status: authErrorStatus(error, isValidation ? 400 : 500) });
   }
 }

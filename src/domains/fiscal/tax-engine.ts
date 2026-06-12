@@ -48,6 +48,29 @@ function round2(value: number) {
 }
 
 /**
+ * Quando o item REALMENTE recolhe ICMS-ST (substituto: valorSt>0 via MVA), promove o CST/CSOSN
+ * para o código de ST correspondente, para que o XML monte o grupo ICMS10/70 (normal) ou
+ * ICMSSN201/202 (Simples). Códigos que já são de ST (10/70/201/202) são mantidos. Sem ST
+ * (valorSt==0) NADA muda — preserva o caminho atual (CST 00/60/40 e CSOSN 102/500/101).
+ */
+function promoteCstStNormal(cst: string | null): string | null {
+  if (!cst) return cst;
+  const c = cst.padStart(2, "0");
+  if (c === "10" || c === "70") return c; // já é ST (tributada+ST / redução+ST)
+  if (c === "00") return "10"; // tributada integralmente → tributada com ST
+  if (c === "20") return "70"; // redução de base → redução de base com ST
+  return c; // demais CST (90 genérico, etc.): mantém, o grupo ICMS90 já aceita campos ST
+}
+
+function promoteCsosnStSimples(csosn: string | null): string | null {
+  if (!csosn) return csosn;
+  const c = csosn.padStart(3, "0");
+  if (c === "201" || c === "202") return c; // já é Simples com ST
+  if (c === "101") return "201"; // com crédito → com crédito e ST
+  return "202"; // 102/103/300/400 (sem crédito) → sem crédito e com ST
+}
+
+/**
  * Reforma Tributária (IBS/CBS/IS): calcula os valores sobre a base da operação. Regra cadastrada
  * (por NCM/UF) vence; sem regra, usa a base nacional de teste (CBS 0,9% / IBS 0,1% / IS 0%).
  * A redução de base (quando houver) vem da regra de CBS/IBS (reducaoBase). IS incide sobre o
@@ -252,10 +275,12 @@ export function computeItemTaxes(
     const valorCofins = round2(base * (aliquotaCofins / 100));
     // No Simples o substituto tributário (CSOSN 201/202) ainda destaca ICMS-ST quando há MVA.
     const st = computeIcmsSt(icmsRuleSimples, csosn, null, base, valorIpi, 0, ctx.ufDestino);
+    // Só quando há ST efetivo (valorSt>0) promovemos o CSOSN para 201/202; sem ST, mantém 102.
+    const csosnFinal = st.valorIcmsSt > 0 ? promoteCsosnStSimples(csosn) : csosn;
     return {
       origem,
       cstIcms: null,
-      csosn,
+      csosn: csosnFinal,
       baseIcms: 0,
       aliquotaIcms: 0,
       valorIcms: 0,
@@ -301,10 +326,13 @@ export function computeItemTaxes(
   const percentualFcp = icmsRule?.fcp != null ? num(icmsRule.fcp) : interna ? fcpInterno(ctx.ufDestino) : 0;
   const valorFcp = round2(baseIcms * (percentualFcp / 100));
   const st = computeIcmsSt(icmsRule, null, cstIcms, base, valorIpi, valorIcms, ctx.ufDestino);
+  // Só quando há ST efetivo (valorSt>0) promovemos o CST para 10/70 (substituto que recolhe);
+  // sem ST, mantém o CST atual (00/90/40…) e o XML segue idêntico ao de hoje.
+  const cstIcmsFinal = st.valorIcmsSt > 0 ? promoteCstStNormal(cstIcms) : cstIcms;
 
   return {
     origem,
-    cstIcms,
+    cstIcms: cstIcmsFinal,
     csosn: null,
     baseIcms,
     aliquotaIcms,

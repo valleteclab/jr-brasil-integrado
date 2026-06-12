@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
+import { requireModulo } from "@/lib/auth/session";
+import { authErrorStatus } from "@/lib/auth/http";
 import { suggestFiscalEntryFinalidadesWithAi } from "@/domains/products/application/fiscal-entry-use-cases";
 
 type RouteContext = {
@@ -10,12 +12,13 @@ type RouteContext = {
 
 export async function POST(_request: Request, context: RouteContext) {
   try {
+    await requireModulo("entradas-fiscais");
     const scope = await getDevelopmentTenantScope();
     const suggestions = await suggestFiscalEntryFinalidadesWithAi(scope, context.params.id);
 
     return NextResponse.json({ suggestions });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Não foi possível sugerir finalidades com IA.";
-    return NextResponse.json({ error: message }, { status: 400 });
+    return NextResponse.json({ error: message }, { status: authErrorStatus(error, 400) });
   }
 }

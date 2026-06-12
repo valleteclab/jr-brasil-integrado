@@ -1,4 +1,6 @@
 import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
+import { requireModulo } from "@/lib/auth/session";
+import { authErrorStatus } from "@/lib/auth/http";
 import { getCaixaReciboData } from "@/domains/cashier/application/cashier-use-cases";
 
 function esc(v: string | null | undefined): string {
@@ -23,6 +25,7 @@ const formaLabel = (id: string) => FORMA_LABEL[id] ?? id;
 // aberto ou recibo de fechamento "Z" quando já fechado. Substitui a antiga Redução Z.
 export async function GET(_request: Request, { params }: { params: { id: string } }) {
   try {
+    await requireModulo("caixa");
     const scope = await getDevelopmentTenantScope();
     const { empresa, caixa, resumo, diferenca } = await getCaixaReciboData(scope, params.id);
     const fechado = caixa.status === "FECHADO";
@@ -107,7 +110,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
   } catch (error) {
     const message = error instanceof Error ? error.message : "Caixa não encontrado.";
     return new Response(`<p style="font-family:sans-serif">${message}</p>`, {
-      status: 404,
+      status: authErrorStatus(error, 404),
       headers: { "Content-Type": "text/html; charset=utf-8" }
     });
   }

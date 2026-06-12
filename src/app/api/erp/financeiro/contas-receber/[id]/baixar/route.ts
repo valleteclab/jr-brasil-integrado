@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
+import { requireModulo } from "@/lib/auth/session";
+import { authErrorStatus } from "@/lib/auth/http";
 import { settleReceivable, FinanceValidationError } from "@/domains/finance/application/finance-use-cases";
 
 export async function POST(
@@ -7,6 +9,7 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
+    await requireModulo("financeiro");
     const scope = await getDevelopmentTenantScope();
     const body = await request.json() as {
       valor: number;
@@ -31,7 +34,7 @@ export async function POST(
     return NextResponse.json({ id: conta.id, status: conta.status });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro ao baixar conta a receber.";
-    const status = error instanceof FinanceValidationError ? 400 : 500;
+    const status = authErrorStatus(error, error instanceof FinanceValidationError ? 400 : 500);
     return NextResponse.json({ error: message }, { status });
   }
 }

@@ -138,6 +138,8 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
     troco: number;
     crediario: { valor: number; parcelas: number; primeiroVencimento: string } | null;
     retirada: { id: string; codigo: string } | null;
+    // Aviso quando a venda foi emitida mas o recebimento NÃO entrou no caixa (lançar manualmente).
+    avisoRecebimento: string | null;
   } | null>(null);
   const [retiradaExpedicao, setRetiradaExpedicao] = useState(false);
   const [pagamentoAberto, setPagamentoAberto] = useState(false);
@@ -294,11 +296,13 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
         troco?: number;
         crediario?: { valor: number; parcelas: number; primeiroVencimento: string } | null;
         retirada?: { id: string; codigo: string } | null;
+        // Recebimento não lançado no caixa — operador precisa lançar manualmente.
+        avisoRecebimento?: string | null;
         error?: string;
       };
       if (!res.ok) throw new Error(dataRes.error || "Falha ao finalizar.");
       const notas = dataRes.notas ?? [];
-      setResultado({ notas, troco: dataRes.troco ?? 0, crediario: dataRes.crediario ?? null, retirada: dataRes.retirada ?? null });
+      setResultado({ notas, troco: dataRes.troco ?? 0, crediario: dataRes.crediario ?? null, retirada: dataRes.retirada ?? null, avisoRecebimento: dataRes.avisoRecebimento ?? null });
       setCart([]);
       setClienteId("");
       setRetiradaExpedicao(false);
@@ -480,6 +484,10 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
             {error && <div className="alert danger">{error}</div>}
             {resultado && (
               <div className="pdv-resultado">
+                {/* Recebimento não entrou no caixa: dinheiro a lançar manualmente — destaque para o operador. */}
+                {resultado.avisoRecebimento && (
+                  <div className="alert danger"><strong>Atenção</strong><span>{resultado.avisoRecebimento}</span></div>
+                )}
                 {resultado.troco > 0 && <div className="alert info pdv-troco">Troco: <strong>{brl(resultado.troco)}</strong></div>}
                 {resultado.crediario && (
                   <div className="alert info">

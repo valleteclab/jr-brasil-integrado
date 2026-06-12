@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 import { updateFiscalEntryItemLinks } from "@/domains/products/application/fiscal-entry-use-cases";
 import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
+import { requireModulo } from "@/lib/auth/session";
+import { authErrorStatus } from "@/lib/auth/http";
 import { isFinalidadeEntrada } from "@/domains/fiscal/finalidade-entrada";
 
 export async function PUT(request: Request) {
   try {
+    await requireModulo("entradas-fiscais");
     const body = await request.json() as {
       links?: Array<{
         itemId?: string;
@@ -39,6 +42,6 @@ export async function PUT(request: Request) {
     return NextResponse.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Não foi possível salvar os vínculos dos itens.";
-    return NextResponse.json({ error: message }, { status: 400 });
+    return NextResponse.json({ error: message }, { status: authErrorStatus(error, 400) });
   }
 }

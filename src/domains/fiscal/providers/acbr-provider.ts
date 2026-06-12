@@ -292,9 +292,14 @@ function pisCofinsGroup(
  *  - demais → ICMS90 (genérico)
  * Simples (CSOSN):
  *  - 102/103/300/400 → ICMSSN102 (sem permissão de crédito: só orig+CSOSN)
+ *  - 201/202 → ICMSSN201/202 (substituto que RECOLHE o ST: vBCST/pMVAST/pICMSST/vICMSST)
  *  - 500 → ICMSSN500 (ICMS cobrado anteriormente por ST)
  *  - 101 → ICMSSN101 (com permissão de crédito)
  *  - demais → ICMSSN900 (genérico)
+ *
+ * Os grupos de ST do SUBSTITUTO (CST 10/70 e CSOSN 201/202) só são montados quando o item
+ * realmente recolhe ST (valorIcmsSt>0); caso contrário, o item nunca cai nesses códigos
+ * (ver tax-engine: a promoção do CST/CSOSN só ocorre com valorSt>0), preservando o XML atual.
  */
 function icmsGroup(
   simples: boolean,
@@ -302,8 +307,24 @@ function icmsGroup(
   base: number,
   orig: number
 ): Record<string, unknown> {
+  // Campos comuns de ST do substituto (modBCST 4 = MVA, alinhado ao tax-engine que calcula por MVA).
+  const vBCST = round2(taxes?.baseIcmsSt ?? 0);
+  const pMVAST = round2(taxes?.percentualMva ?? 0);
+  const pICMSST = round2(taxes?.aliquotaIcmsSt ?? 0);
+  const vICMSST = round2(taxes?.valorIcmsSt ?? 0);
+  const stFields = { modBCST: 4, ...(pMVAST > 0 ? { pMVAST } : {}), vBCST, pICMSST, vICMSST };
+
   if (simples) {
     const csosn = (taxes?.csosn ?? "102").padStart(3, "0");
+    // CSOSN 201/202: Simples substituto que recolhe ST. 201 = com permissão de crédito;
+    // 202/203 = sem permissão. pCredSN/vCredICMSSN só no 201 (e só se houver crédito).
+    if ((csosn === "201" || csosn === "202" || csosn === "203") && vICMSST > 0) {
+      const credito =
+        csosn === "201" && (taxes?.valorIcms ?? 0) > 0
+          ? { pCredSN: taxes?.aliquotaIcms ?? 0, vCredICMSSN: round2(taxes?.valorIcms ?? 0) }
+          : {};
+      return { [`ICMSSN${csosn}`]: { orig, CSOSN: csosn, ...stFields, ...credito } };
+    }
     if (csosn === "500") {
       // Substituído: ICMS retido na operação anterior. A ordem do schema é
       // vBCSTRet → pST → vICMSSTRet (pST = alíquota suportada pelo consumidor final). Todos
@@ -323,6 +344,20 @@ function icmsGroup(
   }
 
   const cst = (taxes?.cstIcms ?? "00").padStart(2, "0");
+  // CST 10/70: substituto que RECOLHE o ST (regime normal). Tem ICMS próprio + grupo ST.
+  //  - 10: tributada integralmente + ST (vBC/pICMS/vICMS próprios + vBCST/pICMSST/vICMSST)
+  //  - 70: com redução de base + ST. Só montamos esses grupos quando há ST efetivo (vICMSST>0).
+  if ((cst === "10" || cst === "70") && vICMSST > 0) {
+    return {
+      [`ICMS${cst}`]: {
+        orig, CST: cst, modBC: 3,
+        vBC: taxes?.baseIcms ?? base, pICMS: taxes?.aliquotaIcms ?? 0, vICMS: taxes?.valorIcms ?? 0,
+        // FCP do ICMS próprio (reconcilia com ICMSTot.vFCP); ST destacado a seguir.
+        pFCP: taxes?.percentualFcp ?? 0, vFCP: taxes?.valorFcp ?? 0,
+        ...stFields
+      }
+    };
+  }
   if (cst === "60") {
     // Revenda de mercadoria com ICMS-ST recolhido: sem ICMS próprio. A ordem exigida pelo
     // schema é vBCSTRet → pST → vICMSSTRet (pST = alíquota suportada pelo consumidor final).
@@ -345,7 +380,7 @@ function icmsGroup(
       }
     };
   }
-  // CST 10/20/70/90 e demais: grupo genérico com ICMS próprio.
+  // CST 20/90 e demais (e 10/70 sem ST efetivo, caso de borda): grupo genérico com ICMS próprio.
   return {
     ICMS90: {
       orig, CST: cst, modBC: 3,
@@ -598,8 +633,8 @@ export class AcbrFiscalProvider implements FiscalProvider {
     const indFinal = isNfce || !input.document.destinatario.inscricaoEstadual ? 1 : 0;
 
     // Acumula os totais a partir dos MESMOS valores por item que serão emitidos —
-    // a SEFAZ rejeita se total.ICMSTot.* divergir da soma dos itens (ex.: vFCP).
-    const sum = { vBC: 0, vICMS: 0, vFCP: 0, vProd: 0, vPIS: 0, vCOFINS: 0 };
+    // a SEFAZ rejeita se total.ICMSTot.* divergir da soma dos itens (ex.: vFCP, vST/vBCST).
+    const sum = { vBC: 0, vICMS: 0, vFCP: 0, vProd: 0, vPIS: 0, vCOFINS: 0, vBCST: 0, vST: 0 };
 
     const det = input.document.itens.map((item, index) => {
       const numeroItem = index + 1;
@@ -619,11 +654,24 @@ export class AcbrFiscalProvider implements FiscalProvider {
       // ICMS próprio, então não entram em ICMSTot.vBC/vICMS — senão a SEFAZ rejeita o total.
       sum.vProd += item.valorTotal;
       const cstIcms = (taxes?.cstIcms ?? "00").padStart(2, "0");
+      const csosnIcms = (taxes?.csosn ?? "").padStart(3, "0");
       const semIcmsProprio = ["40", "41", "50", "60"].includes(cstIcms);
       if (!simples && !semIcmsProprio) {
         sum.vBC += taxes?.baseIcms ?? base;
         sum.vICMS += taxes?.valorIcms ?? 0;
         sum.vFCP += taxes?.valorFcp ?? 0;
+      }
+      // ICMS-ST do substituto: só os itens que REALMENTE emitem grupo ST (CST 10/70 ou
+      // CSOSN 201/202/203, com vICMSST>0) entram em ICMSTot.vBCST/vST — assim
+      // sum(item ST) == ICMSTot.vST e a SEFAZ não rejeita o total. Itens sem ST não somam nada.
+      const vICMSSTItem = round2(taxes?.valorIcmsSt ?? 0);
+      const emiteSt = vICMSSTItem > 0 && (
+        (!simples && (cstIcms === "10" || cstIcms === "70")) ||
+        (simples && (csosnIcms === "201" || csosnIcms === "202" || csosnIcms === "203"))
+      );
+      if (emiteSt) {
+        sum.vBCST += taxes?.baseIcmsSt ?? 0;
+        sum.vST += vICMSSTItem;
       }
       // PIS/COFINS NT não destacam valor; só Aliq/Outr entram no total.
       if (pis.PISNT === undefined) sum.vPIS += taxes?.valorPis ?? 0;
@@ -670,8 +718,10 @@ export class AcbrFiscalProvider implements FiscalProvider {
         total: {
           ICMSTot: {
             // Somados a partir dos itens emitidos (não de t.*), para bater na validação da SEFAZ.
+            // vBCST/vST vêm da soma dos itens que emitem grupo ST (substituto), garantindo
+            // sum(item vICMSST) == ICMSTot.vST. Sem itens com ST, ambos são 0 como antes.
             vBC: round2(sum.vBC), vICMS: round2(sum.vICMS), vICMSDeson: 0,
-            vFCP: round2(sum.vFCP), vBCST: 0, vST: t.valorIcmsSt, vFCPST: 0, vFCPSTRet: 0,
+            vFCP: round2(sum.vFCP), vBCST: round2(sum.vBCST), vST: round2(sum.vST), vFCPST: 0, vFCPSTRet: 0,
             vProd: round2(sum.vProd), vFrete: input.document.valorFrete, vSeg: input.document.valorSeguro,
             // vDesc = soma dos descontos por item (t.valorDesconto) + desconto de documento. Tem que
             // bater com vNF = vProd - vDesc + frete + seg + outros + ST + IPI, senão a SEFAZ rejeita.

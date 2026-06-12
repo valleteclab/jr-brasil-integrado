@@ -1,14 +1,17 @@
 import { NextResponse } from "next/server";
 import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
+import { requireModulo } from "@/lib/auth/session";
+import { authErrorStatus } from "@/lib/auth/http";
 import { pdvCheckout } from "@/domains/sales/application/pdv-use-cases";
 
 export async function POST(request: Request) {
   try {
+    await requireModulo("vendas");
     const scope = await getDevelopmentTenantScope();
     const result = await pdvCheckout(scope, await request.json());
     return NextResponse.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Não foi possível finalizar a venda.";
-    return NextResponse.json({ error: message }, { status: 400 });
+    return NextResponse.json({ error: message }, { status: authErrorStatus(error, 400) });
   }
 }

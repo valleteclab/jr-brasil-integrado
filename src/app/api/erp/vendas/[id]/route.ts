@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
-import { requireAdmin, SessionError, ForbiddenError } from "@/lib/auth/session";
+import { requireAdmin, requireModulo } from "@/lib/auth/session";
+import { authErrorStatus } from "@/lib/auth/http";
 import { deleteSale, editConfirmedSale, type EditSaleInput } from "@/domains/sales/application/sale-use-cases";
 
 // EDITAR pedido em 'Aguardando nota' (antes de emitir a NF): troca itens/dados com estorno e
 // reaplicação transacional de estoque, contas a receber e comissão.
 export async function PUT(request: Request, { params }: { params: { id: string } }) {
   try {
+    await requireModulo("vendas");
     const scope = await getDevelopmentTenantScope();
     const body = (await request.json().catch(() => ({}))) as EditSaleInput;
     if (!Array.isArray(body.itens) || body.itens.length === 0) {
@@ -23,7 +25,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       message.includes("ao menos") ||
       message.includes("insuficiente") ||
       message.includes("inativo");
-    return NextResponse.json({ error: message }, { status: isValidation ? 400 : 500 });
+    return NextResponse.json({ error: message }, { status: authErrorStatus(error, isValidation ? 400 : 500) });
   }
 }
 
@@ -36,10 +38,8 @@ export async function DELETE(_request: Request, { params }: { params: { id: stri
     return NextResponse.json({ id: pedido.id, ok: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro ao excluir venda.";
-    if (error instanceof SessionError) return NextResponse.json({ error: message }, { status: 401 });
-    if (error instanceof ForbiddenError) return NextResponse.json({ error: message }, { status: 403 });
     const isValidation =
       message.includes("não encontrado") || message.includes("Só é possível") || message.includes("nota fiscal");
-    return NextResponse.json({ error: message }, { status: isValidation ? 400 : 500 });
+    return NextResponse.json({ error: message }, { status: authErrorStatus(error, isValidation ? 400 : 500) });
   }
 }

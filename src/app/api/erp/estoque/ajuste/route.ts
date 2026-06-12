@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
 import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
+import { requireModulo } from "@/lib/auth/session";
+import { authErrorStatus } from "@/lib/auth/http";
 import { adjustStock } from "@/domains/stock/application/stock-adjust-use-cases";
 
 export async function POST(request: Request) {
   try {
+    await requireModulo("estoque");
     const scope = await getDevelopmentTenantScope();
     const body = (await request.json()) as {
       produtoId?: string;
@@ -34,6 +37,6 @@ export async function POST(request: Request) {
     return NextResponse.json(resultado);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro ao ajustar estoque.";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: message }, { status: authErrorStatus(error) });
   }
 }

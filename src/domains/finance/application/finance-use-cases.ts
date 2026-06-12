@@ -449,3 +449,208 @@ export async function deletePayable(scope: TenantScope, id: string) {
     return removido;
   });
 }
+
+// ─── Estorno de Baixa de Conta a Pagar ────────────────────────────────────────
+
+/**
+ * ESTORNA a baixa de uma conta a PAGAR: desfaz o(s) pagamento(s) registrado(s).
+ * Para cada MovimentoFinanceiro de baixa (origem CONTA_PAGAR), cria um movimento INVERSO
+ * (CREDITO, origem "ESTORNO") devolvendo o valor ao saldo da conta bancária, e zera
+ * valorPago/juros/multa/descontoBaixa da conta, voltando o status para ABERTO (ou VENCIDO).
+ */
+export async function estornarBaixaPayable(scope: TenantScope, contaPagarId: string) {
+  return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    // Relê dentro da transação para tratar concorrência (duas requisições simultâneas).
+    const conta = await tx.contaPagar.findFirst({
+      where: { id: contaPagarId, ...scopedByTenantCompany(scope) }
+    });
+
+    if (!conta) {
+      throw new FinanceValidationError("Conta a pagar não encontrada.");
+    }
+    const houveBaixa =
+      Number(conta.valorPago) > 0 && (conta.status === "PAGO" || conta.status === "PARCIAL");
+    if (!houveBaixa) {
+      throw new FinanceValidationError("Não há baixa para estornar.");
+    }
+
+    // Movimentos de baixa desta conta (DEBITO, origem CONTA_PAGAR) — não inclui estornos anteriores.
+    const movimentos = await tx.movimentoFinanceiro.findMany({
+      where: { contaPagarId, origem: "CONTA_PAGAR", ...scopedByTenantCompany(scope) },
+      orderBy: { dataMovimento: "asc" }
+    });
+
+    const agora = new Date();
+
+    // Para cada baixa, devolve o valor à conta bancária (estorno = CREDITO inverso ao DEBITO).
+    for (const mov of movimentos) {
+      if (!mov.contaBancariaId) continue; // baixa sem conta bancária: nada a reverter no saldo
+      const valor = Number(mov.valor);
+
+      const contaBancaria = await tx.contaBancaria.findFirst({
+        where: { id: mov.contaBancariaId, ...scopedByTenantCompany(scope) }
+      });
+      if (!contaBancaria) {
+        throw new FinanceValidationError("Conta bancária do movimento não encontrada.");
+      }
+      const saldoAnterior = Number(contaBancaria.saldoAtual);
+      const saldoPosterior = round2(saldoAnterior + valor); // devolve o que foi debitado
+
+      await tx.contaBancaria.update({
+        where: { id: mov.contaBancariaId },
+        data: { saldoAtual: saldoPosterior }
+      });
+
+      await tx.movimentoFinanceiro.create({
+        data: {
+          tenantId: scope.tenantId,
+          empresaId: scope.empresaId,
+          contaBancariaId: mov.contaBancariaId,
+          contaPagarId,
+          tipo: "CREDITO", // inverso do DEBITO da baixa original
+          origem: "ESTORNO",
+          descricao: `Estorno de baixa: ${conta.descricao}`,
+          valor,
+          formaPagamento: mov.formaPagamento,
+          saldoAnterior,
+          saldoPosterior,
+          dataMovimento: agora
+        }
+      });
+    }
+
+    // Volta a conta ao estado "em aberto": zera o que foi acumulado na baixa e limpa pagoEm.
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+    const novoStatus: "ABERTO" | "VENCIDO" = conta.vencimento < hoje ? "VENCIDO" : "ABERTO";
+
+    const contaAtualizada = await tx.contaPagar.update({
+      where: { id: contaPagarId },
+      data: {
+        valorPago: 0,
+        juros: 0,
+        multa: 0,
+        descontoBaixa: 0,
+        status: novoStatus,
+        pagoEm: null
+      }
+    });
+
+    await createAuditLog(tx, {
+      scope,
+      entidade: "ContaPagar",
+      entidadeId: contaPagarId,
+      acao: "ESTORNO_BAIXA",
+      payload: {
+        valorEstornado: Number(conta.valorPago),
+        movimentosRevertidos: movimentos.length,
+        statusAnterior: conta.status,
+        novoStatus
+      }
+    });
+
+    return contaAtualizada;
+  }, TX_OPTIONS);
+}
+
+// ─── Estorno de Baixa de Conta a Receber ──────────────────────────────────────
+
+/**
+ * ESTORNA a baixa de uma conta a RECEBER: desfaz o(s) recebimento(s) registrado(s).
+ * Para cada MovimentoFinanceiro de baixa (origem CONTA_RECEBER), cria um movimento INVERSO
+ * (DEBITO, origem "ESTORNO") subtraindo do saldo da conta bancária o que havia sido creditado.
+ */
+export async function estornarBaixaReceivable(scope: TenantScope, contaReceberId: string) {
+  return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    // Relê dentro da transação para tratar concorrência (duas requisições simultâneas).
+    const conta = await tx.contaReceber.findFirst({
+      where: { id: contaReceberId, ...scopedByTenantCompany(scope) }
+    });
+
+    if (!conta) {
+      throw new FinanceValidationError("Conta a receber não encontrada.");
+    }
+    const houveBaixa =
+      Number(conta.valorPago) > 0 && (conta.status === "PAGO" || conta.status === "PARCIAL");
+    if (!houveBaixa) {
+      throw new FinanceValidationError("Não há baixa para estornar.");
+    }
+
+    // Movimentos de baixa desta conta (CREDITO, origem CONTA_RECEBER) — não inclui estornos anteriores.
+    const movimentos = await tx.movimentoFinanceiro.findMany({
+      where: { contaReceberId, origem: "CONTA_RECEBER", ...scopedByTenantCompany(scope) },
+      orderBy: { dataMovimento: "asc" }
+    });
+
+    const agora = new Date();
+
+    // Para cada baixa, retira o valor da conta bancária (estorno = DEBITO inverso ao CREDITO).
+    for (const mov of movimentos) {
+      if (!mov.contaBancariaId) continue; // baixa sem conta bancária: nada a reverter no saldo
+      const valor = Number(mov.valor);
+
+      const contaBancaria = await tx.contaBancaria.findFirst({
+        where: { id: mov.contaBancariaId, ...scopedByTenantCompany(scope) }
+      });
+      if (!contaBancaria) {
+        throw new FinanceValidationError("Conta bancária do movimento não encontrada.");
+      }
+      const saldoAnterior = Number(contaBancaria.saldoAtual);
+      const saldoPosterior = round2(saldoAnterior - valor); // retira o que foi creditado
+
+      await tx.contaBancaria.update({
+        where: { id: mov.contaBancariaId },
+        data: { saldoAtual: saldoPosterior }
+      });
+
+      await tx.movimentoFinanceiro.create({
+        data: {
+          tenantId: scope.tenantId,
+          empresaId: scope.empresaId,
+          contaBancariaId: mov.contaBancariaId,
+          contaReceberId,
+          tipo: "DEBITO", // inverso do CREDITO da baixa original
+          origem: "ESTORNO",
+          descricao: `Estorno de baixa: ${conta.descricao}`,
+          valor,
+          formaPagamento: mov.formaPagamento,
+          saldoAnterior,
+          saldoPosterior,
+          dataMovimento: agora
+        }
+      });
+    }
+
+    // Volta a conta ao estado "em aberto": zera o que foi acumulado na baixa e limpa pagoEm.
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+    const novoStatus: "ABERTO" | "VENCIDO" = conta.vencimento < hoje ? "VENCIDO" : "ABERTO";
+
+    const contaAtualizada = await tx.contaReceber.update({
+      where: { id: contaReceberId },
+      data: {
+        valorPago: 0,
+        juros: 0,
+        multa: 0,
+        descontoBaixa: 0,
+        status: novoStatus,
+        pagoEm: null
+      }
+    });
+
+    await createAuditLog(tx, {
+      scope,
+      entidade: "ContaReceber",
+      entidadeId: contaReceberId,
+      acao: "ESTORNO_BAIXA",
+      payload: {
+        valorEstornado: Number(conta.valorPago),
+        movimentosRevertidos: movimentos.length,
+        statusAnterior: conta.status,
+        novoStatus
+      }
+    });
+
+    return contaAtualizada;
+  }, TX_OPTIONS);
+}
