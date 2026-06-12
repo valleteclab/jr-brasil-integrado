@@ -45,7 +45,9 @@ services:
       POSTGRES_PASSWORD: "${ERP_DB_PASSWORD}"
       POSTGRES_DB: erp
     volumes:
-      - erp_pgdata:/var/lib/postgresql/data
+      # PG18: o mount vai no diretório-pai (/var/lib/postgresql); os dados ficam em subpasta
+      # versionada. Mantê-lo em /data quebra a inicialização da imagem oficial 18+.
+      - erp_pgdata:/var/lib/postgresql
     deploy:
       replicas: 1
       restart_policy:
