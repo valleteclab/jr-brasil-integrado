@@ -122,30 +122,67 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO", allow
 
   // Venda balcão em um clique: cria + confirma + emite a nota (NFC-e/NF-e) numa só ação.
   // Pré-venda: envia a venda do balcão para o caixa cobrar e emitir (AGUARDANDO_PAGAMENTO).
+  // Cria o pedido de balcão (pré-venda para o caixa ou rascunho) e devolve id/numero.
+  async function criarPedido(statusInicial: "AGUARDANDO_PAGAMENTO" | "RASCUNHO"): Promise<{ id: string; numero: string }> {
+    const itensPayload = items.map((it) => ({
+      produtoId: it.produto.id,
+      quantidade: it.quantidade,
+      precoUnitario: it.preco,
+      desconto: Math.round(it.quantidade * it.preco * (it.desconto / 100) * 100) / 100
+    }));
+    const res = await fetch("/api/erp/vendas", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        clienteId: cliente?.id ?? null, canal: "BALCAO", statusInicial,
+        itens: itensPayload, desconto: descontoVal, frete: Number(frete) || 0,
+        formaPagamento: pagamento, condicaoPagamento: condicao, observacoes: obs
+      })
+    });
+    const p = await res.json();
+    if (!res.ok) throw new Error(p.error || "Falha ao salvar a venda.");
+    return { id: p.id, numero: p.numero };
+  }
+
   async function enviarParaCaixa() {
     setError("");
     if (!items.length) { setError("Adicione ao menos um item."); return; }
     setSaving(true);
     try {
-      const itensPayload = items.map((it) => ({
-        produtoId: it.produto.id,
-        quantidade: it.quantidade,
-        precoUnitario: it.preco,
-        desconto: Math.round(it.quantidade * it.preco * (it.desconto / 100) * 100) / 100
-      }));
-      const res = await fetch("/api/erp/vendas", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          clienteId: cliente?.id ?? null, canal: "BALCAO", statusInicial: "AGUARDANDO_PAGAMENTO",
-          itens: itensPayload, desconto: descontoVal, frete: Number(frete) || 0,
-          formaPagamento: pagamento, condicaoPagamento: condicao, observacoes: obs
-        })
-      });
-      const p = await res.json();
-      if (!res.ok) throw new Error(p.error || "Falha ao enviar para o caixa.");
+      const p = await criarPedido("AGUARDANDO_PAGAMENTO");
       setSuccess({ tipo: "Pré-venda", total, route: "/erp/caixa", pedidoNumero: p.numero });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível enviar para o caixa.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // Imprimir recibo: cria a pré-venda (vai para o caixa, com a forma escolhida) e abre o recibo
+  // para o cliente levar ao caixa.
+  async function imprimirRecibo() {
+    setError("");
+    if (!items.length) { setError("Adicione ao menos um item."); return; }
+    setSaving(true);
+    try {
+      const p = await criarPedido("AGUARDANDO_PAGAMENTO");
+      window.open(`/api/erp/vendas/${p.id}/recibo`, "_blank", "noopener,noreferrer");
+      setSuccess({ tipo: "Pré-venda", total, route: "/erp/caixa", pedidoNumero: p.numero });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não foi possível imprimir o recibo.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function salvarRascunho() {
+    setError("");
+    if (!items.length) { setError("Adicione ao menos um item."); return; }
+    setSaving(true);
+    try {
+      const p = await criarPedido("RASCUNHO");
+      setSuccess({ tipo: "Rascunho", total, route: "/erp/vendas", pedidoNumero: p.numero });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não foi possível salvar o rascunho.");
     } finally {
       setSaving(false);
     }
@@ -465,10 +502,12 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO", allow
             ) : (
               <button type="button" className="btn-erp primary lg" disabled={!cliente || !canFinalize || saving} onClick={finalize}>{saving ? "Processando…" : acaoLabel}</button>
             )}
-            <div style={{ display: "flex", gap: 8 }}>
-              <button type="button" className="btn-erp ghost sm" style={{ flex: 1 }}>Imprimir</button>
-              <button type="button" className="btn-erp ghost sm" style={{ flex: 1 }}>Salvar rascunho</button>
-            </div>
+            {isVendaPedido && (
+              <div style={{ display: "flex", gap: 8 }}>
+                <button type="button" className="btn-erp ghost sm" style={{ flex: 1 }} disabled={!canFinalize || saving} onClick={imprimirRecibo} title="Cria a pré-venda e imprime o recibo para o cliente levar ao caixa">🖨 Imprimir recibo</button>
+                <button type="button" className="btn-erp ghost sm" style={{ flex: 1 }} disabled={!canFinalize || saving} onClick={salvarRascunho}>Salvar rascunho</button>
+              </div>
+            )}
           </div>
         </aside>
       </div>

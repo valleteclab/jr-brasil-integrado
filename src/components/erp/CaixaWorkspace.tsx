@@ -21,6 +21,18 @@ const BANDEIRAS = ["VISA", "MASTERCARD", "ELO", "AMEX", "HIPERCARD", "OUTRA"];
 const isPixOuTransfer = (f: string) => f === "PIX" || f === "TRANSFERENCIA";
 const isCartao = (f: string) => f === "CARTAO_DEBITO" || f === "CARTAO_CREDITO";
 
+// Mapeia a forma escolhida no balcão (texto livre, ex.: "Pix à vista", "Cartão crédito") para o
+// código de forma do caixa, pré-selecionando o que o vendedor já informou. Sem match → Dinheiro.
+function formaCaixaFromLabel(label: string | null): string {
+  const f = (label ?? "").toLowerCase();
+  if (f.includes("pix")) return "PIX";
+  if (f.includes("transfer")) return "TRANSFERENCIA";
+  if (f.includes("déb") || f.includes("deb")) return "CARTAO_DEBITO";
+  if (f.includes("créd") || f.includes("cred")) return "CARTAO_CREDITO";
+  if (f.includes("boleto")) return "BOLETO";
+  return "DINHEIRO";
+}
+
 type PagamentoLinha = {
   uid: string;
   forma: string;
@@ -154,7 +166,8 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
     setError("");
     setModelo("NFCE");
     setRetiradaExpedicao(false);
-    setPagamentos([{ uid: uid(), forma: "DINHEIRO", valor: p.total }]);
+    // Pré-seleciona a forma que o vendedor já informou no balcão (o operador pode trocar).
+    setPagamentos([{ uid: uid(), forma: formaCaixaFromLabel(p.formaPagamento), valor: p.total }]);
   }
 
   function addPagamento() { setPagamentos((cur) => [...cur, { uid: uid(), forma: "DINHEIRO", valor: falta }]); }

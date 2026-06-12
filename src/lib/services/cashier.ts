@@ -11,6 +11,8 @@ export type PreVendaResumo = {
   temCliente: boolean;
   total: number;
   qtdItens: number;
+  /** Forma de pagamento escolhida no balcão (pré-seleciona no caixa). */
+  formaPagamento: string | null;
   criadoEm: string;
   itens: Array<{
     id: string;
@@ -82,6 +84,7 @@ export async function getCaixaPageData(): Promise<CaixaPageData> {
     temCliente: Boolean(p.clienteId),
     total: Number(p.total),
     qtdItens: p.itens.length,
+    formaPagamento: p.formaPagamento ?? null,
     criadoEm: p.criadoEm.toLocaleString("pt-BR"),
     itens: p.itens.map((item) => ({
       id: item.id,

@@ -543,6 +543,26 @@ export async function previewSaleInvoice(scope: TenantScope, id: string, options
   return previewFiscalDocument(scope, doc);
 }
 
+/**
+ * Dados para o RECIBO imprimível de uma venda/pré-venda (o vendedor imprime no balcão e o cliente
+ * leva ao caixa). Carrega o pedido com itens, cliente e o cabeçalho da empresa.
+ */
+export async function getPedidoVendaParaRecibo(scope: TenantScope, id: string) {
+  const pedido = await prisma.pedidoVenda.findFirst({
+    where: { id, ...scopedByTenantCompany(scope) },
+    include: {
+      cliente: { select: { razaoSocial: true, nomeFantasia: true, documento: true } },
+      itens: { orderBy: { id: "asc" }, include: { produto: { select: { nome: true, sku: true } } } }
+    }
+  });
+  if (!pedido) throw new Error("Pedido de venda não encontrado.");
+  const empresa = await prisma.empresa.findUnique({
+    where: { id: scope.empresaId },
+    select: { razaoSocial: true, nomeFantasia: true, cnpj: true }
+  });
+  return { pedido, empresa };
+}
+
 export async function invoiceSale(scope: TenantScope, id: string, options?: { modelo?: "NFE" | "NFCE" }) {
   // Carrega pedido com todos os dados necessários para emissão fiscal
   const pedido = await loadPedidoParaNota(scope, id);
