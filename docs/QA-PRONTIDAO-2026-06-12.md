@@ -126,3 +126,15 @@ Ciclo completo emitido e autorizado, fechando o fix #5 (desconto por item):
 - `dhEmi −03:00` exercitado (toda emissão) — autorizado.
 - Cancelamento da NFC-e → CANCELADA, com **estoque reposto 33→33** (valida o fix do cancelamento com nota real). 
 - (O usuário já havia validado anteriormente a emissão de NF-e, NFC-e e NFS-e.)
+
+### Pendências fechadas — 2026-06-12 (commits d261eb4, a195290)
+Todas as pendências listadas acima foram implementadas:
+- ✅ **Forma de pagamento detalhada** em contas a pagar (cartão/maquininha/parcelas/conta/data + "como foi pago" na lista).
+- ✅ **Estorno de baixa** (contas a pagar/receber) — reverte saldo, status e movimento. (E2E: 500→300→500.)
+- ✅ **Devolução espelha tributos** da nota original (rateio em parcial; fallback ao recálculo).
+- ✅ **ICMS-ST por MVA no XML** (ICMS10/70 e CSOSN201/202) — aditivo, só ativa com ST real.
+- ✅ **RBAC** em ~70 handlers de rotas ERP (requireModulo/requireAdmin + authErrorStatus).
+- ✅ **PDV exibe avisoRecebimento**; **cancelInventory** (rota + botão).
+
+Regressão fiscal verificada: NFC-e normal segue **AUTORIZADA** (nº 30) após as mudanças fiscais.
+**Pendência menor restante:** aplicar RBAC a cadastros (clientes/fornecedores/produtos/relatorios/assistente) — listados pelo agente como P3; lookups `fiscal/cest`/`municipios` deixados abertos de propósito (dados de referência).
