@@ -294,9 +294,13 @@ export async function previewFiscalDocument(
   });
 
   const baseValor = round2(totals.valorProdutos + totals.valorServicos);
+  // vProd é bruto (sem desconto); o desconto total = descontos por item (totals.valorDesconto)
+  // + desconto de documento. Subtrair só o de documento inflaria o vNF quando há desconto por
+  // item e quebraria vNF = vProd - vDesc + frete + seg + outros + ST + IPI na validação da SEFAZ.
+  const descontoTotal = round2(totals.valorDesconto + document.valorDesconto);
   const total = round2(
     baseValor -
-      document.valorDesconto +
+      descontoTotal +
       document.valorFrete +
       document.valorSeguro +
       document.outrasDespesas +
@@ -314,7 +318,8 @@ export async function previewFiscalDocument(
     totais: {
       valorProdutos: totals.valorProdutos,
       valorServicos: totals.valorServicos,
-      valorDesconto: document.valorDesconto || totals.valorDesconto,
+      // Desconto total efetivo = descontos por item + desconto de documento (mesma base do vNF).
+      valorDesconto: descontoTotal,
       valorFrete: document.valorFrete,
       valorSeguro: document.valorSeguro,
       outrasDespesas: document.outrasDespesas,
@@ -392,6 +397,10 @@ export async function emitFiscalDocument(
     if (item.servico) {
       cfop = null;
     } else if (document.finalidade === "DEVOLUCAO") {
+      // TODO (QA 2026-06-12): devolução deveria espelhar tributos da nota original (notaOrigemId),
+      // hoje recalcula. computeItemTaxes acima reaplica as regras atuais (alíquota/base/CST/CSOSN)
+      // em vez de copiar baseIcms/aliquotaIcms/valorIcms/CST dos itens da nota referenciada — pode
+      // divergir da original se a regra mudou desde a emissão, gerando crédito de ICMS incorreto.
       // Devolução é emitida como entrada (tpNF=0): exige CFOP de entrada (1xxx/2xxx). Um CFOP
       // de saída (5/6) herdado do produto não vale — só respeitamos um CFOP explícito de entrada.
       const explicitoEntrada = item.cfop && /^[12]/.test(item.cfop) ? item.cfop : null;
@@ -404,9 +413,12 @@ export async function emitFiscalDocument(
   });
 
   const baseValor = round2(totals.valorProdutos + totals.valorServicos);
+  // Desconto total = descontos por item (totals.valorDesconto) + desconto de documento.
+  // Tem que bater com o vNF/ICMSTot.vDesc do XML, senão a SEFAZ rejeita (vProd-vDesc ≠ vNF).
+  const descontoTotal = round2(totals.valorDesconto + document.valorDesconto);
   const total = round2(
     baseValor -
-      document.valorDesconto +
+      descontoTotal +
       document.valorFrete +
       document.valorSeguro +
       document.outrasDespesas +
@@ -439,7 +451,9 @@ export async function emitFiscalDocument(
     destinatarioEmail: document.destinatario.email,
     valorProdutos: totals.valorProdutos,
     valorServicos: totals.valorServicos,
-    valorDesconto: document.valorDesconto || totals.valorDesconto,
+    // Desconto total da nota = descontos por item (totals.valorDesconto) + desconto de documento.
+    // Mesmo valor que compõe o vNF e o ICMSTot.vDesc enviados à SEFAZ (coerência nota ↔ XML ↔ SPED).
+    valorDesconto: descontoTotal,
     valorFrete: document.valorFrete,
     valorSeguro: document.valorSeguro,
     outrasDespesas: document.outrasDespesas,

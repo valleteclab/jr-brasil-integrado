@@ -67,6 +67,10 @@ export async function settlePayable(
   if (!input.valor || input.valor <= 0) {
     throw new FinanceValidationError("O valor do pagamento deve ser maior que zero.");
   }
+  // Conta bancária obrigatória: a baixa precisa refletir no saldo/fluxo de caixa.
+  if (!input.contaBancariaId) {
+    throw new FinanceValidationError("Selecione a conta bancária para registrar a baixa.");
+  }
 
   return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const conta = await tx.contaPagar.findFirst({
@@ -192,6 +196,10 @@ export async function settleReceivable(
 ) {
   if (!input.valor || input.valor <= 0) {
     throw new FinanceValidationError("O valor do recebimento deve ser maior que zero.");
+  }
+  // Conta bancária obrigatória: a baixa precisa refletir no saldo/fluxo de caixa.
+  if (!input.contaBancariaId) {
+    throw new FinanceValidationError("Selecione a conta bancária para registrar a baixa.");
   }
 
   return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
@@ -368,6 +376,15 @@ export async function createReceivable(scope: TenantScope, input: CreateReceivab
   }
 
   return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    // Valida que o cliente existe e pertence ao tenant/empresa (evita violar a FK com id inválido/placeholder).
+    const cliente = await tx.cliente.findFirst({
+      where: { id: input.clienteId, ...scopedByTenantCompany(scope) },
+      select: { id: true }
+    });
+    if (!cliente) {
+      throw new FinanceValidationError("Cliente não encontrado ou não pertence a esta empresa.");
+    }
+
     const conta = await tx.contaReceber.create({
       data: {
         tenantId: scope.tenantId,

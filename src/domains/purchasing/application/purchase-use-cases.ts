@@ -181,6 +181,17 @@ export async function receivePurchaseOrder(scope: TenantScope, id: string, input
       const qtdRecebidaAntes = Number(pedidoItem.quantidadeRecebida);
       const qtdTotalRecebida = qtdRecebidaAntes + receiveItem.quantidadeRecebida;
 
+      // Bloqueia recebimento acima do pedido. Sem flag de "permitir receber a mais"
+      // no schema, qualquer excedente é barrado para não inflar estoque/contas a pagar.
+      const qtdPedido = Number(pedidoItem.quantidade);
+      if (qtdTotalRecebida > qtdPedido) {
+        const saldoAReceber = qtdPedido - qtdRecebidaAntes;
+        throw new PurchaseValidationError(
+          `Quantidade recebida excede o pedido para o item ${receiveItem.itemId}. ` +
+            `Pedido: ${qtdPedido}, já recebido: ${qtdRecebidaAntes}, saldo a receber: ${saldoAReceber}.`
+        );
+      }
+
       await tx.pedidoCompraItem.update({
         where: { id: receiveItem.itemId },
         data: { quantidadeRecebida: qtdTotalRecebida }

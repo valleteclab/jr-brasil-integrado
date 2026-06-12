@@ -551,6 +551,17 @@ export async function invoiceSale(scope: TenantScope, id: string, options?: { mo
   if (pedido.status !== "AGUARDANDO_NOTA") {
     throw new Error("Somente pedidos AGUARDANDO_NOTA podem ser faturados. Confirme o pedido primeiro.");
   }
+
+  // Idempotência: aborta se o pedido já tiver nota autorizada vinculada, evitando emissão duplicada
+  // (ex.: clique duplo, reprocesso). Cancelamento de nota libera o pedido para nova emissão.
+  const notaAutorizada = await prisma.notaFiscal.findFirst({
+    where: { pedidoVendaId: id, status: "AUTORIZADA", ...scopedByTenantCompany(scope) },
+    select: { numero: true }
+  });
+  if (notaAutorizada) {
+    throw new Error(`Este pedido já tem nota autorizada (nº ${notaAutorizada.numero ?? "—"}).`);
+  }
+
   const modelo = options?.modelo ?? "NFE";
   // NFC-e (mod 65) admite consumidor anônimo; NF-e (mod 55) exige destinatário identificado.
   if (!pedido.cliente && modelo !== "NFCE") {
@@ -714,10 +725,14 @@ export async function cancelSale(scope: TenantScope, id: string) {
   }
 
   const cancelado = await runInTransaction(async (tx) => {
-    const statusFaturados = ["ENVIADO", "ENTREGUE"];
-    const jaFaturado = statusFaturados.includes(pedido.status);
+    // Estoque já baixado: a confirmação (confirmSale -> commitReservationsAsExit) efetiva a saída
+    // física ao mover o pedido para AGUARDANDO_NOTA. Portanto TODOS os status pós-confirmação
+    // (AGUARDANDO_NOTA, SEPARACAO, ENVIADO, ENTREGUE) já consumiram saldo e precisam de ENTRADA de
+    // estorno no cancelamento. RASCUNHO/AGUARDANDO_PAGAMENTO só têm reserva (vão pro releaseReservations).
+    const statusComEstoqueBaixado = ["AGUARDANDO_NOTA", "SEPARACAO", "ENVIADO", "ENTREGUE"];
+    const estoqueJaBaixado = statusComEstoqueBaixado.includes(pedido.status);
 
-    if (jaFaturado) {
+    if (estoqueJaBaixado) {
       // Estorno de estoque por item: repõe o saldo via ENTRADA (no provedor de estoque, ESTORNO
       // conta como saída — quem devolve saldo é a ENTRADA). Reaplica o custo para não distorcer
       // o custo médio.

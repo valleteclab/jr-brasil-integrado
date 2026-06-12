@@ -79,9 +79,31 @@ const DESTINO_7 = new Set<Uf>([
   "MT", "MS", "PA", "PB", "PE", "PI", "RN", "RO", "RR", "SE", "TO"
 ]);
 
-/** Alíquota interestadual de ICMS para produto nacional, dado origem/destino. */
-export function aliquotaInterestadualIcms(ufOrigem: Uf, ufDestino: Uf): number {
+/**
+ * Origens (CST de origem da mercadoria) consideradas IMPORTADAS para a alíquota interestadual
+ * de 4% (Res. SF 13/2012): 1=estrangeira importação direta, 2=estrangeira adquirida no mercado
+ * interno, 3=nacional com conteúdo de importação > 40%, 8=nacional com conteúdo > 70%.
+ */
+const ORIGENS_IMPORTADAS = new Set(["1", "2", "3", "8"]);
+
+function isOrigemImportada(origem: string | number | null | undefined): boolean {
+  if (origem === null || origem === undefined) return false;
+  return ORIGENS_IMPORTADAS.has(String(origem).trim());
+}
+
+/**
+ * Alíquota interestadual de ICMS, dado origem/destino e (opcionalmente) a origem da mercadoria.
+ * Operação interestadual com produto importado (origem 1/2/3/8) usa 4% (Res. SF 13/2012),
+ * independentemente da rota 7%/12%. Sem a origem informada, mantém o comportamento 7/12.
+ */
+export function aliquotaInterestadualIcms(
+  ufOrigem: Uf,
+  ufDestino: Uf,
+  origemMercadoria?: string | number | null
+): number {
   if (ufOrigem === ufDestino) return ICMS_INTERNO[ufDestino];
+  // Importado em operação interestadual: 4% fixos (Res. SF 13/2012), antes da regra 7/12.
+  if (isOrigemImportada(origemMercadoria)) return 4;
   if (ORIGEM_7.has(ufOrigem) && DESTINO_7.has(ufDestino)) return 7;
   return 12;
 }
@@ -94,12 +116,14 @@ export function aliquotaInterestadualIcms(ufOrigem: Uf, ufDestino: Uf): number {
  */
 export function aliquotaIcmsVendaSafe(
   ufOrigem: string | null | undefined,
-  ufDestino: string | null | undefined
+  ufDestino: string | null | undefined,
+  origemMercadoria?: string | number | null
 ): number {
   const o = ufOrigem?.trim().toUpperCase();
   const d = ufDestino?.trim().toUpperCase();
   if (o && o in ICMS_INTERNO && d && d in ICMS_INTERNO) {
-    return aliquotaInterestadualIcms(o as Uf, d as Uf);
+    // Repassa a origem da mercadoria para aplicar 4% em interestadual de importado (Res. SF 13/2012).
+    return aliquotaInterestadualIcms(o as Uf, d as Uf, origemMercadoria);
   }
   if (o && o in ICMS_INTERNO) return ICMS_INTERNO[o as Uf];
   return 0;

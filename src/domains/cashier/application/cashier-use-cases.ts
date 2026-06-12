@@ -40,13 +40,15 @@ const isCartao = (forma: string) => ["CARTAO_CREDITO", "CARTAO_DEBITO"].includes
 /** Consumidor final padrão (doc 000…) — usado como "cliente" do recebível de cartão anônimo. */
 async function getClienteConsumidorPadrao(tx: PrismaTx, scope: TenantScope): Promise<string> {
   const doc = "00000000000";
+  // Escopo por tenant E empresa: sem empresaId, o findFirst poderia reaproveitar o
+  // "Consumidor final" de outra empresa do mesmo tenant.
   const existente = await tx.cliente.findFirst({
-    where: { tenantId: scope.tenantId, documento: doc },
+    where: { ...scopedByTenantCompany(scope), documento: doc },
     select: { id: true }
   });
   if (existente) return existente.id;
   const novo = await tx.cliente.create({
-    data: { tenantId: scope.tenantId, empresaId: scope.empresaId, razaoSocial: "Consumidor final (PDV)", documento: doc },
+    data: { ...scopedByTenantCompany(scope), razaoSocial: "Consumidor final (PDV)", documento: doc },
     select: { id: true }
   });
   return novo.id;
@@ -144,6 +146,21 @@ async function getCaixaAbertoOrThrow(scope: TenantScope) {
   return caixa;
 }
 
+/**
+ * Revalida, JÁ DENTRO da transação de gravação, que o caixa segue ABERTO. Sem isto, um
+ * recebimento concorrente com um fecharCaixa poderia gravar movimentos em um turno já fechado
+ * (o caixa é lido fora da transação). Lança CaixaError se o turno não estiver mais aberto.
+ */
+async function assertCaixaAbertoTx(tx: PrismaTx, scope: TenantScope, caixaId: string) {
+  const atual = await tx.caixa.findFirst({
+    where: { id: caixaId, ...scopedByTenantCompany(scope) },
+    select: { status: true }
+  });
+  if (!atual || atual.status !== "ABERTO") {
+    throw new CaixaError("O caixa foi fechado durante o recebimento. Reabra o caixa e tente novamente.");
+  }
+}
+
 export async function abrirCaixa(
   scope: TenantScope,
   input: { operador: string; saldoInicial?: number; observacao?: string }
@@ -212,6 +229,15 @@ export async function registrarRecebimentoPdv(
   }
   const troco = round2(somaPago - total);
 
+  // Troco só pode sair do dinheiro: se foi pago sem dinheiro suficiente para cobrir o troco
+  // (ex.: tudo em cartão), descontá-lo do dinheiro deixaria a soma por forma acima do total.
+  const somaDinheiro = round2(
+    pagamentos.filter((p) => p.forma === FORMA_DINHEIRO).reduce((s, p) => s + Number(p.valor), 0)
+  );
+  if (troco > somaDinheiro + 0.0001) {
+    throw new CaixaError("O troco só pode sair do dinheiro — ajuste as formas de pagamento para fechar a conta.");
+  }
+
   // Valores líquidos por forma (somam exatamente o total): o troco sai do dinheiro.
   const brutoPorForma = new Map<string, number>();
   for (const p of pagamentos) brutoPorForma.set(p.forma, (brutoPorForma.get(p.forma) ?? 0) + Number(p.valor));
@@ -222,6 +248,8 @@ export async function registrarRecebimentoPdv(
   }
 
   await prisma.$transaction(async (tx) => {
+    // Revalida o turno dentro da transação (anti-corrida com fecharCaixa).
+    await assertCaixaAbertoTx(tx, scope, caixa.id);
     if (input.pedidoVendaId) {
       for (const p of pagamentos) {
         await tx.pagamentoVenda.create({
@@ -279,6 +307,17 @@ export async function registrarMovimentoCaixa(
   const valor = Number(input.valor) || 0;
   if (valor <= 0) throw new CaixaError("Informe um valor maior que zero.");
   const caixa = await getCaixaAbertoOrThrow(scope);
+
+  // Sangria não pode exceder o dinheiro em caixa (deixaria o esperado em dinheiro negativo).
+  // Suprimento (entrada) não tem essa restrição.
+  if (input.tipo === "SANGRIA") {
+    const resumo = await getResumoCaixa(scope, caixa.id);
+    if (round2(valor) > round2(resumo.esperadoDinheiro) + 0.0001) {
+      throw new CaixaError(
+        `Sangria de ${round2(valor).toFixed(2)} excede o dinheiro em caixa (${resumo.esperadoDinheiro.toFixed(2)}).`
+      );
+    }
+  }
 
   return prisma.caixaMovimento.create({
     data: {
@@ -392,6 +431,9 @@ export async function fecharCaixa(
   const resumo = await getResumoCaixa(scope, caixa.id);
 
   const updated = await prisma.$transaction(async (tx) => {
+    // Revalida dentro da transação: se outro fechamento concorrente já fechou o turno,
+    // não sobrescreve (evita "fechar duas vezes" com resumos divergentes).
+    await assertCaixaAbertoTx(tx, scope, caixa.id);
     const c = await tx.caixa.update({
       where: { id: caixa.id },
       data: {
@@ -473,6 +515,15 @@ export async function receberPagamentoEEmitir(
   }
   const troco = round2(somaPago - total);
 
+  // Troco só pode sair do dinheiro: se foi pago sem dinheiro suficiente para cobrir o troco
+  // (ex.: tudo em cartão), descontá-lo do dinheiro deixaria a soma por forma acima do total.
+  const somaDinheiro = round2(
+    pagamentos.filter((p) => p.forma === FORMA_DINHEIRO).reduce((s, p) => s + Number(p.valor), 0)
+  );
+  if (troco > somaDinheiro + 0.0001) {
+    throw new CaixaError("O troco só pode sair do dinheiro — ajuste as formas de pagamento para fechar a conta.");
+  }
+
   // Valores líquidos por forma (somam exatamente o total): o troco sai do dinheiro.
   const brutoPorForma = new Map<string, number>();
   for (const p of pagamentos) brutoPorForma.set(p.forma, (brutoPorForma.get(p.forma) ?? 0) + Number(p.valor));
@@ -484,6 +535,8 @@ export async function receberPagamentoEEmitir(
 
   // 1) Estoque + pagamentos + movimento de caixa — antes de emitir (o dinheiro já foi recebido).
   await prisma.$transaction(async (tx) => {
+    // Revalida o turno dentro da transação (anti-corrida com fecharCaixa).
+    await assertCaixaAbertoTx(tx, scope, caixa.id);
     await commitReservationsAsExit(tx, scope, "PEDIDO_VENDA", pedido.id, {
       documentoTipo: "PEDIDO_VENDA",
       documentoId: pedido.id

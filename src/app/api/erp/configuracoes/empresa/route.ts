@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireModulo } from "@/lib/auth/session";
+import { authErrorStatus } from "@/lib/auth/http";
 import { getCompanySettings, saveCompanySettings, CompanySettingsError } from "@/lib/services/company-settings";
 
 export async function GET() {
@@ -11,7 +12,7 @@ export async function GET() {
     return NextResponse.json(settings);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Não foi possível carregar os dados da empresa.";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: message }, { status: authErrorStatus(error) });
   }
 }
 
@@ -24,7 +25,7 @@ export async function PUT(request: Request) {
     return NextResponse.json(settings);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Não foi possível salvar os dados da empresa.";
-    const status = error instanceof CompanySettingsError ? 400 : 500;
+    const status = error instanceof CompanySettingsError ? 400 : authErrorStatus(error);
     return NextResponse.json({ error: message }, { status });
   }
 }

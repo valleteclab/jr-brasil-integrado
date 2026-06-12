@@ -773,8 +773,18 @@ export async function processFiscalEntry(
       throw new Error("Entrada fiscal não encontrada.");
     }
 
-    if (entrada.status === "ESTOQUE_PROCESSADO") {
-      throw new Error("Entrada fiscal já processada.");
+    // Só permite processar entradas que ainda estão na fase de conferência.
+    // Qualquer outro status (ESTOQUE_PROCESSADO, ESTORNADA, etc.) é barrado para evitar
+    // reprocessamento, que duplicaria estoque e contas a pagar. Em especial, após um estorno
+    // o status vira ESTORNADA e NÃO pode ser reprocessado.
+    if (entrada.status !== "AGUARDANDO_CONFERENCIA" && entrada.status !== "CONFERIDA") {
+      if (entrada.status === "ESTOQUE_PROCESSADO") {
+        throw new Error("Entrada fiscal já processada.");
+      }
+      if (entrada.status === "ESTORNADA") {
+        throw new Error("Entrada fiscal estornada não pode ser reprocessada.");
+      }
+      throw new Error(`Entrada fiscal no status ${entrada.status} não pode ser processada.`);
     }
 
     const installmentInput = input?.installments?.length

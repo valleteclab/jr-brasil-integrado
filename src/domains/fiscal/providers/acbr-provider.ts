@@ -228,6 +228,8 @@ function buildPag(input: EmitInput, tpPagFallback: string): Record<string, unkno
       const tPag = mapTpPag(p.forma);
       const det: Record<string, unknown> = { tPag, vPag: round2(Number(p.valor)) };
       if (isTpPagCartao(tPag)) det.card = cardGroup(p.bandeira);
+      // tPag 99 (forma não mapeável) exige xPag com a descrição da forma — senão a SEFAZ rejeita.
+      if (tPag === "99") det.xPag = (p.forma ?? "").trim() || "Outros";
       return det;
     });
     const recebido = round2(lista.reduce((s, p) => s + Number(p.valor), 0));
@@ -238,6 +240,8 @@ function buildPag(input: EmitInput, tpPagFallback: string): Record<string, unkno
   // Fallback: pagamento único pelo total exato (sem troco), com card se for cartão.
   const det: Record<string, unknown> = { tPag: tpPagFallback, vPag: input.total };
   if (isTpPagCartao(tpPagFallback)) det.card = cardGroup(null);
+  // tPag 99 também exige xPag no fallback: usa a forma original do documento (ou "Outros").
+  if (tpPagFallback === "99") det.xPag = (input.document.formaPagamento ?? "").trim() || "Outros";
   return { detPag: [det] };
 }
 
@@ -640,6 +644,9 @@ export class AcbrFiscalProvider implements FiscalProvider {
     });
 
     const t = input.totals;
+    // dhEmi com offset explícito de Brasília (-03:00). A SEFAZ rejeita o sufixo "Z" (UTC) que o
+    // toISOString() geraria — reaproveita o mesmo helper já usado na NFS-e (fiscalDateTimeSaoPaulo).
+    const dhEmi = fiscalDateTimeSaoPaulo().dhEmi;
     return {
       ambiente: this.ambienteStr({ ambiente: input.document.ambiente } as ProviderContext),
       referencia: input.integrationId,
@@ -649,7 +656,7 @@ export class AcbrFiscalProvider implements FiscalProvider {
           cUF, natOp: input.document.naturezaOperacao, mod: isNfce ? 65 : 55,
           serie: Number(input.document.serie) || 1, nNF: input.numero,
           // Devolução é emitida como entrada (tpNF=0); demais finalidades, saída (tpNF=1).
-          dhEmi: new Date().toISOString(), tpNF: input.document.finalidade === "DEVOLUCAO" ? 0 : 1, idDest, cMunFG,
+          dhEmi, tpNF: input.document.finalidade === "DEVOLUCAO" ? 0 : 1, idDest, cMunFG,
           tpImp: isNfce ? 4 : 1, tpEmis: 1, finNFe: finalidade(input.document.finalidade),
           indFinal, indPres: 1, procEmi: 0, verProc: "XERP",
           // Referência à NF-e original (obrigatória na devolução): grupo NFref/refNFe.
@@ -666,7 +673,9 @@ export class AcbrFiscalProvider implements FiscalProvider {
             vBC: round2(sum.vBC), vICMS: round2(sum.vICMS), vICMSDeson: 0,
             vFCP: round2(sum.vFCP), vBCST: 0, vST: t.valorIcmsSt, vFCPST: 0, vFCPSTRet: 0,
             vProd: round2(sum.vProd), vFrete: input.document.valorFrete, vSeg: input.document.valorSeguro,
-            vDesc: input.document.valorDesconto, vII: 0, vIPI: t.valorIpi, vIPIDevol: 0,
+            // vDesc = soma dos descontos por item (t.valorDesconto) + desconto de documento. Tem que
+            // bater com vNF = vProd - vDesc + frete + seg + outros + ST + IPI, senão a SEFAZ rejeita.
+            vDesc: round2(t.valorDesconto + input.document.valorDesconto), vII: 0, vIPI: t.valorIpi, vIPIDevol: 0,
             vPIS: round2(sum.vPIS), vCOFINS: round2(sum.vCOFINS), vOutro: input.document.outrasDespesas, vNF: input.total
           }
         },

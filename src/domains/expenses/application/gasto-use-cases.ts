@@ -192,10 +192,25 @@ export async function deleteGasto(scope: TenantScope, id: string) {
 }
 
 /** Lança o gasto no financeiro: cria conta a pagar já quitada (à vista) e vincula. */
-export async function lancarGastoNoFinanceiro(scope: TenantScope, id: string) {
+export async function lancarGastoNoFinanceiro(scope: TenantScope, id: string, contaBancariaId?: string) {
   const gasto = await prisma.gasto.findFirst({ where: { id, ...scopedByTenantCompany(scope) } });
   if (!gasto) throw new Error("Gasto não encontrado.");
   if (gasto.lancadoFinanceiro) throw new Error("Este gasto já foi lançado no financeiro.");
+
+  // A baixa precisa debitar uma conta bancária (saldo + fluxo de caixa). Usa a conta informada
+  // ou, na ausência, a primeira conta ATIVA da empresa. Sem nenhuma conta cadastrada, aborta.
+  let contaBancariaIdResolvida = contaBancariaId;
+  if (!contaBancariaIdResolvida) {
+    const contaPadrao = await prisma.contaBancaria.findFirst({
+      where: { ...scopedByTenantCompany(scope), ativo: true },
+      orderBy: { nome: "asc" },
+      select: { id: true }
+    });
+    if (!contaPadrao) {
+      throw new Error("Cadastre uma conta bancária ativa antes de lançar o gasto no financeiro.");
+    }
+    contaBancariaIdResolvida = contaPadrao.id;
+  }
 
   let fornecedorId: string | undefined;
   if (gasto.documento) {
@@ -218,6 +233,7 @@ export async function lancarGastoNoFinanceiro(scope: TenantScope, id: string) {
   await settlePayable(scope, conta.id, {
     valor,
     formaPagamento: gasto.formaPagamento ?? undefined,
+    contaBancariaId: contaBancariaIdResolvida,
     dataPagamento: gasto.data
   });
   await prisma.gasto.update({ where: { id }, data: { contaPagarId: conta.id, lancadoFinanceiro: true, status: "CONFIRMADO" } });

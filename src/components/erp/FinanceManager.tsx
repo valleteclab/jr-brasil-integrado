@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { PayableSummary, ReceivableSummary, BankAccountSummary } from "@/lib/services/finance";
+import type { PayableSummary, ReceivableSummary, BankAccountSummary, ClienteOption } from "@/lib/services/finance";
 
 type FormaPagamentoOption = { id: string; nome: string };
 
@@ -10,6 +10,8 @@ type Props = {
   initialReceivables: ReceivableSummary[];
   bankAccounts: BankAccountSummary[];
   formasPagamento?: FormaPagamentoOption[];
+  /** Clientes ativos para o seletor de conta a receber avulsa. */
+  clientes?: ClienteOption[];
   /** Mostra a ação de EXCLUIR conta a pagar (apenas perfil admin). */
   isAdmin?: boolean;
 };
@@ -174,11 +176,11 @@ function SettleForm({ tipo, id, descricao, saldoNumber, bankAccounts, formasPaga
                   <PaymentMethodOptions tipo={tipo} formas={formasPagamento} />
                 </select>
               </label>
-              {bankAccounts.length > 0 && (
+              {bankAccounts.length > 0 ? (
                 <label>
-                  Conta Bancária
-                  <select value={contaBancariaId} onChange={(e) => setContaBancariaId(e.target.value)}>
-                    <option value="">Nenhuma</option>
+                  Conta Bancária <span className="required">*</span>
+                  <select value={contaBancariaId} onChange={(e) => setContaBancariaId(e.target.value)} required>
+                    <option value="">Selecione a conta...</option>
                     {bankAccounts.map((b) => (
                       <option key={b.id} value={b.id}>
                         {b.nome} ({b.saldoAtual})
@@ -186,6 +188,11 @@ function SettleForm({ tipo, id, descricao, saldoNumber, bankAccounts, formasPaga
                     ))}
                   </select>
                 </label>
+              ) : (
+                <div className="alert danger full" style={{ margin: "0" }}>
+                  <span className="lead">Atenção:</span>
+                  <span>Cadastre uma conta bancária para registrar baixas (a baixa precisa debitar/creditar o saldo).</span>
+                </div>
               )}
             </div>
           </div>
@@ -209,17 +216,19 @@ function SettleForm({ tipo, id, descricao, saldoNumber, bankAccounts, formasPaga
 type NewAccountFormProps = {
   tipo: Aba;
   formasPagamento: FormaPagamentoOption[];
+  clientes: ClienteOption[];
   onSuccess: (item: PayableSummary | ReceivableSummary) => void;
   onClose: () => void;
 };
 
-function NewAccountForm({ tipo, formasPagamento, onSuccess, onClose }: NewAccountFormProps) {
+function NewAccountForm({ tipo, formasPagamento, clientes, onSuccess, onClose }: NewAccountFormProps) {
   const [descricao, setDescricao] = useState("");
   const [valor, setValor] = useState("");
   const [vencimento, setVencimento] = useState(new Date().toISOString().substring(0, 10));
   const [formaPagamento, setFormaPagamento] = useState("");
   const [numeroDocumento, setNumeroDocumento] = useState("");
   const [observacoes, setObservacoes] = useState("");
+  const [clienteId, setClienteId] = useState("");
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState("");
 
@@ -231,6 +240,11 @@ function NewAccountForm({ tipo, formasPagamento, onSuccess, onClose }: NewAccoun
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setErro("");
+    // Conta a receber avulsa exige cliente cadastrado (evita FK quebrada com placeholder).
+    if (tipo === "receber" && !clienteId) {
+      setErro("Selecione o cliente.");
+      return;
+    }
     setLoading(true);
     try {
       const res = await fetch(endpoint, {
@@ -243,8 +257,7 @@ function NewAccountForm({ tipo, formasPagamento, onSuccess, onClose }: NewAccoun
           formaPagamento: formaPagamento || undefined,
           numeroDocumento: numeroDocumento || undefined,
           observacoes: observacoes || undefined,
-          // clienteId placeholder — em produção viria de um seletor de clientes
-          ...(tipo === "receber" ? { clienteId: "MANUAL" } : {})
+          ...(tipo === "receber" ? { clienteId } : {})
         })
       });
       const data = (await res.json()) as { id?: string; error?: string };
@@ -254,7 +267,9 @@ function NewAccountForm({ tipo, formasPagamento, onSuccess, onClose }: NewAccoun
       const novoItem: PayableSummary & ReceivableSummary = {
         id: data.id ?? "",
         descricao,
-        parte: "—",
+        parte: tipo === "receber"
+          ? (clientes.find((c) => c.id === clienteId)?.nome ?? "—")
+          : "—",
         numeroDocumento: numeroDocumento || "—",
         vencimento: new Date(vencimento + "T12:00:00").toLocaleDateString("pt-BR"),
         vencimentoRaw: vencimento,
@@ -297,6 +312,17 @@ function NewAccountForm({ tipo, formasPagamento, onSuccess, onClose }: NewAccoun
               </div>
             )}
             <div className="erp-form">
+              {tipo === "receber" && (
+                <label className="full">
+                  Cliente <span className="required">*</span>
+                  <select value={clienteId} onChange={(e) => setClienteId(e.target.value)} required>
+                    <option value="">Selecione o cliente...</option>
+                    {clientes.map((c) => (
+                      <option key={c.id} value={c.id}>{c.nome}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <label className="full">
                 Descrição <span className="required">*</span>
                 <input
@@ -371,7 +397,7 @@ function NewAccountForm({ tipo, formasPagamento, onSuccess, onClose }: NewAccoun
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-export function FinanceManager({ initialPayables, initialReceivables, bankAccounts, formasPagamento = [], isAdmin = false }: Props) {
+export function FinanceManager({ initialPayables, initialReceivables, bankAccounts, formasPagamento = [], clientes = [], isAdmin = false }: Props) {
   const [aba, setAba] = useState<Aba>("pagar");
   const [payables, setPayables] = useState(initialPayables);
   const [receivables, setReceivables] = useState(initialReceivables);
@@ -535,7 +561,6 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
                       Baixar
                     </button>
                   )}
-                  <button type="button" className="btn-erp ghost xs">Boleto</button>
                   {isAdmin && aba === "pagar" && (r as PayableSummary).canDelete && (
                     <button
                       type="button"
@@ -597,6 +622,7 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
         <NewAccountForm
           tipo={aba}
           formasPagamento={formasPagamento}
+          clientes={clientes}
           onSuccess={handleNewSuccess}
           onClose={() => setShowNewForm(false)}
         />

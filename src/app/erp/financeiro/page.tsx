@@ -1,8 +1,8 @@
 import { PageHeader } from "@/components/shared/PageHeader";
 import { KpiCard } from "@/components/shared/KpiCard";
 import { FinanceManager } from "@/components/erp/FinanceManager";
-import { listPayables, listReceivables, listBankAccounts, getFinanceSummary } from "@/lib/services/finance";
-import type { PayableSummary, ReceivableSummary, BankAccountSummary, FinanceSummary } from "@/lib/services/finance";
+import { listPayables, listReceivables, listBankAccounts, getFinanceSummary, listActiveClienteOptions } from "@/lib/services/finance";
+import type { PayableSummary, ReceivableSummary, BankAccountSummary, FinanceSummary, ClienteOption } from "@/lib/services/finance";
 import { listFormasPagamentoAtivas } from "@/domains/finance/application/payment-config-use-cases";
 import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
 import { getSession } from "@/lib/auth/session";
@@ -20,22 +20,25 @@ export default async function FinanceiroPage() {
   let bankAccounts: BankAccountSummary[] = [];
   let summary: FinanceSummary | null = null;
   let formasPagamento: Array<{ id: string; nome: string }> = [];
+  let clientes: ClienteOption[] = [];
   let loadError = "";
 
   try {
     const scope = await getDevelopmentTenantScope();
-    const [pay, rec, banks, sum, formas] = await Promise.all([
+    const [pay, rec, banks, sum, formas, cli] = await Promise.all([
       listPayables(),
       listReceivables(),
       listBankAccounts(),
       getFinanceSummary(),
-      listFormasPagamentoAtivas(scope)
+      listFormasPagamentoAtivas(scope),
+      listActiveClienteOptions()
     ]);
     payables = pay;
     receivables = rec;
     bankAccounts = banks;
     summary = sum;
     formasPagamento = formas.map((f) => ({ id: f.id, nome: f.nome }));
+    clientes = cli;
   } catch (error) {
     loadError = error instanceof Error ? error.message : "Não foi possível carregar o módulo financeiro.";
   }
@@ -92,6 +95,7 @@ export default async function FinanceiroPage() {
           initialReceivables={receivables}
           bankAccounts={bankAccounts}
           formasPagamento={formasPagamento}
+          clientes={clientes}
           isAdmin={isAdmin}
         />
       )}

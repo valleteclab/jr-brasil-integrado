@@ -51,6 +51,11 @@ export type PdvCheckoutResult = {
   crediario: { valor: number; parcelas: number; primeiroVencimento: string } | null;
   /** Recibo de retirada na expedição (quando solicitado). */
   retirada: { id: string; codigo: string } | null;
+  /**
+   * Aviso quando a venda foi emitida mas o recebimento NÃO entrou no caixa (registro falhou
+   * após a emissão). Sinaliza que há dinheiro sem rastro e exige lançamento manual. null = ok.
+   */
+  avisoRecebimento: string | null;
 };
 
 /**
@@ -247,14 +252,36 @@ export async function pdvCheckout(scope: TenantScope, input: PdvCheckoutInput): 
   }
 
   // 3. Registra o recebimento no caixa (pagamentos + movimento, com troco no dinheiro).
-  const { troco } = await registrarRecebimentoPdv(scope, {
-    pedidoVendaId,
-    descricao: pedidoNumero ? `Venda ${pedidoNumero}` : "Venda PDV",
-    total,
-    numero: pedidoNumero ?? undefined,
-    clienteId: input.clienteId ?? null,
-    pagamentos
-  });
+  // A emissão (passo 1) já baixou estoque e emitiu a nota — fora desta transação. Se o registro
+  // do recebimento falhar, NÃO podemos perder o resultado da venda (dinheiro sem rastro). Por isso:
+  //  (a) revalidamos o caixa aberto IMEDIATAMENTE antes de registrar;
+  //  (b) capturamos qualquer falha e devolvemos o checkout com um aviso explícito para lançamento
+  //      manual, em vez de deixar a exceção crua subir e descartar a(s) nota(s) já emitida(s).
+  let troco = 0;
+  let avisoRecebimento: string | null = null;
+  try {
+    const caixaAtual = await getCaixaAberto(scope);
+    if (!caixaAtual) {
+      throw new Error("O caixa foi fechado durante a finalização. Reabra o caixa para registrar.");
+    }
+    const r = await registrarRecebimentoPdv(scope, {
+      pedidoVendaId,
+      descricao: pedidoNumero ? `Venda ${pedidoNumero}` : "Venda PDV",
+      total,
+      numero: pedidoNumero ?? undefined,
+      clienteId: input.clienteId ?? null,
+      pagamentos
+    });
+    troco = r.troco;
+  } catch (error) {
+    const motivo = error instanceof Error ? error.message : "erro desconhecido";
+    const refNota = pedidoNumero ? `nota ${pedidoNumero}` : "venda emitida";
+    avisoRecebimento =
+      `Venda emitida (${refNota}), mas o recebimento NÃO foi registrado no caixa: ${motivo}. ` +
+      `Registre o recebimento manualmente no caixa.`;
+    // Loga com destaque para o operador/suporte: há dinheiro recebido sem movimento de caixa.
+    console.error(`[pdvCheckout] ${avisoRecebimento}`, error);
+  }
 
   // 4. Crediário → parcelas no contas a receber, conforme a condição informada.
   let crediario: PdvCheckoutResult["crediario"] = null;
@@ -304,5 +331,5 @@ export async function pdvCheckout(scope: TenantScope, input: PdvCheckoutInput): 
     retirada = { id: r.id, codigo: r.codigo };
   }
 
-  return { notas, troco, total, crediario, retirada };
+  return { notas, troco, total, crediario, retirada, avisoRecebimento };
 }

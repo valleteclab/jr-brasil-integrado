@@ -18,6 +18,7 @@ import type { RetencoesInput } from "@/domains/fiscal/nfse-tax";
 import type { StatusOrdemServico } from "@prisma/client";
 import type { TaxationTypeIss } from "@/domains/fiscal/types";
 import { assertModuloLiberado } from "@/lib/auth/tenant-features";
+import { gerarParcelas, rotuloParcela } from "@/lib/finance/condicao-pagamento";
 
 const TX_OPTIONS = { maxWait: 10000, timeout: 30000 };
 
@@ -374,6 +375,17 @@ export async function faturarOrdemServico(scope: TenantScope, id: string, input:
 
   // Transação: baixa de estoque + contas a receber
   const { contaReceber } = await prisma.$transaction(async (tx) => {
+    // Trava otimista contra duplo-clique/concorrência: marca FATURADA somente se ainda NÃO estava.
+    // O guard de status fora da transação é apenas UX; esta é a checagem autoritativa. Se outra
+    // requisição já faturou, count = 0 e abortamos antes de criar conta a receber/baixar estoque.
+    const travada = await tx.ordemServico.updateMany({
+      where: { id, ...scopedByTenantCompany(scope), status: { not: "FATURADA" } },
+      data: { status: "FATURADA", faturadoEm: new Date() }
+    });
+    if (travada.count === 0) {
+      throw new Error("OS já foi faturada.");
+    }
+
     const deposito = os.depositoId
       ? await tx.deposito.findFirst({ where: { id: os.depositoId } }) ?? await getDefaultDeposito(tx, scope)
       : await getDefaultDeposito(tx, scope);
@@ -399,32 +411,38 @@ export async function faturarOrdemServico(scope: TenantScope, id: string, input:
       await exitStock(tx, scope, semReserva, { documentoTipo: "ORDEM_SERVICO", documentoId: id });
     }
 
-    const vencimento = new Date();
-    vencimento.setDate(vencimento.getDate() + 30);
+    // Vencimentos derivados da condição de pagamento (reaproveita o helper das vendas):
+    // "30/60/90" gera 3 parcelas, "à vista" vence hoje; sem condição, 1 parcela em 30 dias.
+    const parcelas = gerarParcelas(Number(os.total), condicaoPagamento);
+    const contasReceber = [] as Array<{ id: string }>;
+    for (const parcela of parcelas) {
+      const cr = await tx.contaReceber.create({
+        data: {
+          ...scopedByTenantCompany(scope),
+          clienteId: os.clienteId,
+          ordemServicoId: id,
+          descricao: `OS ${os.numero} — ${os.equipamento}${rotuloParcela(parcela)}`,
+          numeroDocumento: os.numero,
+          origem: "OS",
+          formaPagamento: formaPagamento ?? null,
+          vencimento: parcela.vencimento,
+          valor: parcela.valor,
+          valorPago: 0,
+          juros: 0,
+          multa: 0,
+          descontoBaixa: 0,
+          status: "ABERTO",
+        },
+      });
+      contasReceber.push({ id: cr.id });
+    }
+    // Primeira parcela é a referência para vincular eventual NFS-e (uma nota por faturamento).
+    const cr = contasReceber[0];
 
-    const cr = await tx.contaReceber.create({
-      data: {
-        ...scopedByTenantCompany(scope),
-        clienteId: os.clienteId,
-        ordemServicoId: id,
-        descricao: `OS ${os.numero} — ${os.equipamento}`,
-        origem: "OS",
-        formaPagamento: formaPagamento ?? null,
-        vencimento,
-        valor: Number(os.total),
-        valorPago: 0,
-        juros: 0,
-        multa: 0,
-        descontoBaixa: 0,
-        status: "ABERTO",
-      },
-    });
-
+    // Status/faturadoEm já gravados na trava otimista; aqui só persistimos condição/forma.
     await tx.ordemServico.update({
       where: { id },
       data: {
-        status: "FATURADA",
-        faturadoEm: new Date(),
         condicaoPagamento: condicaoPagamento ?? undefined,
         formaPagamento: formaPagamento ?? undefined,
       },

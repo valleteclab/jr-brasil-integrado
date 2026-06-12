@@ -157,9 +157,25 @@ export async function finalizeInventory(scope: TenantScope, id: string, usuarioI
     for (const item of inventario.itens) {
       if (!item.contado || item.saldoContado === null) continue;
 
-      const sistema = Number(item.saldoSistema);
+      // Recalcula a diferença contra o saldo ATUAL do produto no momento da finalização.
+      // O `saldoSistema` foi fotografado na abertura do inventário; se houve movimentação
+      // entre a contagem e a finalização, usá-lo geraria um saldo final errado.
+      const saldoAtualRegistro = await tx.estoqueSaldo.findUnique({
+        where: {
+          tenantId_empresaId_produtoId_depositoId_controleKey: {
+            tenantId: scope.tenantId,
+            empresaId: scope.empresaId,
+            produtoId: item.produtoId,
+            depositoId: inventario.depositoId,
+            controleKey: "SEM_CONTROLE"
+          }
+        },
+        select: { quantidade: true }
+      });
+
+      const saldoAtual = Number(saldoAtualRegistro?.quantidade ?? 0);
       const contado = Number(item.saldoContado);
-      const diferenca = contado - sistema;
+      const diferenca = contado - saldoAtual;
 
       if (diferenca === 0) continue;
 
@@ -206,5 +222,41 @@ export async function finalizeInventory(scope: TenantScope, id: string, usuarioI
     });
 
     return { inventario: finalizado, ajustesRealizados };
+  });
+}
+
+// ──────────────────────────────────────────────
+// cancelInventory
+// ──────────────────────────────────────────────
+
+export async function cancelInventory(scope: TenantScope, id: string, usuarioId?: string) {
+  return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    const inventario = await tx.inventario.findFirst({
+      where: { id, ...scopedByTenantCompany(scope) }
+    });
+
+    if (!inventario) throw new Error("Inventário não encontrado.");
+    // Inventário finalizado já gerou ajustes de estoque; não pode ser cancelado.
+    if (inventario.status === "FINALIZADO") throw new Error("Inventário já finalizado, não pode ser cancelado.");
+    if (inventario.status === "CANCELADO") throw new Error("Inventário já está cancelado.");
+
+    const cancelado = await tx.inventario.update({
+      where: { id: inventario.id },
+      data: { status: "CANCELADO" }
+    });
+
+    await createAuditLog(tx, {
+      scope,
+      entidade: "Inventario",
+      entidadeId: inventario.id,
+      acao: "CANCELAR_INVENTARIO",
+      payload: {
+        numero: inventario.numero,
+        statusAnterior: inventario.status,
+        usuarioId: usuarioId ?? null
+      }
+    });
+
+    return cancelado;
   });
 }

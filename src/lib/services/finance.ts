@@ -50,6 +50,11 @@ export type BankAccountSummary = {
   saldoAtualNumber: number;
 };
 
+export type ClienteOption = {
+  id: string;
+  nome: string;
+};
+
 export type FinanceSummary = {
   totalAPagar: string;
   totalAReceber: string;
@@ -245,6 +250,26 @@ export async function listBankAccounts(): Promise<BankAccountSummary[]> {
     banco: c.banco ?? "—",
     saldoAtual: formatBrl(Number(c.saldoAtual)),
     saldoAtualNumber: Number(c.saldoAtual)
+  }));
+}
+
+// ─── Clientes ativos (seletor de conta a receber avulsa) ──────────────────────
+
+export async function listActiveClienteOptions(): Promise<ClienteOption[]> {
+  if (!process.env.DATABASE_URL) {
+    throw new Error("DATABASE_URL não configurada para listar clientes.");
+  }
+
+  const scope = await getDevelopmentTenantScope();
+  const clientes = await prisma.cliente.findMany({
+    where: { ...scopedByTenantCompany(scope), status: "ATIVO" },
+    select: { id: true, razaoSocial: true, nomeFantasia: true },
+    orderBy: { razaoSocial: "asc" }
+  });
+
+  return clientes.map((c) => ({
+    id: c.id,
+    nome: c.nomeFantasia ?? c.razaoSocial
   }));
 }
 

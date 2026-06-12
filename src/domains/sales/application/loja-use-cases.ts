@@ -96,7 +96,24 @@ export async function criarSolicitacaoLoja(scope: TenantScope, input: Solicitaca
   if (!input.itens?.length) throw new SolicitacaoLojaError("Carrinho vazio.");
 
   const clienteId = await upsertClienteLoja(scope, input.cliente);
-  const itens = input.itens.map((i) => ({ produtoId: i.produtoId, quantidade: i.quantidade, precoUnitario: i.precoUnitario }));
+
+  // Segurança: o navegador envia produtoId e precoUnitario, mas NÃO confiamos neles. Para cada item,
+  // validamos o produto dentro do scope (tenant+empresa), exigindo visivelEcommerce, e sobrescrevemos
+  // o preço com o precoVenda do banco — assim nenhum preço/produto forjado entra pela loja pública.
+  const produtoIds = [...new Set(input.itens.map((i) => i.produtoId))];
+  const produtos = await prisma.produto.findMany({
+    where: { id: { in: produtoIds }, ...scopedByTenantCompany(scope), ativo: true, visivelEcommerce: true },
+    select: { id: true, precoVenda: true }
+  });
+  const precoMap = new Map(produtos.map((p) => [p.id, Number(p.precoVenda)]));
+
+  const itens = input.itens.map((i) => {
+    const preco = precoMap.get(i.produtoId);
+    if (preco === undefined) {
+      throw new SolicitacaoLojaError("Produto indisponível na loja. Atualize o carrinho e tente novamente.");
+    }
+    return { produtoId: i.produtoId, quantidade: i.quantidade, precoUnitario: preco };
+  });
 
   if (input.tipo === "ORCAMENTO") {
     const orc = await createQuote(scope, {

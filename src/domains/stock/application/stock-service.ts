@@ -150,8 +150,16 @@ export async function applyStockMovement(
 
   // Custo médio ponderado: apenas entradas com custo positivo recalculam.
   if (isEntrada && saldoDepois > 0) {
-    const previousAverage = Number(produto.custoMedio ?? produto.precoCusto ?? custoUnitario);
-    const weighted = ((saldoAntes * previousAverage) + (input.quantidade * custoUnitario)) / saldoDepois;
+    // Quando o saldo anterior é <= 0 (ex.: venda sem estoque que deixou o saldo negativo/zerado),
+    // ponderar com saldoAntes negativo corromperia o custo médio (resultaria em valor negativo/distorcido).
+    // Nesse caso reiniciamos o custo médio usando o próprio custo da entrada.
+    let weighted: number;
+    if (saldoAntes <= 0) {
+      weighted = custoUnitario;
+    } else {
+      const previousAverage = Number(produto.custoMedio ?? produto.precoCusto ?? custoUnitario);
+      weighted = ((saldoAntes * previousAverage) + (input.quantidade * custoUnitario)) / saldoDepois;
+    }
     await tx.produto.update({
       where: { id: produto.id },
       data: { custoMedio: weighted, ultimoCusto: custoUnitario }

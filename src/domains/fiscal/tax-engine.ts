@@ -287,7 +287,9 @@ export function computeItemTaxes(
   // Sem regra específica, o CST padrão é 00 (tributada integralmente) — então a alíquota NÃO
   // pode ser 0. Cai na base nacional (interna/interestadual) pela UF de origem/destino, igual ao
   // "cálculo automático" de outros ERPs. Uma regra cadastrada (mesmo com 0%) sempre prevalece.
-  const aliquotaIcms = icmsRule ? num(icmsRule.aliquota) : aliquotaIcmsVendaSafe(ctx.ufOrigem, ctx.ufDestino);
+  // Passa a origem do item: produto importado (origem 1/2/3/8) em operação interestadual usa 4%
+  // (Res. SF 13/2012); a base nacional resolve isso quando não há regra específica cadastrada.
+  const aliquotaIcms = icmsRule ? num(icmsRule.aliquota) : aliquotaIcmsVendaSafe(ctx.ufOrigem, ctx.ufDestino, origem);
   const reducao = num(icmsRule?.reducaoBase) / 100;
   const baseIcms = round2(base * (1 - reducao));
   const valorIcms = round2(baseIcms * (aliquotaIcms / 100));
