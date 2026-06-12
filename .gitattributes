@@ -1,0 +1,7 @@
+# Scripts e arquivos lidos dentro de containers Linux DEVEM ter fim de linha LF
+# (CRLF quebra o shebang/parse do shell e do entrypoint do Docker).
+*.sh text eol=lf
+docker-entrypoint.sh text eol=lf
+Dockerfile text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
