@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { PdvData, PdvProduto, PdvServico, PdvCliente } from "@/lib/services/pdv";
+import type { PdvData, PdvProduto, PdvServico, PdvCliente, PdvContaRecebedora, PdvMaquinaCartao } from "@/lib/services/pdv";
 import { correspondeBusca } from "@/lib/search/normalize";
 
 type CartItem = {
@@ -32,9 +32,21 @@ type NotaResultado = {
   erro: string | null;
 };
 
-type Pagamento = { forma: string; valor: number };
+type Pagamento = {
+  forma: string;
+  valor: number;
+  contaBancariaId?: string;
+  maquinaCartaoId?: string;
+  nsu?: string;
+  bandeira?: string;
+  parcelas?: number;
+};
 
 type CaixaAberto = { id: string; operador: string; abertoEm: string };
+
+const BANDEIRAS = ["VISA", "MASTERCARD", "ELO", "AMEX", "HIPERCARD", "OUTRA"];
+const isPixOuTransfer = (f: string) => f === "PIX" || f === "TRANSFERENCIA";
+const isCartao = (f: string) => f === "CARTAO_DEBITO" || f === "CARTAO_CREDITO";
 
 const FORMAS: Array<{ value: string; label: string }> = [
   { value: "DINHEIRO", label: "Dinheiro" },
@@ -493,7 +505,7 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
       </div>
 
       {pagamentoAberto && (
-        <PagamentoModal total={total} loading={loading} clienteSelecionado={Boolean(clienteId)} onCancel={() => setPagamentoAberto(false)} onConfirm={finalizar} />
+        <PagamentoModal total={total} loading={loading} clienteSelecionado={Boolean(clienteId)} contas={data.contas} maquinas={data.maquinas} onCancel={() => setPagamentoAberto(false)} onConfirm={finalizar} />
       )}
       {movimentoAberto && (
         <MovimentoModal onClose={() => setMovimentoAberto(false)} />
@@ -728,7 +740,7 @@ function DescontoModal({
 
 // ─── Modal de pagamento (múltiplas formas + troco) ──────────────────────────────
 
-function PagamentoModal({ total, loading, clienteSelecionado, onCancel, onConfirm }: { total: number; loading: boolean; clienteSelecionado: boolean; onCancel: () => void; onConfirm: (p: Pagamento[], condicaoCrediario: string) => void }) {
+function PagamentoModal({ total, loading, clienteSelecionado, contas, maquinas, onCancel, onConfirm }: { total: number; loading: boolean; clienteSelecionado: boolean; contas: PdvContaRecebedora[]; maquinas: PdvMaquinaCartao[]; onCancel: () => void; onConfirm: (p: Pagamento[], condicaoCrediario: string) => void }) {
   const [linhas, setLinhas] = useState<Pagamento[]>([{ forma: "DINHEIRO", valor: total }]);
   const [condicaoCrediario, setCondicaoCrediario] = useState("30");
   const pago = round2(linhas.reduce((s, l) => s + (Number(l.valor) || 0), 0));
@@ -748,16 +760,40 @@ function PagamentoModal({ total, loading, clienteSelecionado, onCancel, onConfir
       <div className="pdv-modal" onClick={(e) => e.stopPropagation()}>
         <h2>Pagamento — {brl(total)}</h2>
         {linhas.map((l, idx) => (
-          <div className="pdv-pag-linha" key={idx}>
-            <select value={l.forma} onChange={(e) => set(idx, { forma: e.target.value })}>
-              {FORMAS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
-            </select>
-            <input
-              inputMode="decimal"
-              value={String(l.valor)}
-              onChange={(e) => set(idx, { valor: Number(e.target.value.replace(",", ".")) || 0 })}
-            />
-            {linhas.length > 1 && <button className="pdv-item-x" onClick={() => setLinhas((cur) => cur.filter((_, i) => i !== idx))}>×</button>}
+          <div key={idx} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <div className="pdv-pag-linha">
+              <select value={l.forma} onChange={(e) => set(idx, { forma: e.target.value, contaBancariaId: undefined, maquinaCartaoId: undefined })}>
+                {FORMAS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+              </select>
+              <input
+                inputMode="decimal"
+                value={String(l.valor)}
+                onChange={(e) => set(idx, { valor: Number(e.target.value.replace(",", ".")) || 0 })}
+              />
+              {linhas.length > 1 && <button className="pdv-item-x" onClick={() => setLinhas((cur) => cur.filter((_, i) => i !== idx))}>×</button>}
+            </div>
+            {isPixOuTransfer(l.forma) && (
+              <select value={l.contaBancariaId ?? ""} onChange={(e) => set(idx, { contaBancariaId: e.target.value || undefined })} style={{ height: 34 }}>
+                <option value="">Conta recebedora…{contas.length ? "" : " (cadastre em Contas financeiras)"}</option>
+                {contas.map((c) => <option key={c.id} value={c.id}>{c.nome}{c.chavePix ? ` · PIX ${c.chavePix}` : ""}</option>)}
+              </select>
+            )}
+            {isCartao(l.forma) && (
+              <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                <select value={l.maquinaCartaoId ?? ""} onChange={(e) => set(idx, { maquinaCartaoId: e.target.value || undefined })} style={{ flex: "1 1 100%", height: 34 }}>
+                  <option value="">Maquininha…{maquinas.length ? "" : " (cadastre em Máquinas de cartão)"}</option>
+                  {maquinas.map((m) => <option key={m.id} value={m.id}>{m.nome}{m.adquirente ? ` · ${m.adquirente}` : ""}</option>)}
+                </select>
+                <input placeholder="NSU" value={l.nsu ?? ""} onChange={(e) => set(idx, { nsu: e.target.value })} style={{ flex: "1 1 90px", height: 34 }} />
+                <select value={l.bandeira ?? ""} onChange={(e) => set(idx, { bandeira: e.target.value || undefined })} style={{ flex: "1 1 90px", height: 34 }}>
+                  <option value="">Bandeira…</option>
+                  {BANDEIRAS.map((b) => <option key={b} value={b}>{b}</option>)}
+                </select>
+                {l.forma === "CARTAO_CREDITO" && (
+                  <input type="number" min={1} max={18} value={l.parcelas ?? 1} onChange={(e) => set(idx, { parcelas: Math.max(1, Number(e.target.value) || 1) })} style={{ flex: "0 0 70px", height: 34, textAlign: "center" }} title="Parcelas" />
+                )}
+              </div>
+            )}
           </div>
         ))}
         <button className="pdv-add-forma" onClick={() => setLinhas((cur) => [...cur, { forma: "PIX", valor: falta }])}>+ outra forma</button>

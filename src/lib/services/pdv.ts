@@ -5,6 +5,8 @@ import type { TipoNegocio } from "@/lib/auth/modules";
 export type PdvProduto = { id: string; sku: string; nome: string; gtin: string | null; codigoOriginal: string | null; codigoFabricante: string | null; preco: number; disponivel: number };
 export type PdvServico = { id: string; nome: string; preco: number; codigoServicoLc116: string | null; codigoNbs: string | null };
 export type PdvCliente = { id: string; label: string; documento: string | null };
+export type PdvContaRecebedora = { id: string; nome: string; chavePix: string | null; tipoChavePix: string | null };
+export type PdvMaquinaCartao = { id: string; nome: string; adquirente: string | null };
 
 export type PdvData = {
   tipoNegocio: TipoNegocio;
@@ -19,6 +21,9 @@ export type PdvData = {
   produtos: PdvProduto[];
   servicos: PdvServico[];
   vendedores: Array<{ id: string; nome: string }>;
+  /** Contas recebedoras (PIX/transferência) e maquininhas (cartão) para detalhar o recebimento. */
+  contas: PdvContaRecebedora[];
+  maquinas: PdvMaquinaCartao[];
 };
 
 /**
@@ -29,7 +34,7 @@ export async function getPdvData(): Promise<PdvData> {
   const scope = await getDevelopmentTenantScope();
   const base = scopedByTenantCompany(scope);
 
-  const [empresa, tenant, config, clientes, itens, vendedores] = await Promise.all([
+  const [empresa, tenant, config, clientes, itens, vendedores, contas, maquinas] = await Promise.all([
     prisma.empresa.findUnique({ where: { id: scope.empresaId }, select: { tipoNegocio: true, permiteVendaSemEstoque: true } }),
     prisma.tenant.findUnique({ where: { id: scope.tenantId }, select: { expedicaoHabilitada: true } }),
     prisma.configuracaoFiscal.findUnique({
@@ -59,6 +64,16 @@ export async function getPdvData(): Promise<PdvData> {
     prisma.vendedor.findMany({
       where: { ...base, ativo: true },
       select: { id: true, nome: true },
+      orderBy: { nome: "asc" }
+    }),
+    prisma.contaBancaria.findMany({
+      where: { ...base, ativo: true },
+      select: { id: true, nome: true, chavePix: true, tipoChavePix: true },
+      orderBy: { nome: "asc" }
+    }),
+    prisma.maquinaCartao.findMany({
+      where: { ...base, ativo: true },
+      select: { id: true, nome: true, adquirente: true },
       orderBy: { nome: "asc" }
     })
   ]);
@@ -96,6 +111,8 @@ export async function getPdvData(): Promise<PdvData> {
     })),
     produtos,
     servicos,
-    vendedores
+    vendedores,
+    contas,
+    maquinas
   };
 }

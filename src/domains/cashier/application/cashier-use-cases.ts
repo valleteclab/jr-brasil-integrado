@@ -22,6 +22,114 @@ export class CaixaError extends Error {}
 const FORMA_DINHEIRO = "DINHEIRO";
 const round2 = (v: number) => Math.round((v + Number.EPSILON) * 100) / 100;
 
+/** Pagamento com o detalhe de destino/transação (PIX→conta, cartão→máquina/NSU). */
+export type PagamentoDetalhado = {
+  forma: string;
+  valor: number;
+  contaBancariaId?: string | null;
+  maquinaCartaoId?: string | null;
+  nsu?: string | null;
+  bandeira?: string | null;
+  parcelas?: number | null;
+  autorizacao?: string | null;
+};
+
+const isPixOuTransfer = (forma: string) => ["PIX", "TRANSFERENCIA"].includes(forma.toUpperCase());
+const isCartao = (forma: string) => ["CARTAO_CREDITO", "CARTAO_DEBITO"].includes(forma.toUpperCase());
+
+/** Consumidor final padrão (doc 000…) — usado como "cliente" do recebível de cartão anônimo. */
+async function getClienteConsumidorPadrao(tx: PrismaTx, scope: TenantScope): Promise<string> {
+  const doc = "00000000000";
+  const existente = await tx.cliente.findFirst({
+    where: { tenantId: scope.tenantId, documento: doc },
+    select: { id: true }
+  });
+  if (existente) return existente.id;
+  const novo = await tx.cliente.create({
+    data: { tenantId: scope.tenantId, empresaId: scope.empresaId, razaoSocial: "Consumidor final (PDV)", documento: doc },
+    select: { id: true }
+  });
+  return novo.id;
+}
+
+type PrismaTx = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
+
+/**
+ * Roteia o DESTINO de cada pagamento (dentro da transação do recebimento):
+ *  - PIX/Transferência com conta → credita o saldo da conta (MovimentoFinanceiro CRÉDITO).
+ *  - Cartão com máquina → cria o recebível da adquirente (ContaReceber, líquido da taxa, venc. D+x).
+ * Dinheiro/crediário não passam por aqui (dinheiro fica no caixa; crediário gera conta a receber à parte).
+ */
+async function rotearDestinosPagamento(
+  tx: PrismaTx,
+  scope: TenantScope,
+  ctx: { pedidoVendaId: string | null; numero: string; clienteId: string | null },
+  pagamentos: PagamentoDetalhado[]
+) {
+  for (const p of pagamentos) {
+    const forma = p.forma.toUpperCase();
+    const valor = round2(Number(p.valor) || 0);
+    if (valor <= 0) continue;
+
+    if (isPixOuTransfer(forma) && p.contaBancariaId) {
+      const conta = await tx.contaBancaria.findFirst({
+        where: { id: p.contaBancariaId, ...scopedByTenantCompany(scope) },
+        select: { id: true, saldoAtual: true }
+      });
+      if (!conta) continue;
+      const saldoAnterior = Number(conta.saldoAtual);
+      const saldoPosterior = round2(saldoAnterior + valor);
+      await tx.contaBancaria.update({ where: { id: conta.id }, data: { saldoAtual: saldoPosterior } });
+      await tx.movimentoFinanceiro.create({
+        data: {
+          ...scopedByTenantCompany(scope),
+          contaBancariaId: conta.id,
+          contaReceberId: null,
+          tipo: "CREDITO",
+          origem: "VENDA_PDV",
+          descricao: `Venda ${ctx.numero} (${forma})`,
+          valor,
+          formaPagamento: forma,
+          saldoAnterior,
+          saldoPosterior,
+          dataMovimento: new Date()
+        }
+      });
+    } else if (isCartao(forma) && p.maquinaCartaoId) {
+      const maq = await tx.maquinaCartao.findFirst({
+        where: { id: p.maquinaCartaoId, ...scopedByTenantCompany(scope) }
+      });
+      if (!maq) continue;
+      const credito = forma === "CARTAO_CREDITO";
+      const parcelas = Math.max(1, Number(p.parcelas) || 1);
+      const taxaPct = credito ? (parcelas > 1 ? Number(maq.taxaCreditoParcelado) : Number(maq.taxaCredito)) : Number(maq.taxaDebito);
+      const liquido = round2(valor * (1 - taxaPct / 100));
+      const prazoDias = credito ? maq.prazoCreditoDias : maq.prazoDebitoDias;
+      const vencimento = new Date(Date.now() + prazoDias * 86_400_000);
+      const clienteId = ctx.clienteId ?? (await getClienteConsumidorPadrao(tx, scope));
+      await tx.contaReceber.create({
+        data: {
+          ...scopedByTenantCompany(scope),
+          clienteId,
+          pedidoVendaId: ctx.pedidoVendaId,
+          contaBancariaId: maq.contaBancariaId,
+          descricao: `Cartão ${credito ? "crédito" : "débito"} ${maq.nome} — venda ${ctx.numero}${parcelas > 1 ? ` (${parcelas}x)` : ""}`,
+          numeroDocumento: p.nsu ?? null,
+          origem: "ADQUIRENTE",
+          formaPagamento: forma,
+          vencimento,
+          valor: liquido,
+          valorPago: 0,
+          juros: 0,
+          multa: 0,
+          descontoBaixa: 0,
+          status: "ABERTO"
+        }
+      });
+    }
+  }
+}
+
 /** Caixa aberto da empresa — no máximo um por vez. */
 export async function getCaixaAberto(scope: TenantScope) {
   return prisma.caixa.findFirst({
@@ -87,7 +195,9 @@ export async function registrarRecebimentoPdv(
     pedidoVendaId: string | null;
     descricao: string;
     total: number;
-    pagamentos: Array<{ forma: string; valor: number }>;
+    numero?: string;
+    clienteId?: string | null;
+    pagamentos: PagamentoDetalhado[];
   }
 ): Promise<{ troco: number; caixaId: string }> {
   const caixa = await getCaixaAbertoOrThrow(scope);
@@ -120,7 +230,13 @@ export async function registrarRecebimentoPdv(
             pedidoVendaId: input.pedidoVendaId,
             forma: p.forma,
             valor: round2(Number(p.valor)),
-            troco: p.forma === FORMA_DINHEIRO ? troco : 0
+            troco: p.forma === FORMA_DINHEIRO ? troco : 0,
+            contaBancariaId: p.contaBancariaId ?? null,
+            maquinaCartaoId: p.maquinaCartaoId ?? null,
+            nsu: p.nsu ?? null,
+            bandeira: p.bandeira ?? null,
+            parcelas: p.parcelas ?? null,
+            autorizacao: p.autorizacao ?? null
           }
         });
       }
@@ -138,7 +254,14 @@ export async function registrarRecebimentoPdv(
         }
       });
     }
-  });
+    // Roteia o destino do dinheiro: PIX/transferência → saldo da conta; cartão → recebível da adquirente.
+    await rotearDestinosPagamento(
+      tx,
+      scope,
+      { pedidoVendaId: input.pedidoVendaId, numero: input.numero ?? input.descricao, clienteId: input.clienteId ?? null },
+      pagamentos
+    );
+  }, { maxWait: 15000, timeout: 30000 });
 
   // Tempo real: o resumo do caixa (e a lista de vendas) refletem o recebimento na hora — inclusive
   // PIX/cartão, não só dinheiro. Sem isto, vendas feitas no PDV não atualizavam o /erp/caixa aberto.
@@ -266,7 +389,7 @@ export async function fecharCaixa(
 export type ReceberPagamentoInput = {
   pedidoId: string;
   modelo: "NFE" | "NFCE";
-  pagamentos: Array<{ forma: string; valor: number }>;
+  pagamentos: PagamentoDetalhado[];
   /** Gera recibo de retirada na expedição (exige módulo habilitado para o tenant). */
   retiradaExpedicao?: boolean;
 };
@@ -339,7 +462,13 @@ export async function receberPagamentoEEmitir(
           pedidoVendaId: pedido.id,
           forma: p.forma,
           valor: round2(Number(p.valor)),
-          troco: p.forma === FORMA_DINHEIRO ? troco : 0
+          troco: p.forma === FORMA_DINHEIRO ? troco : 0,
+          contaBancariaId: p.contaBancariaId ?? null,
+          maquinaCartaoId: p.maquinaCartaoId ?? null,
+          nsu: p.nsu ?? null,
+          bandeira: p.bandeira ?? null,
+          parcelas: p.parcelas ?? null,
+          autorizacao: p.autorizacao ?? null
         }
       });
     }
@@ -356,6 +485,13 @@ export async function receberPagamentoEEmitir(
         }
       });
     }
+    // Roteia o destino: PIX/transferência → saldo da conta; cartão → recebível da adquirente.
+    await rotearDestinosPagamento(
+      tx,
+      scope,
+      { pedidoVendaId: pedido.id, numero: pedido.numero, clienteId: pedido.clienteId ?? null },
+      pagamentos
+    );
     await tx.pedidoVenda.update({
       where: { id: pedido.id },
       data: {

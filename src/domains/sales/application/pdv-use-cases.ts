@@ -7,7 +7,7 @@ import { validarCredencialAdmin, type CredencialAdmin } from "@/lib/auth/admin-c
 import { checkoutSale } from "./sale-use-cases";
 import { criarRetiradaExpedicao } from "./expedicao-use-cases";
 import { emitServiceInvoiceAvulsa } from "@/domains/fiscal/application/standalone-emission-use-cases";
-import { getCaixaAberto, registrarRecebimentoPdv } from "@/domains/cashier/application/cashier-use-cases";
+import { getCaixaAberto, registrarRecebimentoPdv, type PagamentoDetalhado } from "@/domains/cashier/application/cashier-use-cases";
 
 const FORMA_CREDIARIO = "CREDIARIO";
 const FORMA_DINHEIRO = "DINHEIRO";
@@ -22,7 +22,7 @@ export type PdvCheckoutInput = {
   produtos: Array<{ produtoId: string; quantidade: number; precoUnitario: number; desconto?: number }>;
   servicos: Array<{ descricao: string; valor: number; codigoServicoLc116?: string | null; codigoNbs?: string | null }>;
   /** Formas de pagamento recebidas (o troco sai do dinheiro). Exigidas — o PDV opera com caixa. */
-  pagamentos: Array<{ forma: string; valor: number }>;
+  pagamentos: PagamentoDetalhado[];
   /** Condição do crediário ("30", "30/60/90"...) quando há forma CREDIARIO. Padrão: 30 dias. */
   condicaoCrediario?: string | null;
   /** Credencial de um administrador — obrigatória quando há desconto em itens. */
@@ -247,8 +247,10 @@ export async function pdvCheckout(scope: TenantScope, input: PdvCheckoutInput): 
   // 3. Registra o recebimento no caixa (pagamentos + movimento, com troco no dinheiro).
   const { troco } = await registrarRecebimentoPdv(scope, {
     pedidoVendaId,
-    descricao: "Venda PDV",
+    descricao: pedidoNumero ? `Venda ${pedidoNumero}` : "Venda PDV",
     total,
+    numero: pedidoNumero ?? undefined,
+    clienteId: input.clienteId ?? null,
     pagamentos
   });
 

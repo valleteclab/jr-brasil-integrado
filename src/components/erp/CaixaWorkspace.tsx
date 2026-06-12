@@ -17,7 +17,20 @@ const FORMAS: Array<{ id: string; label: string }> = [
 ];
 const formaLabel = (id: string) => FORMAS.find((f) => f.id === id)?.label ?? id;
 
-type PagamentoLinha = { uid: string; forma: string; valor: number };
+const BANDEIRAS = ["VISA", "MASTERCARD", "ELO", "AMEX", "HIPERCARD", "OUTRA"];
+const isPixOuTransfer = (f: string) => f === "PIX" || f === "TRANSFERENCIA";
+const isCartao = (f: string) => f === "CARTAO_DEBITO" || f === "CARTAO_CREDITO";
+
+type PagamentoLinha = {
+  uid: string;
+  forma: string;
+  valor: number;
+  contaBancariaId?: string;
+  maquinaCartaoId?: string;
+  nsu?: string;
+  bandeira?: string;
+  parcelas?: number;
+};
 const uid = () => Math.random().toString(36).slice(2, 9);
 
 export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
@@ -154,7 +167,15 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
       const r = await post("/api/erp/caixa/receber", {
         pedidoId: sel.id,
         modelo,
-        pagamentos: pagamentos.filter((p) => Number(p.valor) > 0).map((p) => ({ forma: p.forma, valor: Number(p.valor) })),
+        pagamentos: pagamentos.filter((p) => Number(p.valor) > 0).map((p) => ({
+          forma: p.forma,
+          valor: Number(p.valor),
+          contaBancariaId: isPixOuTransfer(p.forma) ? p.contaBancariaId ?? null : null,
+          maquinaCartaoId: isCartao(p.forma) ? p.maquinaCartaoId ?? null : null,
+          nsu: isCartao(p.forma) ? p.nsu ?? null : null,
+          bandeira: isCartao(p.forma) ? p.bandeira ?? null : null,
+          parcelas: p.forma === "CARTAO_CREDITO" ? p.parcelas ?? 1 : null
+        })),
         retiradaExpedicao: data.expedicaoHabilitada && retiradaExpedicao
       });
       setResultado({ pedidoNumero: r.pedidoNumero, troco: r.troco, notaId: r.nota?.id ?? null, notaStatus: r.nota?.status ?? null, emitErro: r.emitErro ?? null, retirada: r.retirada ?? null });
@@ -323,12 +344,36 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6, margin: "10px 0" }}>
                   {pagamentos.map((p) => (
-                    <div key={p.uid} style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                      <select value={p.forma} onChange={(e) => updPag(p.uid, { forma: e.target.value })} style={{ flex: 1, height: 32 }}>
-                        {FORMAS.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
-                      </select>
-                      <input type="number" min={0} step="0.01" value={p.valor} onChange={(e) => updPag(p.uid, { valor: Number(e.target.value) || 0 })} style={{ width: 100, height: 32, textAlign: "right" }} />
-                      {pagamentos.length > 1 && <button type="button" className="btn-erp ghost xs icon-only" onClick={() => rmPag(p.uid)}>✕</button>}
+                    <div key={p.uid} style={{ display: "flex", flexDirection: "column", gap: 4, borderBottom: isPixOuTransfer(p.forma) || isCartao(p.forma) ? "1px dashed var(--erp-line)" : "none", paddingBottom: isPixOuTransfer(p.forma) || isCartao(p.forma) ? 6 : 0 }}>
+                      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                        <select value={p.forma} onChange={(e) => updPag(p.uid, { forma: e.target.value, contaBancariaId: undefined, maquinaCartaoId: undefined })} style={{ flex: 1, height: 32 }}>
+                          {FORMAS.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+                        </select>
+                        <input type="number" min={0} step="0.01" value={p.valor} onChange={(e) => updPag(p.uid, { valor: Number(e.target.value) || 0 })} style={{ width: 100, height: 32, textAlign: "right" }} />
+                        {pagamentos.length > 1 && <button type="button" className="btn-erp ghost xs icon-only" onClick={() => rmPag(p.uid)}>✕</button>}
+                      </div>
+                      {isPixOuTransfer(p.forma) && (
+                        <select value={p.contaBancariaId ?? ""} onChange={(e) => updPag(p.uid, { contaBancariaId: e.target.value || undefined })} style={{ height: 30, fontSize: 12 }}>
+                          <option value="">Conta recebedora…{data.contas.length ? "" : " (cadastre em Contas financeiras)"}</option>
+                          {data.contas.map((c) => <option key={c.id} value={c.id}>{c.nome}{c.chavePix ? ` · PIX ${c.chavePix}` : ""}</option>)}
+                        </select>
+                      )}
+                      {isCartao(p.forma) && (
+                        <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                          <select value={p.maquinaCartaoId ?? ""} onChange={(e) => updPag(p.uid, { maquinaCartaoId: e.target.value || undefined })} style={{ flex: "1 1 100%", height: 30, fontSize: 12 }}>
+                            <option value="">Maquininha…{data.maquinas.length ? "" : " (cadastre em Máquinas de cartão)"}</option>
+                            {data.maquinas.map((m) => <option key={m.id} value={m.id}>{m.nome}{m.adquirente ? ` · ${m.adquirente}` : ""}</option>)}
+                          </select>
+                          <input placeholder="NSU" value={p.nsu ?? ""} onChange={(e) => updPag(p.uid, { nsu: e.target.value })} style={{ flex: "1 1 80px", height: 30, fontSize: 12 }} />
+                          <select value={p.bandeira ?? ""} onChange={(e) => updPag(p.uid, { bandeira: e.target.value || undefined })} style={{ flex: "1 1 80px", height: 30, fontSize: 12 }}>
+                            <option value="">Bandeira…</option>
+                            {BANDEIRAS.map((b) => <option key={b} value={b}>{b}</option>)}
+                          </select>
+                          {p.forma === "CARTAO_CREDITO" && (
+                            <input type="number" min={1} max={18} placeholder="Parc." value={p.parcelas ?? 1} onChange={(e) => updPag(p.uid, { parcelas: Math.max(1, Number(e.target.value) || 1) })} style={{ flex: "0 0 64px", height: 30, fontSize: 12, textAlign: "center" }} title="Parcelas" />
+                          )}
+                        </div>
+                      )}
                     </div>
                   ))}
                   <button type="button" className="btn-erp ghost xs" onClick={addPagamento}>+ Outra forma</button>

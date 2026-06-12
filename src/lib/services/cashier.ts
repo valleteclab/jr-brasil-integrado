@@ -22,9 +22,17 @@ export type PreVendaResumo = {
   }>;
 };
 
+/** Conta recebedora (banco/PIX) para destinar o recebimento de PIX/transferência. */
+export type ContaRecebedora = { id: string; nome: string; chavePix: string | null; tipoChavePix: string | null };
+/** Maquininha de cartão para gerar o recebível da adquirente (líquido da taxa). */
+export type MaquinaCartaoResumo = { id: string; nome: string; adquirente: string | null };
+
 export type CaixaPageData = {
   caixa: { id: string; operador: string; abertoEm: string; resumo: ResumoCaixa } | null;
   preVendas: PreVendaResumo[];
+  /** Contas recebedoras (PIX/transferência) e maquininhas (cartão) para detalhar o recebimento. */
+  contas: ContaRecebedora[];
+  maquinas: MaquinaCartaoResumo[];
   /** Módulo Expedição habilitado para o tenant (mostra a opção de recibo de retirada). */
   expedicaoHabilitada: boolean;
 };
@@ -37,6 +45,19 @@ export async function getCaixaPageData(): Promise<CaixaPageData> {
     where: { id: scope.tenantId },
     select: { expedicaoHabilitada: true }
   });
+
+  const [contasRaw, maquinasRaw] = await Promise.all([
+    prisma.contaBancaria.findMany({
+      where: { ...scopedByTenantCompany(scope), ativo: true },
+      select: { id: true, nome: true, chavePix: true, tipoChavePix: true },
+      orderBy: { nome: "asc" }
+    }),
+    prisma.maquinaCartao.findMany({
+      where: { ...scopedByTenantCompany(scope), ativo: true },
+      select: { id: true, nome: true, adquirente: true },
+      orderBy: { nome: "asc" }
+    })
+  ]);
 
   const pedidos = await prisma.pedidoVenda.findMany({
     where: { ...scopedByTenantCompany(scope), status: "AGUARDANDO_PAGAMENTO" },
@@ -82,6 +103,8 @@ export async function getCaixaPageData(): Promise<CaixaPageData> {
         }
       : null,
     preVendas,
+    contas: contasRaw,
+    maquinas: maquinasRaw,
     expedicaoHabilitada: Boolean(tenant?.expedicaoHabilitada)
   };
 }
