@@ -2096,6 +2096,11 @@ model MovimentoFinanceiro {
   descricao       String
   valor           Decimal                 @db.Decimal(14, 2)
   formaPagamento  String?
+  // Detalhe do pagamento (ex.: contas a pagar quitadas no cartão): qual maquininha/cartão,
+  // bandeira e nº de parcelas (1 = à vista). Reusa o cadastro de MaquinaCartao.
+  maquinaCartaoId String?
+  bandeira        String?
+  parcelas        Int?
   saldoAnterior   Decimal?                @db.Decimal(14, 2)
   saldoPosterior  Decimal?                @db.Decimal(14, 2)
   dataMovimento   DateTime                @default(now())

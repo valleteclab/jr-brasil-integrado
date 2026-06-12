@@ -16,6 +16,9 @@ export async function POST(
       formaPagamento?: string;
       contaBancariaId?: string;
       dataPagamento?: string;
+      maquinaCartaoId?: string | null;
+      bandeira?: string | null;
+      parcelas?: number | null;
     };
 
     const conta = await settlePayable(scope, params.id, {
@@ -25,7 +28,10 @@ export async function POST(
       descontoBaixa: body.descontoBaixa !== undefined ? Number(body.descontoBaixa) : undefined,
       formaPagamento: body.formaPagamento,
       contaBancariaId: body.contaBancariaId,
-      dataPagamento: body.dataPagamento ? new Date(body.dataPagamento) : undefined
+      dataPagamento: body.dataPagamento ? new Date(body.dataPagamento) : undefined,
+      maquinaCartaoId: body.maquinaCartaoId ?? null,
+      bandeira: body.bandeira ?? null,
+      parcelas: body.parcelas != null ? Number(body.parcelas) : null
     });
 
     return NextResponse.json({ id: conta.id, status: conta.status });

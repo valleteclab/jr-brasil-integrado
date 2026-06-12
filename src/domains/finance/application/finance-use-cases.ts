@@ -25,6 +25,10 @@ export type SettleInput = {
   formaPagamento?: string;
   contaBancariaId?: string;
   dataPagamento?: Date;
+  /** Detalhe do pagamento no cartão (qual maquininha/cartão, bandeira e parcelas; 1 = à vista). */
+  maquinaCartaoId?: string | null;
+  bandeira?: string | null;
+  parcelas?: number | null;
 };
 
 export type CreatePayableInput = {
@@ -161,6 +165,10 @@ export async function settlePayable(
         descricao: `Baixa de conta a pagar: ${conta.descricao}`,
         valor: valorLiquido,
         formaPagamento: input.formaPagamento ?? conta.formaPagamento ?? null,
+        // Como foi pago (cartão): maquininha/cartão, bandeira e parcelas (1 = à vista).
+        maquinaCartaoId: input.maquinaCartaoId ?? null,
+        bandeira: input.bandeira ?? null,
+        parcelas: input.parcelas ?? null,
         saldoAnterior: saldoAnterior ?? null,
         saldoPosterior: saldoPosterior ?? null,
         dataMovimento: dataPagamento

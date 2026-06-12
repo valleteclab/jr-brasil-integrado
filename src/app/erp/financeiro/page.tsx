@@ -1,8 +1,8 @@
 import { PageHeader } from "@/components/shared/PageHeader";
 import { KpiCard } from "@/components/shared/KpiCard";
 import { FinanceManager } from "@/components/erp/FinanceManager";
-import { listPayables, listReceivables, listBankAccounts, getFinanceSummary, listActiveClienteOptions } from "@/lib/services/finance";
-import type { PayableSummary, ReceivableSummary, BankAccountSummary, FinanceSummary, ClienteOption } from "@/lib/services/finance";
+import { listPayables, listReceivables, listBankAccounts, getFinanceSummary, listActiveClienteOptions, listMaquinasCartaoOptions } from "@/lib/services/finance";
+import type { PayableSummary, ReceivableSummary, BankAccountSummary, FinanceSummary, ClienteOption, MaquinaCartaoOption } from "@/lib/services/finance";
 import { listFormasPagamentoAtivas } from "@/domains/finance/application/payment-config-use-cases";
 import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
 import { getSession } from "@/lib/auth/session";
@@ -21,17 +21,19 @@ export default async function FinanceiroPage() {
   let summary: FinanceSummary | null = null;
   let formasPagamento: Array<{ id: string; nome: string }> = [];
   let clientes: ClienteOption[] = [];
+  let maquinas: MaquinaCartaoOption[] = [];
   let loadError = "";
 
   try {
     const scope = await getDevelopmentTenantScope();
-    const [pay, rec, banks, sum, formas, cli] = await Promise.all([
+    const [pay, rec, banks, sum, formas, cli, maqs] = await Promise.all([
       listPayables(),
       listReceivables(),
       listBankAccounts(),
       getFinanceSummary(),
       listFormasPagamentoAtivas(scope),
-      listActiveClienteOptions()
+      listActiveClienteOptions(),
+      listMaquinasCartaoOptions()
     ]);
     payables = pay;
     receivables = rec;
@@ -39,6 +41,7 @@ export default async function FinanceiroPage() {
     summary = sum;
     formasPagamento = formas.map((f) => ({ id: f.id, nome: f.nome }));
     clientes = cli;
+    maquinas = maqs;
   } catch (error) {
     loadError = error instanceof Error ? error.message : "Não foi possível carregar o módulo financeiro.";
   }
@@ -96,6 +99,7 @@ export default async function FinanceiroPage() {
           bankAccounts={bankAccounts}
           formasPagamento={formasPagamento}
           clientes={clientes}
+          maquinas={maquinas}
           isAdmin={isAdmin}
         />
       )}

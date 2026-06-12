@@ -20,6 +20,8 @@ export type PayableSummary = {
   statusLabel: string;
   statusTone: StatusTone;
   formaPagamento: string;
+  /** Resumo de "como foi pago" (forma + parcelas + cartão/bandeira + conta), quando quitada. */
+  comoPago?: string | null;
   canSettle: boolean;
   /** Pode ser excluída (admin): sem pagamento registrado. */
   canDelete: boolean;
@@ -142,6 +144,35 @@ export async function listPayables(filtroStatus?: string): Promise<PayableSummar
     orderBy: [{ vencimento: "asc" }, { criadoEm: "desc" }]
   });
 
+  // "Como foi pago": pega o movimento financeiro (DEBITO) mais recente de cada conta quitada e
+  // monta um resumo (forma + parcelas + cartão/bandeira + conta). Tudo em 2 queries (sem N+1).
+  const idsComPagamento = contas.filter((c) => Number(c.valorPago) > 0).map((c) => c.id);
+  const movPorConta = new Map<string, { formaPagamento: string | null; parcelas: number | null; bandeira: string | null; maquinaCartaoId: string | null; contaNome: string | null; data: Date }>();
+  if (idsComPagamento.length) {
+    const movs = await prisma.movimentoFinanceiro.findMany({
+      where: { ...scopedByTenantCompany(scope), origem: "CONTA_PAGAR", contaPagarId: { in: idsComPagamento } },
+      select: { contaPagarId: true, formaPagamento: true, parcelas: true, bandeira: true, maquinaCartaoId: true, dataMovimento: true, contaBancaria: { select: { nome: true } } },
+      orderBy: { dataMovimento: "desc" }
+    });
+    const maqIds = [...new Set(movs.map((m) => m.maquinaCartaoId).filter(Boolean) as string[])];
+    const maqNome = new Map<string, string>();
+    if (maqIds.length) {
+      const maqs = await prisma.maquinaCartao.findMany({ where: { id: { in: maqIds } }, select: { id: true, nome: true } });
+      for (const m of maqs) maqNome.set(m.id, m.nome);
+    }
+    for (const m of movs) {
+      if (!m.contaPagarId || movPorConta.has(m.contaPagarId)) continue; // já é o mais recente (ordenado desc)
+      movPorConta.set(m.contaPagarId, {
+        formaPagamento: m.formaPagamento,
+        parcelas: m.parcelas,
+        bandeira: m.bandeira,
+        maquinaCartaoId: m.maquinaCartaoId ? (maqNome.get(m.maquinaCartaoId) ?? null) : null,
+        contaNome: m.contaBancaria?.nome ?? null,
+        data: m.dataMovimento
+      });
+    }
+  }
+
   return contas.map((c) => {
     const valor = Number(c.valor);
     const valorPago = Number(c.valorPago);
@@ -171,6 +202,19 @@ export async function listPayables(filtroStatus?: string): Promise<PayableSummar
       statusLabel,
       statusTone,
       formaPagamento: c.formaPagamento ?? "—",
+      comoPago: (() => {
+        const m = movPorConta.get(c.id);
+        if (!m) return null;
+        const partes = [
+          m.formaPagamento,
+          m.parcelas && m.parcelas > 1 ? `${m.parcelas}x` : null,
+          m.maquinaCartaoId,
+          m.bandeira,
+          m.contaNome ? `via ${m.contaNome}` : null,
+          fmtDate(m.data)
+        ].filter(Boolean);
+        return partes.length ? partes.join(" · ") : null;
+      })(),
       canSettle,
       // Excluir (admin): só sem pagamento registrado (evita orfanar movimentos financeiros).
       canDelete: valorPago === 0
@@ -251,6 +295,24 @@ export async function listBankAccounts(): Promise<BankAccountSummary[]> {
     saldoAtual: formatBrl(Number(c.saldoAtual)),
     saldoAtualNumber: Number(c.saldoAtual)
   }));
+}
+
+// ─── Maquininhas/cartões (seletor de "como foi pago" no cartão) ───────────────
+
+export type MaquinaCartaoOption = { id: string; nome: string; adquirente: string | null };
+
+export async function listMaquinasCartaoOptions(): Promise<MaquinaCartaoOption[]> {
+  if (!process.env.DATABASE_URL) {
+    throw new Error("DATABASE_URL não configurada para listar máquinas de cartão.");
+  }
+
+  const scope = await getDevelopmentTenantScope();
+  const maquinas = await prisma.maquinaCartao.findMany({
+    where: { ...scopedByTenantCompany(scope), ativo: true },
+    select: { id: true, nome: true, adquirente: true },
+    orderBy: { nome: "asc" }
+  });
+  return maquinas.map((m) => ({ id: m.id, nome: m.nome, adquirente: m.adquirente }));
 }
 
 // ─── Clientes ativos (seletor de conta a receber avulsa) ──────────────────────
