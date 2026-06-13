@@ -285,11 +285,15 @@ export async function editConfirmedSale(scope: TenantScope, id: string, input: E
     }
   });
   if (!pedido) throw new Error("Pedido de venda não encontrado.");
-  if (pedido.status !== "AGUARDANDO_NOTA") {
+  // Editável enquanto não pago/faturado: AGUARDANDO_PAGAMENTO (pré-venda, estoque só reservado)
+  // e AGUARDANDO_NOTA (confirmado, estoque baixado). Faturado usa devolução; rascunho edita antes.
+  if (pedido.status !== "AGUARDANDO_NOTA" && pedido.status !== "AGUARDANDO_PAGAMENTO") {
     throw new Error(
-      "Somente pedidos em 'Aguardando nota' podem ser editados aqui. Pedidos faturados usam devolução; pedidos em rascunho são editados antes da confirmação."
+      "Só dá para editar enquanto o pedido não foi pago/faturado (pré-venda no caixa ou aguardando nota)."
     );
   }
+  // Pré-venda (AGUARDANDO_PAGAMENTO): o estoque está apenas RESERVADO (a baixa ocorre no caixa).
+  const reservadoApenas = pedido.status === "AGUARDANDO_PAGAMENTO";
   if (pedido.notasFiscais.length > 0) {
     throw new Error("Há nota fiscal autorizada vinculada — cancele a nota antes de editar o pedido.");
   }
@@ -315,20 +319,24 @@ export async function editConfirmedSale(scope: TenantScope, id: string, input: E
   const atualizado = await runInTransaction(async (tx) => {
     const depositoId = pedido.depositoId ?? (await getDefaultDeposito(tx, scope)).id;
 
-    // 1. Estorna o estoque dos itens atuais devolvendo ao saldo. Usa ENTRADA (mesmo padrão da
-    //    devolução): no provedor de estoque, ESTORNO conta como saída — quem REPÕE saldo é a ENTRADA.
-    //    O custo do item é reaplicado para não distorcer o custo médio.
-    for (const item of pedido.itens) {
-      await applyStockMovement(tx, scope, {
-        produtoId: item.produtoId,
-        depositoId,
-        tipo: "ENTRADA",
-        quantidade: Number(item.quantidade),
-        custoUnitario: Number(item.custoUnitario),
-        documentoTipo: "PEDIDO_VENDA",
-        documentoId: id,
-        observacoes: `Estorno de estoque por edição do pedido ${pedido.numero}`
-      });
+    // 1. Solta o estoque dos itens atuais. Pré-venda (reservadoApenas): só LIBERA a reserva.
+    //    Confirmado: ENTRADA de estorno (no provedor, ESTORNO conta como saída; quem REPÕE é a
+    //    ENTRADA), reaplicando o custo para não distorcer o custo médio.
+    if (reservadoApenas) {
+      await releaseReservations(tx, scope, "PEDIDO_VENDA", id);
+    } else {
+      for (const item of pedido.itens) {
+        await applyStockMovement(tx, scope, {
+          produtoId: item.produtoId,
+          depositoId,
+          tipo: "ENTRADA",
+          quantidade: Number(item.quantidade),
+          custoUnitario: Number(item.custoUnitario),
+          documentoTipo: "PEDIDO_VENDA",
+          documentoId: id,
+          observacoes: `Estorno de estoque por edição do pedido ${pedido.numero}`
+        });
+      }
     }
 
     // 2. Cancela contas a receber em aberto e a comissão a pagar.
@@ -416,18 +424,29 @@ export async function editConfirmedSale(scope: TenantScope, id: string, input: E
       }
     });
 
-    // 7. Nova saída de estoque para os itens vigentes.
+    // 7. Re-aplica o estoque dos itens vigentes. Pré-venda: RESERVA (a baixa é no caixa);
+    //    confirmado: SAÍDA (baixa). Espelha o passo 1.
     for (const item of itensMapped) {
-      await applyStockMovement(tx, scope, {
-        produtoId: item.produtoId,
-        depositoId,
-        tipo: "SAIDA",
-        quantidade: item.quantidade,
-        custoUnitario: item.custoUnitario,
-        documentoTipo: "PEDIDO_VENDA",
-        documentoId: id,
-        observacoes: `Saída por edição do pedido ${pedido.numero}`
-      });
+      if (reservadoApenas) {
+        await reserveStock(tx, scope, {
+          produtoId: item.produtoId,
+          depositoId,
+          quantidade: item.quantidade,
+          origemTipo: "PEDIDO_VENDA",
+          origemId: id
+        });
+      } else {
+        await applyStockMovement(tx, scope, {
+          produtoId: item.produtoId,
+          depositoId,
+          tipo: "SAIDA",
+          quantidade: item.quantidade,
+          custoUnitario: item.custoUnitario,
+          documentoTipo: "PEDIDO_VENDA",
+          documentoId: id,
+          observacoes: `Saída por edição do pedido ${pedido.numero}`
+        });
+      }
     }
 
     // 8. Regenera as contas a receber (mesma regra do confirmSale), preservando o modo original.

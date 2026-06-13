@@ -10,8 +10,10 @@ export default async function EditarVendaPage({ params }: { params: { id: string
   const [venda, form] = await Promise.all([getSaleDetail(params.id), listSaleFormData()]);
   if (!venda) notFound();
 
-  // Edição só é permitida antes da nota (pedido confirmado, em 'Aguardando nota').
-  if (venda.status !== "AGUARDANDO_NOTA" || venda.temNotaAutorizada) {
+  // Edição permitida enquanto não pago/faturado: pré-venda no caixa (AGUARDANDO_PAGAMENTO) ou
+  // confirmado aguardando a nota (AGUARDANDO_NOTA), sempre sem nota autorizada vinculada.
+  const editavel = venda.status === "AGUARDANDO_NOTA" || venda.status === "AGUARDANDO_PAGAMENTO";
+  if (!editavel || venda.temNotaAutorizada) {
     redirect(`/erp/vendas/${params.id}`);
   }
 
