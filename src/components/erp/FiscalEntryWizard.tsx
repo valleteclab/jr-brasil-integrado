@@ -645,8 +645,8 @@ export function FiscalEntryWizard({ initialDraft = null, products, formasPagamen
             <Button type="button" onClick={() => fileInputRef.current?.click()} disabled={loading}>
               {loading ? "Importando..." : "Importar XML da NF-e"}
             </Button>
-            <Button type="button" variant="light" onClick={() => setMessage("Preencha os dados manualmente e adicione itens na próxima etapa.")}>
-              Lançamento manual
+            <Button href="/erp/entradas-fiscais/manual" variant="light">
+              Lançamento manual (sem XML)
             </Button>
             <input ref={fileInputRef} className="sr-only-file" type="file" accept=".xml,text/xml,application/xml" onChange={handleFileChange} />
           </div>

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { FinalidadeEntrada, Prisma, RegimeTributario, TipoTributo } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
+import { scopedByTenantCompany } from "@/lib/auth/dev-session";
 import { createAuditLog } from "@/lib/audit/audit-service";
 import { parseNfeXml } from "@/domains/products/xml/nfe-server-parser";
 import type { ParsedNfeItem } from "@/domains/products/xml/nfe-server-parser";
@@ -1986,4 +1987,283 @@ export async function suggestFiscalEntryFinalidadesWithAi(scope: TenantScope, en
       motivo: String(suggestion.motivo || "")
     }))
     .filter((suggestion) => isFinalidadeEntrada(suggestion.finalidade));
+}
+
+// =====================================================================================
+// Lançamento MANUAL de nota de entrada (sem XML): o usuário digita cabeçalho, itens
+// (com conversão de embalagem) e parcelas. Cria a entrada em AGUARDANDO_CONFERENCIA; o
+// usuário revisa e processa pelo mesmo wizard/processFiscalEntry da entrada por XML.
+// =====================================================================================
+
+export type ManualFiscalEntryInput = {
+  fornecedor: { id?: string | null; documento?: string | null; razaoSocial?: string | null; uf?: string | null };
+  numero?: string | null;
+  serie?: string | null;
+  modelo?: string | null;
+  chaveAcesso?: string | null;
+  cfopPrincipal?: string | null;
+  emitidaEm?: string | null;
+  recebidaEm?: string | null;
+  valorFrete?: number;
+  valorSeguro?: number;
+  valorDesconto?: number;
+  outrasDespesas?: number;
+  observacoes?: string | null;
+  itens: Array<{
+    codigoFornecedor: string;
+    descricao: string;
+    gtin?: string | null;
+    ncm?: string | null;
+    cest?: string | null;
+    cfop?: string | null;
+    unidade: string;
+    quantidade: number;
+    valorUnitario: number;
+    valorDesconto?: number;
+    fatorConversao?: number;
+    unidadeVenda?: string | null;
+    finalidade?: FinalidadeEntrada | null;
+    produtoId?: string | null;
+    criarNovoSku?: boolean;
+    precoVenda?: number | null;
+    precoMinimo?: number | null;
+    marca?: string | null;
+    impostos?: Array<{ tributo: TipoTributo; cst?: string | null; csosn?: string | null; base?: number; aliquota?: number; valor?: number }>;
+  }>;
+  parcelas?: Array<{ numero?: string | null; vencimento?: string | null; valor: number; formaPagamento?: string | null }>;
+};
+
+/** Dados para montar o formulário de lançamento manual (fornecedores + produtos para vínculo). */
+export async function getManualFiscalEntryFormData(scope: TenantScope) {
+  const [fornecedores, produtos] = await Promise.all([
+    prisma.fornecedor.findMany({
+      where: { ...scopedByTenantCompany(scope), ativo: true },
+      orderBy: { razaoSocial: "asc" },
+      select: { id: true, razaoSocial: true, nomeFantasia: true, documento: true, uf: true }
+    }),
+    prisma.produto.findMany({
+      where: { ...scopedByTenantCompany(scope), ativo: true },
+      orderBy: { nome: "asc" },
+      select: { id: true, sku: true, nome: true, unidade: true, unidadeCompra: true, fatorConversaoCompra: true, precoVenda: true, ultimoCusto: true }
+    })
+  ]);
+
+  return {
+    fornecedores: fornecedores.map((f) => ({
+      id: f.id,
+      documento: f.documento,
+      uf: f.uf ?? "",
+      label: f.nomeFantasia ? `${f.nomeFantasia} (${f.razaoSocial})` : f.razaoSocial
+    })),
+    produtos: produtos.map((p) => ({
+      id: p.id,
+      sku: p.sku,
+      nome: p.nome,
+      unidade: p.unidade,
+      unidadeCompra: p.unidadeCompra,
+      fatorConversaoCompra: Number(p.fatorConversaoCompra ?? 1),
+      precoVenda: Number(p.precoVenda ?? 0),
+      ultimoCusto: Number(p.ultimoCusto ?? 0)
+    }))
+  };
+}
+
+export async function createManualFiscalEntry(scope: TenantScope, input: ManualFiscalEntryInput) {
+  const itens = (input.itens ?? []).filter((item) => item.codigoFornecedor?.trim() && item.descricao?.trim());
+  if (!itens.length) {
+    throw new Error("Informe ao menos um item na nota de entrada.");
+  }
+  for (const item of itens) {
+    if (!(item.quantidade > 0)) {
+      throw new Error(`Quantidade inválida no item ${item.codigoFornecedor}.`);
+    }
+    if (item.valorUnitario < 0) {
+      throw new Error(`Valor unitário inválido no item ${item.codigoFornecedor}.`);
+    }
+    const movimenta = (item.finalidade ?? "REVENDA") === "REVENDA" || (item.finalidade ?? "REVENDA") === "INDUSTRIALIZACAO";
+    if (movimenta && !item.produtoId && (!item.precoVenda || item.precoVenda <= 0)) {
+      throw new Error(`Informe o produto vinculado ou o preço de venda (novo SKU) do item ${item.codigoFornecedor}.`);
+    }
+  }
+
+  return prisma.$transaction(async (tx) => {
+    // Fornecedor: usa o existente (id) ou cria/atualiza pelo documento. Pode ficar sem fornecedor.
+    let fornecedorId: string | null = null;
+    let fornecedorUf: string | null = null;
+    if (input.fornecedor?.id) {
+      const forn = await tx.fornecedor.findFirst({
+        where: { id: input.fornecedor.id, ...scopedByTenantCompany(scope) },
+        select: { id: true, uf: true }
+      });
+      if (!forn) throw new Error("Fornecedor informado não pertence a esta empresa.");
+      fornecedorId = forn.id;
+      fornecedorUf = forn.uf?.trim().toUpperCase() || null;
+    } else if (input.fornecedor?.documento?.trim()) {
+      const forn = await resolveFornecedor(
+        tx,
+        scope,
+        input.fornecedor.documento.trim(),
+        input.fornecedor.razaoSocial?.trim() || input.fornecedor.documento.trim(),
+        input.fornecedor.uf?.trim() || undefined
+      );
+      fornecedorId = forn?.id ?? null;
+      fornecedorUf = forn?.uf?.trim().toUpperCase() || null;
+    }
+
+    const empresa = await tx.empresa.findUnique({
+      where: { id: scope.empresaId },
+      select: { enderecoUf: true, regimeTributario: true }
+    });
+    const empresaUf = empresa?.enderecoUf?.trim().toUpperCase() || null;
+    const regime = empresa?.regimeTributario ?? "SIMPLES_NACIONAL";
+    const interestadual = Boolean(empresaUf && fornecedorUf && empresaUf !== fornecedorUf);
+
+    const frete = Number(input.valorFrete ?? 0);
+    const seguro = Number(input.valorSeguro ?? 0);
+    const descontoNota = Number(input.valorDesconto ?? 0);
+    const outras = Number(input.outrasDespesas ?? 0);
+
+    const itensCalc = itens.map((item, index) => {
+      const desconto = Number(item.valorDesconto ?? 0);
+      const valorTotal = Math.round((item.quantidade * item.valorUnitario - desconto + Number.EPSILON) * 100) / 100;
+      return { ...item, itemNumero: index + 1, valorDescontoCalc: desconto, valorTotal: valorTotal < 0 ? 0 : valorTotal };
+    });
+    const totalProdutos = Math.round((itensCalc.reduce((s, i) => s + i.valorTotal, 0) + Number.EPSILON) * 100) / 100;
+    const totalNota = Math.round((totalProdutos + frete + seguro + outras - descontoNota + Number.EPSILON) * 100) / 100;
+
+    const entrada = await tx.entradaFiscal.create({
+      data: {
+        ...scopedByTenantCompany(scope),
+        fornecedorId,
+        chaveAcesso: input.chaveAcesso?.trim() || null,
+        numero: input.numero?.trim() || null,
+        serie: input.serie?.trim() || null,
+        modelo: input.modelo?.trim() || "55",
+        cfopPrincipal: input.cfopPrincipal?.trim() || itensCalc[0]?.cfop?.trim() || null,
+        status: "AGUARDANDO_CONFERENCIA",
+        emitidaEm: input.emitidaEm ? new Date(`${input.emitidaEm.slice(0, 10)}T12:00:00.000Z`) : new Date(),
+        recebidaEm: input.recebidaEm ? new Date(`${input.recebidaEm.slice(0, 10)}T12:00:00.000Z`) : new Date(),
+        totalProdutos,
+        totalNota,
+        valorFrete: frete,
+        valorSeguro: seguro,
+        valorDesconto: descontoNota,
+        outrasDespesas: outras,
+        observacoes: input.observacoes?.trim() || null
+      }
+    });
+
+    for (const item of itensCalc) {
+      const finalidade = item.finalidade ?? "REVENDA";
+      const movimentaEstoque = finalidade === "REVENDA" || finalidade === "INDUSTRIALIZACAO";
+      const icms = item.impostos?.find((imp) => imp.tributo === "ICMS");
+      const st = isSubstituicaoTributaria({ cstIcms: icms?.cst ?? null, csosn: icms?.csosn ?? null }) || cfopIndicaSt(item.cfop ?? null);
+      const cfopEntrada = resolveCfopEntrada(finalidade, { interestadual, st });
+      const fatorNorm = item.fatorConversao && item.fatorConversao > 0 ? item.fatorConversao : 1;
+      const unidadeVendaNorm = fatorNorm > 1 ? (item.unidadeVenda?.trim() || "UN") : (item.unidadeVenda?.trim() || null);
+
+      // Vínculo: produto existente (produtoId) ou novo SKU (precoVendaDefinido). Uso/consumo e
+      // imobilizado não exigem preço nem produto.
+      let produtoId: string | null = null;
+      if (item.produtoId && !item.criarNovoSku) {
+        const produto = await tx.produto.findFirst({
+          where: { id: item.produtoId, ...scopedByTenantCompany(scope), ativo: true },
+          select: { id: true }
+        });
+        if (!produto) throw new Error(`Produto do item ${item.codigoFornecedor} não pertence a esta empresa.`);
+        produtoId = produto.id;
+      }
+
+      const createdItem = await tx.entradaFiscalItem.create({
+        data: {
+          ...scopedByTenantCompany(scope),
+          entradaFiscalId: entrada.id,
+          produtoId,
+          itemNumero: item.itemNumero,
+          codigoFornecedor: item.codigoFornecedor.trim(),
+          descricaoFornecedor: item.descricao.trim(),
+          gtin: item.gtin?.trim() || null,
+          ncm: item.ncm?.replace(/\D/g, "") || null,
+          cest: item.cest?.replace(/\D/g, "") || null,
+          cfop: item.cfop?.replace(/\D/g, "") || null,
+          unidade: item.unidade?.trim() || "UN",
+          quantidade: item.quantidade,
+          valorUnitario: item.valorUnitario,
+          valorTotal: item.valorTotal,
+          valorDesconto: item.valorDescontoCalc,
+          fatorConversao: fatorNorm,
+          unidadeVenda: unidadeVendaNorm,
+          precoVendaDefinido: !produtoId && item.precoVenda ? item.precoVenda : null,
+          precoMinimoDefinido: !produtoId ? (item.precoMinimo && item.precoMinimo > 0 ? item.precoMinimo : item.precoVenda ?? null) : null,
+          marcaDefinida: !produtoId ? item.marca?.trim() || null : null,
+          produtoVinculadoAutomaticamente: false,
+          confiancaVinculo: produtoId ? 100 : 0,
+          revisarVinculo: false,
+          finalidade,
+          finalidadeSugerida: finalidade,
+          finalidadeOrigem: "MANUAL",
+          cfopEntradaDerivado: cfopEntrada,
+          movimentaEstoque
+        }
+      });
+
+      const impostosValidos = (item.impostos ?? []).filter(
+        (imp) => imp.cst || imp.csosn || (imp.base ?? 0) > 0 || (imp.aliquota ?? 0) > 0 || (imp.valor ?? 0) > 0
+      );
+      if (impostosValidos.length) {
+        await tx.entradaFiscalItemImposto.createMany({
+          data: impostosValidos.map((imp) => ({
+            ...scopedByTenantCompany(scope),
+            entradaFiscalItemId: createdItem.id,
+            tributo: imp.tributo,
+            cst: imp.cst?.trim() || null,
+            csosn: imp.csosn?.trim() || null,
+            baseCalculo: imp.base ?? null,
+            aliquota: imp.aliquota ?? null,
+            valor: imp.valor ?? null,
+            recuperavel: creditoPorFinalidade(finalidade, regime, imp.tributo, { st }).recuperavel
+          }))
+        });
+      }
+    }
+
+    // Parcelas: usa as informadas; senão cria uma única (vencimento +30 dias) para o usuário
+    // ajustar na etapa financeira do wizard antes de processar.
+    const parcelasInput = (input.parcelas ?? []).filter((p) => Number(p.valor) > 0);
+    if (parcelasInput.length) {
+      await tx.entradaFiscalParcela.createMany({
+        data: parcelasInput.map((p, index) => ({
+          ...scopedByTenantCompany(scope),
+          entradaFiscalId: entrada.id,
+          numero: p.numero?.trim() || String(index + 1),
+          vencimento: p.vencimento ? new Date(`${p.vencimento.slice(0, 10)}T12:00:00.000Z`) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+          valor: Number(p.valor),
+          formaPagamento: p.formaPagamento?.trim() || "A definir",
+          origem: "MANUAL"
+        }))
+      });
+    } else {
+      await tx.entradaFiscalParcela.create({
+        data: {
+          ...scopedByTenantCompany(scope),
+          entradaFiscalId: entrada.id,
+          numero: "1",
+          vencimento: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+          valor: totalNota,
+          formaPagamento: "A definir",
+          origem: "MANUAL"
+        }
+      });
+    }
+
+    await createAuditLog(tx, {
+      scope,
+      entidade: "EntradaFiscal",
+      entidadeId: entrada.id,
+      acao: "CREATE_MANUAL",
+      payload: { numero: entrada.numero, fornecedorId, itens: itensCalc.length, totalNota }
+    });
+
+    return { id: entrada.id };
+  }, FISCAL_TRANSACTION_OPTIONS);
 }
