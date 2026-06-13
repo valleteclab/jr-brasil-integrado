@@ -18,6 +18,8 @@ export async function PUT(request: Request) {
         marca?: string | null;
         finalidade?: string | null;
         cfopEntrada?: string | null;
+        fatorConversao?: number | null;
+        unidadeVenda?: string | null;
       }>;
     };
 
@@ -29,7 +31,9 @@ export async function PUT(request: Request) {
       precoMinimo: link.precoMinimo,
       marca: link.marca,
       finalidade: isFinalidadeEntrada(link.finalidade) ? link.finalidade : null,
-      cfopEntrada: link.cfopEntrada ?? null
+      cfopEntrada: link.cfopEntrada ?? null,
+      fatorConversao: typeof link.fatorConversao === "number" && link.fatorConversao > 0 ? link.fatorConversao : null,
+      unidadeVenda: link.unidadeVenda?.trim() || null
     })) ?? [];
 
     if (!links.length) {

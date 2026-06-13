@@ -1198,10 +1198,12 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
               {form.purchaseUnit && !unidadeOpcoes.includes(form.purchaseUnit) && <option value={form.purchaseUnit}>{form.purchaseUnit}</option>}
               {unidadeOpcoes.map((u) => <option key={u} value={u}>{u}</option>)}
             </select>
+            <small className="block-muted">Como você compra do fornecedor (ex.: CX, FD). A venda usa a unidade do produto.</small>
           </label>
           <label>
-            Fator de conversão
-            <input value={form.purchaseConversion} onChange={(event) => updateField("purchaseConversion", event.target.value)} />
+            Unidades de venda por unidade de compra
+            <input inputMode="decimal" value={form.purchaseConversion} onChange={(event) => updateField("purchaseConversion", event.target.value)} />
+            <small className="block-muted">Quantas unidades de venda há em 1 de compra. Ex.: 1 {form.purchaseUnit || "CX"} = 12 {form.unit || "UN"} ⇒ 12. Use 1 se não houver conversão.</small>
           </label>
           <label>
             Lead time em dias

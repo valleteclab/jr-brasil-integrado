@@ -14,6 +14,12 @@ export type ParsedNfeItem = {
   unitValue: number;
   totalValue: number;
   discountValue: number;
+  /** Unidade tributável da NF-e (uTrib) — costuma ser a unidade de revenda (ex.: UN). */
+  taxableUnit?: string;
+  /** Quantidade tributável da NF-e (qTrib) — ex.: 12 quando vem 1 caixa de 12. */
+  taxableQuantity?: number;
+  /** Fator de conversão sugerido (qTrib ÷ qCom) quando a unidade tributável difere da comercial. */
+  suggestedConversion?: number;
   taxes: ParsedNfeTax[];
 };
 
@@ -152,6 +158,17 @@ export function parseNfeXml(xmlText: string): ParsedNfe {
       readTax(imposto.COFINS, "COFINS")
     ].filter(Boolean) as ParsedNfeTax[];
 
+    const unitComercial = text(prod.uCom) || "UN";
+    const qtdComercial = numberValue(prod.qCom);
+    const unitTrib = text(prod.uTrib) || undefined;
+    const qtdTrib = numberValue(prod.qTrib);
+    // Sugere o fator de embalagem quando a unidade tributável difere da comercial e a quantidade
+    // tributável é maior (ex.: 1 CX comercial → 12 UN tributável ⇒ fator 12). Arredonda para evitar
+    // ruído de ponto flutuante. Só sugere > 1 (1 caixa = 1 unidade não precisa de conversão).
+    const ratio = unitTrib && unitTrib !== unitComercial && qtdComercial > 0 && qtdTrib > qtdComercial
+      ? Math.round((qtdTrib / qtdComercial) * 1_000_000) / 1_000_000
+      : 1;
+
     return {
       itemNumber: Number(text(det["@_nItem"])) || index + 1,
       supplierCode: text(prod.cProd),
@@ -160,11 +177,14 @@ export function parseNfeXml(xmlText: string): ParsedNfe {
       ncm: text(prod.NCM) || undefined,
       cest: text(prod.CEST) || undefined,
       cfop: text(prod.CFOP) || undefined,
-      unit: text(prod.uCom) || "UN",
-      quantity: numberValue(prod.qCom),
+      unit: unitComercial,
+      quantity: qtdComercial,
       unitValue: numberValue(prod.vUnCom),
       totalValue: numberValue(prod.vProd),
       discountValue: numberValue(prod.vDesc),
+      taxableUnit: unitTrib,
+      taxableQuantity: qtdTrib || undefined,
+      suggestedConversion: ratio > 1 ? ratio : 1,
       taxes
     };
   });

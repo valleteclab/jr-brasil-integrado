@@ -1580,6 +1580,32 @@ p {
   margin-bottom: 5px;
 }
 
+.fiscal-conversao-box {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 150px;
+}
+
+.fiscal-conversao-inputs {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.fiscal-conversao-inputs label {
+  align-items: center;
+  display: flex;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.fiscal-conversao-inputs input {
+  min-height: 26px;
+  padding: 0 6px;
+}
+
 .fiscal-link-actions button {
   background: #fff;
   border: 1px solid var(--erp-line);

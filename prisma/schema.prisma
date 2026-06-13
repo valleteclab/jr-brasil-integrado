@@ -1467,6 +1467,12 @@ model EntradaFiscalItem {
   valorUnitario                   Decimal                    @db.Decimal(14, 4)
   valorTotal                      Decimal                    @db.Decimal(14, 2)
   valorDesconto                   Decimal                    @default(0) @db.Decimal(14, 2)
+  // Conversão de embalagem: 1 unidade de compra (`unidade`, ex.: CX/FD) = `fatorConversao` unidades de
+  // venda (`unidadeVenda`, ex.: UN). Ao lançar, o estoque entra em unidadeVenda (quantidade × fator) e
+  // o custo unitário vira valorUnitario ÷ fator. `quantidade`/`unidade` permanecem o COMERCIAL da nota
+  // (fidelidade do SPED C170). Sugerido do XML (qTrib/qCom) e editável na conferência.
+  fatorConversao                  Decimal                    @default(1) @db.Decimal(14, 6)
+  unidadeVenda                    String?
   precoVendaDefinido              Decimal?                   @db.Decimal(14, 2)
   precoMinimoDefinido             Decimal?                   @db.Decimal(14, 2)
   marcaDefinida                   String?

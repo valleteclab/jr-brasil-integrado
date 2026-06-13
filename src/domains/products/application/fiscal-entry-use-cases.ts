@@ -85,6 +85,8 @@ type FiscalEntryDraftSource = {
     quantidade: Prisma.Decimal;
     valorUnitario: Prisma.Decimal;
     valorTotal: Prisma.Decimal;
+    fatorConversao: Prisma.Decimal;
+    unidadeVenda: string | null;
     precoVendaDefinido: Prisma.Decimal | null;
     precoMinimoDefinido: Prisma.Decimal | null;
     marcaDefinida: string | null;
@@ -203,7 +205,7 @@ function buildFiscalEntryDraft(entrada: FiscalEntryDraftSource) {
         supplier: entrada.fornecedor?.razaoSocial || "",
         supplierCode: item.codigoFornecedor,
         purchaseUnit: item.unidade,
-        purchaseConversion: "1",
+        purchaseConversion: String(Number(item.fatorConversao ?? 1)),
         leadTime: "",
         minimumPurchase: "1",
         storeTitle: item.descricaoFornecedor,
@@ -219,6 +221,8 @@ function buildFiscalEntryDraft(entrada: FiscalEntryDraftSource) {
       action: item.produtoId ? "update" as const : "create" as const,
       confidence: Number(item.confiancaVinculo ?? 0),
       review: item.revisarVinculo,
+      fatorConversao: Number(item.fatorConversao ?? 1),
+      unidadeVenda: item.unidadeVenda ?? item.unidade,
       salePrice: item.precoVendaDefinido ? String(Number(item.precoVendaDefinido)).replace(".", ",") : "",
       minimumPrice: item.precoMinimoDefinido ? String(Number(item.precoMinimoDefinido)).replace(".", ",") : "",
       brand: item.marcaDefinida ?? "",
@@ -570,6 +574,9 @@ export async function importNfeXml(scope: TenantScope, xmlText: string) {
           valorUnitario: item.unitValue,
           valorTotal: item.totalValue,
           valorDesconto: item.discountValue,
+          // Conversão de embalagem sugerida pelo XML (qTrib/qCom); editável na conferência.
+          fatorConversao: item.suggestedConversion && item.suggestedConversion > 0 ? item.suggestedConversion : 1,
+          unidadeVenda: item.suggestedConversion && item.suggestedConversion > 1 ? (item.taxableUnit ?? null) : null,
           produtoVinculadoAutomaticamente: Boolean(match.product),
           confiancaVinculo: match.confidence,
           revisarVinculo: match.review,
@@ -648,7 +655,7 @@ export async function importNfeXml(scope: TenantScope, xmlText: string) {
           supplier: parsed.supplierName || "",
           supplierCode: item.supplierCode,
           purchaseUnit: item.unit,
-          purchaseConversion: "1",
+          purchaseConversion: String(item.suggestedConversion && item.suggestedConversion > 0 ? item.suggestedConversion : 1),
           leadTime: "",
           minimumPurchase: "1",
           storeTitle: item.description,
@@ -664,6 +671,8 @@ export async function importNfeXml(scope: TenantScope, xmlText: string) {
         action: match.product ? "update" : "create",
         confidence: match.confidence,
         review: match.review,
+        fatorConversao: item.suggestedConversion && item.suggestedConversion > 0 ? item.suggestedConversion : 1,
+        unidadeVenda: item.suggestedConversion && item.suggestedConversion > 1 ? (item.taxableUnit ?? "UN") : (item.unit || "UN"),
         finalidade: finalidadeRes.finalidade,
         finalidadeOrigem: finalidadeRes.origem,
         cfopEntradaDerivado: cfopEntrada,
@@ -861,6 +870,13 @@ export async function processFiscalEntry(
     for (const item of entrada.itens) {
       const movimentaEstoque = item.movimentaEstoque;
       let produtoId = item.produtoId;
+      // Conversão de embalagem: comprou em fardo/caixa (item.unidade, item.quantidade comercial),
+      // mas estoca/vende unitário. O estoque entra em unidade de venda (quantidade × fator) e o
+      // custo unitário vira valorUnitario ÷ fator. valorTotal não muda (qtd×custo permanece igual).
+      const fatorConv = Number(item.fatorConversao) > 0 ? Number(item.fatorConversao) : 1;
+      const qtdEstoque = Number(item.quantidade) * fatorConv;
+      const custoUnitConv = Number(item.valorUnitario) / fatorConv;
+      const unidadeVendaItem = item.unidadeVenda?.trim() || item.unidade;
       // Mercadoria substituída (ICMS-ST já recolhido): memorizada no produto para que a revenda
       // saia sem ICMS próprio (CST 60 / CSOSN 500) e com CFOP de ST.
       const icmsItem = item.impostos.find((imp) => imp.tributo === "ICMS");
@@ -910,17 +926,17 @@ export async function processFiscalEntry(
             gtin: item.gtin,
             categoriaId: await categoriaIdPara(categoriasIa[item.id] ?? ""),
             marcaId: marca?.id,
-            unidade: item.unidade,
+            unidade: unidadeVendaItem,
             unidadeCompra: item.unidade,
-            fatorConversaoCompra: 1,
+            fatorConversaoCompra: fatorConv,
             ncm: item.ncm,
             cest: item.cest,
             // CFOP de VENDA do produto conforme a finalidade (não o CFOP do fornecedor).
             // ST fica null aqui para a emissão derivar 5405/6404.
             cfop: cfopVendaPadrao(item.finalidade, { st: itemSt }),
-            precoCusto: item.valorUnitario,
-            ultimoCusto: item.valorUnitario,
-            custoMedio: item.valorUnitario,
+            precoCusto: custoUnitConv,
+            ultimoCusto: custoUnitConv,
+            custoMedio: custoUnitConv,
             precoVenda: item.precoVendaDefinido,
             precoMinimo: item.precoMinimoDefinido ?? item.precoVendaDefinido,
             visivelEcommerce: false
@@ -1012,10 +1028,11 @@ export async function processFiscalEntry(
         }
       });
       const previousQuantity = Number(previous?.quantidade ?? 0);
-      const nextQuantity = previousQuantity + Number(item.quantidade);
-      const previousAverageCost = Number(product.custoMedio ?? product.precoCusto ?? item.valorUnitario);
-      const incomingQuantity = Number(item.quantidade);
-      const incomingCost = Number(item.valorUnitario);
+      // Estoque e custo na unidade de venda (já convertidos pelo fator de embalagem).
+      const nextQuantity = previousQuantity + qtdEstoque;
+      const previousAverageCost = Number(product.custoMedio ?? product.precoCusto ?? custoUnitConv);
+      const incomingQuantity = qtdEstoque;
+      const incomingCost = custoUnitConv;
       const weightedAverageCost = nextQuantity > 0
         ? ((previousQuantity * previousAverageCost) + (incomingQuantity * incomingCost)) / nextQuantity
         : incomingCost;
@@ -1024,15 +1041,19 @@ export async function processFiscalEntry(
       // (não sobrescreve configuração que o contador já fez no produto existente).
       const cfopVenda = cfopVendaPadrao(item.finalidade, { st: itemSt });
       const definirCfop = cfopVenda && !product.cfop;
+      // Em produto existente, registra a embalagem desta compra (unidade de compra + fator) para
+      // futuras compras/relatórios herdarem a conversão correta.
+      const definirEmbalagem = fatorConv > 1;
       await tx.produto.update({
         where: { id: produtoId },
         data: {
-          ultimoCusto: item.valorUnitario,
-          precoCusto: item.valorUnitario,
+          ultimoCusto: custoUnitConv,
+          precoCusto: custoUnitConv,
           custoMedio: weightedAverageCost,
           ncm: item.ncm,
           cest: item.cest,
-          ...(definirCfop ? { cfop: cfopVenda } : {})
+          ...(definirCfop ? { cfop: cfopVenda } : {}),
+          ...(definirEmbalagem ? { unidadeCompra: item.unidade, fatorConversaoCompra: fatorConv } : {})
         }
       });
       await upsertProductFiscalFromEntryItem(tx, scope, produtoId, itemFiscal);
@@ -1065,10 +1086,10 @@ export async function processFiscalEntry(
           produtoId,
           depositoId: deposito.id,
           tipo: "ENTRADA",
-          quantidade: item.quantidade,
+          quantidade: qtdEstoque,
           saldoAntes: previousQuantity,
           saldoDepois: nextQuantity,
-          custoUnitario: item.valorUnitario,
+          custoUnitario: custoUnitConv,
           custoTotal: item.valorTotal,
           documentoTipo: "ENTRADA_FISCAL",
           documentoId: entrada.id,
@@ -1256,16 +1277,20 @@ export async function reverseFiscalEntry(scope: TenantScope, entradaFiscalId: st
           }
         }
       });
+      // Espelha o lançamento: a entrada postou quantidade × fator na unidade de venda, então o
+      // estorno devolve a mesma quantidade convertida e usa o custo unitário convertido.
+      const fatorConv = Number(item.fatorConversao) > 0 ? Number(item.fatorConversao) : 1;
+      const custoUnitConv = Number(item.valorUnitario) / fatorConv;
       const previousQuantity = Number(saldo?.quantidade ?? 0);
-      const reversalQuantity = Number(item.quantidade);
+      const reversalQuantity = Number(item.quantidade) * fatorConv;
       const nextQuantity = previousQuantity - reversalQuantity;
 
       if (nextQuantity < 0 && !item.produto.permiteEstoqueNegativo) {
         throw new Error(`Saldo insuficiente para estornar o SKU ${item.produto.sku}. Saldo atual: ${previousQuantity}.`);
       }
 
-      const previousAverageCost = Number(item.produto.custoMedio ?? item.produto.precoCusto ?? item.valorUnitario);
-      const itemCost = Number(item.valorUnitario);
+      const previousAverageCost = Number(item.produto.custoMedio ?? item.produto.precoCusto ?? custoUnitConv);
+      const itemCost = custoUnitConv;
       const nextAverageCost = nextQuantity > 0
         ? ((previousQuantity * previousAverageCost) - (reversalQuantity * itemCost)) / nextQuantity
         : previousAverageCost;
@@ -1301,7 +1326,7 @@ export async function reverseFiscalEntry(scope: TenantScope, entradaFiscalId: st
           quantidade: -reversalQuantity,
           saldoAntes: previousQuantity,
           saldoDepois: nextQuantity,
-          custoUnitario: item.valorUnitario,
+          custoUnitario: custoUnitConv,
           custoTotal: -Number(item.valorTotal),
           documentoTipo: "ESTORNO_ENTRADA_FISCAL",
           documentoId: entrada.id,
@@ -1502,6 +1527,10 @@ type FiscalEntryItemLinkInput = {
   finalidade?: FinalidadeEntrada | null;
   /** CFOP de entrada informado manualmente (casos especiais fora da matriz). Sobrepõe o automático. */
   cfopEntrada?: string | null;
+  /** Conversão de embalagem: unidades de venda por unidade de compra (1 CX = 12 UN ⇒ 12). */
+  fatorConversao?: number | null;
+  /** Unidade de venda alvo (ex.: UN) quando há conversão de embalagem. */
+  unidadeVenda?: string | null;
 };
 
 type LoadedEntryItem = Prisma.EntradaFiscalItemGetPayload<{ include: { entradaFiscal: true; impostos: true } }>;
@@ -1651,6 +1680,11 @@ async function updateFiscalEntryItemLinkInTransaction(
       }
     }
 
+    // Conversão de embalagem (comprar em fardo/caixa, vender unitário): fator = unidades de venda por
+    // unidade de compra. Persistido no item para o lançamento e o estorno espelharem a mesma conta.
+    const fatorNorm = input.fatorConversao && input.fatorConversao > 0 ? input.fatorConversao : 1;
+    const unidadeVendaNorm = fatorNorm > 1 ? (input.unidadeVenda?.trim() || "UN") : (input.unidadeVenda?.trim() || null);
+
     if (input.criarNovoSku) {
       if (!input.precoVenda || input.precoVenda <= 0) {
         throw new Error("Informe o preço de venda para criar um novo SKU.");
@@ -1663,6 +1697,8 @@ async function updateFiscalEntryItemLinkInTransaction(
           precoVendaDefinido: input.precoVenda,
           precoMinimoDefinido: input.precoMinimo && input.precoMinimo > 0 ? input.precoMinimo : input.precoVenda,
           marcaDefinida: input.marca?.trim() || null,
+          fatorConversao: fatorNorm,
+          unidadeVenda: unidadeVendaNorm,
           produtoVinculadoAutomaticamente: false,
           confiancaVinculo: 0,
           revisarVinculo: false
@@ -1704,6 +1740,8 @@ async function updateFiscalEntryItemLinkInTransaction(
         precoVendaDefinido: null,
         precoMinimoDefinido: null,
         marcaDefinida: null,
+        fatorConversao: fatorNorm,
+        unidadeVenda: unidadeVendaNorm ?? product.unidade,
         produtoVinculadoAutomaticamente: false,
         confiancaVinculo: 100,
         revisarVinculo: false

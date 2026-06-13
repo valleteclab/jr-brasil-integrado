@@ -26,6 +26,10 @@ type FiscalDraftItem = {
   salePrice?: string;
   minimumPrice?: string;
   brand?: string;
+  /** Conversão de embalagem: unidades de venda por unidade de compra (1 CX = 12 UN ⇒ 12). */
+  fatorConversao?: number;
+  /** Unidade de venda alvo quando há conversão (ex.: UN). */
+  unidadeVenda?: string;
   finalidade?: FinalidadeEntrada;
   finalidadeOrigem?: string;
   cfopEntradaDerivado?: string;
@@ -149,6 +153,10 @@ const today = new Date().toISOString().slice(0, 10);
 
 function formatBrl(value: number) {
   return new Intl.NumberFormat("pt-BR", { currency: "BRL", style: "currency" }).format(value);
+}
+
+function formatQty(value: number) {
+  return new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 4 }).format(value);
 }
 
 // Resumo de um imposto do XML para conferência: "ICMS CSOSN 500 · IPI CST 53 · PIS CST 01 0,65% R$ 0,04".
@@ -366,7 +374,9 @@ export function FiscalEntryWizard({ initialDraft = null, products, formasPagamen
             precoMinimo: item.action === "create" ? decimalInputToNumber(item.minimumPrice) : null,
             marca: item.action === "create" ? item.brand?.trim() || null : null,
             finalidade: item.finalidade ?? null,
-            cfopEntrada: item.cfopEntradaDerivado ?? null
+            cfopEntrada: item.cfopEntradaDerivado ?? null,
+            fatorConversao: item.fatorConversao && item.fatorConversao > 0 ? item.fatorConversao : 1,
+            unidadeVenda: item.unidadeVenda?.trim() || null
           }))
         }),
         headers: { "Content-Type": "application/json" },
@@ -703,6 +713,7 @@ export function FiscalEntryWizard({ initialDraft = null, products, formasPagamen
                   <th className="num">Qtd.</th>
                   <th className="num">Custo</th>
                   <th className="num">Total</th>
+                  <th>Conversão (compra → venda)</th>
                   <th>Finalidade</th>
                   <th>Vínculo no estoque</th>
                 </tr>
@@ -723,6 +734,46 @@ export function FiscalEntryWizard({ initialDraft = null, products, formasPagamen
                     <td className="num">{item.importedProduct.availableStock}</td>
                     <td className="num">{item.importedProduct.costValue}</td>
                     <td className="num">{formatBrl(currencyToNumber(item.importedProduct.costValue) * item.importedProduct.availableStock)}</td>
+                    <td>
+                      {item.movimentaEstoque === false ? (
+                        <small className="block-muted">—</small>
+                      ) : (() => {
+                        const fator = item.fatorConversao && item.fatorConversao > 0 ? item.fatorConversao : 1;
+                        const qtdVenda = item.importedProduct.availableStock * fator;
+                        const custoUn = fator > 0 ? currencyToNumber(item.importedProduct.costValue) / fator : 0;
+                        const unVenda = item.unidadeVenda?.trim() || (fator > 1 ? "UN" : item.importedProduct.unit);
+                        return (
+                          <div className="fiscal-conversao-box">
+                            <div className="fiscal-conversao-inputs">
+                              <label>
+                                <span>1 {item.importedProduct.unit} =</span>
+                                <input
+                                  inputMode="decimal"
+                                  style={{ width: 64 }}
+                                  value={String(fator).replace(".", ",")}
+                                  onChange={(event) => {
+                                    const v = decimalInputToNumber(event.target.value);
+                                    updateItem(item.id, { fatorConversao: v > 0 ? v : 1 });
+                                  }}
+                                />
+                              </label>
+                              <input
+                                aria-label="Unidade de venda"
+                                style={{ width: 60 }}
+                                placeholder="UN"
+                                value={unVenda}
+                                onChange={(event) => updateItem(item.id, { unidadeVenda: event.target.value.toUpperCase().slice(0, 6) })}
+                              />
+                            </div>
+                            <small className="block-muted">
+                              {fator > 1
+                                ? `entra ${formatQty(qtdVenda)} ${unVenda} a ${formatBrl(custoUn)}/${unVenda}`
+                                : `sem conversão (1 ${item.importedProduct.unit} = 1 ${unVenda})`}
+                            </small>
+                          </div>
+                        );
+                      })()}
+                    </td>
                     <td>
                       <select
                         value={item.finalidade ?? "REVENDA"}
@@ -935,14 +986,24 @@ export function FiscalEntryWizard({ initialDraft = null, products, formasPagamen
           <table className="erp-table">
             <thead><tr><th>SKU</th><th>Operação</th><th className="num">Qtd.</th><th className="num">Custo</th></tr></thead>
             <tbody>
-              {draft.items.map((item) => (
+              {draft.items.map((item) => {
+                const fator = item.fatorConversao && item.fatorConversao > 0 ? item.fatorConversao : 1;
+                const movimenta = item.movimentaEstoque !== false;
+                const unVenda = item.unidadeVenda?.trim() || (fator > 1 ? "UN" : item.importedProduct.unit);
+                const qtdVenda = item.importedProduct.availableStock * fator;
+                const custoUn = currencyToNumber(item.importedProduct.costValue) / fator;
+                return (
                 <tr key={item.id}>
                   <td className="mono bold">{item.action === "create" ? item.importedProduct.sku : productsById.get(item.matchedProductId || "")?.sku ?? item.importedProduct.sku}</td>
                   <td><span className={item.action === "create" ? "status-badge warn" : "status-badge success"}>{item.action === "create" ? "Novo SKU + Entrada" : "Entrada"}</span></td>
-                  <td className="num">+{item.importedProduct.availableStock}</td>
-                  <td className="num">{item.importedProduct.costValue}</td>
+                  <td className="num">
+                    {movimenta ? `+${formatQty(qtdVenda)} ${unVenda}` : "—"}
+                    {movimenta && fator > 1 && <small className="block-muted"> ({formatQty(item.importedProduct.availableStock)} {item.importedProduct.unit} × {formatQty(fator)})</small>}
+                  </td>
+                  <td className="num">{movimenta && fator > 1 ? `${formatBrl(custoUn)}/${unVenda}` : item.importedProduct.costValue}</td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
           <div className="fiscal-ready-box">Tudo pronto para lançar. Total da NF-e: <strong>{formatBrl(totalInvoice)}</strong></div>

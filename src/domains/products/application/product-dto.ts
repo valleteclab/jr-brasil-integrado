@@ -133,7 +133,9 @@ export function validateProductPayload(payload: ProductPayload): ValidatedProduc
     barcode: barcode || undefined,
     unit: text(payload, "unit", "UN") || "UN",
     purchaseUnit: text(payload, "purchaseUnit", "UN") || "UN",
-    purchaseConversion: numeric(payload.purchaseConversion) || 1,
+    // Fator de conversão de embalagem (unidades de venda por unidade de compra). Sempre > 0;
+    // valor inválido/zero/negativo cai em 1 (sem conversão).
+    purchaseConversion: numeric(payload.purchaseConversion) > 0 ? numeric(payload.purchaseConversion) : 1,
     shortDescription: text(payload, "shortDescription") || undefined,
     technicalDescription: text(payload, "technicalDescription") || undefined,
     storeDescription: text(payload, "storeDescription") || undefined,
