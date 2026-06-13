@@ -203,6 +203,7 @@ export function SalesList({ sales, isAdmin = false }: Props) {
                   )}
                 </td>
                 <td className="actions">
+                  <a className="btn-erp ghost xs" href={`/api/erp/vendas/${row.id}/recibo?formato=a4`} target="_blank" rel="noopener noreferrer" title="Reimprimir recibo (A4)">🖨 Recibo</a>
                   {row.notaFiscalId && row.notaCanDownload && (
                     <>
                       <a className="btn-erp ghost xs" href={`/api/erp/fiscal/${row.notaFiscalId}/pdf`} target="_blank" rel="noopener noreferrer" title="Imprimir DANFE/cupom">🖨️ PDF</a>

@@ -165,7 +165,7 @@ export async function listSales(): Promise<SaleSummary[]> {
         confirmadoEm: formatDate(p.confirmadoEm),
         faturadoEm: formatDate(p.faturadoEm),
         canceladoEm: formatDate(p.canceladoEm),
-        canConfirm: p.status === "RASCUNHO" || p.status === "AGUARDANDO_PAGAMENTO",
+        canConfirm: p.status === "RASCUNHO", // AGUARDANDO_PAGAMENTO (pre-venda) e recebido no CAIXA, nao confirmado aqui
         canInvoice: p.status === "AGUARDANDO_NOTA",
         canCancel: p.status !== "CANCELADO" && !temNota,
         temNotaAutorizada: temNota,
@@ -256,7 +256,7 @@ export async function getSaleDetail(id: string): Promise<SaleDetail | null> {
       confirmadoEm: formatDate(p.confirmadoEm),
       faturadoEm: formatDate(p.faturadoEm),
       canceladoEm: formatDate(p.canceladoEm),
-      canConfirm: p.status === "RASCUNHO" || p.status === "AGUARDANDO_PAGAMENTO",
+      canConfirm: p.status === "RASCUNHO", // AGUARDANDO_PAGAMENTO (pre-venda) e recebido no CAIXA, nao confirmado aqui
       canInvoice: p.status === "AGUARDANDO_NOTA",
       canCancel: p.status !== "CANCELADO" && !temNota,
       temNotaAutorizada: temNota,

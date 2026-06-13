@@ -146,6 +146,8 @@ export function SaleDetailActions({ id, numero, canConfirm, canInvoice, canCance
         {canInvoice && <button type="button" className="btn-erp ghost sm" onClick={() => faturar("NFCE")} disabled={!!busy}>Emitir NFC-e</button>}
         {canEdit && <Link className="btn-erp light sm" href={`/erp/vendas/${id}/editar`}>✏️ Editar pedido</Link>}
         <button type="button" className="btn-erp light sm" onClick={() => espelho("NFE")} disabled={!!busy}>{busy === "espelho" ? "Calculando…" : "🔍 Espelho fiscal"}</button>
+        <a className="btn-erp light sm" href={`/api/erp/vendas/${id}/recibo?formato=a4`} target="_blank" rel="noopener noreferrer" title="Recibo da venda em A4 (PDF)">🖨 Recibo A4</a>
+        <a className="btn-erp light sm" href={`/api/erp/vendas/${id}/recibo`} target="_blank" rel="noopener noreferrer" title="Recibo térmico 80mm">🖨 80mm</a>
         {canReturn && <button type="button" className="btn-erp ghost sm" onClick={() => setDevolucaoAberta(true)} disabled={!!busy}>↩ Devolver itens</button>}
         {canCancel && <button type="button" className="btn-erp danger sm" onClick={cancelar} disabled={!!busy}>{busy === "cancelar" ? "Cancelando…" : "Cancelar pedido"}</button>}
         {podeExcluir && <button type="button" className="btn-erp danger sm" onClick={excluir} disabled={!!busy} title="Excluir pedido (admin)">{busy === "excluir" ? "Excluindo…" : "🗑️ Excluir pedido"}</button>}
