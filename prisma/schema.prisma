@@ -386,6 +386,9 @@ model Empresa {
   // Regra de operação: quando true, permite saída/venda de produtos sem saldo (estoque negativo)
   // para toda a empresa. Por produto, permiteEstoqueNegativo/permiteVendaSobEncomenda ainda valem.
   permiteVendaSemEstoque Boolean        @default(false)
+  // Quando true, o atendimento permite "Finalizar direto + NFC-e/NF-e" (emite sem passar pelo
+  // caixa). Padrão false: TODA venda vai para o CAIXA receber o pagamento e emitir.
+  permiteVendaDiretaBalcao Boolean      @default(false)
   criadoEm           DateTime           @default(now())
   atualizadoEm       DateTime           @updatedAt
 

@@ -491,14 +491,17 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO", allow
                 <button type="button" className="btn-erp primary lg" disabled={!canFinalize || saving} onClick={enviarParaCaixa}>
                   {saving ? "Processando…" : `Enviar para o caixa · ${brl(total)}`}
                 </button>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button type="button" className="btn-erp ghost sm" style={{ flex: 1 }} disabled={!canFinalize || saving} onClick={() => finalizeBalcao("NFCE")}>
-                    Finalizar direto + NFC-e
-                  </button>
-                  <button type="button" className="btn-erp ghost sm" style={{ flex: 1 }} disabled={!cliente || !canFinalize || saving} onClick={() => finalizeBalcao("NFE")}>
-                    + NF-e
-                  </button>
-                </div>
+                {/* Finalizar direto (sem caixa) só quando a empresa habilita nas configurações. */}
+                {data.permiteVendaDiretaBalcao && (
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button type="button" className="btn-erp ghost sm" style={{ flex: 1 }} disabled={!canFinalize || saving} onClick={() => finalizeBalcao("NFCE")}>
+                      Finalizar direto + NFC-e
+                    </button>
+                    <button type="button" className="btn-erp ghost sm" style={{ flex: 1 }} disabled={!cliente || !canFinalize || saving} onClick={() => finalizeBalcao("NFE")}>
+                      + NF-e
+                    </button>
+                  </div>
+                )}
               </>
             ) : (
               <button type="button" className="btn-erp primary lg" disabled={!cliente || !canFinalize || saving} onClick={finalize}>{saving ? "Processando…" : acaoLabel}</button>

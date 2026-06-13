@@ -208,6 +208,16 @@ export function CompanySettingsForm({ initialSettings }: Props) {
               <span>Aceitar venda/saída de produtos sem estoque (permite saldo negativo)</span>
             </label>
 
+            <label className="span-2" style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <input
+                type="checkbox"
+                checked={form.permiteVendaDiretaBalcao}
+                onChange={(event) => update("permiteVendaDiretaBalcao", event.target.checked)}
+                style={{ width: "auto" }}
+              />
+              <span>Permitir finalizar a venda direto no atendimento (emite NFC-e/NF-e sem passar pelo caixa). Desligado: toda venda vai ao caixa.</span>
+            </label>
+
             <p className="span-2 field-hint" style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
               <strong>PDV recomendado:</strong> {PDV_RECOMENDADO[form.tipoNegocio] ?? PDV_RECOMENDADO.AMBOS}
               {form.tipoNegocio === "SERVICO" && " O menu oculta compras, estoque e notas de entrada."}

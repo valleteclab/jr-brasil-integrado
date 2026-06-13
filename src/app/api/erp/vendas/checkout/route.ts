@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
 import { requireModulo } from "@/lib/auth/session";
 import { authErrorStatus } from "@/lib/auth/http";
+import { prisma } from "@/lib/db/prisma";
 import { checkoutSale, type CreateSaleInput } from "@/domains/sales/application/sale-use-cases";
 
 // Checkout de balcão em um clique: cria + confirma + emite a nota (NFC-e/NF-e).
@@ -10,6 +11,11 @@ export async function POST(request: Request) {
   try {
     await requireModulo("vendas");
     const scope = await getDevelopmentTenantScope();
+    // Finalizar direto (sem caixa) só é permitido se a empresa habilitou nas configurações.
+    const empresa = await prisma.empresa.findUnique({ where: { id: scope.empresaId }, select: { permiteVendaDiretaBalcao: true } });
+    if (!empresa?.permiteVendaDiretaBalcao) {
+      return NextResponse.json({ error: "Finalizar venda direto está desabilitado. Envie a venda para o caixa receber e emitir." }, { status: 400 });
+    }
     const body = (await request.json()) as CreateSaleInput & { modelo?: "NFE" | "NFCE" };
     const { modelo, ...sale } = body;
     const result = await checkoutSale(scope, sale, { modelo: modelo === "NFE" ? "NFE" : "NFCE" });

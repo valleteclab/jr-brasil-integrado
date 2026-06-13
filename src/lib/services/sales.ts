@@ -93,6 +93,8 @@ export type SaleFormData = {
   clientes: Array<{ id: string; label: string; documento: string | null }>;
   produtos: Array<{ id: string; sku: string; nome: string; descricao: string | null; descricaoComercial: string | null; gtin: string | null; codigoOriginal: string | null; codigoFabricante: string | null; preco: number; disponivel: number }>;
   vendedores: Array<{ id: string; nome: string }>;
+  /** Empresa permite finalizar a venda direto no atendimento (sem caixa). Padrão false. */
+  permiteVendaDiretaBalcao: boolean;
 };
 
 function statusLabel(status: StatusPedido): string {
@@ -323,7 +325,8 @@ export async function listSaleFormData(): Promise<SaleFormData> {
   try {
     const scope = await getDevelopmentTenantScope();
 
-    const [clientes, produtos, vendedores] = await Promise.all([
+    const [empresa, clientes, produtos, vendedores] = await Promise.all([
+      prisma.empresa.findUnique({ where: { id: scope.empresaId }, select: { permiteVendaDiretaBalcao: true } }),
       prisma.cliente.findMany({
         where: { ...scopedByTenantCompany(scope), status: "ATIVO" },
         select: { id: true, razaoSocial: true, nomeFantasia: true, documento: true },
@@ -378,7 +381,8 @@ export async function listSaleFormData(): Promise<SaleFormData> {
           disponivel
         };
       }),
-      vendedores
+      vendedores,
+      permiteVendaDiretaBalcao: Boolean(empresa?.permiteVendaDiretaBalcao)
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : "erro desconhecido";
