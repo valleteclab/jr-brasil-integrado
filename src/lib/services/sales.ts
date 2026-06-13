@@ -95,6 +95,8 @@ export type SaleFormData = {
   vendedores: Array<{ id: string; nome: string }>;
   /** Empresa permite finalizar a venda direto no atendimento (sem caixa). Padrão false. */
   permiteVendaDiretaBalcao: boolean;
+  /** Empresa aceita vender produto sem saldo (estoque negativo). Padrão false. */
+  permiteVendaSemEstoque: boolean;
 };
 
 function statusLabel(status: StatusPedido): string {
@@ -326,7 +328,7 @@ export async function listSaleFormData(): Promise<SaleFormData> {
     const scope = await getDevelopmentTenantScope();
 
     const [empresa, clientes, produtos, vendedores] = await Promise.all([
-      prisma.empresa.findUnique({ where: { id: scope.empresaId }, select: { permiteVendaDiretaBalcao: true } }),
+      prisma.empresa.findUnique({ where: { id: scope.empresaId }, select: { permiteVendaDiretaBalcao: true, permiteVendaSemEstoque: true } }),
       prisma.cliente.findMany({
         where: { ...scopedByTenantCompany(scope), status: "ATIVO" },
         select: { id: true, razaoSocial: true, nomeFantasia: true, documento: true },
@@ -382,7 +384,8 @@ export async function listSaleFormData(): Promise<SaleFormData> {
         };
       }),
       vendedores,
-      permiteVendaDiretaBalcao: Boolean(empresa?.permiteVendaDiretaBalcao)
+      permiteVendaDiretaBalcao: Boolean(empresa?.permiteVendaDiretaBalcao),
+      permiteVendaSemEstoque: Boolean(empresa?.permiteVendaSemEstoque)
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : "erro desconhecido";

@@ -542,6 +542,7 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO", allow
         <ProdutoPickerMulti
           produtos={data.produtos}
           items={items}
+          permiteVendaSemEstoque={data.permiteVendaSemEstoque}
           onAdd={addItem}
           onRemove={rmItem}
           onClose={() => setShowProd(false)}
@@ -652,15 +653,31 @@ function PickerDrawer<T>({ title, placeholder, headers, rows, filter, render, on
 
 // Seletor de produtos com adição múltipla: a cada clique adiciona/incrementa o item e mostra
 // a quantidade já no carrinho, sem fechar o drawer. Botão "Concluir" volta para a venda.
-function ProdutoPickerMulti({ produtos, items, onAdd, onRemove, onClose }: {
-  produtos: Produto[]; items: ItemLinha[]; onAdd: (p: Produto) => void; onRemove: (id: string) => void; onClose: () => void;
+function ProdutoPickerMulti({ produtos, items, permiteVendaSemEstoque, onAdd, onRemove, onClose }: {
+  produtos: Produto[]; items: ItemLinha[]; permiteVendaSemEstoque: boolean; onAdd: (p: Produto) => void; onRemove: (id: string) => void; onClose: () => void;
 }) {
   const [q, setQ] = useState("");
+  const [aviso, setAviso] = useState("");
   const qtyById = new Map(items.map((it) => [it.produto.id, it.quantidade]));
   const list = produtos
     .filter((p) => correspondeBusca(q, p.sku, p.nome, p.descricao, p.descricaoComercial, p.gtin, p.codigoOriginal, p.codigoFabricante))
     .slice(0, 50);
   const totalItens = items.reduce((s, it) => s + it.quantidade, 0);
+
+  // Bloqueia adicionar produto sem saldo quando a empresa não aceita venda sem estoque.
+  function tentarAdd(p: Produto) {
+    const noCarrinho = qtyById.get(p.id) ?? 0;
+    if (!permiteVendaSemEstoque && noCarrinho + 1 > p.disponivel) {
+      setAviso(
+        p.disponivel <= 0
+          ? `"${p.nome}" está sem estoque (disponível 0). A empresa não aceita venda sem estoque.`
+          : `Estoque insuficiente de "${p.nome}": disponível ${p.disponivel}, no carrinho ${noCarrinho}.`
+      );
+      return;
+    }
+    setAviso("");
+    onAdd(p);
+  }
   return (
     <>
       <div className="drawer-bd" onClick={onClose} />
@@ -671,6 +688,7 @@ function ProdutoPickerMulti({ produtos, items, onAdd, onRemove, onClose }: {
         </header>
         <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--erp-line)" }}>
           <input autoFocus placeholder="Busque por SKU, código de barras, código interno/fabricante, nome ou descrição…" value={q} onChange={(e) => setQ(e.target.value)} style={{ width: "100%", height: 38, padding: "0 12px", border: "1px solid var(--erp-line)", borderRadius: 6, fontSize: 13 }} />
+          {aviso && <div className="alert danger" style={{ marginTop: 10 }}><span className="lead">Sem estoque:</span> {aviso}</div>}
         </div>
         <div className="drawer-body">
           <table className="erp-table">
@@ -679,7 +697,7 @@ function ProdutoPickerMulti({ produtos, items, onAdd, onRemove, onClose }: {
               {list.map((p) => {
                 const qty = qtyById.get(p.id) ?? 0;
                 return (
-                  <tr key={p.id} style={{ cursor: "pointer", background: qty > 0 ? "rgba(255,193,7,.06)" : undefined }} onClick={() => onAdd(p)}>
+                  <tr key={p.id} style={{ cursor: "pointer", background: qty > 0 ? "rgba(255,193,7,.06)" : undefined }} onClick={() => tentarAdd(p)}>
                     <td className="mono bold">{p.sku}</td>
                     <td>
                       <div style={{ fontWeight: 600 }}>{p.nome}</div>
@@ -696,7 +714,7 @@ function ProdutoPickerMulti({ produtos, items, onAdd, onRemove, onClose }: {
                     <td className="num bold">{qty > 0 ? `${qty}×` : "—"}</td>
                     <td className="actions" onClick={(e) => e.stopPropagation()}>
                       {qty > 0 && <button type="button" className="btn-erp ghost xs icon-only" aria-label="Remover" onClick={() => onRemove(p.id)}>✕</button>}
-                      <button type="button" className="btn-erp primary xs" onClick={() => onAdd(p)}>+ Add</button>
+                      <button type="button" className="btn-erp primary xs" onClick={() => tentarAdd(p)}>+ Add</button>
                     </td>
                   </tr>
                 );
