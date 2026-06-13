@@ -20,7 +20,10 @@ type Props = {
   fornecedores: Fornecedor[];
   produtos: Produto[];
   formasPagamento: string[];
+  unidades: string[];
 };
+
+const UNIDADES_FALLBACK = ["UN", "PC", "CX", "FD", "SC", "KG", "L", "M", "DZ", "CT"];
 
 type Finalidade = "REVENDA" | "USO_CONSUMO" | "IMOBILIZADO" | "INDUSTRIALIZACAO";
 const FINALIDADES: Array<{ value: Finalidade; label: string }> = [
@@ -115,8 +118,9 @@ function qtd(v: number) {
   return new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 4 }).format(v);
 }
 
-export function ManualFiscalEntryForm({ fornecedores, produtos, formasPagamento }: Props) {
+export function ManualFiscalEntryForm({ fornecedores, produtos, formasPagamento, unidades }: Props) {
   const router = useRouter();
+  const unidadeOpcoes = unidades.length ? unidades : UNIDADES_FALLBACK;
 
   const [fornMode, setFornMode] = useState<"existente" | "novo">(fornecedores.length ? "existente" : "novo");
   const [fornecedorId, setFornecedorId] = useState("");
@@ -382,12 +386,22 @@ export function ManualFiscalEntryForm({ fornecedores, produtos, formasPagamento 
               </div>
 
               <div className="erp-form">
-                <label>Unidade de compra<input value={item.unidade} onChange={(e) => updateItem(item.key, { unidade: e.target.value.toUpperCase().slice(0, 6) })} /></label>
+                <label>Unidade de compra
+                  <select value={item.unidade} onChange={(e) => updateItem(item.key, { unidade: e.target.value })}>
+                    {item.unidade && !unidadeOpcoes.includes(item.unidade) && <option value={item.unidade}>{item.unidade}</option>}
+                    {unidadeOpcoes.map((u) => <option key={u} value={u}>{u}</option>)}
+                  </select>
+                </label>
                 <label>Quantidade (compra)<input inputMode="decimal" value={item.quantidade} onChange={(e) => updateItem(item.key, { quantidade: e.target.value })} /></label>
                 <label>Custo unit. (R$)<input inputMode="decimal" value={item.valorUnitario} onChange={(e) => updateItem(item.key, { valorUnitario: e.target.value })} /></label>
                 <label>Desconto do item (R$)<input inputMode="decimal" value={item.valorDesconto} onChange={(e) => updateItem(item.key, { valorDesconto: e.target.value })} /></label>
                 <label>Fator de conversão<input inputMode="decimal" value={item.fatorConversao} onChange={(e) => updateItem(item.key, { fatorConversao: e.target.value })} /></label>
-                <label>Unidade de venda<input value={item.unidadeVenda} onChange={(e) => updateItem(item.key, { unidadeVenda: e.target.value.toUpperCase().slice(0, 6) })} /></label>
+                <label>Unidade de venda
+                  <select value={item.unidadeVenda} onChange={(e) => updateItem(item.key, { unidadeVenda: e.target.value })}>
+                    {item.unidadeVenda && !unidadeOpcoes.includes(item.unidadeVenda) && <option value={item.unidadeVenda}>{item.unidadeVenda}</option>}
+                    {unidadeOpcoes.map((u) => <option key={u} value={u}>{u}</option>)}
+                  </select>
+                </label>
               </div>
 
               <p className="block-muted" style={{ padding: "0 16px" }}>

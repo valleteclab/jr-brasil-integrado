@@ -3,15 +3,17 @@ import { PageHeader } from "@/components/shared/PageHeader";
 import { getManualFiscalEntryFormData } from "@/domains/products/application/fiscal-entry-use-cases";
 import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
 import { listFormasPagamentoAtivas } from "@/domains/finance/application/payment-config-use-cases";
+import { listUnidades } from "@/lib/services/products";
 import { ManualFiscalEntryForm } from "@/components/erp/ManualFiscalEntryForm";
 
 export const dynamic = "force-dynamic";
 
 export default async function ManualFiscalEntryPage() {
   const scope = await getDevelopmentTenantScope();
-  const [formData, formasPagamento] = await Promise.all([
+  const [formData, formasPagamento, unidades] = await Promise.all([
     getManualFiscalEntryFormData(scope),
-    listFormasPagamentoAtivas(scope)
+    listFormasPagamentoAtivas(scope),
+    listUnidades()
   ]);
 
   return (
@@ -31,6 +33,7 @@ export default async function ManualFiscalEntryPage() {
         fornecedores={formData.fornecedores}
         produtos={formData.produtos}
         formasPagamento={formasPagamento.map((f) => f.nome)}
+        unidades={unidades.map((u) => u.codigo)}
       />
     </>
   );
