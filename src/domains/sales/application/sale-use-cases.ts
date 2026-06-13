@@ -558,7 +558,12 @@ export async function getPedidoVendaParaRecibo(scope: TenantScope, id: string) {
   if (!pedido) throw new Error("Pedido de venda não encontrado.");
   const empresa = await prisma.empresa.findUnique({
     where: { id: scope.empresaId },
-    select: { razaoSocial: true, nomeFantasia: true, cnpj: true }
+    select: {
+      razaoSocial: true, nomeFantasia: true, cnpj: true, inscricaoEstadual: true,
+      enderecoLogradouro: true, enderecoNumero: true, enderecoBairro: true,
+      enderecoCidade: true, enderecoUf: true, enderecoCep: true,
+      telefone: true, email: true, logoSistema: true, corDestaque: true
+    }
   });
   return { pedido, empresa };
 }

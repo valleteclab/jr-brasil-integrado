@@ -18,6 +18,7 @@ type SuccessState = {
   total: number;
   route: string;
   // Checkout de balcão (venda + nota em um clique):
+  pedidoId?: string;
   pedidoNumero?: string;
   modeloLabel?: string;
   nota?: { id: string; status: string; numero: string | null; chave: string | null; motivo: string | null } | null;
@@ -149,7 +150,7 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO", allow
     setSaving(true);
     try {
       const p = await criarPedido("AGUARDANDO_PAGAMENTO");
-      setSuccess({ tipo: "Pré-venda", total, route: "/erp/caixa", pedidoNumero: p.numero });
+      setSuccess({ tipo: "Pré-venda", total, route: "/erp/caixa", pedidoId: p.id, pedidoNumero: p.numero });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível enviar para o caixa.");
     } finally {
@@ -157,16 +158,16 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO", allow
     }
   }
 
-  // Imprimir recibo: cria a pré-venda (vai para o caixa, com a forma escolhida) e abre o recibo
-  // para o cliente levar ao caixa.
+  // Imprimir recibo: cria a pré-venda (vai para o caixa, com a forma escolhida) e abre o recibo A4
+  // para o cliente levar ao caixa. O painel de sucesso oferece também a versão 80mm (térmica).
   async function imprimirRecibo() {
     setError("");
     if (!items.length) { setError("Adicione ao menos um item."); return; }
     setSaving(true);
     try {
       const p = await criarPedido("AGUARDANDO_PAGAMENTO");
-      window.open(`/api/erp/vendas/${p.id}/recibo`, "_blank", "noopener,noreferrer");
-      setSuccess({ tipo: "Pré-venda", total, route: "/erp/caixa", pedidoNumero: p.numero });
+      window.open(`/api/erp/vendas/${p.id}/recibo?formato=a4`, "_blank", "noopener,noreferrer");
+      setSuccess({ tipo: "Pré-venda", total, route: "/erp/caixa", pedidoId: p.id, pedidoNumero: p.numero });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível imprimir o recibo.");
     } finally {
@@ -583,6 +584,12 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO", allow
             )}
             <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
               <button type="button" className="btn-erp ghost sm" onClick={fechar}>Novo atendimento</button>
+              {success.pedidoId && !isCheckout && (
+                <>
+                  <a className="btn-erp ghost sm" href={`/api/erp/vendas/${success.pedidoId}/recibo?formato=a4`} target="_blank" rel="noopener noreferrer">🖨 Recibo A4</a>
+                  <a className="btn-erp ghost sm" href={`/api/erp/vendas/${success.pedidoId}/recibo`} target="_blank" rel="noopener noreferrer">🖨 80mm</a>
+                </>
+              )}
               {autorizada && n && (
                 <>
                   <a className="btn-erp ghost sm" href={`/api/erp/fiscal/${n.id}/pdf`} target="_blank" rel="noopener noreferrer">Baixar PDF</a>
