@@ -2,15 +2,19 @@ import { PageHeader } from "@/components/shared/PageHeader";
 import { PurchaseForm } from "@/components/erp/PurchaseForm";
 import { listPurchaseFormData } from "@/lib/services/purchasing";
 import type { PurchaseFormData } from "@/lib/services/purchasing";
+import { listUnidades } from "@/lib/services/products";
 
 export const dynamic = "force-dynamic";
 
 export default async function NovoPedidoCompraPage() {
   let formData: PurchaseFormData = { fornecedores: [], produtos: [] };
+  let unidades: string[] = [];
   let loadError = "";
 
   try {
-    formData = await listPurchaseFormData();
+    const [data, uns] = await Promise.all([listPurchaseFormData(), listUnidades()]);
+    formData = data;
+    unidades = uns.map((u) => u.codigo);
   } catch (error) {
     loadError = error instanceof Error ? error.message : "Não foi possível carregar dados do formulário.";
   }
@@ -28,7 +32,7 @@ export default async function NovoPedidoCompraPage() {
         </div>
       )}
 
-      {!loadError && <PurchaseForm formData={formData} />}
+      {!loadError && <PurchaseForm formData={formData} unidades={unidades} />}
     </>
   );
 }

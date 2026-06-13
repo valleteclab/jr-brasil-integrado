@@ -7,7 +7,10 @@ import type { PurchaseFormData } from "@/lib/services/purchasing";
 
 type Props = {
   formData: PurchaseFormData;
+  unidades?: string[];
 };
+
+const UNIDADES_FALLBACK = ["UN", "PC", "CX", "FD", "SC", "KG", "L", "M", "DZ", "CT"];
 
 type ItemLine = {
   key: number;
@@ -15,12 +18,13 @@ type ItemLine = {
   quantidade: string;
   custoUnitario: string;
   fatorConversao: string;
+  unidadeCompra: string;
 };
 
 let lineKey = 1;
 
 function newLine(): ItemLine {
-  return { key: lineKey++, produtoId: "", quantidade: "1", custoUnitario: "", fatorConversao: "1" };
+  return { key: lineKey++, produtoId: "", quantidade: "1", custoUnitario: "", fatorConversao: "1", unidadeCompra: "" };
 }
 
 function formatQty(value: number) {
@@ -35,8 +39,9 @@ function parseNum(v: string) {
   return Number(v.replace(",", ".")) || 0;
 }
 
-export function PurchaseForm({ formData }: Props) {
+export function PurchaseForm({ formData, unidades = [] }: Props) {
   const router = useRouter();
+  const unidadeOpcoes = unidades.length ? unidades : UNIDADES_FALLBACK;
   const [fornecedorId, setFornecedorId] = useState("");
   const [condicaoPagamento, setCondicaoPagamento] = useState("");
   const [previsaoEm, setPrevisaoEm] = useState("");
@@ -59,7 +64,7 @@ export function PurchaseForm({ formData }: Props) {
       cur.map((l) => {
         if (l.key !== key) return l;
         const updated = { ...l, [field]: value };
-        // Auto-preenche custo e fator de conversão a partir do cadastro do produto.
+        // Auto-preenche custo, fator de conversão e unidade de compra a partir do cadastro do produto.
         if (field === "produtoId") {
           const produto = formData.produtos.find((p) => p.id === String(value));
           if (produto && produto.ultimoCusto > 0) {
@@ -67,6 +72,7 @@ export function PurchaseForm({ formData }: Props) {
           }
           if (produto) {
             updated.fatorConversao = String(produto.fatorConversaoCompra > 0 ? produto.fatorConversaoCompra : 1).replace(".", ",");
+            updated.unidadeCompra = produto.unidadeCompra || "UN";
           }
         }
         return updated;
@@ -116,7 +122,7 @@ export function PurchaseForm({ formData }: Props) {
           quantidade: Math.floor(parseNum(l.quantidade)),
           custoUnitario: parseNum(l.custoUnitario),
           fatorConversao: parseNum(l.fatorConversao) > 0 ? parseNum(l.fatorConversao) : 1,
-          unidadeCompra: formData.produtos.find((p) => p.id === l.produtoId)?.unidadeCompra || undefined
+          unidadeCompra: l.unidadeCompra || formData.produtos.find((p) => p.id === l.produtoId)?.unidadeCompra || undefined
         }))
       };
 
@@ -206,6 +212,7 @@ export function PurchaseForm({ formData }: Props) {
             <thead>
               <tr>
                 <th>Produto</th>
+                <th>Un. compra</th>
                 <th className="num">Qtd. (compra)</th>
                 <th className="num">Custo unit. (R$)</th>
                 <th className="num">Conversão</th>
@@ -221,7 +228,7 @@ export function PurchaseForm({ formData }: Props) {
                 const fator = parseNum(line.fatorConversao) > 0 ? parseNum(line.fatorConversao) : 1;
                 const produtoLinha = formData.produtos.find((p) => p.id === line.produtoId);
                 const unVenda = produtoLinha?.unidade || "UN";
-                const unCompra = produtoLinha?.unidadeCompra || "compra";
+                const unCompra = line.unidadeCompra || produtoLinha?.unidadeCompra || "compra";
                 return (
                   <tr key={line.key}>
                     <td>
@@ -236,6 +243,17 @@ export function PurchaseForm({ formData }: Props) {
                             {p.sku} · {p.nome}
                           </option>
                         ))}
+                      </select>
+                    </td>
+                    <td>
+                      <select
+                        value={line.unidadeCompra}
+                        onChange={(e) => updateLine(line.key, "unidadeCompra", e.target.value)}
+                        style={{ width: "90px" }}
+                      >
+                        <option value="">—</option>
+                        {line.unidadeCompra && !unidadeOpcoes.includes(line.unidadeCompra) && <option value={line.unidadeCompra}>{line.unidadeCompra}</option>}
+                        {unidadeOpcoes.map((u) => <option key={u} value={u}>{u}</option>)}
                       </select>
                     </td>
                     <td className="num">
@@ -297,17 +315,17 @@ export function PurchaseForm({ formData }: Props) {
             </tbody>
             <tfoot>
               <tr>
-                <td colSpan={4} style={{ textAlign: "right" }}><strong>Subtotal</strong></td>
+                <td colSpan={5} style={{ textAlign: "right" }}><strong>Subtotal</strong></td>
                 <td className="num"><strong>{formatBrl(subtotal)}</strong></td>
                 <td />
               </tr>
               <tr>
-                <td colSpan={4} style={{ textAlign: "right" }}>Frete</td>
+                <td colSpan={5} style={{ textAlign: "right" }}>Frete</td>
                 <td className="num">{formatBrl(freteNum)}</td>
                 <td />
               </tr>
               <tr>
-                <td colSpan={4} style={{ textAlign: "right" }}><strong>Total</strong></td>
+                <td colSpan={5} style={{ textAlign: "right" }}><strong>Total</strong></td>
                 <td className="num"><strong>{formatBrl(total)}</strong></td>
                 <td />
               </tr>
