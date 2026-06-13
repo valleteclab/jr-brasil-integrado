@@ -11,7 +11,13 @@ type ReceiveItem = {
   quantidade: number;
   quantidadeRecebida: number;
   quantidadeAReceber: number;
+  fatorConversao: number;
+  unidade: string;
 };
+
+function formatQty(value: number) {
+  return new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 4 }).format(value);
+}
 
 type ReceiveForm = {
   pedidoId: string;
@@ -133,6 +139,8 @@ export function PurchaseList({ initialOrders }: Props) {
           produtoSku: string;
           quantidade: number;
           quantidadeRecebida: number;
+          fatorConversao?: number;
+          unidade?: string;
         }>;
         error?: string;
       };
@@ -145,7 +153,9 @@ export function PurchaseList({ initialOrders }: Props) {
           produtoSku: item.produtoSku,
           quantidade: item.quantidade,
           quantidadeRecebida: item.quantidadeRecebida,
-          quantidadeAReceber: Math.max(0, item.quantidade - item.quantidadeRecebida)
+          quantidadeAReceber: Math.max(0, item.quantidade - item.quantidadeRecebida),
+          fatorConversao: item.fatorConversao && item.fatorConversao > 0 ? item.fatorConversao : 1,
+          unidade: item.unidade || "UN"
         })),
         gerarContaPagar: false,
         vencimento: defaultVencimento()
@@ -426,6 +436,11 @@ export function PurchaseList({ initialOrders }: Props) {
                               }
                               style={{ width: "80px", textAlign: "right" }}
                             />
+                            {item.fatorConversao > 1 && item.quantidadeAReceber > 0 && (
+                              <small className="block-muted" style={{ display: "block" }}>
+                                entra {formatQty(item.quantidadeAReceber * item.fatorConversao)} {item.unidade} no estoque
+                              </small>
+                            )}
                           </td>
                         </tr>
                       ))}

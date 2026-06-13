@@ -21,6 +21,10 @@ export type CreatePurchaseOrderInput = {
     produtoId: string;
     quantidade: number;
     custoUnitario: number;
+    /** Conversão de embalagem: unidades de venda por unidade de compra (1 CX = 12 UN ⇒ 12). */
+    fatorConversao?: number;
+    /** Unidade de compra (ex.: CX, FD) — informativo, herdado para o produto ao receber. */
+    unidadeCompra?: string;
   }>;
   frete?: number;
   condicaoPagamento?: string;
@@ -93,7 +97,9 @@ export async function createPurchaseOrder(scope: TenantScope, input: CreatePurch
               quantidade: item.quantidade,
               quantidadeRecebida: 0,
               custoUnitario: item.custoUnitario,
-              total: item.quantidade * item.custoUnitario
+              total: item.quantidade * item.custoUnitario,
+              fatorConversao: item.fatorConversao && item.fatorConversao > 0 ? item.fatorConversao : 1,
+              unidadeCompra: item.unidadeCompra?.trim() || null
             }))
           }
         }
@@ -197,18 +203,34 @@ export async function receivePurchaseOrder(scope: TenantScope, id: string, input
         data: { quantidadeRecebida: qtdTotalRecebida }
       });
 
+      // Conversão de embalagem: comprou em CX/FD mas estoca/vende unitário. quantidadeRecebida fica na
+      // unidade de COMPRA (bate com o pedido); o estoque entra na unidade de venda (× fator) e o custo
+      // unitário vira custoUnitario ÷ fator. O custoTotal do movimento (qtd×custo) não muda.
+      const fator = Number(pedidoItem.fatorConversao) > 0 ? Number(pedidoItem.fatorConversao) : 1;
       await applyStockMovement(tx, scope, {
         produtoId: pedidoItem.produtoId,
         depositoId: deposito.id,
         tipo: "ENTRADA",
-        quantidade: receiveItem.quantidadeRecebida,
-        custoUnitario: Number(pedidoItem.custoUnitario),
+        quantidade: receiveItem.quantidadeRecebida * fator,
+        custoUnitario: Number(pedidoItem.custoUnitario) / fator,
         documentoTipo: "PEDIDO_COMPRA",
         documentoId: id,
         idempotencyKey: `pedido-compra:${id}:item:${receiveItem.itemId}:rcv:${qtdRecebidaAntes}`,
         observacoes: `Recebimento pedido de compra ${pedido.numero}.`
       });
 
+      // Produto herda a embalagem desta compra (unidade de compra + fator) para futuras compras.
+      if (fator > 1) {
+        await tx.produto.update({
+          where: { id: pedidoItem.produtoId },
+          data: {
+            fatorConversaoCompra: fator,
+            ...(pedidoItem.unidadeCompra ? { unidadeCompra: pedidoItem.unidadeCompra } : {})
+          }
+        });
+      }
+
+      // Conta a pagar (totalRecebido) permanece na unidade de compra: é o que o fornecedor fatura.
       totalRecebido += receiveItem.quantidadeRecebida * Number(pedidoItem.custoUnitario);
     }
 

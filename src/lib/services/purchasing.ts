@@ -49,12 +49,15 @@ export type PurchaseOrderDetail = PurchaseOrderSummary & {
     custoUnitario: string;
     total: string;
     percentRecebido: number;
+    fatorConversao: number;
+    unidade: string;
+    unidadeCompra: string | null;
   }>;
 };
 
 export type PurchaseFormData = {
   fornecedores: Array<{ id: string; label: string }>;
-  produtos: Array<{ id: string; sku: string; nome: string; ultimoCusto: number }>;
+  produtos: Array<{ id: string; sku: string; nome: string; ultimoCusto: number; unidade: string; unidadeCompra: string; fatorConversaoCompra: number }>;
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -171,7 +174,7 @@ export async function getPurchaseOrderDetail(id: string): Promise<PurchaseOrderD
       fornecedor: { select: { id: true, razaoSocial: true } },
       itens: {
         include: {
-          produto: { select: { id: true, sku: true, nome: true } }
+          produto: { select: { id: true, sku: true, nome: true, unidade: true } }
         }
       }
     }
@@ -200,7 +203,10 @@ export async function getPurchaseOrderDetail(id: string): Promise<PurchaseOrderD
         quantidadeRecebida: Number(item.quantidadeRecebida),
         custoUnitario: formatBrl(Number(item.custoUnitario)),
         total: formatBrl(Number(item.total)),
-        percentRecebido: pctRec
+        percentRecebido: pctRec,
+        fatorConversao: Number(item.fatorConversao ?? 1),
+        unidade: item.produto.unidade,
+        unidadeCompra: item.unidadeCompra ?? null
       };
     })
   };
@@ -222,7 +228,7 @@ export async function listPurchaseFormData(): Promise<PurchaseFormData> {
     prisma.produto.findMany({
       where: { ...scopedByTenantCompany(scope), ativo: true },
       orderBy: { nome: "asc" },
-      select: { id: true, sku: true, nome: true, ultimoCusto: true }
+      select: { id: true, sku: true, nome: true, ultimoCusto: true, unidade: true, unidadeCompra: true, fatorConversaoCompra: true }
     })
   ]);
 
@@ -235,7 +241,10 @@ export async function listPurchaseFormData(): Promise<PurchaseFormData> {
       id: p.id,
       sku: p.sku,
       nome: p.nome,
-      ultimoCusto: Number(p.ultimoCusto ?? 0)
+      ultimoCusto: Number(p.ultimoCusto ?? 0),
+      unidade: p.unidade,
+      unidadeCompra: p.unidadeCompra,
+      fatorConversaoCompra: Number(p.fatorConversaoCompra ?? 1)
     }))
   };
 }

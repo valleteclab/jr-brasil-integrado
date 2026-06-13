@@ -14,12 +14,17 @@ type ItemLine = {
   produtoId: string;
   quantidade: string;
   custoUnitario: string;
+  fatorConversao: string;
 };
 
 let lineKey = 1;
 
 function newLine(): ItemLine {
-  return { key: lineKey++, produtoId: "", quantidade: "1", custoUnitario: "" };
+  return { key: lineKey++, produtoId: "", quantidade: "1", custoUnitario: "", fatorConversao: "1" };
+}
+
+function formatQty(value: number) {
+  return new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 4 }).format(value);
 }
 
 function formatBrl(value: number) {
@@ -54,11 +59,14 @@ export function PurchaseForm({ formData }: Props) {
       cur.map((l) => {
         if (l.key !== key) return l;
         const updated = { ...l, [field]: value };
-        // Auto-fill custo from produto's ultimoCusto
+        // Auto-preenche custo e fator de conversão a partir do cadastro do produto.
         if (field === "produtoId") {
           const produto = formData.produtos.find((p) => p.id === String(value));
           if (produto && produto.ultimoCusto > 0) {
             updated.custoUnitario = String(produto.ultimoCusto).replace(".", ",");
+          }
+          if (produto) {
+            updated.fatorConversao = String(produto.fatorConversaoCompra > 0 ? produto.fatorConversaoCompra : 1).replace(".", ",");
           }
         }
         return updated;
@@ -106,7 +114,9 @@ export function PurchaseForm({ formData }: Props) {
         itens: validItens.map((l) => ({
           produtoId: l.produtoId,
           quantidade: Math.floor(parseNum(l.quantidade)),
-          custoUnitario: parseNum(l.custoUnitario)
+          custoUnitario: parseNum(l.custoUnitario),
+          fatorConversao: parseNum(l.fatorConversao) > 0 ? parseNum(l.fatorConversao) : 1,
+          unidadeCompra: formData.produtos.find((p) => p.id === l.produtoId)?.unidadeCompra || undefined
         }))
       };
 
@@ -185,13 +195,20 @@ export function PurchaseForm({ formData }: Props) {
           <Button variant="light" type="button" onClick={addLine}>+ Adicionar item</Button>
         </div>
 
+        <p className="block-muted" style={{ padding: "0 16px" }}>
+          Compra em fardo/caixa e vende unitário? Informe a <strong>quantidade</strong> e o <strong>custo</strong> na unidade
+          que o fornecedor cobra (ex.: 1 caixa a R$ 48) e o <strong>fator de conversão</strong> (caixa de 12 ⇒ 12). Ao receber,
+          o estoque entra unitário (12 un. a R$ 4) — o valor do pedido e a conta a pagar continuam pela caixa. Use fator 1 quando não há conversão.
+        </p>
+
         <div className="erp-table-wrap">
           <table className="erp-table">
             <thead>
               <tr>
                 <th>Produto</th>
-                <th className="num">Quantidade</th>
+                <th className="num">Qtd. (compra)</th>
                 <th className="num">Custo unit. (R$)</th>
+                <th className="num">Conversão</th>
                 <th className="num">Total</th>
                 <th className="actions">Remover</th>
               </tr>
@@ -201,6 +218,10 @@ export function PurchaseForm({ formData }: Props) {
                 const qty = Math.floor(parseNum(line.quantidade));
                 const cost = parseNum(line.custoUnitario);
                 const lineTotal = qty * cost;
+                const fator = parseNum(line.fatorConversao) > 0 ? parseNum(line.fatorConversao) : 1;
+                const produtoLinha = formData.produtos.find((p) => p.id === line.produtoId);
+                const unVenda = produtoLinha?.unidade || "UN";
+                const unCompra = produtoLinha?.unidadeCompra || "compra";
                 return (
                   <tr key={line.key}>
                     <td>
@@ -241,6 +262,23 @@ export function PurchaseForm({ formData }: Props) {
                         style={{ width: "100px", textAlign: "right" }}
                       />
                     </td>
+                    <td className="num">
+                      <input
+                        type="number"
+                        min={1}
+                        step="0.000001"
+                        value={line.fatorConversao}
+                        onChange={(e) => updateLine(line.key, "fatorConversao", e.target.value)}
+                        style={{ width: "70px", textAlign: "right" }}
+                        title="Unidades de venda por unidade de compra"
+                      />
+                      {fator > 1 && qty > 0 && (
+                        <small className="block-muted" style={{ display: "block" }}>
+                          = {formatQty(qty * fator)} {unVenda}{cost > 0 ? ` a ${formatBrl(cost / fator)}/${unVenda}` : ""}
+                        </small>
+                      )}
+                      {fator <= 1 && <small className="block-muted" style={{ display: "block" }}>1 {unCompra} = 1 {unVenda}</small>}
+                    </td>
                     <td className="num">{lineTotal > 0 ? formatBrl(lineTotal) : "—"}</td>
                     <td className="actions">
                       {itens.length > 1 && (
@@ -259,17 +297,17 @@ export function PurchaseForm({ formData }: Props) {
             </tbody>
             <tfoot>
               <tr>
-                <td colSpan={3} style={{ textAlign: "right" }}><strong>Subtotal</strong></td>
+                <td colSpan={4} style={{ textAlign: "right" }}><strong>Subtotal</strong></td>
                 <td className="num"><strong>{formatBrl(subtotal)}</strong></td>
                 <td />
               </tr>
               <tr>
-                <td colSpan={3} style={{ textAlign: "right" }}>Frete</td>
+                <td colSpan={4} style={{ textAlign: "right" }}>Frete</td>
                 <td className="num">{formatBrl(freteNum)}</td>
                 <td />
               </tr>
               <tr>
-                <td colSpan={3} style={{ textAlign: "right" }}><strong>Total</strong></td>
+                <td colSpan={4} style={{ textAlign: "right" }}><strong>Total</strong></td>
                 <td className="num"><strong>{formatBrl(total)}</strong></td>
                 <td />
               </tr>

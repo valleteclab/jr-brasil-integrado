@@ -1315,6 +1315,11 @@ model PedidoCompraItem {
   quantidadeRecebida Decimal  @default(0) @db.Decimal(14, 4)
   custoUnitario  Decimal      @db.Decimal(14, 2)
   total          Decimal      @db.Decimal(14, 2)
+  // Conversão de embalagem: quantidade/custoUnitario são na unidade de COMPRA (ex.: CX/FD). Ao receber,
+  // o estoque entra na unidade de venda (quantidade × fatorConversao) e o custo vira custoUnitario ÷ fator.
+  // total/subtotal/conta a pagar permanecem na unidade de compra (= o que o fornecedor fatura).
+  fatorConversao Decimal      @default(1) @db.Decimal(14, 6)
+  unidadeCompra  String?
 
   @@index([tenantId, empresaId])
 }
