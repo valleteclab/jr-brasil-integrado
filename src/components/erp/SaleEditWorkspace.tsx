@@ -64,6 +64,19 @@ export function SaleEditWorkspace({ venda, form }: { venda: SaleDetail; form: Sa
   function adicionar(produtoId: string) {
     const p = form.produtos.find((x) => x.id === produtoId);
     if (!p) return;
+    // Bloqueia sem estoque quando a empresa não permite. A qtd já reservada por ESTE pedido
+    // (venda.itens) será estornada e refeita ao salvar, então só conta o excedente sobre ela.
+    const atualNoPedido = linhas.find((l) => l.produtoId === produtoId)?.quantidade ?? 0;
+    const reservadoOriginal = venda.itens.find((i) => i.produtoId === produtoId)?.quantidade ?? 0;
+    if (!form.permiteVendaSemEstoque && atualNoPedido + 1 - reservadoOriginal > p.disponivel) {
+      setErro(
+        p.disponivel <= 0 && reservadoOriginal === 0
+          ? `"${p.nome}" está sem estoque (disponível 0). A empresa não aceita venda sem estoque.`
+          : `Estoque insuficiente de "${p.nome}": disponível ${p.disponivel}.`
+      );
+      return;
+    }
+    setErro("");
     setBusca("");
     setLinhas((cur) => {
       const existente = cur.find((l) => l.produtoId === produtoId);
