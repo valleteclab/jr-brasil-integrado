@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { Card } from "@/components/shared/Card";
 import { Button } from "@/components/shared/Button";
+import { useCadastroLookup } from "@/components/erp/useCadastroLookup";
 
 type Form = {
   nomeCliente: string;
@@ -41,8 +42,23 @@ export function NovoClienteForm() {
   const [erro, setErro] = useState("");
   const [resultado, setResultado] = useState<CriarResult | null>(null);
 
+  const { buscarCnpj, buscandoCnpj, erro: lookupErro } = useCadastroLookup();
+
   function set<K extends keyof Form>(campo: K, valor: string) {
     setForm((f) => ({ ...f, [campo]: valor }));
+  }
+
+  // Autopreenche razão social / nome fantasia / nome do cliente a partir do CNPJ (mesmo serviço
+  // do ERP: BrasilAPI/Receita).
+  async function preencherPorCnpj() {
+    const d = await buscarCnpj(form.cnpj);
+    if (!d) return;
+    setForm((f) => ({
+      ...f,
+      razaoSocial: d.razaoSocial ?? f.razaoSocial,
+      nomeFantasia: d.nomeFantasia ?? f.nomeFantasia,
+      nomeCliente: f.nomeCliente || d.nomeFantasia || d.razaoSocial || ""
+    }));
   }
 
   async function enviar(e: React.FormEvent) {
@@ -141,7 +157,13 @@ export function NovoClienteForm() {
           </label>
           <label>
             CNPJ *
-            <input value={form.cnpj} onChange={(e) => set("cnpj", e.target.value)} required />
+            <span style={{ display: "flex", gap: 6 }}>
+              <input value={form.cnpj} onChange={(e) => set("cnpj", e.target.value.toUpperCase())} maxLength={18} required style={{ flex: 1 }} />
+              <button type="button" className="btn-erp light sm" onClick={preencherPorCnpj} disabled={buscandoCnpj} style={{ flexShrink: 0, whiteSpace: "nowrap" }}>
+                {buscandoCnpj ? "Buscando…" : "Buscar CNPJ"}
+              </button>
+            </span>
+            {lookupErro && <small className="form-error">{lookupErro}</small>}
           </label>
           <label>
             Nome do administrador *

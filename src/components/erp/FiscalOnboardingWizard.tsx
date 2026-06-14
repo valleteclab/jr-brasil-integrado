@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/shared/Button";
 import { Card } from "@/components/shared/Card";
+import { useCadastroLookup } from "@/components/erp/useCadastroLookup";
 import type { FiscalOnboardingData } from "@/domains/fiscal/application/fiscal-onboarding-use-cases";
 
 const PROVIDERS = [
@@ -66,8 +67,32 @@ export function FiscalOnboardingWizard({
   // ACBr usa OAuth: client_id (campo cscId) + client_secret (campo token); a URL base vem do ambiente.
   const isAcbr = form.provider === "ACBR";
 
+  const { buscarCnpj, buscandoCnpj, erro: lookupErro } = useCadastroLookup();
+
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  // Autopreenche os dados da empresa (razão social, fantasia, endereço, contato) a partir do CNPJ —
+  // mesmo serviço usado nos cadastros do ERP (BrasilAPI/Receita).
+  async function preencherPorCnpj() {
+    const d = await buscarCnpj(form.cnpj);
+    if (!d) return;
+    setForm((current) => ({
+      ...current,
+      razaoSocial: d.razaoSocial ?? current.razaoSocial,
+      nomeFantasia: d.nomeFantasia ?? current.nomeFantasia,
+      email: d.email ?? current.email,
+      telefone: d.telefone ?? current.telefone,
+      enderecoLogradouro: d.endereco.logradouro ?? current.enderecoLogradouro,
+      enderecoNumero: d.endereco.numero ?? current.enderecoNumero,
+      enderecoComplemento: d.endereco.complemento ?? current.enderecoComplemento,
+      enderecoBairro: d.endereco.bairro ?? current.enderecoBairro,
+      enderecoCidade: d.endereco.cidade ?? current.enderecoCidade,
+      enderecoUf: d.endereco.uf ?? current.enderecoUf,
+      enderecoCep: d.endereco.cep ?? current.enderecoCep,
+      codigoMunicipioIbge: d.endereco.codigoMunicipioIbge ?? current.codigoMunicipioIbge
+    }));
   }
 
   const stepError = useMemo(() => {
@@ -211,7 +236,13 @@ export function FiscalOnboardingWizard({
           </label>
           <label>
             CNPJ*
-            <input value={form.cnpj} onChange={(e) => update("cnpj", e.target.value)} placeholder="00.000.000/0001-00" />
+            <span style={{ display: "flex", gap: 6 }}>
+              <input value={form.cnpj} onChange={(e) => update("cnpj", e.target.value)} placeholder="00.000.000/0001-00" maxLength={18} style={{ flex: 1 }} />
+              <button type="button" className="btn-erp light sm" onClick={preencherPorCnpj} disabled={buscandoCnpj} style={{ flexShrink: 0, whiteSpace: "nowrap" }}>
+                {buscandoCnpj ? "Buscando…" : "Buscar CNPJ"}
+              </button>
+            </span>
+            {lookupErro && <small className="form-error">{lookupErro}</small>}
           </label>
           <label>
             Regime tributário*

@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/shared/Button";
+import { useCadastroLookup } from "./useCadastroLookup";
 
 type Fornecedor = { id: string; documento: string | null; uf: string; label: string };
 type Produto = {
@@ -146,6 +147,17 @@ export function ManualFiscalEntryForm({ fornecedores, produtos, formasPagamento,
 
   const [erro, setErro] = useState("");
   const [salvando, setSalvando] = useState(false);
+
+  const { buscarCnpj, buscandoCnpj, erro: lookupErro } = useCadastroLookup();
+
+  // Autopreenche o novo fornecedor a partir do CNPJ (Receita via BrasilAPI) — mesmo serviço do
+  // cadastro de fornecedores/clientes/empresa.
+  async function preencherFornecedorPorCnpj() {
+    const d = await buscarCnpj(fornDocumento);
+    if (!d) return;
+    setFornRazao(d.razaoSocial ?? d.nomeFantasia ?? fornRazao);
+    if (d.endereco.uf) setFornUf(d.endereco.uf);
+  }
 
   const produtosById = useMemo(() => new Map(produtos.map((p) => [p.id, p])), [produtos]);
 
@@ -309,11 +321,19 @@ export function ManualFiscalEntryForm({ fornecedores, produtos, formasPagamento,
             </label>
           ) : (
             <>
-              <label>CNPJ/CPF<input value={fornDocumento} onChange={(e) => setFornDocumento(e.target.value)} placeholder="Somente números" /></label>
+              <label>CNPJ/CPF
+                <span style={{ display: "flex", gap: 6 }}>
+                  <input value={fornDocumento} onChange={(e) => setFornDocumento(e.target.value.toUpperCase())} placeholder="CNPJ (aceita letras) ou CPF" maxLength={18} style={{ flex: 1 }} />
+                  <button type="button" className="btn-erp light sm" onClick={preencherFornecedorPorCnpj} disabled={buscandoCnpj} style={{ flexShrink: 0, whiteSpace: "nowrap" }}>
+                    {buscandoCnpj ? "Buscando…" : "Buscar CNPJ"}
+                  </button>
+                </span>
+              </label>
               <label>Razão social<input value={fornRazao} onChange={(e) => setFornRazao(e.target.value)} /></label>
               <label>UF<input value={fornUf} maxLength={2} onChange={(e) => setFornUf(e.target.value.toUpperCase())} placeholder="Ex.: SP" /></label>
             </>
           )}
+          {lookupErro && <p className="form-error" style={{ gridColumn: "1 / -1" }}>{lookupErro}</p>}
         </div>
       </section>
 
