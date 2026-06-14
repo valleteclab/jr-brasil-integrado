@@ -43,6 +43,9 @@ const PAGAMENTOS = [
 
 const brl = (v: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
 
+const UNIDADES_RAPIDO = ["UN", "PC", "CX", "FD", "SC", "KG", "G", "L", "ML", "M", "M2", "DZ", "CT"];
+const numBr = (v: string) => Number(v.replace(/\./g, "").replace(",", ".")) || 0;
+
 export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO", allowedTipos }: { data: SaleFormData; defaultTipo?: Tipo; allowedTipos?: Tipo[] }) {
   // Só os tipos liberados pelo dono do SaaS aparecem no seletor (default: todos).
   const tiposVisiveis = allowedTipos ? TIPOS.filter((t) => allowedTipos.includes(t.id)) : TIPOS;
@@ -672,6 +675,66 @@ function ProdutoPickerMulti({ produtos, items, permiteVendaSemEstoque, onAdd, on
     window.open(`/erp/produtos?novo=1${nome ? `&nome=${encodeURIComponent(nome)}` : ""}`, "_blank", "noopener");
   }
 
+  // Cadastro RÁPIDO: cria o produto com o mínimo (nome, preço, NCM, CFOP, unidade) e já adiciona ao
+  // carrinho, sem sair da tela. O detalhamento fiscal completo pode ser feito depois no cadastro.
+  const [rapidoAberto, setRapidoAberto] = useState(false);
+  const [rapidoSalvando, setRapidoSalvando] = useState(false);
+  const [rapidoErro, setRapidoErro] = useState("");
+  const [rNome, setRNome] = useState("");
+  const [rPreco, setRPreco] = useState("");
+  const [rCusto, setRCusto] = useState("");
+  const [rNcm, setRNcm] = useState("");
+  const [rCfop, setRCfop] = useState("");
+  const [rUnidade, setRUnidade] = useState("UN");
+  const [rEstoque, setREstoque] = useState("0");
+
+  function abrirRapido() {
+    setRNome(q.trim());
+    setRPreco(""); setRCusto(""); setRNcm(""); setRCfop(""); setRUnidade("UN"); setREstoque("0");
+    setRapidoErro("");
+    setRapidoAberto(true);
+  }
+
+  async function salvarRapido() {
+    setRapidoErro("");
+    if (!rNome.trim()) { setRapidoErro("Informe o nome do produto."); return; }
+    if (numBr(rPreco) <= 0) { setRapidoErro("Informe o preço de venda."); return; }
+    if (rNcm.trim() && rNcm.replace(/\D/g, "").length !== 8) { setRapidoErro("NCM deve ter 8 dígitos."); return; }
+    setRapidoSalvando(true);
+    try {
+      const res = await fetch("/api/erp/produtos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: rNome.trim(),
+          priceValue: numBr(rPreco),
+          costValue: numBr(rCusto),
+          ncm: rNcm.replace(/\D/g, "") || undefined,
+          cfopInState: rCfop.replace(/\D/g, "") || undefined,
+          unit: rUnidade,
+          availableStock: numBr(rEstoque)
+        })
+      });
+      const data = (await res.json().catch(() => ({}))) as { id?: string; sku?: string; nome?: string; error?: string };
+      if (!res.ok || !data.id) throw new Error(data.error || "Não foi possível cadastrar o produto.");
+      const novo: Produto = {
+        id: data.id,
+        sku: data.sku ?? "",
+        nome: data.nome ?? rNome.trim(),
+        descricao: null, descricaoComercial: null, gtin: null, codigoOriginal: null, codigoFabricante: null,
+        preco: numBr(rPreco),
+        disponivel: numBr(rEstoque)
+      };
+      onAdd(novo);
+      setRapidoAberto(false);
+      router.refresh(); // sincroniza a lista para próximas buscas
+    } catch (e) {
+      setRapidoErro(e instanceof Error ? e.message : "Não foi possível cadastrar o produto.");
+    } finally {
+      setRapidoSalvando(false);
+    }
+  }
+
   // Bloqueia adicionar produto sem saldo quando a empresa não aceita venda sem estoque.
   function tentarAdd(p: Produto) {
     const noCarrinho = qtyById.get(p.id) ?? 0;
@@ -697,10 +760,35 @@ function ProdutoPickerMulti({ produtos, items, permiteVendaSemEstoque, onAdd, on
         <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--erp-line)" }}>
           <input autoFocus placeholder="Busque por SKU, código de barras, código interno/fabricante, nome ou descrição…" value={q} onChange={(e) => setQ(e.target.value)} style={{ width: "100%", height: 38, padding: "0 12px", border: "1px solid var(--erp-line)", borderRadius: 6, fontSize: 13 }} />
           <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
-            <button type="button" className="btn-erp light sm" onClick={abrirCadastroProduto}>➕ Cadastrar produto</button>
+            <button type="button" className="btn-erp primary sm" onClick={abrirRapido}>⚡ Cadastro rápido</button>
+            <button type="button" className="btn-erp light sm" onClick={abrirCadastroProduto}>➕ Cadastro completo</button>
             <button type="button" className="btn-erp ghost sm" onClick={() => router.refresh()} title="Atualizar a lista após cadastrar um produto">🔄 Atualizar lista</button>
-            <span className="block-muted" style={{ alignSelf: "center", fontSize: 11 }}>Cadastro completo abre em nova aba (dados fiscais p/ NF-e). Depois clique em Atualizar.</span>
           </div>
+          <p className="block-muted" style={{ fontSize: 11, marginTop: 6 }}>Rápido: cria e já adiciona ao carrinho. Completo: abre em nova aba com todos os dados fiscais p/ NF-e.</p>
+          {rapidoAberto && (
+            <div className="erp-card" style={{ marginTop: 10, padding: 12, background: "var(--erp-surface,#fafbfc)" }}>
+              <strong style={{ fontSize: 13 }}>⚡ Cadastro rápido de produto</strong>
+              <div className="erp-form" style={{ marginTop: 8 }}>
+                <label className="full">Nome*<input value={rNome} onChange={(e) => setRNome(e.target.value)} autoFocus /></label>
+                <label>Preço de venda* (R$)<input inputMode="decimal" value={rPreco} onChange={(e) => setRPreco(e.target.value)} /></label>
+                <label>Custo (R$)<input inputMode="decimal" value={rCusto} onChange={(e) => setRCusto(e.target.value)} /></label>
+                <label>Estoque inicial<input inputMode="decimal" value={rEstoque} onChange={(e) => setREstoque(e.target.value)} /></label>
+                <label>Unidade
+                  <select value={rUnidade} onChange={(e) => setRUnidade(e.target.value)}>
+                    {UNIDADES_RAPIDO.map((u) => <option key={u} value={u}>{u}</option>)}
+                  </select>
+                </label>
+                <label>NCM<input inputMode="numeric" value={rNcm} maxLength={8} onChange={(e) => setRNcm(e.target.value.replace(/\D/g, "").slice(0, 8))} placeholder="8 dígitos" /></label>
+                <label>CFOP (venda)<input inputMode="numeric" value={rCfop} maxLength={4} onChange={(e) => setRCfop(e.target.value.replace(/\D/g, "").slice(0, 4))} placeholder="ex.: 5102" /></label>
+              </div>
+              {rapidoErro && <div className="alert danger" style={{ marginTop: 8 }}><span>{rapidoErro}</span></div>}
+              <p className="block-muted" style={{ fontSize: 11, marginTop: 6 }}>Para emitir NF-e pode ser necessário completar CST/origem/regra fiscal depois no cadastro completo.</p>
+              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                <button type="button" className="btn-erp primary sm" onClick={salvarRapido} disabled={rapidoSalvando}>{rapidoSalvando ? "Salvando…" : "Salvar e adicionar"}</button>
+                <button type="button" className="btn-erp ghost sm" onClick={() => setRapidoAberto(false)} disabled={rapidoSalvando}>Cancelar</button>
+              </div>
+            </div>
+          )}
           {aviso && <div className="alert danger" style={{ marginTop: 10 }}><span className="lead">Sem estoque:</span> {aviso}</div>}
         </div>
         <div className="drawer-body">
@@ -734,11 +822,14 @@ function ProdutoPickerMulti({ produtos, items, permiteVendaSemEstoque, onAdd, on
               })}
             </tbody>
           </table>
-          {!list.length && (
+          {!list.length && !rapidoAberto && (
             <div className="empty-st">
               <h4>Nenhum resultado</h4>
-              <p>Não encontrou o produto? Cadastre agora{q.trim() ? ` "${q.trim()}"` : ""} com os dados fiscais para NF-e.</p>
-              <button type="button" className="btn-erp primary sm" onClick={abrirCadastroProduto} style={{ marginTop: 8 }}>➕ Cadastrar novo produto</button>
+              <p>Não encontrou o produto? Cadastre agora{q.trim() ? ` "${q.trim()}"` : ""}.</p>
+              <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 8, flexWrap: "wrap" }}>
+                <button type="button" className="btn-erp primary sm" onClick={abrirRapido}>⚡ Cadastro rápido</button>
+                <button type="button" className="btn-erp light sm" onClick={abrirCadastroProduto}>➕ Cadastro completo</button>
+              </div>
             </div>
           )}
         </div>

@@ -55,6 +55,11 @@ export function PurchaseForm({ formData, unidades = [] }: Props) {
     setItens((cur) => [...cur, newLine()]);
   }
 
+  // Atalho: cadastro completo de produto (NF-e) em nova aba; depois "Atualizar" recarrega a lista.
+  function abrirCadastroProduto() {
+    window.open("/erp/produtos?novo=1", "_blank", "noopener");
+  }
+
   function removeLine(key: number) {
     setItens((cur) => cur.filter((l) => l.key !== key));
   }
@@ -198,7 +203,11 @@ export function PurchaseForm({ formData, unidades = [] }: Props) {
       <section className="erp-card">
         <div className="erp-card-head">
           <h3>Itens do pedido</h3>
-          <Button variant="light" type="button" onClick={addLine}>+ Adicionar item</Button>
+          <span style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button type="button" className="btn-erp light sm" onClick={abrirCadastroProduto} title="Cadastrar produto (nova aba)">➕ Cadastrar produto</button>
+            <button type="button" className="btn-erp ghost sm" onClick={() => router.refresh()} title="Atualizar a lista após cadastrar">🔄 Atualizar</button>
+            <Button variant="light" type="button" onClick={addLine}>+ Adicionar item</Button>
+          </span>
         </div>
 
         <p className="block-muted" style={{ padding: "0 16px" }}>

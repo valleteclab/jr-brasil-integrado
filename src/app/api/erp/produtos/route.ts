@@ -11,7 +11,7 @@ export async function POST(request: Request) {
     const scope = await getDevelopmentTenantScope();
     const product = await createProduct(scope, await request.json());
 
-    return NextResponse.json({ id: product.id });
+    return NextResponse.json({ id: product.id, sku: product.sku, nome: product.nome });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro ao cadastrar produto.";
     const status = authErrorStatus(error, error instanceof ProductValidationError ? 400 : 500);

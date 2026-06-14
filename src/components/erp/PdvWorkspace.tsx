@@ -147,6 +147,12 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
 
   const buscaRef = useRef<HTMLInputElement>(null);
 
+  // Atalho: cadastro completo de produto (NF-e) em nova aba, preservando a venda do PDV.
+  function abrirCadastroProduto() {
+    const nome = busca.trim();
+    window.open(`/erp/produtos?novo=1${nome ? `&nome=${encodeURIComponent(nome)}` : ""}`, "_blank", "noopener");
+  }
+
   const total = useMemo(() => round2(cart.reduce((sum, i) => sum + i.preco * i.qtd - i.desconto, 0)), [cart]);
   const temServicoNoCart = cart.some((i) => i.kind === "servico");
   const precisaCliente = temServicoNoCart || modeloProduto === "NFE";
@@ -380,6 +386,8 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
           onKeyDown={onBuscaKeyDown}
         />
         <span className="pdv-caixa-info">Caixa: {caixa.operador}</span>
+        <button className="pdv-mini" onClick={abrirCadastroProduto} title="Cadastrar produto (nova aba)">➕</button>
+        <button className="pdv-mini" onClick={() => router.refresh()} title="Atualizar lista de produtos">🔄</button>
         <button className="pdv-mini" onClick={() => setMovimentoAberto(true)} title="Sangria / Suprimento (F8)">💵</button>
         <button className="pdv-mini" onClick={fecharCaixa} title="Fechar caixa">🔒</button>
         <a className="pdv-sair" href="/erp">Sair</a>
@@ -414,7 +422,12 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
                 <span className="pdv-preco">{brl(s.preco)}</span>
               </button>
             ))}
-            {aba === "produtos" && produtosFiltrados.length === 0 && <p className="pdv-vazio">Nenhum produto.</p>}
+            {aba === "produtos" && produtosFiltrados.length === 0 && (
+              <p className="pdv-vazio">
+                Nenhum produto.{" "}
+                <button type="button" className="btn-erp light sm" onClick={abrirCadastroProduto} style={{ marginLeft: 6 }}>➕ Cadastrar produto</button>
+              </p>
+            )}
             {aba === "servicos" && servicosFiltrados.length === 0 && <p className="pdv-vazio">Nenhum serviço cadastrado.</p>}
           </div>
           <div className="pdv-atalhos">F2 busca · F4 pagar · F6 cliente · F8 sangria · Esc limpar · Enter = código de barras</div>
