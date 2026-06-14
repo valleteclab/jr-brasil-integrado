@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { EmissaoFormData } from "@/lib/services/fiscal-emit";
 import type { EmissaoPrefill } from "@/lib/services/fiscal";
 import { sugerirPorLc116 } from "@/domains/fiscal/nbs";
+import { useCadastroLookup } from "./useCadastroLookup";
 
 /**
  * Wizard de emissão de NFS-e inspirado no Emissor Nacional (gov.br): passo a passo
@@ -140,6 +141,30 @@ export function NfseWizard({ data, initial = null }: { data: EmissaoFormData; in
     () => data.clientes.find((c) => c.id === clienteId) ?? null,
     [data.clientes, clienteId]
   );
+
+  // Busca de CNPJ/CEP (mesmo serviço dos demais cadastros) para autopreencher o tomador manual.
+  const { buscarCnpj, buscarCep, buscandoCnpj, buscandoCep, erro: lookupErro } = useCadastroLookup();
+  async function preencherTomadorPorCnpj() {
+    const d = await buscarCnpj(tDocumento);
+    if (!d) return;
+    setTNome(d.razaoSocial ?? d.nomeFantasia ?? tNome);
+    if (d.email) setTEmail(d.email);
+    if (d.endereco.logradouro) setTLogradouro(d.endereco.logradouro);
+    if (d.endereco.numero) setTNumero(d.endereco.numero);
+    if (d.endereco.complemento) setTComplemento(d.endereco.complemento);
+    if (d.endereco.bairro) setTBairro(d.endereco.bairro);
+    if (d.endereco.cep) setTCep(d.endereco.cep);
+    if (d.endereco.cidade) setTCidade(d.endereco.cidade);
+    if (d.endereco.uf) setTUf(d.endereco.uf);
+  }
+  async function preencherTomadorPorCep() {
+    const d = await buscarCep(tCep);
+    if (!d) return;
+    if (d.logradouro) setTLogradouro(d.logradouro);
+    if (d.bairro) setTBairro(d.bairro);
+    if (d.cidade) setTCidade(d.cidade);
+    if (d.uf) setTUf(d.uf);
+  }
 
   // Exigibilidade suspensa não permite retenção de ISSQN (regra do Emissor Nacional).
   const exigibilidadeSuspensa = suspensao;
@@ -331,7 +356,7 @@ export function NfseWizard({ data, initial = null }: { data: EmissaoFormData; in
             <div className="erp-card-head"><h3>Tomador do Serviço</h3></div>
             <div className="erp-card-body">
               <div className="stat-pills" role="tablist" style={{ marginBottom: 12 }}>
-                {([["cadastrado", "Cliente cadastrado"], ["brasil", "Brasil (novo)"], ["naoInformado", "Tomador não informado"]] as Array<[TomadorModo, string]>).map(([id, label]) => (
+                {([["cadastrado", "Cliente cadastrado"], ["brasil", "Informar manualmente"], ["naoInformado", "Tomador não informado"]] as Array<[TomadorModo, string]>).map(([id, label]) => (
                   <button key={id} type="button" className={`stat-pill${tomadorModo === id ? " active" : ""}`} onClick={() => setTomadorModo(id)}>{label}</button>
                 ))}
               </div>
@@ -355,11 +380,21 @@ export function NfseWizard({ data, initial = null }: { data: EmissaoFormData; in
 
               {tomadorModo === "brasil" && (
                 <div className="erp-form">
+                  <label>CPF / CNPJ
+                    <span style={{ display: "flex", gap: 6 }}>
+                      <input value={tDocumento} onChange={(e) => setTDocumento(e.target.value.toUpperCase())} placeholder="CNPJ ou CPF" maxLength={18} style={{ flex: 1 }} />
+                      <button type="button" className="btn-erp light sm" onClick={preencherTomadorPorCnpj} disabled={buscandoCnpj} style={{ flexShrink: 0, whiteSpace: "nowrap" }}>{buscandoCnpj ? "Buscando…" : "Buscar CNPJ"}</button>
+                    </span>
+                  </label>
                   <label className="full">Nome / Razão Social<input value={tNome} onChange={(e) => setTNome(e.target.value)} /></label>
-                  <label>CPF / CNPJ<input value={tDocumento} onChange={(e) => setTDocumento(e.target.value)} placeholder="Somente números" /></label>
                   <label>Inscrição Municipal<input value={tIe} onChange={(e) => setTIe(e.target.value)} /></label>
                   <label>E-mail<input value={tEmail} onChange={(e) => setTEmail(e.target.value)} /></label>
-                  <label>CEP<input value={tCep} onChange={(e) => setTCep(e.target.value)} /></label>
+                  <label>CEP
+                    <span style={{ display: "flex", gap: 6 }}>
+                      <input value={tCep} onChange={(e) => setTCep(e.target.value)} maxLength={9} style={{ flex: 1 }} />
+                      <button type="button" className="btn-erp light sm" onClick={preencherTomadorPorCep} disabled={buscandoCep} style={{ flexShrink: 0, whiteSpace: "nowrap" }}>{buscandoCep ? "Buscando…" : "Buscar CEP"}</button>
+                    </span>
+                  </label>
                   <label className="full">Logradouro<input value={tLogradouro} onChange={(e) => setTLogradouro(e.target.value)} /></label>
                   <label>Número<input value={tNumero} onChange={(e) => setTNumero(e.target.value)} /></label>
                   <label>Complemento<input value={tComplemento} onChange={(e) => setTComplemento(e.target.value)} /></label>
@@ -371,6 +406,7 @@ export function NfseWizard({ data, initial = null }: { data: EmissaoFormData; in
                       {UFS.map((uf) => <option key={uf} value={uf}>{uf}</option>)}
                     </select>
                   </label>
+                  {lookupErro && <p className="form-error" style={{ gridColumn: "1 / -1", margin: 0 }}>{lookupErro}</p>}
                 </div>
               )}
 
