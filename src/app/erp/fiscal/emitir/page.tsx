@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import { EmissaoAvulsaWorkspace } from "@/components/erp/EmissaoAvulsaWorkspace";
 import { getEmissaoFormData } from "@/lib/services/fiscal-emit";
 import type { EmissaoFormData } from "@/lib/services/fiscal-emit";
@@ -38,6 +39,12 @@ export default async function EmitirNotaPage({
     else if (clonarId) initial = await getNotaFiscalPrefill(clonarId, "CLONE");
   } catch (error) {
     prefillError = error instanceof Error ? error.message : "Não foi possível carregar a nota de origem.";
+  }
+
+  // Clonar uma NFS-e (serviço) usa a tela própria de emissão de NFS-e (mesmo wizard de /emitir/nfse),
+  // que pede a descrição do serviço — não a tela genérica de produtos.
+  if (clonarId && initial?.tipo === "NFSE") {
+    redirect(`/erp/fiscal/emitir/nfse?clonar=${clonarId}`);
   }
 
   return (

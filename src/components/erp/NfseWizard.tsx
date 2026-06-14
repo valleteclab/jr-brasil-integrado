@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { EmissaoFormData } from "@/lib/services/fiscal-emit";
+import type { EmissaoPrefill } from "@/lib/services/fiscal";
 import { sugerirPorLc116 } from "@/domains/fiscal/nbs";
 
 /**
@@ -52,7 +53,7 @@ function statusTone(status: string): string {
   return map[status.toUpperCase()] ?? "default";
 }
 
-export function NfseWizard({ data }: { data: EmissaoFormData }) {
+export function NfseWizard({ data, initial = null }: { data: EmissaoFormData; initial?: EmissaoPrefill | null }) {
   const router = useRouter();
   const hoje = new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Sao_Paulo",
@@ -61,6 +62,15 @@ export function NfseWizard({ data }: { data: EmissaoFormData }) {
     day: "2-digit"
   }).format(new Date());
 
+  // Prefill ao clonar uma NFS-e: tomador + serviço (descrição/LC116/valor) da nota original.
+  const ini = initial && initial.tipo === "NFSE" ? initial : null;
+  const iniEndereco = ini?.destinatario.endereco;
+  const iniTomadorModo: TomadorModo = ini ? (ini.clienteId ? "cadastrado" : ini.destinatario.nome ? "brasil" : "cadastrado") : "cadastrado";
+  const iniDescricao = ini?.servicos.length ? ini.servicos.map((s) => s.descricao).filter(Boolean).join("\n") : "";
+  const iniLc116 = ini?.codigoServicoLc116 || ini?.servicos[0]?.codigoServicoLc116 || "";
+  const iniValor = ini?.servicos.length ? ini.servicos.reduce((s, x) => s + Number(x.valor || 0), 0) : 0;
+  const iniSugestao = iniLc116 ? sugerirPorLc116(iniLc116) : null;
+
   const [step, setStep] = useState(0);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -68,25 +78,25 @@ export function NfseWizard({ data }: { data: EmissaoFormData }) {
 
   // Passo 1 — Pessoas
   const [dataCompetencia, setDataCompetencia] = useState(hoje);
-  const [tomadorModo, setTomadorModo] = useState<TomadorModo>("cadastrado");
-  const [clienteId, setClienteId] = useState("");
-  const [tNome, setTNome] = useState("");
-  const [tDocumento, setTDocumento] = useState("");
-  const [tIe, setTIe] = useState("");
-  const [tEmail, setTEmail] = useState("");
-  const [tLogradouro, setTLogradouro] = useState("");
-  const [tNumero, setTNumero] = useState("");
-  const [tComplemento, setTComplemento] = useState("");
-  const [tBairro, setTBairro] = useState("");
-  const [tCep, setTCep] = useState("");
-  const [tCidade, setTCidade] = useState("");
-  const [tUf, setTUf] = useState(data.emitterUf ?? "");
+  const [tomadorModo, setTomadorModo] = useState<TomadorModo>(iniTomadorModo);
+  const [clienteId, setClienteId] = useState(ini?.clienteId ?? "");
+  const [tNome, setTNome] = useState(ini?.destinatario.nome ?? "");
+  const [tDocumento, setTDocumento] = useState(ini?.destinatario.documento ?? "");
+  const [tIe, setTIe] = useState(ini?.destinatario.inscricaoEstadual ?? "");
+  const [tEmail, setTEmail] = useState(ini?.destinatario.email ?? "");
+  const [tLogradouro, setTLogradouro] = useState(iniEndereco?.logradouro ?? "");
+  const [tNumero, setTNumero] = useState(iniEndereco?.numero ?? "");
+  const [tComplemento, setTComplemento] = useState(iniEndereco?.complemento ?? "");
+  const [tBairro, setTBairro] = useState(iniEndereco?.bairro ?? "");
+  const [tCep, setTCep] = useState(iniEndereco?.cep ?? "");
+  const [tCidade, setTCidade] = useState(iniEndereco?.cidade ?? "");
+  const [tUf, setTUf] = useState(iniEndereco?.uf || data.emitterUf || "");
 
   // Passo 2 — Serviço
-  const [codigoLc116, setCodigoLc116] = useState("");
-  const [descricao, setDescricao] = useState("");
-  const [itemNbs, setItemNbs] = useState("");
-  const [cClassTrib, setCClassTrib] = useState("");
+  const [codigoLc116, setCodigoLc116] = useState(iniLc116);
+  const [descricao, setDescricao] = useState(iniDescricao);
+  const [itemNbs, setItemNbs] = useState(iniSugestao?.nbsPadrao ?? "");
+  const [cClassTrib, setCClassTrib] = useState(iniSugestao?.classTribPadrao ?? "");
   const [codigoInterno, setCodigoInterno] = useState("");
 
   // Sugestões de NBS e cClassTrib a partir do LC 116 escolhido (tabela oficial de correlação).
@@ -104,16 +114,16 @@ export function NfseWizard({ data }: { data: EmissaoFormData }) {
   }
 
   // Passo 3 — Valores
-  const [valorServico, setValorServico] = useState(0);
+  const [valorServico, setValorServico] = useState(iniValor);
   const [descontoIncondicionado, setDescontoIncondicionado] = useState(0);
   const [descontoCondicionado, setDescontoCondicionado] = useState(0);
   const [deducaoBc, setDeducaoBc] = useState(0);
   const [tipoOperacao, setTipoOperacao] = useState("taxationInMunicipality");
-  const [aliquotaIss, setAliquotaIss] = useState(0);
+  const [aliquotaIss, setAliquotaIss] = useState(ini?.aliquotaIss ?? 0);
   const [suspensao, setSuspensao] = useState(false);
   const [suspensaoTipo, setSuspensaoTipo] = useState("suspendedByCourt");
   const [suspensaoProcesso, setSuspensaoProcesso] = useState("");
-  const [issRetido, setIssRetido] = useState(false);
+  const [issRetido, setIssRetido] = useState(ini?.issRetido ?? false);
   const [issRetidoPor, setIssRetidoPor] = useState("tomador");
   // Tributação federal (retenções)
   const [retIr, setRetIr] = useState(0);
@@ -123,8 +133,8 @@ export function NfseWizard({ data }: { data: EmissaoFormData }) {
   const [retCofins, setRetCofins] = useState(0);
   const [baseRetencao, setBaseRetencao] = useState(0);
   // Outros
-  const [condicaoPagamento, setCondicaoPagamento] = useState("");
-  const [observacoes, setObservacoes] = useState("");
+  const [condicaoPagamento, setCondicaoPagamento] = useState(ini?.condicaoPagamento ?? "");
+  const [observacoes, setObservacoes] = useState(ini?.observacoes ?? "");
 
   const cliente: Cliente | null = useMemo(
     () => data.clientes.find((c) => c.id === clienteId) ?? null,
