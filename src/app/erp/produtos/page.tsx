@@ -20,7 +20,9 @@ function formatBrl(value: number) {
   }).format(value);
 }
 
-export default async function ErpProductsPage() {
+export default async function ErpProductsPage({ searchParams }: { searchParams?: { novo?: string; nome?: string } }) {
+  const autoNew = searchParams?.novo === "1";
+  const prefillName = searchParams?.nome?.trim() || "";
   let products: ErpProductSummary[] = [];
   let taxRules: ProductTaxRuleOption[] = [];
   let warehouses: string[] = [];
@@ -58,7 +60,7 @@ export default async function ErpProductsPage() {
           <span>{loadError}</span>
         </div>
       )}
-      <ProductCrud initialProducts={products} taxRules={taxRules} warehouses={warehouses} categoryOptions={categories} unitOptions={units} fiscalCodes={fiscalCodes} segmento={segmento} />
+      <ProductCrud initialProducts={products} taxRules={taxRules} warehouses={warehouses} categoryOptions={categories} unitOptions={units} fiscalCodes={fiscalCodes} segmento={segmento} autoNew={autoNew} prefillName={prefillName} />
     </>
   );
 }

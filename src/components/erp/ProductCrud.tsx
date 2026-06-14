@@ -106,6 +106,10 @@ type ProductCrudProps = {
   fiscalCodes?: Record<string, { codigo: string; descricao: string }[]>;
   /** Ramo da empresa — habilita recursos específicos (AUTOPECAS → aplicação veicular). */
   segmento?: string;
+  /** Abre o drawer de novo produto automaticamente (ex.: atalho "Cadastrar produto" vindo do atendimento). */
+  autoNew?: boolean;
+  /** Nome pré-preenchido ao abrir via atalho (o termo buscado no seletor de produtos). */
+  prefillName?: string;
 };
 
 type BadgeTone = "success" | "warn" | "danger" | "info" | "violet" | "mute";
@@ -320,7 +324,7 @@ function toProduct(form: ProductFormState): ProductRecord {
   };
 }
 
-export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOptions = [], unitOptions = [], fiscalCodes = {}, segmento }: ProductCrudProps) {
+export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOptions = [], unitOptions = [], fiscalCodes = {}, segmento, autoNew = false, prefillName = "" }: ProductCrudProps) {
   const isAutopecas = segmento === "AUTOPECAS";
   const defaultWarehouse = warehouses[0] ?? "";
   const initialRecords = useMemo(() => initialProducts.map(enrichProduct), [initialProducts]);
@@ -677,12 +681,18 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
     setActiveTab("geral");
   }
 
-  function openNewProduct() {
-    setForm({ ...emptyForm, warehouse: defaultWarehouse });
+  function openNewProduct(nomeInicial = "") {
+    setForm({ ...emptyForm, warehouse: defaultWarehouse, name: nomeInicial });
     setError("");
     setActiveTab("geral");
     setDrawerOpen(true);
   }
+
+  // Atalho vindo do atendimento/orçamento (?novo=1&nome=...): abre o cadastro completo já com o nome.
+  useEffect(() => {
+    if (autoNew) openNewProduct(prefillName);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function gerarSku() {
     setGerandoSku(true);
@@ -1301,7 +1311,7 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
           ref={xmlInputRef}
           type="file"
         />
-        <button type="button" className="btn-erp primary sm" onClick={openNewProduct}>+ Novo produto</button>
+        <button type="button" className="btn-erp primary sm" onClick={() => openNewProduct()}>+ Novo produto</button>
       </div>
 
       {importResult && (

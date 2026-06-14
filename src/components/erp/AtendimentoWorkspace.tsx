@@ -656,6 +656,7 @@ function PickerDrawer<T>({ title, placeholder, headers, rows, filter, render, on
 function ProdutoPickerMulti({ produtos, items, permiteVendaSemEstoque, onAdd, onRemove, onClose }: {
   produtos: Produto[]; items: ItemLinha[]; permiteVendaSemEstoque: boolean; onAdd: (p: Produto) => void; onRemove: (id: string) => void; onClose: () => void;
 }) {
+  const router = useRouter();
   const [q, setQ] = useState("");
   const [aviso, setAviso] = useState("");
   const qtyById = new Map(items.map((it) => [it.produto.id, it.quantidade]));
@@ -663,6 +664,13 @@ function ProdutoPickerMulti({ produtos, items, permiteVendaSemEstoque, onAdd, on
     .filter((p) => correspondeBusca(q, p.sku, p.nome, p.descricao, p.descricaoComercial, p.gtin, p.codigoOriginal, p.codigoFabricante))
     .slice(0, 50);
   const totalItens = items.reduce((s, it) => s + it.quantidade, 0);
+
+  // Abre o cadastro COMPLETO de produto (NF-e: NCM/CFOP/CST/origem/etc.) em nova aba — preserva o
+  // atendimento em andamento. Pré-preenche o nome com o termo buscado.
+  function abrirCadastroProduto() {
+    const nome = q.trim();
+    window.open(`/erp/produtos?novo=1${nome ? `&nome=${encodeURIComponent(nome)}` : ""}`, "_blank", "noopener");
+  }
 
   // Bloqueia adicionar produto sem saldo quando a empresa não aceita venda sem estoque.
   function tentarAdd(p: Produto) {
@@ -688,6 +696,11 @@ function ProdutoPickerMulti({ produtos, items, permiteVendaSemEstoque, onAdd, on
         </header>
         <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--erp-line)" }}>
           <input autoFocus placeholder="Busque por SKU, código de barras, código interno/fabricante, nome ou descrição…" value={q} onChange={(e) => setQ(e.target.value)} style={{ width: "100%", height: 38, padding: "0 12px", border: "1px solid var(--erp-line)", borderRadius: 6, fontSize: 13 }} />
+          <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+            <button type="button" className="btn-erp light sm" onClick={abrirCadastroProduto}>➕ Cadastrar produto</button>
+            <button type="button" className="btn-erp ghost sm" onClick={() => router.refresh()} title="Atualizar a lista após cadastrar um produto">🔄 Atualizar lista</button>
+            <span className="block-muted" style={{ alignSelf: "center", fontSize: 11 }}>Cadastro completo abre em nova aba (dados fiscais p/ NF-e). Depois clique em Atualizar.</span>
+          </div>
           {aviso && <div className="alert danger" style={{ marginTop: 10 }}><span className="lead">Sem estoque:</span> {aviso}</div>}
         </div>
         <div className="drawer-body">
@@ -721,7 +734,13 @@ function ProdutoPickerMulti({ produtos, items, permiteVendaSemEstoque, onAdd, on
               })}
             </tbody>
           </table>
-          {!list.length && <div className="empty-st"><h4>Nenhum resultado</h4><p>Tente outro termo.</p></div>}
+          {!list.length && (
+            <div className="empty-st">
+              <h4>Nenhum resultado</h4>
+              <p>Não encontrou o produto? Cadastre agora{q.trim() ? ` "${q.trim()}"` : ""} com os dados fiscais para NF-e.</p>
+              <button type="button" className="btn-erp primary sm" onClick={abrirCadastroProduto} style={{ marginTop: 8 }}>➕ Cadastrar novo produto</button>
+            </div>
+          )}
         </div>
       </aside>
     </>

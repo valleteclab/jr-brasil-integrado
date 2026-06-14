@@ -95,6 +95,12 @@ export function SaleEditWorkspace({ venda, form }: { venda: SaleDetail; form: Sa
     setLinhas((cur) => cur.filter((l) => l.produtoId !== produtoId));
   }
 
+  // Cadastro completo de produto (NF-e) em nova aba — preserva a edição em andamento.
+  function abrirCadastroProduto() {
+    const nome = busca.trim();
+    window.open(`/erp/produtos?novo=1${nome ? `&nome=${encodeURIComponent(nome)}` : ""}`, "_blank", "noopener");
+  }
+
   async function salvar() {
     setErro("");
     if (linhas.length === 0) {
@@ -186,6 +192,11 @@ export function SaleEditWorkspace({ venda, form }: { venda: SaleDetail; form: Sa
               ))}
             </div>
           )}
+          <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+            <button type="button" className="btn-erp light sm" onClick={abrirCadastroProduto}>➕ Cadastrar produto</button>
+            <button type="button" className="btn-erp ghost sm" onClick={() => router.refresh()} title="Atualizar a lista após cadastrar um produto">🔄 Atualizar lista</button>
+            <span className="block-muted" style={{ alignSelf: "center", fontSize: 11 }}>Cadastro completo (dados fiscais p/ NF-e) abre em nova aba; depois clique em Atualizar.</span>
+          </div>
         </div>
         <div className="erp-table-wrap">
           <table className="erp-table">
