@@ -274,6 +274,41 @@ export type EditSaleInput = {
  * registrado — nesses casos o caminho correto é cancelar a nota / estornar o recebimento, ou usar
  * a devolução depois de faturado.
  */
+/**
+ * Identifica/troca o cliente de um pedido SEM mexer em itens/estoque/financeiro — usado no caixa
+ * quando o consumidor (antes anônimo) decide se identificar. Permitido enquanto não pago/faturado
+ * e sem nota autorizada. Retorna os dados do cliente para a UI atualizar na hora.
+ */
+export async function setSaleCliente(scope: TenantScope, id: string, clienteId: string | null) {
+  const pedido = await prisma.pedidoVenda.findFirst({
+    where: { id, ...scopedByTenantCompany(scope) },
+    include: { notasFiscais: { where: { status: "AUTORIZADA" }, select: { id: true } } }
+  });
+  if (!pedido) throw new Error("Pedido de venda não encontrado.");
+  if (pedido.status !== "AGUARDANDO_PAGAMENTO" && pedido.status !== "AGUARDANDO_NOTA" && pedido.status !== "RASCUNHO") {
+    throw new Error("Só dá para identificar o cliente enquanto o pedido não foi pago/faturado.");
+  }
+  if (pedido.notasFiscais.length > 0) {
+    throw new Error("Há nota fiscal autorizada vinculada — não é possível alterar o cliente.");
+  }
+
+  let cliente: { id: string; razaoSocial: string; nomeFantasia: string | null; documento: string | null } | null = null;
+  if (clienteId) {
+    cliente = await prisma.cliente.findFirst({
+      where: { id: clienteId, ...scopedByTenantCompany(scope) },
+      select: { id: true, razaoSocial: true, nomeFantasia: true, documento: true }
+    });
+    if (!cliente) throw new Error("Cliente informado não pertence a esta empresa.");
+  }
+
+  await prisma.pedidoVenda.update({ where: { id }, data: { clienteId: cliente?.id ?? null } });
+  return {
+    clienteId: cliente?.id ?? null,
+    clienteNome: cliente ? (cliente.nomeFantasia ?? cliente.razaoSocial) : null,
+    clienteDocumento: cliente?.documento ?? null
+  };
+}
+
 export async function editConfirmedSale(scope: TenantScope, id: string, input: EditSaleInput) {
   if (!input.itens || input.itens.length === 0) throw new Error("Pedido deve ter ao menos um item.");
 

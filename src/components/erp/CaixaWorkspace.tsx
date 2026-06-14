@@ -4,6 +4,8 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { CaixaPageData, PreVendaResumo } from "@/lib/services/cashier";
 import { useRealtime } from "@/lib/realtime/useRealtime";
+import { ClienteCadastroDrawer, type ClienteCriado } from "./ClienteCadastroDrawer";
+import { correspondeBusca } from "@/lib/search/normalize";
 
 const brl = (v: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
 
@@ -64,6 +66,47 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
   const [resultado, setResultado] = useState<{ pedidoNumero: string; troco: number; notaId: string | null; notaStatus: string | null; emitErro: string | null; retirada: { id: string; codigo: string } | null } | null>(null);
 
   const caixa = data.caixa;
+
+  // Identificação de cliente no caixa (consumidor antes anônimo).
+  const [clientes, setClientes] = useState(data.clientes);
+  const [showCliPicker, setShowCliPicker] = useState(false);
+  const [cliQuery, setCliQuery] = useState("");
+  const [showNovoCli, setShowNovoCli] = useState(false);
+  const [idCliBusy, setIdCliBusy] = useState(false);
+
+  useEffect(() => { setClientes(data.clientes); }, [data.clientes]);
+
+  // Grava o cliente no pedido (endpoint leve: não mexe em estoque/financeiro) e atualiza a tela.
+  async function identificarCliente(clienteId: string | null) {
+    if (!sel) return;
+    setIdCliBusy(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/erp/vendas/${sel.id}/cliente`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clienteId })
+      });
+      const d = (await res.json().catch(() => ({}))) as { clienteNome?: string | null; clienteDocumento?: string | null; error?: string };
+      if (!res.ok) throw new Error(d.error || "Não foi possível identificar o cliente.");
+      setSel((cur) => cur ? { ...cur, clienteNome: d.clienteNome ?? null, clienteDocumento: d.clienteDocumento ?? null, temCliente: Boolean(clienteId) } : cur);
+      setShowCliPicker(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Não foi possível identificar o cliente.");
+    } finally {
+      setIdCliBusy(false);
+    }
+  }
+
+  function onClienteCriado(c: ClienteCriado) {
+    setClientes((cur) => [{ id: c.id, label: c.label, documento: c.documento }, ...cur.filter((x) => x.id !== c.id)]);
+    setShowNovoCli(false);
+    void identificarCliente(c.id);
+  }
+
+  const clientesFiltrados = clientes
+    .filter((c) => correspondeBusca(cliQuery, c.label, c.documento ?? ""))
+    .slice(0, 50);
 
   // Atualiza a lista, mas nunca atrapalha quem está no meio de um recebimento.
   function refreshIfIdle() {
@@ -349,6 +392,17 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
             <div className="erp-card">
               <div className="erp-card-head"><h3>Receber · {sel.numero}</h3></div>
               <div className="erp-card-body">
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, borderBottom: "1px solid var(--erp-line)", paddingBottom: 10, marginBottom: 10 }}>
+                  <span style={{ fontSize: 13 }}>
+                    👤 {sel.clienteNome
+                      ? <><strong>{sel.clienteNome}</strong>{sel.clienteDocumento && <span className="sublabel">{sel.clienteDocumento}</span>}</>
+                      : <span style={{ color: "var(--erp-mute)" }}>Consumidor não identificado</span>}
+                  </span>
+                  <span style={{ display: "flex", gap: 6 }}>
+                    {sel.temCliente && <button type="button" className="btn-erp ghost xs" onClick={() => identificarCliente(null)} disabled={idCliBusy}>Remover</button>}
+                    <button type="button" className="btn-erp light xs" onClick={() => { setCliQuery(""); setShowCliPicker(true); }} disabled={idCliBusy}>{sel.temCliente ? "Trocar" : "Identificar cliente"}</button>
+                  </span>
+                </div>
                 <div className="atend-total-row grand"><span>Total</span><strong>{brl(sel.total)}</strong></div>
                 <div style={{ borderBottom: "1px solid var(--erp-line)", marginBottom: 10, paddingBottom: 10 }}>
                   {sel.itens.map((item) => (
@@ -455,6 +509,49 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
           )}
         </aside>
       </div>
+
+      {showCliPicker && (
+        <>
+          <div className="drawer-bd" onClick={() => setShowCliPicker(false)} />
+          <aside className="drawer" style={{ width: 520 }}>
+            <header className="drawer-head">
+              <h2>Identificar cliente</h2>
+              <button type="button" className="btn-erp ghost sm" onClick={() => setShowCliPicker(false)}>Fechar</button>
+            </header>
+            <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--erp-line)" }}>
+              <input autoFocus placeholder="Buscar por nome ou CPF/CNPJ…" value={cliQuery} onChange={(e) => setCliQuery(e.target.value)} style={{ width: "100%", height: 38, padding: "0 12px", border: "1px solid var(--erp-line)", borderRadius: 6, fontSize: 13 }} />
+              <button type="button" className="btn-erp primary sm" style={{ marginTop: 10 }} onClick={() => setShowNovoCli(true)}>➕ Cadastrar cliente</button>
+            </div>
+            <div className="drawer-body">
+              <table className="erp-table">
+                <tbody>
+                  {clientesFiltrados.map((c) => (
+                    <tr key={c.id} style={{ cursor: "pointer" }} onClick={() => identificarCliente(c.id)}>
+                      <td><strong>{c.label}</strong>{c.documento && <span className="sublabel">{c.documento}</span>}</td>
+                      <td className="actions"><button type="button" className="btn-erp primary xs" disabled={idCliBusy} onClick={(e) => { e.stopPropagation(); identificarCliente(c.id); }}>Selecionar</button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {!clientesFiltrados.length && (
+                <div className="empty-st">
+                  <h4>Nenhum cliente</h4>
+                  <p>Cadastre o cliente para identificar a venda.</p>
+                  <button type="button" className="btn-erp primary sm" style={{ marginTop: 8 }} onClick={() => setShowNovoCli(true)}>➕ Cadastrar cliente</button>
+                </div>
+              )}
+            </div>
+          </aside>
+        </>
+      )}
+
+      {showNovoCli && (
+        <ClienteCadastroDrawer
+          documentoInicial={cliQuery.replace(/\D/g, "").length >= 11 ? cliQuery.replace(/\D/g, "") : ""}
+          onClose={() => setShowNovoCli(false)}
+          onCreated={onClienteCriado}
+        />
+      )}
     </div>
   );
 }

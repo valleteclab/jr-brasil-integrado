@@ -35,6 +35,8 @@ export type CaixaPageData = {
   /** Contas recebedoras (PIX/transferência) e maquininhas (cartão) para detalhar o recebimento. */
   contas: ContaRecebedora[];
   maquinas: MaquinaCartaoResumo[];
+  /** Clientes para identificar o consumidor anônimo direto no caixa. */
+  clientes: Array<{ id: string; label: string; documento: string | null }>;
   /** Módulo Expedição habilitado para o tenant (mostra a opção de recibo de retirada). */
   expedicaoHabilitada: boolean;
 };
@@ -48,7 +50,7 @@ export async function getCaixaPageData(): Promise<CaixaPageData> {
     select: { expedicaoHabilitada: true }
   });
 
-  const [contasRaw, maquinasRaw] = await Promise.all([
+  const [contasRaw, maquinasRaw, clientesRaw] = await Promise.all([
     prisma.contaBancaria.findMany({
       where: { ...scopedByTenantCompany(scope), ativo: true },
       select: { id: true, nome: true, chavePix: true, tipoChavePix: true },
@@ -58,6 +60,12 @@ export async function getCaixaPageData(): Promise<CaixaPageData> {
       where: { ...scopedByTenantCompany(scope), ativo: true },
       select: { id: true, nome: true, adquirente: true },
       orderBy: { nome: "asc" }
+    }),
+    prisma.cliente.findMany({
+      where: { ...scopedByTenantCompany(scope), status: "ATIVO" },
+      select: { id: true, razaoSocial: true, nomeFantasia: true, documento: true },
+      orderBy: { razaoSocial: "asc" },
+      take: 1000
     })
   ]);
 
@@ -108,6 +116,11 @@ export async function getCaixaPageData(): Promise<CaixaPageData> {
     preVendas,
     contas: contasRaw,
     maquinas: maquinasRaw,
+    clientes: clientesRaw.map((c) => ({
+      id: c.id,
+      label: c.nomeFantasia ? `${c.nomeFantasia} (${c.razaoSocial})` : c.razaoSocial,
+      documento: c.documento ?? null
+    })),
     expedicaoHabilitada: Boolean(tenant?.expedicaoHabilitada)
   };
 }
