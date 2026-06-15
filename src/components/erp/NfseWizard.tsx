@@ -34,6 +34,37 @@ const TIPOS_OPERACAO: Array<{ id: string; label: string }> = [
 
 const brl = (v: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
 
+/** Campo de MOEDA (padrão brasileiro): começa vazio, dá para apagar, digita-se da direita p/ esquerda
+ *  (ex.: 1 → 0,01; 100 → 1,00; 150000 → 1.500,00). Mantém o valor numérico no estado do pai. */
+function MoneyInput({ value, onChange, disabled, placeholder }: {
+  value: number; onChange: (n: number) => void; disabled?: boolean; placeholder?: string;
+}) {
+  const [txt, setTxt] = useState(value ? value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "");
+  function handle(raw: string) {
+    const digits = raw.replace(/\D/g, "");
+    if (!digits) { setTxt(""); onChange(0); return; }
+    const n = Number(digits) / 100;
+    setTxt(n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+    onChange(n);
+  }
+  return <input inputMode="decimal" disabled={disabled} placeholder={placeholder ?? "0,00"} value={txt} onChange={(e) => handle(e.target.value)} />;
+}
+
+/** Campo de PERCENTUAL: começa vazio, aceita decimal com vírgula e pode ser apagado. */
+function PercentInput({ value, onChange, disabled, placeholder }: {
+  value: number; onChange: (n: number) => void; disabled?: boolean; placeholder?: string;
+}) {
+  const [txt, setTxt] = useState(value ? String(value).replace(".", ",") : "");
+  function handle(raw: string) {
+    let v = raw.replace(/[^\d,]/g, "");
+    const parts = v.split(",");
+    if (parts.length > 2) v = `${parts[0]},${parts.slice(1).join("")}`;
+    setTxt(v);
+    onChange(Number(v.replace(",", ".")) || 0);
+  }
+  return <input inputMode="decimal" disabled={disabled} placeholder={placeholder ?? "0,00"} value={txt} onChange={(e) => handle(e.target.value)} />;
+}
+
 /** Combobox com busca para o Código de Tributação Nacional (LC 116) — evita rolar a lista inteira. */
 function CodigoServicoSelect({ value, options, onChange }: {
   value: string;
@@ -236,6 +267,8 @@ export function NfseWizard({ data, initial = null }: { data: EmissaoFormData; in
     if (s === 1) {
       if (!codigoLc116) return "Selecione o Código de Tributação Nacional (LC 116).";
       if (!descricao.trim()) return "Informe a Descrição do Serviço.";
+      // cNBS é obrigatório no schema da NFS-e (Padrão Nacional) — sem ele a emissão é rejeitada.
+      if (itemNbs.replace(/\D/g, "").length !== 9) return "Informe o Código NBS (9 dígitos) — obrigatório para a NFS-e.";
     }
     if (s === 2) {
       if (valorServico <= 0) return "Informe o Valor do Serviço.";
@@ -274,6 +307,30 @@ export function NfseWizard({ data, initial = null }: { data: EmissaoFormData; in
     };
   }
 
+  // Tomador informado manualmente: salva também como CLIENTE no sistema (best effort) e passa a
+  // usar o clienteId na emissão. Se falhar (ex.: documento duplicado), segue com os dados manuais.
+  async function criarClienteDoTomador(): Promise<string | null> {
+    if (!tNome.trim()) return null;
+    const enderecoValido = tCidade.trim() && tUf.trim();
+    const payload = {
+      razaoSocial: tNome.trim(),
+      nomeFantasia: null,
+      documento: tDocumento.trim(),
+      status: "ATIVO",
+      contatos: tEmail.trim() ? [{ nome: tNome.trim(), email: tEmail.trim(), telefone: null, principal: true }] : [],
+      enderecos: enderecoValido
+        ? [{ apelido: "Principal", cep: tCep.trim(), logradouro: tLogradouro.trim(), numero: tNumero.trim() || null, bairro: tBairro.trim() || null, cidade: tCidade.trim(), uf: tUf.trim().toUpperCase(), codigoMunicipioIbge: null, padrao: true }]
+        : []
+    };
+    try {
+      const res = await fetch("/api/erp/clientes", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const data = (await res.json().catch(() => ({}))) as { id?: string };
+      return res.ok && data.id ? data.id : null;
+    } catch {
+      return null;
+    }
+  }
+
   async function emitir() {
     for (let s = 0; s <= 2; s += 1) {
       const e = stepError(s);
@@ -282,6 +339,12 @@ export function NfseWizard({ data, initial = null }: { data: EmissaoFormData; in
     setSaving(true);
     setError("");
     try {
+      // Salva o tomador manual como cliente; usa o clienteId se criado.
+      let receiver = buildReceiver();
+      if (tomadorModo === "brasil") {
+        const novoClienteId = await criarClienteDoTomador();
+        if (novoClienteId) receiver = { clienteId: novoClienteId };
+      }
       const obsPartes: string[] = [];
       if (observacoes.trim()) obsPartes.push(observacoes.trim());
       if (descontoCondicionado > 0) obsPartes.push(`Desconto condicionado: ${brl(descontoCondicionado)}.`);
@@ -297,7 +360,7 @@ export function NfseWizard({ data, initial = null }: { data: EmissaoFormData; in
       const taxationType = exigibilidadeSuspensa ? suspensaoTipo : tipoOperacao;
 
       const body = {
-        receiver: buildReceiver(),
+        receiver,
         codigoServicoLc116: codigoLc116,
         codigoNbs: itemNbs.replace(/\D/g, "") || undefined,
         aliquotaIss: aliquotaIss > 0 ? aliquotaIss : undefined,
@@ -483,7 +546,7 @@ export function NfseWizard({ data, initial = null }: { data: EmissaoFormData; in
               <span style={{ fontSize: 11, color: "var(--erp-mute)", textAlign: "right" }}>{descricao.length}/2000</span>
             </label>
             <label className="full">
-              Código NBS (Nomenclatura Brasileira de Serviços)
+              Código NBS (Nomenclatura Brasileira de Serviços)*
               {sugestao && sugestao.nbs.length > 0 ? (
                 <select value={itemNbs.replace(/\D/g, "")} onChange={(e) => setItemNbs(e.target.value)}>
                   <option value="">Selecione…</option>
@@ -517,9 +580,9 @@ export function NfseWizard({ data, initial = null }: { data: EmissaoFormData; in
           <div className="erp-card">
             <div className="erp-card-head"><h3>Valores do serviço</h3></div>
             <div className="erp-form">
-              <label>Valor do Serviço<input type="number" min={0} step="any" value={valorServico} onChange={(e) => setValorServico(Math.max(0, Number(e.target.value) || 0))} /></label>
-              <label>Desconto incondicionado<input type="number" min={0} step="any" value={descontoIncondicionado} onChange={(e) => setDescontoIncondicionado(Math.max(0, Number(e.target.value) || 0))} /></label>
-              <label>Desconto condicionado<input type="number" min={0} step="any" value={descontoCondicionado} onChange={(e) => setDescontoCondicionado(Math.max(0, Number(e.target.value) || 0))} /></label>
+              <label>Valor do Serviço (R$)<MoneyInput value={valorServico} onChange={setValorServico} /></label>
+              <label>Desconto incondicionado (R$)<MoneyInput value={descontoIncondicionado} onChange={setDescontoIncondicionado} /></label>
+              <label>Desconto condicionado (R$)<MoneyInput value={descontoCondicionado} onChange={setDescontoCondicionado} /></label>
             </div>
           </div>
 
@@ -547,8 +610,8 @@ export function NfseWizard({ data, initial = null }: { data: EmissaoFormData; in
                   <label>Número do processo<input value={suspensaoProcesso} onChange={(e) => setSuspensaoProcesso(e.target.value)} /></label>
                 </>
               )}
-              <label>Dedução / redução da BC (R$)<input type="number" min={0} step="any" value={deducaoBc} onChange={(e) => setDeducaoBc(Math.max(0, Number(e.target.value) || 0))} /></label>
-              <label>Alíquota do ISSQN %<input type="number" min={0} step="any" value={aliquotaIss} onChange={(e) => setAliquotaIss(Math.max(0, Number(e.target.value) || 0))} disabled={!tributavel || exigibilidadeSuspensa || data.nfseAmbienteNacional === true} placeholder={data.nfseAmbienteNacional === true ? "Definida pelo sistema nacional" : undefined} /></label>
+              <label>Dedução / redução da BC (R$)<MoneyInput value={deducaoBc} onChange={setDeducaoBc} /></label>
+              <label>Alíquota do ISSQN %<PercentInput value={aliquotaIss} onChange={setAliquotaIss} disabled={!tributavel || exigibilidadeSuspensa || data.nfseAmbienteNacional === true} placeholder={data.nfseAmbienteNacional === true ? "Definida pelo sistema nacional" : undefined} /></label>
               {!exigibilidadeSuspensa && tributavel && (
                 <>
                   <label className="check-row">
@@ -575,12 +638,12 @@ export function NfseWizard({ data, initial = null }: { data: EmissaoFormData; in
           <div className="erp-card">
             <div className="erp-card-head"><h3>Tributação federal (retenções)</h3></div>
             <div className="erp-form">
-              <label className="full">Base de cálculo das retenções (R$)<input type="number" min={0} step="any" value={baseRetencao} onChange={(e) => setBaseRetencao(Math.max(0, Number(e.target.value) || 0))} placeholder={`Padrão: valor do serviço (${brl(valorServico)})`} /></label>
-              <label>IRRF %<input type="number" min={0} step="any" value={retIr} onChange={(e) => setRetIr(Math.max(0, Number(e.target.value) || 0))} /></label>
-              <label>CSLL %<input type="number" min={0} step="any" value={retCsll} onChange={(e) => setRetCsll(Math.max(0, Number(e.target.value) || 0))} /></label>
-              <label>CP / INSS %<input type="number" min={0} step="any" value={retInss} onChange={(e) => setRetInss(Math.max(0, Number(e.target.value) || 0))} /></label>
-              <label>PIS %<input type="number" min={0} step="any" value={retPis} onChange={(e) => setRetPis(Math.max(0, Number(e.target.value) || 0))} /></label>
-              <label>COFINS %<input type="number" min={0} step="any" value={retCofins} onChange={(e) => setRetCofins(Math.max(0, Number(e.target.value) || 0))} /></label>
+              <label className="full">Base de cálculo das retenções (R$)<MoneyInput value={baseRetencao} onChange={setBaseRetencao} placeholder={`Padrão: valor do serviço (${brl(valorServico)})`} /></label>
+              <label>IRRF %<PercentInput value={retIr} onChange={setRetIr} /></label>
+              <label>CSLL %<PercentInput value={retCsll} onChange={setRetCsll} /></label>
+              <label>CP / INSS %<PercentInput value={retInss} onChange={setRetInss} /></label>
+              <label>PIS %<PercentInput value={retPis} onChange={setRetPis} /></label>
+              <label>COFINS %<PercentInput value={retCofins} onChange={setRetCofins} /></label>
             </div>
           </div>
 
