@@ -404,7 +404,23 @@ function cTribNacFromLc116(lc116: string | null | undefined): string {
   if (parts.length < 2) return "010101";
   const item = parts[0].replace(/\D/g, "").padStart(2, "0").slice(-2);
   const sub = parts[1].replace(/\D/g, "").padStart(2, "0").slice(0, 2);
-  return `${item}${sub}01`;
+  // Desdobro: usa o 3º grupo do código quando informado (ex.: "99.01.01" → "990101"); senão "01".
+  const desdobro = (parts[2] ?? "").replace(/\D/g, "").padStart(2, "0").slice(0, 2) || "01";
+  return `${item}${sub}${desdobro}`;
+}
+
+/**
+ * tribISSQN (DPS nacional) conforme a natureza/exigibilidade do ISS:
+ * 1=Operação tributável · 2=Imunidade · 3=Exportação de serviço · 4=Não Incidência.
+ * Isenção e suspensão de exigibilidade seguem como tributável (1) — tratadas por benefício/suspensão.
+ */
+function tribISSQNCode(taxationType: string | null | undefined): 1 | 2 | 3 | 4 {
+  switch (taxationType) {
+    case "immune": return 2;
+    case "exportation": return 3;
+    case "nonIncidence": return 4;
+    default: return 1;
+  }
 }
 
 // Cache de token OAuth em memória, por ambiente+client_id. Sobrevive entre requisições no
@@ -775,6 +791,10 @@ export class AcbrFiscalProvider implements FiscalProvider {
     const servicoTax = input.computed.find((c) => c.taxes.aliquotaIss > 0 || c.taxes.itemListaServico != null)?.taxes;
     const aliquotaIss = servicoTax?.aliquotaIss ?? 0;
     const itemLc116 = servicoTax?.itemListaServico ?? "";
+    // Natureza do ISSQN: tributável vs não incidência/imunidade/exportação (define tribISSQN e se
+    // alíquota/valor de ISS são enviados). Corrige denegação ao emitir serviço sem incidência.
+    const tribIssqnCode = tribISSQNCode(input.document.taxationType);
+    const operacaoTributavel = tribIssqnCode === 1;
     // cNBS (Nomenclatura Brasileira de Serviços): exigido no cServ pela DPS nacional.
     const cNbs = onlyDigits(input.document.itens.find((i) => i.servico && i.codigoNbs)?.codigoNbs);
     const ret = input.document.retencoes ?? null;
@@ -841,11 +861,13 @@ export class AcbrFiscalProvider implements FiscalProvider {
           vServPrest: { vServ: input.totals.valorServicos || input.total },
           trib: {
             tribMun: {
-              tribISSQN: 1, // 1 = operação tributável
-              ...(informarAliquota
+              // Natureza do ISSQN conforme o tipo de operação (não incidência/imunidade/exportação
+              // NÃO levam alíquota/valor de ISS — informá-los gera denegação pelo município).
+              tribISSQN: tribIssqnCode,
+              ...(operacaoTributavel && informarAliquota
                 ? { pAliq: aliquotaIss, vISSQN: input.totals.valorIss || undefined }
                 : {}),
-              tpRetISSQN: ret?.issRetido ? 2 : 1
+              tpRetISSQN: operacaoTributavel && ret?.issRetido ? 2 : 1
             },
             ...(tribFed ? { tribFed } : {}),
             // Total de tributos (obrigatório no DPS): federal/estadual/municipal.
@@ -853,7 +875,7 @@ export class AcbrFiscalProvider implements FiscalProvider {
               vTotTrib: {
                 vTotTribFed: (ret?.pis?.valor ?? 0) + (ret?.cofins?.valor ?? 0) + (ret?.ir?.valor ?? 0) + (ret?.csll?.valor ?? 0),
                 vTotTribEst: 0,
-                vTotTribMun: input.totals.valorIss || 0
+                vTotTribMun: operacaoTributavel ? (input.totals.valorIss || 0) : 0
               }
             }
           }
