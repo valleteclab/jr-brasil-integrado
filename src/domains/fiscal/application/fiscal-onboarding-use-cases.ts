@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import { createAuditLog } from "@/lib/audit/audit-service";
 import { saveFiscalConfig } from "./fiscal-config-use-cases";
+import { getProvedorFiscalAtivo } from "./plataforma-provedor-use-cases";
 import { applyNationalTaxBaseline, PREFIXO_BASE_NACIONAL, UFS } from "../national-tax-baseline";
 
 export type FiscalOnboardingInput = {
@@ -89,7 +90,7 @@ export type FiscalOnboardingData = {
 
 /** Dados atuais da empresa/config para pré-preencher o wizard de onboarding fiscal. */
 export async function getFiscalOnboardingData(scope: TenantScope): Promise<FiscalOnboardingData> {
-  const [empresa, config, baselineRules] = await Promise.all([
+  const [empresa, config, baselineRules, provedorAtivo] = await Promise.all([
     prisma.empresa.findUniqueOrThrow({ where: { id: scope.empresaId } }),
     prisma.configuracaoFiscal.findUnique({ where: { empresaId: scope.empresaId } }),
     prisma.regraTributaria.count({
@@ -98,7 +99,8 @@ export async function getFiscalOnboardingData(scope: TenantScope): Promise<Fisca
         empresaId: scope.empresaId,
         nome: { startsWith: PREFIXO_BASE_NACIONAL }
       }
-    })
+    }),
+    getProvedorFiscalAtivo()
   ]);
 
   return {
@@ -122,7 +124,8 @@ export async function getFiscalOnboardingData(scope: TenantScope): Promise<Fisca
       email: empresa.email ?? ""
     },
     config: {
-      provider: config?.provedor ?? "INTERNO",
+      // Empresa nova herda o provedor ATIVO da plataforma (ex.: ACBr) em vez de cair em "INTERNO".
+      provider: config?.provedor ?? (provedorAtivo as ProvedorFiscal),
       environment: config?.ambiente ?? "HOMOLOGACAO",
       baseUrl: config?.baseUrl ?? "",
       hasToken: Boolean(config?.tokenCriptografado),

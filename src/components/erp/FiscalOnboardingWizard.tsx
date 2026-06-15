@@ -8,6 +8,7 @@ import { useCadastroLookup } from "@/components/erp/useCadastroLookup";
 import type { FiscalOnboardingData } from "@/domains/fiscal/application/fiscal-onboarding-use-cases";
 
 const PROVIDERS = [
+  { value: "ACBR", label: "ACBr API (NF-e/NFC-e/NFS-e) — provedor da plataforma" },
   { value: "INTERNO", label: "Interno (homologação funcional, sem certificado)" },
   { value: "FOCUS_NFE", label: "Focus NFe" },
   { value: "NFEIO", label: "NFe.io" },
