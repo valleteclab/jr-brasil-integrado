@@ -6,6 +6,7 @@ import type { EmissaoFormData } from "@/lib/services/fiscal-emit";
 import type { EmissaoPrefill } from "@/lib/services/fiscal";
 import { sugerirPorLc116 } from "@/domains/fiscal/nbs";
 import { useCadastroLookup } from "./useCadastroLookup";
+import { correspondeBusca } from "@/lib/search/normalize";
 
 /**
  * Wizard de emissão de NFS-e inspirado no Emissor Nacional (gov.br): passo a passo
@@ -32,6 +33,46 @@ const TIPOS_OPERACAO: Array<{ id: string; label: string }> = [
 ];
 
 const brl = (v: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
+
+/** Combobox com busca para o Código de Tributação Nacional (LC 116) — evita rolar a lista inteira. */
+function CodigoServicoSelect({ value, options, onChange }: {
+  value: string;
+  options: Array<{ code: string; description: string }>;
+  onChange: (code: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const sel = options.find((o) => o.code === value);
+  const lista = (q.trim() ? options.filter((o) => correspondeBusca(q, o.code, o.description)) : options).slice(0, 60);
+  return (
+    <div style={{ position: "relative" }}>
+      <input
+        value={open ? q : (sel ? `${sel.code} — ${sel.description}` : "")}
+        onChange={(e) => { setQ(e.target.value); if (!open) setOpen(true); }}
+        onFocus={() => { setOpen(true); setQ(""); }}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        placeholder="Digite o código ou a descrição para buscar…"
+        style={{ width: "100%" }}
+      />
+      {open && (
+        <div className="busca-sugestoes" style={{ position: "absolute", zIndex: 20, left: 0, right: 0, background: "var(--erp-surface,#fff)", border: "1px solid var(--erp-line)", borderRadius: 6, maxHeight: 280, overflowY: "auto", boxShadow: "0 6px 18px rgba(0,0,0,.12)" }}>
+          {lista.map((o) => (
+            <button
+              key={o.code}
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => { onChange(o.code); setQ(""); setOpen(false); }}
+              style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 12px", background: o.code === value ? "rgba(255,193,7,.08)" : "none", border: "none", borderBottom: "1px solid var(--erp-line)", cursor: "pointer", fontSize: 13 }}
+            >
+              <strong className="mono">{o.code}</strong> — {o.description}
+            </button>
+          ))}
+          {!lista.length && <div style={{ padding: 10, fontSize: 12, color: "var(--erp-mute)" }}>Nenhum código encontrado para “{q}”.</div>}
+        </div>
+      )}
+    </div>
+  );
+}
 
 type TomadorModo = "cadastrado" | "brasil" | "naoInformado";
 
@@ -427,10 +468,7 @@ export function NfseWizard({ data, initial = null }: { data: EmissaoFormData; in
           <div className="erp-form">
             <label className="full">
               Código de Tributação Nacional (LC 116)
-              <select value={codigoLc116} onChange={(e) => aoTrocarLc116(e.target.value)}>
-                <option value="">Selecione…</option>
-                {data.lc116.map((l) => <option key={l.code} value={l.code}>{l.code} — {l.description}</option>)}
-              </select>
+              <CodigoServicoSelect value={codigoLc116} options={data.lc116} onChange={aoTrocarLc116} />
             </label>
             <label className="full">
               Descrição do Serviço

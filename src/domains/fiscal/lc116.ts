@@ -226,7 +226,9 @@ export const LC116_LIST: Lc116Item[] = [
   { code: "37.01", description: "Serviços de artistas, atletas, modelos e manequins" },
   { code: "38.01", description: "Serviços de museologia" },
   { code: "39.01", description: "Ourivesaria e lapidação (material fornecido pelo tomador)" },
-  { code: "40.01", description: "Obras de arte sob encomenda" }
+  { code: "40.01", description: "Obras de arte sob encomenda" },
+  // 99 — Casos especiais do Código de Tributação Nacional (NFS-e padrão nacional)
+  { code: "99.01.01", description: "Serviços sem a incidência de ISSQN e ICMS" }
 ];
 
 const LC116_SET = new Set(LC116_LIST.map((item) => item.code));
