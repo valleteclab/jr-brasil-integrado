@@ -26,9 +26,11 @@ const has = (k: string) => process.argv.includes(`--${k}`);
 
 const EMPRESA_ID = arg("empresa", "cmqfut5v2000fhk8ghiobb9lo"); // Seu Gama Materiais de Construção
 const ARQUIVO = arg("arquivo", "scripts/seu-gama-inventario.json");
+// Mapa fiscal pré-classificado (grupo -> {ncm,cest,categoria}); se existir, usa em vez da IA ao vivo.
+const FISCAL_FILE = arg("fiscal", "scripts/seu-gama-fiscal.json");
 const LIMIT = Number(arg("limit", "0")) || 0;
 const DRY = has("dry");
-const USE_AI = !has("no-ai");
+const USE_AI = !has("no-ai") && !fs.existsSync(FISCAL_FILE);
 
 // Nome-base do grupo: remove o sufixo " - NN" (numeração de calçado/ruído do relatório) e normaliza.
 const grupoKey = (desc: string) => desc.replace(/\s*-\s*\d+\s*$/, "").replace(/\s+/g, " ").trim().toUpperCase();
@@ -96,7 +98,19 @@ async function main() {
   // Classificação fiscal por grupo (distintos).
   const grupos = [...new Set(itens.map((i) => grupoKey(i.descricao)))];
   console.log(`Grupos fiscais distintos: ${grupos.length}`);
-  const fiscalPorGrupo = DRY && !USE_AI ? new Map<string, Fiscal>() : await classificarGrupos(scope, grupos);
+  let fiscalPorGrupo: Map<string, Fiscal>;
+  if (fs.existsSync(FISCAL_FILE)) {
+    // Mapa pré-classificado (subagentes). Valida cada NCM distinto contra a tabela oficial; NCM
+    // inexistente vira null (melhor não gravar NCM do que gravar um inválido que rejeita a NF-e).
+    const raw = JSON.parse(fs.readFileSync(FISCAL_FILE, "utf8")) as Record<string, Fiscal>;
+    const ncmsDistintos = [...new Set(Object.values(raw).map((f) => f.ncm).filter(Boolean) as string[])];
+    const validos = new Set<string>();
+    for (const n of ncmsDistintos) { const r = await findNcm(n); if (r?.codigo) validos.add(r.codigo); }
+    console.log(`Mapa fiscal: ${Object.keys(raw).length} grupos · NCM distintos ${ncmsDistintos.length} · válidos na tabela ${validos.size}`);
+    fiscalPorGrupo = new Map(Object.entries(raw).map(([g, f]) => [g, { ncm: f.ncm && validos.has(f.ncm) ? f.ncm : null, cest: f.cest ?? null, categoria: f.categoria ?? null }]));
+  } else {
+    fiscalPorGrupo = DRY && !USE_AI ? new Map<string, Fiscal>() : await classificarGrupos(scope, grupos);
+  }
 
   let criados = 0, pulados = 0, enriquecidos = 0, erros = 0;
   for (const item of itens) {
