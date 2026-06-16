@@ -72,6 +72,9 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO", allow
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState<SuccessState | null>(null);
+  // Texto sendo digitado em cada input de quantidade — permite "0,5" ou "0.5" sem o campo
+  // zerar no meio. Commit no blur via updItem. Limpo quando o item sai da venda.
+  const [qtdInputs, setQtdInputs] = useState<Record<string, string>>({});
 
   // Tempo real: atualiza o estoque disponível dos produtos enquanto o vendedor monta a venda
   // (outra venda/caixa baixou ou reservou saldo). router.refresh() só re-busca os dados do
@@ -95,11 +98,13 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO", allow
   const total = Math.max(subtotal - descontoVal + (isVendaPedido ? Number(frete) || 0 : 0), 0);
 
   // Adiciona/incrementa um produto SEM fechar o seletor — permite adicionar vários itens seguidos.
-  function addItem(p: Produto) {
+  // Aceita quantidade fracionada do picker (default 1).
+  function addItem(p: Produto, qtd: number = 1) {
+    const q = qtd > 0 ? qtd : 1;
     setItems((cur) => {
       const ex = cur.find((it) => it.produto.id === p.id);
-      if (ex) return cur.map((it) => (it.produto.id === p.id ? { ...it, quantidade: it.quantidade + 1 } : it));
-      return [...cur, { produto: p, quantidade: 1, preco: p.preco, desconto: 0 }];
+      if (ex) return cur.map((it) => (it.produto.id === p.id ? { ...it, quantidade: it.quantidade + q } : it));
+      return [...cur, { produto: p, quantidade: q, preco: p.preco, desconto: 0 }];
     });
   }
   const updItem = (id: string, patch: Partial<ItemLinha>) =>
@@ -399,19 +404,34 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO", allow
             ) : (
               <div className="erp-table-wrap solo" style={{ borderRadius: 0, border: 0 }}>
                 <table className="erp-table">
-                  <thead><tr><th>SKU</th><th>Produto</th><th className="num">Qtd</th><th className="num">Preço un.</th><th className="num">% Desc.</th><th className="num">Subtotal</th><th className="actions" /></tr></thead>
+                  <thead><tr><th>SKU</th><th>Produto</th><th>Un.</th><th className="num">Qtd</th><th className="num">Preço un.</th><th className="num">% Desc.</th><th className="num">Subtotal</th><th className="actions" /></tr></thead>
                   <tbody>
                     {items.map((it) => {
                       const sub = it.quantidade * it.preco * (1 - it.desconto / 100);
+                      const qtdStr = qtdInputs[it.produto.id] ?? String(it.quantidade).replace(".", ",");
                       return (
                         <tr key={it.produto.id}>
                           <td className="mono bold">{it.produto.sku}</td>
                           <td><div style={{ fontWeight: 600 }}>{it.produto.nome}</div><span className="sublabel">{it.produto.disponivel} em estoque</span></td>
-                          <td className="num"><input type="number" min={0} step="any" value={it.quantidade} onChange={(e) => updItem(it.produto.id, { quantidade: Math.max(0, Number(e.target.value) || 0) })} style={cellNum} /></td>
-                          <td className="num"><input type="number" value={it.preco} onChange={(e) => updItem(it.produto.id, { preco: Number(e.target.value) })} style={cellNum} /></td>
+                          <td className="mono" style={{ color: "var(--erp-mute)", fontSize: 12 }}>{it.produto.unidade}</td>
+                          <td className="num">
+                            <input
+                              inputMode="decimal"
+                              value={qtdStr}
+                              onChange={(e) => setQtdInputs((s) => ({ ...s, [it.produto.id]: e.target.value }))}
+                              onBlur={(e) => {
+                                const v = Math.max(0, numBr(e.target.value));
+                                setQtdInputs((s) => { const n = { ...s }; delete n[it.produto.id]; return n; });
+                                updItem(it.produto.id, { quantidade: v });
+                              }}
+                              onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                              style={cellNum}
+                            />
+                          </td>
+                          <td className="num bold">{brl(it.preco)}</td>
                           <td className="num"><input type="number" min={0} max={100} value={it.desconto} onChange={(e) => updItem(it.produto.id, { desconto: Math.min(100, Math.max(0, Number(e.target.value) || 0)) })} style={cellNum} /></td>
                           <td className="num bold">{brl(sub)}</td>
-                          <td className="actions"><button type="button" className="btn-erp ghost xs icon-only" onClick={() => rmItem(it.produto.id)}>✕</button></td>
+                          <td className="actions"><button type="button" className="btn-erp ghost xs icon-only" onClick={() => { setQtdInputs((s) => { const n = { ...s }; delete n[it.produto.id]; return n; }); rmItem(it.produto.id); }}>✕</button></td>
                         </tr>
                       );
                     })}
@@ -659,11 +679,13 @@ function PickerDrawer<T>({ title, placeholder, headers, rows, filter, render, on
 // Seletor de produtos com adição múltipla: a cada clique adiciona/incrementa o item e mostra
 // a quantidade já no carrinho, sem fechar o drawer. Botão "Concluir" volta para a venda.
 function ProdutoPickerMulti({ produtos, items, permiteVendaSemEstoque, onAdd, onRemove, onClose }: {
-  produtos: Produto[]; items: ItemLinha[]; permiteVendaSemEstoque: boolean; onAdd: (p: Produto) => void; onRemove: (id: string) => void; onClose: () => void;
+  produtos: Produto[]; items: ItemLinha[]; permiteVendaSemEstoque: boolean; onAdd: (p: Produto, qtd?: number) => void; onRemove: (id: string) => void; onClose: () => void;
 }) {
   const router = useRouter();
   const [q, setQ] = useState("");
   const [aviso, setAviso] = useState("");
+  // Quantidade digitada por linha (default vazio → 1 ao adicionar). Permite "0,5" / "2,75".
+  const [qtdPorLinha, setQtdPorLinha] = useState<Record<string, string>>({});
   const qtyById = new Map(items.map((it) => [it.produto.id, it.quantidade]));
   const list = produtos
     .filter((p) => correspondeBusca(q, p.sku, p.nome, p.descricao, p.descricaoComercial, p.gtin, p.codigoOriginal, p.codigoFabricante))
@@ -725,7 +747,8 @@ function ProdutoPickerMulti({ produtos, items, permiteVendaSemEstoque, onAdd, on
         nome: data.nome ?? rNome.trim(),
         descricao: null, descricaoComercial: null, gtin: null, codigoOriginal: null, codigoFabricante: null,
         preco: numBr(rPreco),
-        disponivel: numBr(rEstoque)
+        disponivel: numBr(rEstoque),
+        unidade: rUnidade
       };
       onAdd(novo);
       setRapidoAberto(false);
@@ -739,8 +762,11 @@ function ProdutoPickerMulti({ produtos, items, permiteVendaSemEstoque, onAdd, on
 
   // Bloqueia adicionar produto sem saldo quando a empresa não aceita venda sem estoque.
   function tentarAdd(p: Produto) {
+    const raw = qtdPorLinha[p.id];
+    const qtd = raw && raw.trim() ? numBr(raw) : 1;
+    if (qtd <= 0) { setAviso(`Informe uma quantidade maior que zero para "${p.nome}".`); return; }
     const noCarrinho = qtyById.get(p.id) ?? 0;
-    if (!permiteVendaSemEstoque && noCarrinho + 1 > p.disponivel) {
+    if (!permiteVendaSemEstoque && noCarrinho + qtd > p.disponivel) {
       setAviso(
         p.disponivel <= 0
           ? `"${p.nome}" está sem estoque (disponível 0). A empresa não aceita venda sem estoque.`
@@ -749,7 +775,8 @@ function ProdutoPickerMulti({ produtos, items, permiteVendaSemEstoque, onAdd, on
       return;
     }
     setAviso("");
-    onAdd(p);
+    onAdd(p, qtd);
+    setQtdPorLinha((s) => ({ ...s, [p.id]: "" }));
   }
   return (
     <>
@@ -795,12 +822,12 @@ function ProdutoPickerMulti({ produtos, items, permiteVendaSemEstoque, onAdd, on
         </div>
         <div className="drawer-body">
           <table className="erp-table">
-            <thead><tr><th>SKU</th><th>Produto</th><th className="num">Estoque</th><th className="num">Preço</th><th className="num">No carrinho</th><th className="actions" /></tr></thead>
+            <thead><tr><th>SKU</th><th>Produto</th><th>Un.</th><th className="num">Estoque</th><th className="num">Preço</th><th className="num">Qtd</th><th className="num">No carrinho</th><th className="actions" /></tr></thead>
             <tbody>
               {list.map((p) => {
                 const qty = qtyById.get(p.id) ?? 0;
                 return (
-                  <tr key={p.id} style={{ cursor: "pointer", background: qty > 0 ? "rgba(255,193,7,.06)" : undefined }} onClick={() => tentarAdd(p)}>
+                  <tr key={p.id} style={{ background: qty > 0 ? "rgba(255,193,7,.06)" : undefined }}>
                     <td className="mono bold">{p.sku}</td>
                     <td>
                       <div style={{ fontWeight: 600 }}>{p.nome}</div>
@@ -812,10 +839,21 @@ function ProdutoPickerMulti({ produtos, items, permiteVendaSemEstoque, onAdd, on
                         return <div style={{ fontSize: 11, color: "var(--erp-mute)", marginTop: 2, lineHeight: 1.35 }}>{desc}</div>;
                       })()}
                     </td>
+                    <td className="mono" style={{ color: "var(--erp-mute)", fontSize: 12 }}>{p.unidade}</td>
                     <td className="num bold" style={{ color: p.disponivel <= 0 ? "var(--erp-danger)" : p.disponivel <= 5 ? "var(--erp-warn)" : "var(--erp-success)" }}>{p.disponivel}</td>
                     <td className="num bold">{brl(p.preco)}</td>
-                    <td className="num bold">{qty > 0 ? `${qty}×` : "—"}</td>
-                    <td className="actions" onClick={(e) => e.stopPropagation()}>
+                    <td className="num">
+                      <input
+                        inputMode="decimal"
+                        placeholder="1"
+                        value={qtdPorLinha[p.id] ?? ""}
+                        onChange={(e) => setQtdPorLinha((s) => ({ ...s, [p.id]: e.target.value }))}
+                        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); tentarAdd(p); } }}
+                        style={{ width: 60, height: 28, border: "1px solid var(--erp-line)", borderRadius: 4, padding: "0 6px", fontSize: 12.5, textAlign: "right" }}
+                      />
+                    </td>
+                    <td className="num bold">{qty > 0 ? `${String(qty).replace(".", ",")}×` : "—"}</td>
+                    <td className="actions">
                       {qty > 0 && <button type="button" className="btn-erp ghost xs icon-only" aria-label="Remover" onClick={() => onRemove(p.id)}>✕</button>}
                       <button type="button" className="btn-erp primary xs" onClick={() => tentarAdd(p)}>+ Add</button>
                     </td>

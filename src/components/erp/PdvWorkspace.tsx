@@ -12,6 +12,8 @@ type CartItem = {
   nome: string;
   preco: number;
   qtd: number;
+  /** Unidade de medida do produto (UN/KG/M/L…) — só p/ exibir na linha. */
+  unidade?: string;
   /** Desconto em R$ da LINHA (total = preço × qtd − desconto). Exige autorização de admin. */
   desconto: number;
   /** Saldo disponível do produto no momento (para validar venda sem estoque). */
@@ -121,6 +123,10 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
   const [aba, setAba] = useState<"produtos" | "servicos">(mostraProdutos ? "produtos" : "servicos");
   const [busca, setBusca] = useState("");
   const [cart, setCart] = useState<CartItem[]>([]);
+  // Texto sendo digitado em cada input de quantidade — permite "0,5" sem o campo zerar
+  // no meio da digitação. Quando o input perde foco, é convertido para number e commit
+  // via definirQtd. Limpo automaticamente quando o item sai do carrinho.
+  const [qtdInputs, setQtdInputs] = useState<Record<string, string>>({});
   const [clientes, setClientes] = useState(data.clientes);
   const [clienteId, setClienteId] = useState("");
   const [clienteModalAberto, setClienteModalAberto] = useState(false);
@@ -190,7 +196,7 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
     setCart((cur) => {
       const ex = cur.find((i) => i.kind === "produto" && i.refId === p.id);
       if (ex) return cur.map((i) => (i === ex ? { ...i, qtd: i.qtd + 1 } : i));
-      return [...cur, { key: `p-${p.id}`, kind: "produto", refId: p.id, nome: p.nome, preco: p.preco, qtd: 1, desconto: 0, disponivel: p.disponivel }];
+      return [...cur, { key: `p-${p.id}`, kind: "produto", refId: p.id, nome: p.nome, preco: p.preco, qtd: 1, desconto: 0, disponivel: p.disponivel, unidade: p.unidade }];
     });
     setBusca("");
     buscaRef.current?.focus();
@@ -264,10 +270,14 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
     setCart((cur) => cur.map((i) => (i.key === key ? { ...i, qtd: q, desconto: Math.min(i.desconto, round2(i.preco * q)) } : i)));
   }
 
-  function removerItem(key: string) { setCart((cur) => cur.filter((i) => i.key !== key)); }
+  function removerItem(key: string) {
+    setCart((cur) => cur.filter((i) => i.key !== key));
+    setQtdInputs((s) => { const n = { ...s }; delete n[key]; return n; });
+  }
 
   function limpar() {
     setCart([]);
+    setQtdInputs({});
     setClienteId("");
     setVendedorId("");
     setAutorizacao(null);
@@ -459,9 +469,21 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
                 </div>
                 <div className="pdv-item-bot">
                   <div className="pdv-item-qtd">
-                    <button onClick={() => mudarQtd(i.key, -1)}>−</button>
-                    <input inputMode="decimal" value={i.qtd} onChange={(e) => definirQtd(i.key, Number(e.target.value.replace(",", ".")) || 0)} style={{ width: 52, textAlign: "center", border: "1px solid var(--erp-line)", borderRadius: 4, height: 28 }} />
-                    <button onClick={() => mudarQtd(i.key, 1)}>+</button>
+                    <button onClick={() => { setQtdInputs((s) => { const n = { ...s }; delete n[i.key]; return n; }); mudarQtd(i.key, -1); }}>−</button>
+                    <input
+                      inputMode="decimal"
+                      value={qtdInputs[i.key] ?? String(i.qtd).replace(".", ",")}
+                      onChange={(e) => setQtdInputs((s) => ({ ...s, [i.key]: e.target.value }))}
+                      onBlur={(e) => {
+                        const v = Number(e.target.value.replace(/\./g, "").replace(",", ".")) || 0;
+                        setQtdInputs((s) => { const n = { ...s }; delete n[i.key]; return n; });
+                        definirQtd(i.key, v);
+                      }}
+                      onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                      style={{ width: 60, textAlign: "center", border: "1px solid var(--erp-line)", borderRadius: 4, height: 28 }}
+                    />
+                    <button onClick={() => { setQtdInputs((s) => { const n = { ...s }; delete n[i.key]; return n; }); mudarQtd(i.key, 1); }}>+</button>
+                    {i.unidade && <span style={{ fontSize: 11, color: "var(--erp-mute)", marginLeft: 4 }}>{i.unidade}</span>}
                   </div>
                   <span className="pdv-item-unit">× {brl(i.preco)}{i.desconto > 0 ? ` − ${brl(i.desconto)} desc.` : ""}</span>
                   {i.kind === "produto" && (

@@ -2,7 +2,7 @@ import { getDevelopmentTenantScope, scopedByTenantCompany } from "@/lib/auth/dev
 import { prisma } from "@/lib/db/prisma";
 import type { TipoNegocio } from "@/lib/auth/modules";
 
-export type PdvProduto = { id: string; sku: string; nome: string; descricao: string | null; descricaoComercial: string | null; gtin: string | null; codigoOriginal: string | null; codigoFabricante: string | null; preco: number; disponivel: number };
+export type PdvProduto = { id: string; sku: string; nome: string; descricao: string | null; descricaoComercial: string | null; gtin: string | null; codigoOriginal: string | null; codigoFabricante: string | null; preco: number; disponivel: number; unidade: string };
 export type PdvServico = { id: string; nome: string; preco: number; codigoServicoLc116: string | null; codigoNbs: string | null };
 export type PdvCliente = { id: string; label: string; documento: string | null };
 export type PdvContaRecebedora = { id: string; nome: string; chavePix: string | null; tipoChavePix: string | null };
@@ -61,6 +61,7 @@ export async function getPdvData(): Promise<PdvData> {
         codigoFabricante: true,
         tipo: true,
         precoVenda: true,
+        unidade: true,
         saldosEstoque: { select: { quantidade: true, reservado: true } }
       },
       orderBy: { nome: "asc" }
@@ -103,7 +104,7 @@ export async function getPdvData(): Promise<PdvData> {
         (sum, s) => sum + Math.max(Number(s.quantidade) - Number(s.reservado), 0),
         0
       );
-      produtos.push({ id: p.id, sku: p.sku, nome: p.nome, descricao: p.descricao, descricaoComercial: p.descricaoComercial, gtin: p.gtin, codigoOriginal: p.codigoOriginal, codigoFabricante: p.codigoFabricante, preco: Number(p.precoVenda), disponivel });
+      produtos.push({ id: p.id, sku: p.sku, nome: p.nome, descricao: p.descricao, descricaoComercial: p.descricaoComercial, gtin: p.gtin, codigoOriginal: p.codigoOriginal, codigoFabricante: p.codigoFabricante, preco: Number(p.precoVenda), disponivel, unidade: p.unidade });
     }
   }
 

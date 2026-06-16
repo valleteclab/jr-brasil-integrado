@@ -91,7 +91,7 @@ export type SaleDetail = SaleSummary & {
 
 export type SaleFormData = {
   clientes: Array<{ id: string; label: string; documento: string | null }>;
-  produtos: Array<{ id: string; sku: string; nome: string; descricao: string | null; descricaoComercial: string | null; gtin: string | null; codigoOriginal: string | null; codigoFabricante: string | null; preco: number; disponivel: number }>;
+  produtos: Array<{ id: string; sku: string; nome: string; descricao: string | null; descricaoComercial: string | null; gtin: string | null; codigoOriginal: string | null; codigoFabricante: string | null; preco: number; disponivel: number; unidade: string }>;
   vendedores: Array<{ id: string; nome: string }>;
   formas: Array<{ id: string; nome: string; tipo: string }>;
   /** Empresa permite finalizar a venda direto no atendimento (sem caixa). Padrão false. */
@@ -348,6 +348,7 @@ export async function listSaleFormData(): Promise<SaleFormData> {
           codigoOriginal: true,
           codigoFabricante: true,
           precoVenda: true,
+          unidade: true,
           saldosEstoque: {
             select: { quantidade: true, reservado: true }
           }
@@ -387,7 +388,8 @@ export async function listSaleFormData(): Promise<SaleFormData> {
           codigoOriginal: p.codigoOriginal,
           codigoFabricante: p.codigoFabricante,
           preco: Number(p.precoVenda),
-          disponivel
+          disponivel,
+          unidade: p.unidade
         };
       }),
       vendedores,
