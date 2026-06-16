@@ -55,9 +55,12 @@ async function main() {
   await prisma.notaFiscalItem.deleteMany({ where: w }).catch(() => {});
   await prisma.notaFiscal.deleteMany({ where: w });
 
-  // 5) Pedidos de venda (itens -> pedido) + financeiro vinculado.
+  // 5) Pedidos de venda + tudo que referencia o pedido (pagamentos, comissões, retiradas, itens).
   await prisma.contaReceber.deleteMany({ where: w }).catch(() => {});
   await prisma.movimentoFinanceiro.deleteMany({ where: w }).catch(() => {});
+  await prisma.pagamentoVenda.deleteMany({ where: w }).catch(() => {});
+  await prisma.comissaoVenda.deleteMany({ where: w }).catch(() => {});
+  await prisma.expedicaoRetirada.deleteMany({ where: w }).catch(() => {});
   await prisma.pedidoVendaItem.deleteMany({ where: w }).catch(() => {});
   await prisma.pedidoVenda.deleteMany({ where: w });
 
