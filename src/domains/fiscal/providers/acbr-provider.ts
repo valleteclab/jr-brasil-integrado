@@ -1072,14 +1072,15 @@ export async function registrarEmpresaAcbr(
     cpf_cnpj: documento,
     endereco: { ...empresa.endereco, codigo_pais: "1058", pais: "BRASIL" }
   };
-  const req = (provider as unknown as {
+  // Chama via o objeto (não destacar o método) para preservar o `this` dentro de request/resolveConfig.
+  const api = provider as unknown as {
     request: <T>(c: ProviderContext, m: string, p: string, b?: unknown) => Promise<{ ok: boolean; status: number; data: T | undefined; errorMessage: string | null }>;
-  }).request;
+  };
 
-  const put = await req(ctx, "PUT", `/empresas/${documento}`, body);
+  const put = await api.request(ctx, "PUT", `/empresas/${documento}`, body);
   if (put.ok) return { ok: true, created: false, message: "Empresa atualizada na ACBr." };
   if (put.status === 404) {
-    const post = await req(ctx, "POST", "/empresas", body);
+    const post = await api.request(ctx, "POST", "/empresas", body);
     if (post.ok) return { ok: true, created: true, message: "Empresa cadastrada na ACBr." };
     return { ok: false, created: false, message: post.errorMessage ?? `Falha ao cadastrar a empresa na ACBr (HTTP ${post.status}).` };
   }
