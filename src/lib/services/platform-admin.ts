@@ -1,6 +1,7 @@
 import { hashPassword } from "@/lib/security/password";
 import { prisma } from "@/lib/db/prisma";
 import { requirePlatformAdmin } from "@/lib/auth/session";
+import { FORMAS_PAGAMENTO_PADRAO } from "@/domains/finance/application/payment-config-use-cases";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import type { AmbienteFiscal, ProvedorFiscal } from "@prisma/client";
 import { encryptSecret, secretLastChars } from "@/lib/security/secret-crypto";
@@ -600,6 +601,11 @@ export async function criarCliente(input: CriarClienteInput): Promise<CriarClien
         matriz: true,
         status: "ATIVA"
       }
+    });
+
+    // Formas de pagamento padrão (o cliente pode editar/excluir depois).
+    await tx.formaPagamento.createMany({
+      data: FORMAS_PAGAMENTO_PADRAO.map((f) => ({ tenantId: tenant.id, empresaId: empresa.id, nome: f.nome, tipo: f.tipo, ordem: f.ordem, ativo: true }))
     });
 
     // Perfis padrão (RBAC por módulo) do novo tenant.

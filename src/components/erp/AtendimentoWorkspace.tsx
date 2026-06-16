@@ -32,7 +32,7 @@ const TIPOS: Array<{ id: Tipo; icon: string; label: string; desc: string }> = [
   { id: "ORCAMENTO", icon: "📄", label: "Orçamento", desc: "Cotação com validade · sem baixa de estoque" }
 ];
 
-const PAGAMENTOS = [
+const PAGAMENTOS_FALLBACK = [
   { id: "Pix à vista", s: "Confirmação imediata" },
   { id: "Dinheiro", s: "Pagamento em espécie" },
   { id: "Cartão débito", s: "Maquininha · à vista" },
@@ -57,7 +57,9 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO", allow
   const [servicos, setServicos] = useState<Servico[]>([]);
   const [veiculo, setVeiculo] = useState({ desc: "", placa: "", km: "" });
   const [diagnostico, setDiagnostico] = useState("");
-  const [pagamento, setPagamento] = useState(PAGAMENTOS[0].id);
+  // Formas de pagamento da empresa (cadastradas) — o que aparece na venda. Fallback fixo se vazio.
+  const PAGAMENTOS = data.formas.length ? data.formas.map((f) => ({ id: f.nome, s: "" })) : PAGAMENTOS_FALLBACK;
+  const [pagamento, setPagamento] = useState(data.formas[0]?.nome ?? PAGAMENTOS_FALLBACK[0].id);
   const [descGlobal, setDescGlobal] = useState(0);
   const [frete, setFrete] = useState(0);
   const [obs, setObs] = useState("");

@@ -48,15 +48,15 @@ const BANDEIRAS = ["VISA", "MASTERCARD", "ELO", "AMEX", "HIPERCARD", "OUTRA"];
 const isPixOuTransfer = (f: string) => f === "PIX" || f === "TRANSFERENCIA";
 const isCartao = (f: string) => f === "CARTAO_DEBITO" || f === "CARTAO_CREDITO";
 
-const FORMAS: Array<{ value: string; label: string }> = [
+const FORMAS_FALLBACK: Array<{ value: string; label: string }> = [
   { value: "DINHEIRO", label: "Dinheiro" },
   { value: "PIX", label: "PIX" },
   { value: "CARTAO_DEBITO", label: "Cartão débito" },
   { value: "CARTAO_CREDITO", label: "Cartão crédito" },
   { value: "BOLETO", label: "Boleto" },
-  { value: "TRANSFERENCIA", label: "Transferência" },
-  { value: "CREDIARIO", label: "Crediário (a prazo)" }
+  { value: "TRANSFERENCIA", label: "Transferência" }
 ];
+const CREDIARIO_OPCAO = { value: "CREDIARIO", label: "Crediário (a prazo)" };
 
 const brl = (v: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
 const round2 = (v: number) => Math.round((v + Number.EPSILON) * 100) / 100;
@@ -532,7 +532,7 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
       </div>
 
       {pagamentoAberto && (
-        <PagamentoModal total={total} loading={loading} clienteSelecionado={Boolean(clienteId)} contas={data.contas} maquinas={data.maquinas} onCancel={() => setPagamentoAberto(false)} onConfirm={finalizar} />
+        <PagamentoModal total={total} loading={loading} clienteSelecionado={Boolean(clienteId)} contas={data.contas} maquinas={data.maquinas} formas={data.formas} onCancel={() => setPagamentoAberto(false)} onConfirm={finalizar} />
       )}
       {movimentoAberto && (
         <MovimentoModal onClose={() => setMovimentoAberto(false)} />
@@ -767,7 +767,12 @@ function DescontoModal({
 
 // ─── Modal de pagamento (múltiplas formas + troco) ──────────────────────────────
 
-function PagamentoModal({ total, loading, clienteSelecionado, contas, maquinas, onCancel, onConfirm }: { total: number; loading: boolean; clienteSelecionado: boolean; contas: PdvContaRecebedora[]; maquinas: PdvMaquinaCartao[]; onCancel: () => void; onConfirm: (p: Pagamento[], condicaoCrediario: string) => void }) {
+function PagamentoModal({ total, loading, clienteSelecionado, contas, maquinas, formas, onCancel, onConfirm }: { total: number; loading: boolean; clienteSelecionado: boolean; contas: PdvContaRecebedora[]; maquinas: PdvMaquinaCartao[]; formas: Array<{ id: string; nome: string; tipo: string }>; onCancel: () => void; onConfirm: (p: Pagamento[], condicaoCrediario: string) => void }) {
+  // Formas cadastradas (deduplicadas por tipo, pois o PDV opera por tipo) + Crediário (a prazo).
+  const FORMAS = [
+    ...(formas.length ? Array.from(new Map(formas.map((f) => [f.tipo, { value: f.tipo, label: f.nome }])).values()) : FORMAS_FALLBACK),
+    CREDIARIO_OPCAO
+  ];
   const [linhas, setLinhas] = useState<Pagamento[]>([{ forma: "DINHEIRO", valor: total }]);
   const [condicaoCrediario, setCondicaoCrediario] = useState("30");
   const pago = round2(linhas.reduce((s, l) => s + (Number(l.valor) || 0), 0));

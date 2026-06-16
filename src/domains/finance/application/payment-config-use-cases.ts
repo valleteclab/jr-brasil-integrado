@@ -282,3 +282,22 @@ export async function archiveMaquinaCartao(scope: TenantScope, id: string) {
   await createAuditLog(prisma, { scope, entidade: "MaquinaCartao", entidadeId: id, acao: "ARCHIVE", payload: { nome: m.nome } });
   return m;
 }
+
+/** Formas de pagamento padrão dadas a todo cliente novo (editáveis/excluíveis pelo cliente). */
+export const FORMAS_PAGAMENTO_PADRAO: Array<{ nome: string; tipo: string; ordem: number }> = [
+  { nome: "Dinheiro", tipo: "DINHEIRO", ordem: 1 },
+  { nome: "Pix", tipo: "PIX", ordem: 2 },
+  { nome: "Cartão de débito", tipo: "CARTAO_DEBITO", ordem: 3 },
+  { nome: "Cartão de crédito", tipo: "CARTAO_CREDITO", ordem: 4 },
+  { nome: "Boleto", tipo: "BOLETO", ordem: 5 },
+  { nome: "Transferência", tipo: "TRANSFERENCIA", ordem: 6 }
+];
+
+/** Semeia as formas padrão na empresa (idempotente: não duplica por nome). */
+export async function seedFormasPagamentoPadrao(scope: TenantScope): Promise<number> {
+  const res = await prisma.formaPagamento.createMany({
+    data: FORMAS_PAGAMENTO_PADRAO.map((f) => ({ tenantId: scope.tenantId, empresaId: scope.empresaId, nome: f.nome, tipo: f.tipo, ordem: f.ordem, ativo: true })),
+    skipDuplicates: true
+  });
+  return res.count;
+}

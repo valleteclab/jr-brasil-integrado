@@ -35,6 +35,8 @@ export type CaixaPageData = {
   /** Contas recebedoras (PIX/transferência) e maquininhas (cartão) para detalhar o recebimento. */
   contas: ContaRecebedora[];
   maquinas: MaquinaCartaoResumo[];
+  /** Formas de pagamento cadastradas (ativas) — o que aparece na tela do caixa. */
+  formas: Array<{ id: string; nome: string; tipo: string }>;
   /** Clientes para identificar o consumidor anônimo direto no caixa. */
   clientes: Array<{ id: string; label: string; documento: string | null }>;
   /** Módulo Expedição habilitado para o tenant (mostra a opção de recibo de retirada). */
@@ -116,6 +118,11 @@ export async function getCaixaPageData(): Promise<CaixaPageData> {
     preVendas,
     contas: contasRaw,
     maquinas: maquinasRaw,
+    formas: await prisma.formaPagamento.findMany({
+      where: { ...scopedByTenantCompany(scope), ativo: true },
+      orderBy: [{ ordem: "asc" }, { nome: "asc" }],
+      select: { id: true, nome: true, tipo: true }
+    }),
     clientes: clientesRaw.map((c) => ({
       id: c.id,
       label: c.nomeFantasia ? `${c.nomeFantasia} (${c.razaoSocial})` : c.razaoSocial,

@@ -24,6 +24,8 @@ export type PdvData = {
   /** Contas recebedoras (PIX/transferência) e maquininhas (cartão) para detalhar o recebimento. */
   contas: PdvContaRecebedora[];
   maquinas: PdvMaquinaCartao[];
+  /** Formas de pagamento cadastradas (ativas) — o que aparece no PDV. */
+  formas: Array<{ id: string; nome: string; tipo: string }>;
 };
 
 /**
@@ -34,7 +36,7 @@ export async function getPdvData(): Promise<PdvData> {
   const scope = await getDevelopmentTenantScope();
   const base = scopedByTenantCompany(scope);
 
-  const [empresa, tenant, config, clientes, itens, vendedores, contas, maquinas] = await Promise.all([
+  const [empresa, tenant, config, clientes, itens, vendedores, contas, maquinas, formas] = await Promise.all([
     prisma.empresa.findUnique({ where: { id: scope.empresaId }, select: { tipoNegocio: true, permiteVendaSemEstoque: true } }),
     prisma.tenant.findUnique({ where: { id: scope.tenantId }, select: { expedicaoHabilitada: true } }),
     prisma.configuracaoFiscal.findUnique({
@@ -77,6 +79,11 @@ export async function getPdvData(): Promise<PdvData> {
       where: { ...base, ativo: true },
       select: { id: true, nome: true, adquirente: true },
       orderBy: { nome: "asc" }
+    }),
+    prisma.formaPagamento.findMany({
+      where: { ...base, ativo: true },
+      select: { id: true, nome: true, tipo: true },
+      orderBy: [{ ordem: "asc" }, { nome: "asc" }]
     })
   ]);
 
@@ -115,6 +122,7 @@ export async function getPdvData(): Promise<PdvData> {
     servicos,
     vendedores,
     contas,
-    maquinas
+    maquinas,
+    formas
   };
 }

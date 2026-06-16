@@ -9,7 +9,7 @@ import { correspondeBusca } from "@/lib/search/normalize";
 
 const brl = (v: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
 
-const FORMAS: Array<{ id: string; label: string }> = [
+const FORMAS_FALLBACK: Array<{ id: string; label: string }> = [
   { id: "DINHEIRO", label: "Dinheiro" },
   { id: "PIX", label: "Pix" },
   { id: "CARTAO_DEBITO", label: "Cartão débito" },
@@ -17,7 +17,6 @@ const FORMAS: Array<{ id: string; label: string }> = [
   { id: "BOLETO", label: "Boleto" },
   { id: "TRANSFERENCIA", label: "Transferência" }
 ];
-const formaLabel = (id: string) => FORMAS.find((f) => f.id === id)?.label ?? id;
 
 const BANDEIRAS = ["VISA", "MASTERCARD", "ELO", "AMEX", "HIPERCARD", "OUTRA"];
 const isPixOuTransfer = (f: string) => f === "PIX" || f === "TRANSFERENCIA";
@@ -66,6 +65,13 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
   const [resultado, setResultado] = useState<{ pedidoNumero: string; troco: number; notaId: string | null; notaStatus: string | null; emitErro: string | null; retirada: { id: string; codigo: string } | null } | null>(null);
 
   const caixa = data.caixa;
+
+  // Formas de pagamento da EMPRESA (cadastradas) — o caixa opera por tipo (PIX→conta, cartão→máquina),
+  // então deduplica por tipo. Sem formas cadastradas, cai no conjunto fixo de segurança.
+  const FORMAS = data.formas.length
+    ? Array.from(new Map(data.formas.map((f) => [f.tipo, { id: f.tipo, label: f.nome }])).values())
+    : FORMAS_FALLBACK;
+  const formaLabel = (id: string) => FORMAS.find((f) => f.id === id)?.label ?? id;
 
   // Identificação de cliente no caixa (consumidor antes anônimo).
   const [clientes, setClientes] = useState(data.clientes);

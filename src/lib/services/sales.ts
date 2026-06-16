@@ -93,6 +93,7 @@ export type SaleFormData = {
   clientes: Array<{ id: string; label: string; documento: string | null }>;
   produtos: Array<{ id: string; sku: string; nome: string; descricao: string | null; descricaoComercial: string | null; gtin: string | null; codigoOriginal: string | null; codigoFabricante: string | null; preco: number; disponivel: number }>;
   vendedores: Array<{ id: string; nome: string }>;
+  formas: Array<{ id: string; nome: string; tipo: string }>;
   /** Empresa permite finalizar a venda direto no atendimento (sem caixa). Padrão false. */
   permiteVendaDiretaBalcao: boolean;
   /** Empresa aceita vender produto sem saldo (estoque negativo). Padrão false. */
@@ -327,7 +328,7 @@ export async function listSaleFormData(): Promise<SaleFormData> {
   try {
     const scope = await getDevelopmentTenantScope();
 
-    const [empresa, clientes, produtos, vendedores] = await Promise.all([
+    const [empresa, clientes, produtos, vendedores, formas] = await Promise.all([
       prisma.empresa.findUnique({ where: { id: scope.empresaId }, select: { permiteVendaDiretaBalcao: true, permiteVendaSemEstoque: true } }),
       prisma.cliente.findMany({
         where: { ...scopedByTenantCompany(scope), status: "ATIVO" },
@@ -356,6 +357,11 @@ export async function listSaleFormData(): Promise<SaleFormData> {
         where: { ...scopedByTenantCompany(scope), ativo: true },
         select: { id: true, nome: true },
         orderBy: { nome: "asc" }
+      }),
+      prisma.formaPagamento.findMany({
+        where: { ...scopedByTenantCompany(scope), ativo: true },
+        select: { id: true, nome: true, tipo: true },
+        orderBy: [{ ordem: "asc" }, { nome: "asc" }]
       })
     ]);
 
@@ -384,6 +390,7 @@ export async function listSaleFormData(): Promise<SaleFormData> {
         };
       }),
       vendedores,
+      formas,
       permiteVendaDiretaBalcao: Boolean(empresa?.permiteVendaDiretaBalcao),
       permiteVendaSemEstoque: Boolean(empresa?.permiteVendaSemEstoque)
     };
