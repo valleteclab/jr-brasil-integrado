@@ -402,7 +402,7 @@ export async function faturarOrdemServico(scope: TenantScope, id: string, input:
         semReserva.push({
           produtoId: p.produtoId,
           depositoId: deposito.id,
-          quantidade: p.quantidade,
+          quantidade: Number(p.quantidade),
           custoUnitario: Number(p.produto.custoMedio ?? p.produto.precoCusto ?? 0),
         });
       }

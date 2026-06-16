@@ -77,7 +77,7 @@ export async function returnSale(scope: TenantScope, pedidoId: string, input: Re
   // como devolvidas para não permitir devolver duas vezes enquanto a SEFAZ responde.
   const vendidoPorProduto = new Map<string, number>();
   for (const item of pedido.itens) {
-    vendidoPorProduto.set(item.produtoId, (vendidoPorProduto.get(item.produtoId) ?? 0) + item.quantidade);
+    vendidoPorProduto.set(item.produtoId, (vendidoPorProduto.get(item.produtoId) ?? 0) + Number(item.quantidade));
   }
   const devolvidoPorProduto = new Map<string, number>();
   for (const nota of pedido.notasFiscais) {
@@ -123,9 +123,9 @@ export async function returnSale(scope: TenantScope, pedidoId: string, input: Re
       throw new Error(`"${nomeProduto}": quantidade a devolver (${solicitado.quantidade}) maior que o restante devolvível (${restante}).`);
     }
     // Preço líquido médio (total da linha já desconta o desconto por item) e custo médio da venda.
-    const qtdTotal = itensProduto.reduce((s, i) => s + i.quantidade, 0);
+    const qtdTotal = itensProduto.reduce((s, i) => s + Number(i.quantidade), 0);
     const valorTotal = itensProduto.reduce((s, i) => s + Number(i.total), 0);
-    const custoMedio = itensProduto.reduce((s, i) => s + Number(i.custoUnitario) * i.quantidade, 0) / qtdTotal;
+    const custoMedio = itensProduto.reduce((s, i) => s + Number(i.custoUnitario) * Number(i.quantidade), 0) / qtdTotal;
     linhas.push({
       produto: itensProduto[0].produto,
       quantidade: solicitado.quantidade,

@@ -243,7 +243,7 @@ export async function convertQuoteToPedido(scope: TenantScope, id: string) {
       await reserveStock(tx, scope, {
         produtoId: item.produtoId,
         depositoId: deposito.id,
-        quantidade: item.quantidade,
+        quantidade: Number(item.quantidade),
         origemTipo: "PEDIDO_VENDA",
         origemId: pedido.id,
       });

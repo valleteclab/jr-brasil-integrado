@@ -100,7 +100,7 @@ export async function getCaixaPageData(): Promise<CaixaPageData> {
       id: item.id,
       produtoNome: item.produto.nome,
       produtoSku: item.produto.sku,
-      quantidade: item.quantidade,
+      quantidade: Number(item.quantidade),
       precoUnitario: Number(item.precoUnitario),
       total: Number(item.total)
     }))

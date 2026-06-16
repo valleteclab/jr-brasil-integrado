@@ -169,7 +169,7 @@ export async function getOrdemServicoDetail(id: string): Promise<OrdemServicoDet
         produtoId: p.produtoId,
         produtoNome: p.produto.nome,
         produtoSku: p.produto.sku,
-        quantidade: p.quantidade,
+        quantidade: Number(p.quantidade),
         precoUnitario: formatBrl(Number(p.precoUnitario)),
         total: formatBrl(Number(p.total)),
       })),

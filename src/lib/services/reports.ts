@@ -290,7 +290,7 @@ export async function salesReport(periodoDias = 30, scopeArg?: TenantScope): Pro
         qty: 0,
         total: 0
       };
-      existing.qty += item.quantidade;
+      existing.qty += Number(item.quantidade);
       existing.total = round2(existing.total + Number(item.total));
       mapaProdutos.set(item.produtoId, existing);
     }

@@ -407,7 +407,7 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO", allow
                         <tr key={it.produto.id}>
                           <td className="mono bold">{it.produto.sku}</td>
                           <td><div style={{ fontWeight: 600 }}>{it.produto.nome}</div><span className="sublabel">{it.produto.disponivel} em estoque</span></td>
-                          <td className="num"><input type="number" min={1} value={it.quantidade} onChange={(e) => updItem(it.produto.id, { quantidade: Math.max(1, Number(e.target.value) || 1) })} style={cellNum} /></td>
+                          <td className="num"><input type="number" min={0} step="any" value={it.quantidade} onChange={(e) => updItem(it.produto.id, { quantidade: Math.max(0, Number(e.target.value) || 0) })} style={cellNum} /></td>
                           <td className="num"><input type="number" value={it.preco} onChange={(e) => updItem(it.produto.id, { preco: Number(e.target.value) })} style={cellNum} /></td>
                           <td className="num"><input type="number" min={0} max={100} value={it.desconto} onChange={(e) => updItem(it.produto.id, { desconto: Math.min(100, Math.max(0, Number(e.target.value) || 0)) })} style={cellNum} /></td>
                           <td className="num bold">{brl(sub)}</td>

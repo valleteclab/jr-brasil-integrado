@@ -28,9 +28,9 @@ export async function GET(request: Request) {
           produtoId: i.produtoId,
           produtoNome: i.produto.nome,
           produtoSku: i.produto.sku,
-          quantidade: i.quantidade,
-          entregue: i.entregue,
-          restante: i.quantidade - i.entregue
+          quantidade: Number(i.quantidade),
+          entregue: Number(i.entregue),
+          restante: Number(i.quantidade) - Number(i.entregue)
         }))
       }
     });

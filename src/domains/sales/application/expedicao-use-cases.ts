@@ -48,9 +48,9 @@ async function assertExpedicaoHabilitada(scope: TenantScope) {
 }
 
 /** Soma as quantidades do pedido por produto (linhas repetidas do mesmo produto somam). */
-function quantidadesPorProduto(itens: Array<{ produtoId: string; quantidade: number }>) {
+function quantidadesPorProduto(itens: Array<{ produtoId: string; quantidade: number | { toString(): string } }>) {
   const mapa = new Map<string, number>();
-  for (const item of itens) mapa.set(item.produtoId, (mapa.get(item.produtoId) ?? 0) + item.quantidade);
+  for (const item of itens) mapa.set(item.produtoId, (mapa.get(item.produtoId) ?? 0) + Number(item.quantidade));
   return mapa;
 }
 
@@ -192,7 +192,7 @@ export async function confirmarEntregaRetirada(
   }
 
   // Quantidades a entregar agora: as informadas, ou tudo o que resta.
-  const restantePorProduto = new Map(retirada.itens.map((i) => [i.produtoId, i.quantidade - i.entregue]));
+  const restantePorProduto = new Map(retirada.itens.map((i) => [i.produtoId, Number(i.quantidade) - Number(i.entregue)]));
   let entregas: EntregaItemInput[];
   if (input.itens && input.itens.length > 0) {
     entregas = input.itens
@@ -200,7 +200,7 @@ export async function confirmarEntregaRetirada(
       .filter((i) => i.quantidade !== 0);
   } else {
     entregas = retirada.itens
-      .map((i) => ({ produtoId: i.produtoId, quantidade: i.quantidade - i.entregue }))
+      .map((i) => ({ produtoId: i.produtoId, quantidade: Number(i.quantidade) - Number(i.entregue) }))
       .filter((i) => i.quantidade > 0);
   }
   if (entregas.length === 0) throw new ExpedicaoError("Informe a quantidade de ao menos um item para entregar.");
@@ -226,7 +226,7 @@ export async function confirmarEntregaRetirada(
     }
 
     const itensAtuais = await tx.expedicaoRetiradaItem.findMany({ where: { retiradaId: retirada.id } });
-    const completo = itensAtuais.every((i) => i.entregue >= i.quantidade);
+    const completo = itensAtuais.every((i) => Number(i.entregue) >= Number(i.quantidade));
 
     // Histórico legível direto na retirada (auditoria guarda o payload completo).
     const nomesPorProduto = new Map(retirada.itens.map((i) => [i.produtoId, i.produto.sku]));

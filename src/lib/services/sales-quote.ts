@@ -158,7 +158,7 @@ export async function getQuoteDetail(id: string): Promise<QuoteDetail | null> {
         produtoId: item.produtoId,
         produtoNome: item.produto.nome,
         produtoSku: item.produto.sku,
-        quantidade: item.quantidade,
+        quantidade: Number(item.quantidade),
         precoUnitario: formatBrl(Number(item.precoUnitario)),
         total: formatBrl(Number(item.total)),
       })),

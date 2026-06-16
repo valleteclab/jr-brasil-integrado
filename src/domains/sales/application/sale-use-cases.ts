@@ -582,7 +582,7 @@ function buildDocumentoVenda(pedido: PedidoParaNota, modelo: "NFE" | "NFCE") {
             }
           : null
       },
-      quantidade: item.quantidade,
+      quantidade: Number(item.quantidade),
       precoUnitario: Number(item.precoUnitario),
       desconto: Number(item.desconto)
     }))

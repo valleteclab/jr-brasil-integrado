@@ -271,14 +271,15 @@ export async function getSaleDetail(id: string): Promise<SaleDetail | null> {
       itens: p.itens.map((item) => {
         // Distribui o devolvido do produto pelas linhas, na ordem (cobre produto repetido).
         const restanteDevolvido = devolvidoPorProduto.get(item.produtoId) ?? 0;
-        const devolvido = Math.min(restanteDevolvido, item.quantidade);
+        const qtd = Number(item.quantidade);
+        const devolvido = Math.min(restanteDevolvido, qtd);
         devolvidoPorProduto.set(item.produtoId, restanteDevolvido - devolvido);
         return {
           id: item.id,
           produtoId: item.produtoId,
           produtoNome: item.produto.nome,
           produtoSku: item.produto.sku,
-          quantidade: item.quantidade,
+          quantidade: qtd,
           devolvido,
           precoUnitario: Number(item.precoUnitario),
           custoUnitario: Number(item.custoUnitario),

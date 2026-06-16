@@ -250,6 +250,20 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
     setCart((cur) => cur.map((i) => (i.key === key ? { ...i, qtd: q, desconto: Math.min(i.desconto, round2(i.preco * q)) } : i)));
   }
 
+  // Define a quantidade absoluta (permite fração, ex.: 0,5 metro). Mesma checagem de saldo do +/-.
+  function definirQtd(key: string, valor: number) {
+    const item = cart.find((i) => i.key === key);
+    if (!item) return;
+    const q = Math.max(0, valor);
+    if (item.kind === "produto" && item.disponivel != null && q > item.disponivel) {
+      const msg = `Estoque insuficiente de "${item.nome}": disponível ${item.disponivel}.`;
+      if (!data.permiteVendaSemEstoque) { setError(msg); return; }
+      setAviso(`${msg} Venda liberada (empresa aceita venda sem estoque).`);
+    } else { setAviso(""); }
+    setError("");
+    setCart((cur) => cur.map((i) => (i.key === key ? { ...i, qtd: q, desconto: Math.min(i.desconto, round2(i.preco * q)) } : i)));
+  }
+
   function removerItem(key: string) { setCart((cur) => cur.filter((i) => i.key !== key)); }
 
   function limpar() {
@@ -446,7 +460,7 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
                 <div className="pdv-item-bot">
                   <div className="pdv-item-qtd">
                     <button onClick={() => mudarQtd(i.key, -1)}>−</button>
-                    <span>{i.qtd}</span>
+                    <input inputMode="decimal" value={i.qtd} onChange={(e) => definirQtd(i.key, Number(e.target.value.replace(",", ".")) || 0)} style={{ width: 52, textAlign: "center", border: "1px solid var(--erp-line)", borderRadius: 4, height: 28 }} />
                     <button onClick={() => mudarQtd(i.key, 1)}>+</button>
                   </div>
                   <span className="pdv-item-unit">× {brl(i.preco)}{i.desconto > 0 ? ` − ${brl(i.desconto)} desc.` : ""}</span>

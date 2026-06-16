@@ -1134,7 +1134,7 @@ model PedidoVendaItem {
   produtoId     String
   pedidoVenda   PedidoVenda @relation(fields: [pedidoVendaId], references: [id])
   produto       Produto     @relation(fields: [produtoId], references: [id])
-  quantidade    Int
+  quantidade    Decimal     @db.Decimal(14, 4)
   precoUnitario Decimal     @db.Decimal(14, 2)
   custoUnitario Decimal     @default(0) @db.Decimal(14, 4)
   desconto      Decimal     @default(0) @db.Decimal(14, 2)
@@ -1181,7 +1181,7 @@ model OrcamentoItem {
   produtoId     String
   orcamento     Orcamento @relation(fields: [orcamentoId], references: [id])
   produto       Produto   @relation(fields: [produtoId], references: [id])
-  quantidade    Int
+  quantidade    Decimal   @db.Decimal(14, 4)
   precoUnitario Decimal   @db.Decimal(14, 2)
   total         Decimal   @db.Decimal(14, 2)
 
@@ -1245,7 +1245,7 @@ model OrdemServicoPeca {
   produtoId      String
   ordemServico   OrdemServico @relation(fields: [ordemServicoId], references: [id])
   produto        Produto      @relation(fields: [produtoId], references: [id])
-  quantidade     Int
+  quantidade     Decimal      @db.Decimal(14, 4)
   precoUnitario  Decimal      @db.Decimal(14, 2)
   total          Decimal      @db.Decimal(14, 2)
 
@@ -2234,8 +2234,8 @@ model ExpedicaoRetiradaItem {
   retirada   ExpedicaoRetirada @relation(fields: [retiradaId], references: [id])
   produtoId  String
   produto    Produto           @relation(fields: [produtoId], references: [id])
-  quantidade Int
-  entregue   Int               @default(0)
+  quantidade Decimal           @db.Decimal(14, 4)
+  entregue   Decimal           @default(0) @db.Decimal(14, 4)
 
   @@unique([retiradaId, produtoId])
   @@index([tenantId, empresaId])
