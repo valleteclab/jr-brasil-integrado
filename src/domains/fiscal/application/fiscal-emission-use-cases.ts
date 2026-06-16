@@ -736,6 +736,11 @@ export async function emitFiscalDocument(
       {
         document: {
           ...document,
+          // O documento vem do builder com ambiente/provedor placeholder ("HOMOLOGACAO"/"MANUAL").
+          // O ambiente/provedor EFETIVOS são os da config da empresa — a NF-e/NFC-e usa document.ambiente,
+          // então sobrescrever aqui evita o conflito "ambiente solicitado x configurado para a empresa".
+          ambiente: config.ambiente,
+          provedor: config.provider,
           serie,
           itens: computedItems.map(({ item, cfop }) => ({ ...item, cfop: cfop ?? item.cfop }))
         },
