@@ -16,4 +16,6 @@ tsconfig.tsbuildinfo
 docs/sped_fiscal_*.txt
 docs/Entradas.pdf
 docs/*.pdf
+docs/*.zip
+docs/*.oxps
 scripts/cls/
