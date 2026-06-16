@@ -98,12 +98,21 @@ async function main() {
   console.log(`Grupos fiscais distintos: ${grupos.length}`);
   const fiscalPorGrupo = DRY && !USE_AI ? new Map<string, Fiscal>() : await classificarGrupos(scope, grupos);
 
-  let criados = 0, pulados = 0, erros = 0;
+  let criados = 0, pulados = 0, enriquecidos = 0, erros = 0;
   for (const item of itens) {
     const sku = `SG-${item.seq}`;
-    const existe = await prisma.produto.findUnique({ where: { tenantId_empresaId_sku: { tenantId: scope.tenantId, empresaId: scope.empresaId, sku } }, select: { id: true } });
-    if (existe) { pulados++; continue; }
     const fis = fiscalPorGrupo.get(grupoKey(item.descricao)) ?? { ncm: null, cest: null, categoria: null };
+    const existe = await prisma.produto.findUnique({ where: { tenantId_empresaId_sku: { tenantId: scope.tenantId, empresaId: scope.empresaId, sku } }, select: { id: true, ncm: true } });
+    if (existe) {
+      // Já criado: enriquece NCM/CEST se faltava e a IA agora trouxe (re-rodar após configurar a IA).
+      if (!DRY && !existe.ncm && fis.ncm) {
+        await prisma.produto.update({ where: { id: existe.id }, data: { ncm: fis.ncm, ...(fis.cest ? { cest: fis.cest } : {}) } });
+        enriquecidos++;
+      } else {
+        pulados++;
+      }
+      continue;
+    }
     if (DRY) { criados++; if (criados <= 8) console.log(`  [dry] ${sku} ${item.descricao} | un=${item.unidade} estoque=${Math.max(0, item.qtd)} venda=${item.precoVenda} | NCM=${fis.ncm} CEST=${fis.cest} cat=${fis.categoria}`); continue; }
     try {
       await createProduct(scope, {
@@ -130,7 +139,7 @@ async function main() {
       if (erros <= 15) console.log(`  ❌ ${sku} "${item.descricao}": ${(e as Error)?.message}`);
     }
   }
-  console.log(`\nResumo: criados=${criados} · pulados(já existiam)=${pulados} · erros=${erros}`);
+  console.log(`\nResumo: criados=${criados} · enriquecidos(NCM)=${enriquecidos} · pulados=${pulados} · erros=${erros}`);
 }
 
 main().catch((e) => { console.error("ERRO:", e?.message); process.exitCode = 1; }).finally(() => prisma.$disconnect());
