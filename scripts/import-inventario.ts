@@ -104,10 +104,18 @@ async function main() {
     // inexistente vira null (melhor não gravar NCM do que gravar um inválido que rejeita a NF-e).
     const raw = JSON.parse(fs.readFileSync(FISCAL_FILE, "utf8")) as Record<string, Fiscal>;
     const ncmsDistintos = [...new Set(Object.values(raw).map((f) => f.ncm).filter(Boolean) as string[])];
-    const validos = new Set<string>();
-    for (const n of ncmsDistintos) { const r = await findNcm(n); if (r?.codigo) validos.add(r.codigo); }
-    console.log(`Mapa fiscal: ${Object.keys(raw).length} grupos · NCM distintos ${ncmsDistintos.length} · válidos na tabela ${validos.size}`);
-    fiscalPorGrupo = new Map(Object.entries(raw).map(([g, f]) => [g, { ncm: f.ncm && validos.has(f.ncm) ? f.ncm : null, cest: f.cest ?? null, categoria: f.categoria ?? null }]));
+    // Resolve cada NCM: exato na tabela; senão, uma folha válida da MESMA subposição (6 dígitos);
+    // senão null. Evita gravar NCM inexistente (rejeitado pela SEFAZ) sem perder a classificação.
+    const remap = new Map<string, string | null>();
+    let exatos = 0, porPrefixo = 0, nulos = 0;
+    for (const n of ncmsDistintos) {
+      const exato = await findNcm(n);
+      if (exato?.codigo) { remap.set(n, exato.codigo); exatos++; continue; }
+      const folha = await prisma.ncm.findFirst({ where: { codigo: { startsWith: n.slice(0, 6) } }, orderBy: { codigo: "asc" }, select: { codigo: true } });
+      if (folha?.codigo) { remap.set(n, folha.codigo); porPrefixo++; } else { remap.set(n, null); nulos++; }
+    }
+    console.log(`Mapa fiscal: ${Object.keys(raw).length} grupos · NCM distintos ${ncmsDistintos.length} · exatos ${exatos} · por subposição ${porPrefixo} · sem NCM ${nulos}`);
+    fiscalPorGrupo = new Map(Object.entries(raw).map(([g, f]) => [g, { ncm: f.ncm ? (remap.get(f.ncm) ?? null) : null, cest: f.cest ?? null, categoria: f.categoria ?? null }]));
   } else {
     fiscalPorGrupo = DRY && !USE_AI ? new Map<string, Fiscal>() : await classificarGrupos(scope, grupos);
   }
