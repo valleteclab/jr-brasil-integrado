@@ -40,7 +40,8 @@ export type FiscalConfigSummary = {
 };
 
 export type SaveFiscalConfigInput = {
-  provider: ProvedorFiscal;
+  /** Opcional: quando omitido, herda o provedor ATIVO da plataforma (escolha de provedor é só global). */
+  provider?: ProvedorFiscal;
   environment: AmbienteFiscal;
   regime: RegimeTributario;
   baseUrl?: string;
@@ -133,30 +134,26 @@ export async function getFiscalConfig(scope: TenantScope): Promise<FiscalConfigS
 }
 
 export async function saveFiscalConfig(scope: TenantScope, input: SaveFiscalConfigInput): Promise<FiscalConfigSummary> {
-  const externalProvider = !["MANUAL", "INTERNO"].includes(input.provider);
-  if (externalProvider && input.active) {
-    const existing = await prisma.configuracaoFiscal.findUnique({ where: { empresaId: scope.empresaId } });
-    const willHaveToken = Boolean(input.token?.trim()) || Boolean(existing?.tokenCriptografado);
-    // SPEDY e Focus NFe derivam a base do ambiente (produção/sandbox), então não exigem
-    // baseUrl — apenas o token. Os demais provedores externos exigem URL base + token.
-    if (input.provider === "SPEDY") {
-      if (!willHaveToken) {
-        throw new Error("Para ativar a Spedy informe a chave de API (X-Api-Key) no campo token.");
-      }
-    } else if (input.provider === "FOCUS_NFE") {
-      if (!willHaveToken) {
-        throw new Error("Para ativar a Focus NFe informe o token de integração.");
-      }
-    } else if (input.provider === "ACBR") {
-      // ACBr usa OAuth2: client_secret no campo token (cripto) e client_id no campo cscId.
-      const willHaveClientId = Boolean(input.cscId?.trim()) || Boolean(existing?.cscId);
-      if (!willHaveToken || !willHaveClientId) {
-        throw new Error("Para ativar a ACBr informe o client_id e o client_secret.");
-      }
-    } else {
-      const willHaveUrl = Boolean(input.baseUrl?.trim()) || Boolean(existing?.baseUrl);
-      if (!willHaveToken || !willHaveUrl) {
-        throw new Error("Para ativar um provedor externo informe a URL base e o token de integração.");
+  // A escolha de provedor é GLOBAL (/admin/provedor-fiscal). Quando o chamador não informa o provider
+  // (fluxo da empresa), herda o ativo da plataforma e NÃO valida credenciais por empresa (são globais).
+  const provider = (input.provider ?? (await getProvedorFiscalAtivo())) as ProvedorFiscal;
+
+  // Validação de credenciais por empresa só no fluxo LEGADO em que o provider é escolhido aqui.
+  if (input.provider) {
+    const externalProvider = !["MANUAL", "INTERNO"].includes(input.provider);
+    if (externalProvider && input.active) {
+      const existing = await prisma.configuracaoFiscal.findUnique({ where: { empresaId: scope.empresaId } });
+      const willHaveToken = Boolean(input.token?.trim()) || Boolean(existing?.tokenCriptografado);
+      if (input.provider === "SPEDY") {
+        if (!willHaveToken) throw new Error("Para ativar a Spedy informe a chave de API (X-Api-Key) no campo token.");
+      } else if (input.provider === "FOCUS_NFE") {
+        if (!willHaveToken) throw new Error("Para ativar a Focus NFe informe o token de integração.");
+      } else if (input.provider === "ACBR") {
+        const willHaveClientId = Boolean(input.cscId?.trim()) || Boolean(existing?.cscId);
+        if (!willHaveToken || !willHaveClientId) throw new Error("Para ativar a ACBr informe o client_id e o client_secret.");
+      } else {
+        const willHaveUrl = Boolean(input.baseUrl?.trim()) || Boolean(existing?.baseUrl);
+        if (!willHaveToken || !willHaveUrl) throw new Error("Para ativar um provedor externo informe a URL base e o token de integração.");
       }
     }
   }
@@ -168,7 +165,7 @@ export async function saveFiscalConfig(scope: TenantScope, input: SaveFiscalConf
   const config = await prisma.configuracaoFiscal.upsert({
     where: { empresaId: scope.empresaId },
     update: {
-      provedor: input.provider,
+      provedor: provider,
       ambiente: input.environment,
       regimeTributario: input.regime,
       baseUrl: input.baseUrl?.trim() || null,
@@ -196,7 +193,7 @@ export async function saveFiscalConfig(scope: TenantScope, input: SaveFiscalConf
     create: {
       tenantId: scope.tenantId,
       empresaId: scope.empresaId,
-      provedor: input.provider,
+      provedor: provider,
       ambiente: input.environment,
       regimeTributario: input.regime,
       baseUrl: input.baseUrl?.trim() || null,
@@ -225,7 +222,7 @@ export async function saveFiscalConfig(scope: TenantScope, input: SaveFiscalConf
   // ACBr: quando um novo CSC da NFC-e é informado, propaga ao cadastro da empresa na ACBr
   // (config_nfce). Best-effort: a falha aqui não impede salvar a configuração local.
   let cscWarning: string | null = null;
-  if (input.provider === "ACBR" && input.nfceCsc?.trim() && input.nfceIdCsc?.trim() && config.tokenCriptografado) {
+  if (provider === "ACBR" && input.nfceCsc?.trim() && input.nfceIdCsc?.trim() && config.tokenCriptografado) {
     const empresa = await prisma.empresa.findFirst({ where: { id: scope.empresaId, tenantId: scope.tenantId } });
     if (empresa) {
       try {
@@ -256,7 +253,7 @@ export async function saveFiscalConfig(scope: TenantScope, input: SaveFiscalConf
       entidadeId: config.id,
       acao: "SAVE",
       // Nunca registrar o CSC; só se foi configurado.
-      payload: { provider: input.provider, environment: input.environment, active: config.ativo, cscNfceAtualizado: Boolean(input.nfceCsc?.trim()) }
+      payload: { provider, environment: input.environment, active: config.ativo, cscNfceAtualizado: Boolean(input.nfceCsc?.trim()) }
     });
   });
 

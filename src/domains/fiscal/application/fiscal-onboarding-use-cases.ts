@@ -26,8 +26,9 @@ export type FiscalOnboardingInput = {
   codigoMunicipioIbge?: string;
   telefone?: string;
   email?: string;
-  // Emissão / provedor
-  provider: ProvedorFiscal;
+  // Emissão. O PROVEDOR é global (/admin/provedor-fiscal); a empresa só escolhe o ambiente.
+  // provider/baseUrl/token/cscId/cscToken ficam opcionais por retrocompatibilidade (não usados aqui).
+  provider?: ProvedorFiscal;
   environment: AmbienteFiscal;
   baseUrl?: string;
   token?: string;

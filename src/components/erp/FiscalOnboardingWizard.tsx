@@ -7,17 +7,6 @@ import { Card } from "@/components/shared/Card";
 import { useCadastroLookup } from "@/components/erp/useCadastroLookup";
 import type { FiscalOnboardingData } from "@/domains/fiscal/application/fiscal-onboarding-use-cases";
 
-const PROVIDERS = [
-  { value: "ACBR", label: "ACBr API (NF-e/NFC-e/NFS-e) — provedor da plataforma" },
-  { value: "INTERNO", label: "Interno (homologação funcional, sem certificado)" },
-  { value: "FOCUS_NFE", label: "Focus NFe" },
-  { value: "NFEIO", label: "NFe.io" },
-  { value: "PLUGNOTAS", label: "PlugNotas" },
-  { value: "WEBMANIA", label: "WebmaniaBR" },
-  { value: "SPEDY", label: "Spedy (NF-e/NFC-e/NFS-e)" },
-  { value: "MANUAL", label: "Manual (registro sem transmissão)" }
-];
-
 const REGIMES = [
   { value: "SIMPLES_NACIONAL", label: "Simples Nacional" },
   { value: "SIMPLES_EXCESSO_SUBLIMITE", label: "Simples Nacional · excesso de sublimite" },
@@ -52,8 +41,6 @@ export function FiscalOnboardingWizard({
 }) {
   const router = useRouter();
   const [step, setStep] = useState(0);
-  const [token, setToken] = useState("");
-  const [cscToken, setCscToken] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [done, setDone] = useState<{ baselineRules: number } | null>(null);
@@ -63,10 +50,6 @@ export function FiscalOnboardingWizard({
     ...initialData.config,
     gerarBaseNacional: true
   });
-
-  const externalProvider = !["INTERNO", "MANUAL"].includes(form.provider);
-  // ACBr usa OAuth: client_id (campo cscId) + client_secret (campo token); a URL base vem do ambiente.
-  const isAcbr = form.provider === "ACBR";
 
   const { buscarCnpj, buscandoCnpj, erro: lookupErro } = useCadastroLookup();
 
@@ -104,14 +87,8 @@ export function FiscalOnboardingWizard({
     if (step === 1) {
       if (!form.enderecoUf.trim()) return "Selecione a UF.";
     }
-    if (step === 2 && externalProvider) {
-      // SPEDY deriva a base do ambiente; exige apenas o token (X-Api-Key).
-      if (form.provider !== "SPEDY" && !isAcbr && !form.baseUrl.trim()) return "Provedor externo exige a URL base.";
-      // ACBr: credenciais (client_id/secret) são da PLATAFORMA (env), não pedidas aqui.
-      if (!isAcbr && !initialData.config.hasToken && !token.trim()) return "Provedor externo exige o token de integração.";
-    }
     return "";
-  }, [step, form, externalProvider, token, initialData.config.hasToken]);
+  }, [step, form]);
 
   function next() {
     if (stepError) {
@@ -152,12 +129,8 @@ export function FiscalOnboardingWizard({
           codigoMunicipioIbge: form.codigoMunicipioIbge,
           telefone: form.telefone,
           email: form.email,
-          provider: form.provider,
+          // Provedor e credenciais são GLOBAIS (/admin/provedor-fiscal) — não enviados pela empresa.
           environment: form.environment,
-          baseUrl: form.baseUrl,
-          token: token || undefined,
-          cscId: form.cscId,
-          cscToken: cscToken || undefined,
           serieNfe: form.serieNfe,
           serieNfce: form.serieNfce,
           serieNfse: form.serieNfse,
@@ -324,14 +297,15 @@ export function FiscalOnboardingWizard({
 
       {step === 2 && (
         <div className="form-grid two">
-          <label>
-            Provedor de emissão
-            <select value={form.provider} onChange={(e) => update("provider", e.target.value as FormState["provider"])}>
-              {PROVIDERS.map((p) => (
-                <option key={p.value} value={p.value}>{p.label}</option>
-              ))}
-            </select>
-          </label>
+          <div className="full alert info" style={{ margin: 0 }}>
+            <strong>Provedor de emissão é configurado pela plataforma</strong>
+            <span>
+              O provedor fiscal (hoje ACBr) e as credenciais são definidos uma única vez em
+              <b> Admin · Provedor fiscal</b> e valem para todas as empresas. Aqui você define apenas o
+              <b> ambiente</b>, as <b>séries</b> e o que será emitido — depois envie o <b>certificado</b> e
+              clique em <b>“Sincronizar empresa na ACBr”</b> (seção abaixo) para cadastrar a empresa.
+            </span>
+          </div>
           <label>
             Ambiente
             <select value={form.environment} onChange={(e) => update("environment", e.target.value as FormState["environment"])}>
@@ -339,36 +313,6 @@ export function FiscalOnboardingWizard({
               <option value="PRODUCAO">Produção</option>
             </select>
           </label>
-          {externalProvider && isAcbr && (
-            <div className="full alert info" style={{ margin: 0 }}>
-              <strong>Credenciais ACBr são da plataforma</strong>
-              <span>
-                O client_id/client_secret do ACBr pertencem à APLICAÇÃO (configurados pelo dono do SaaS
-                nas variáveis ACBR_CLIENT_ID / ACBR_CLIENT_SECRET), não por empresa. Aqui você define só o
-                ambiente, as séries e o certificado — e registra a empresa na ACBr.
-              </span>
-            </div>
-          )}
-          {externalProvider && !isAcbr && (
-            <>
-              <label className="full">
-                URL base do provedor*
-                <input value={form.baseUrl} onChange={(e) => update("baseUrl", e.target.value)} placeholder="https://api.provedor.com.br" />
-              </label>
-              <label>
-                Token de integração{initialData.config.hasToken ? " (já salvo)" : "*"}
-                <input type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder={initialData.config.hasToken ? "•••• manter atual" : ""} />
-              </label>
-              <label>
-                CSC ID (NFC-e)
-                <input value={form.cscId} onChange={(e) => update("cscId", e.target.value)} />
-              </label>
-              <label>
-                CSC Token (NFC-e){initialData.config.hasCscToken ? " (já salvo)" : ""}
-                <input type="password" value={cscToken} onChange={(e) => setCscToken(e.target.value)} />
-              </label>
-            </>
-          )}
           <label>
             Série NF-e
             <input value={form.serieNfe} onChange={(e) => update("serieNfe", e.target.value)} />
@@ -400,7 +344,7 @@ export function FiscalOnboardingWizard({
             <div><span className="field-label">Empresa</span><strong>{form.razaoSocial || "—"}</strong><small>{form.cnpj}</small></div>
             <div><span className="field-label">Regime</span><strong>{regimeLabel(form.regime)}</strong></div>
             <div><span className="field-label">UF de origem</span><strong>{form.enderecoUf || "—"}</strong><small>{form.enderecoCidade}</small></div>
-            <div><span className="field-label">Provedor / ambiente</span><strong>{PROVIDERS.find((p) => p.value === form.provider)?.label}</strong><small>{form.environment === "PRODUCAO" ? "Produção" : "Homologação"}</small></div>
+            <div><span className="field-label">Ambiente</span><strong>{form.environment === "PRODUCAO" ? "Produção" : "Homologação"}</strong><small>Provedor: definido pela plataforma</small></div>
             <div><span className="field-label">Documentos</span><strong>{[form.emitNfe && "NF-e", form.emitNfce && "NFC-e", form.emitNfse && "NFS-e"].filter(Boolean).join(" · ") || "Nenhum"}</strong></div>
             <div><span className="field-label">Emissão ativa</span><strong>{form.active ? "Sim" : "Não"}</strong></div>
           </div>
