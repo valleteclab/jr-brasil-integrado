@@ -113,6 +113,29 @@ export type PedidoFiscalInput = {
 /** Constrói um documento NF-e/NFC-e a partir de um pedido de venda já carregado. */
 export function buildDocumentFromPedido(input: PedidoFiscalInput): NormalizedFiscalDocument {
   const modelo = input.modelo ?? "NFE";
+  const itens = input.itens.map((linha) => ({
+    ...itemFromProduto(linha.produto, linha.quantidade, linha.precoUnitario, linha.desconto ?? 0),
+    produtoId: linha.produto.id
+  }));
+  // A SEFAZ exige que ICMSTot.vDesc == sum(det[i].prod.vDesc). Como o XML não tem campo de
+  // desconto "de documento", o desconto global precisa ser rateado por item antes de emitir,
+  // senão rejeita ("Total do Desconto difere do somatorio dos itens"). Faz o rateio pelo peso
+  // de cada item (valorTotal-desconto já existente) e zera o desconto de documento.
+  const descontoDoc = round2(input.desconto ?? 0);
+  if (descontoDoc > 0 && itens.length > 0) {
+    const bases = itens.map((it) => Math.max(round2(it.valorTotal - it.desconto), 0));
+    const baseTotal = round2(bases.reduce((s, v) => s + v, 0));
+    if (baseTotal > 0) {
+      let aplicado = 0;
+      for (let i = 0; i < itens.length; i++) {
+        const cota = i === itens.length - 1
+          ? round2(descontoDoc - aplicado)
+          : round2((bases[i] / baseTotal) * descontoDoc);
+        itens[i].desconto = round2(itens[i].desconto + cota);
+        aplicado = round2(aplicado + cota);
+      }
+    }
+  }
   return {
     modelo,
     finalidade: input.finalidade ?? "NORMAL",
@@ -129,13 +152,15 @@ export function buildDocumentFromPedido(input: PedidoFiscalInput): NormalizedFis
     valorFrete: input.frete ?? 0,
     modalidadeFrete: input.modalidadeFrete ?? null,
     valorSeguro: input.valorSeguro ?? 0,
-    valorDesconto: input.desconto ?? 0,
+    // Rateado em itens acima — zerar aqui evita dupla contagem em ICMSTot.vDesc.
+    valorDesconto: 0,
     outrasDespesas: input.outrasDespesas ?? 0,
-    itens: input.itens.map((linha) => ({
-      ...itemFromProduto(linha.produto, linha.quantidade, linha.precoUnitario, linha.desconto ?? 0),
-      produtoId: linha.produto.id
-    }))
+    itens
   };
+}
+
+function round2(v: number): number {
+  return Math.round((v + Number.EPSILON) * 100) / 100;
 }
 
 export type OrdemServicoFiscalInput = {
