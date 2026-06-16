@@ -145,10 +145,19 @@ export async function uploadFiscalCertificate(
     expiresOn = result.expiresOn ?? undefined;
   }
 
-  // Persiste apenas metadados (nunca o arquivo/senha).
-  await prisma.configuracaoFiscal.update({
+  // Persiste apenas metadados (nunca o arquivo/senha). Upsert: cria a config fiscal se a empresa
+  // ainda não tiver (ex.: certificado enviado antes de salvar o onboarding), já com o provedor ativo.
+  await prisma.configuracaoFiscal.upsert({
     where: { empresaId: scope.empresaId },
-    data: {
+    update: {
+      certificadoInfo: input.filename || "Certificado A1",
+      certificadoValidade: expiresOn ? new Date(expiresOn) : undefined
+    },
+    create: {
+      tenantId: scope.tenantId,
+      empresaId: scope.empresaId,
+      provedor: config.provider,
+      ambiente: config.ambiente,
       certificadoInfo: input.filename || "Certificado A1",
       certificadoValidade: expiresOn ? new Date(expiresOn) : undefined
     }

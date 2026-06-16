@@ -279,8 +279,10 @@ export async function getFiscalRuntimeConfig(scope: TenantScope) {
   // AMBIENTE. Empresas marcadas como INTERNO/MANUAL mantêm o provedor interno; as demais usam o
   // provedor ATIVO da plataforma. Env/config da empresa ficam só como fallback retrocompatível.
   const ambiente = config?.ambiente ?? "HOMOLOGACAO";
-  const provedorEmpresa = config?.provedor ?? "MANUAL";
   const provedorAtivo = await getProvedorFiscalAtivo();
+  // Empresa SEM config fiscal salva herda o provedor ATIVO da plataforma (ex.: ACBr) — antes caía em
+  // MANUAL e bloqueava certificado/emissão. Quem salvou explicitamente INTERNO/MANUAL mantém o interno.
+  const provedorEmpresa = config?.provedor ?? provedorAtivo;
   const provider = (provedorEmpresa === "INTERNO" || provedorEmpresa === "MANUAL" ? provedorEmpresa : provedorAtivo) as ProvedorFiscal;
   const usaPlataforma = provider !== "INTERNO" && provider !== "MANUAL";
   const isOauth = provedorCred(provider) === "oauth";
