@@ -1481,7 +1481,7 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
                     <td className="num">{formatBrl(costPrice)}</td>
                     <td className="num">{product.price}</td>
                     <td className="num margin-ok">{margin.toFixed(1)}%</td>
-                    <td className={`num ${product.status === "Crítico" ? "stock-warn" : ""}`}>{product.availableStock} un.</td>
+                    <td className={`num ${product.status === "Crítico" ? "stock-warn" : ""}`}>{product.availableStock} {product.unit || "un."}</td>
                     <td className="num">{product.minimumStock}</td>
                     <td><Pill tone={stockTone(product.status)}>{product.status}</Pill></td>
                     <td className="actions">
