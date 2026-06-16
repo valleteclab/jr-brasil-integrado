@@ -827,7 +827,7 @@ function ProdutoPickerMulti({ produtos, items, permiteVendaSemEstoque, onAdd, on
               {list.map((p) => {
                 const qty = qtyById.get(p.id) ?? 0;
                 return (
-                  <tr key={p.id} style={{ background: qty > 0 ? "rgba(255,193,7,.06)" : undefined }}>
+                  <tr key={p.id} style={{ cursor: "pointer", background: qty > 0 ? "rgba(255,193,7,.06)" : undefined }} onClick={() => tentarAdd(p)}>
                     <td className="mono bold">{p.sku}</td>
                     <td>
                       <div style={{ fontWeight: 600 }}>{p.nome}</div>
@@ -842,7 +842,8 @@ function ProdutoPickerMulti({ produtos, items, permiteVendaSemEstoque, onAdd, on
                     <td className="mono" style={{ color: "var(--erp-mute)", fontSize: 12 }}>{p.unidade}</td>
                     <td className="num bold" style={{ color: p.disponivel <= 0 ? "var(--erp-danger)" : p.disponivel <= 5 ? "var(--erp-warn)" : "var(--erp-success)" }}>{p.disponivel}</td>
                     <td className="num bold">{brl(p.preco)}</td>
-                    <td className="num">
+                    {/* Qtd: clique no input NÃO adiciona — só edita. Adicionar = Enter no input, "+ Add" ou clique no resto da linha. */}
+                    <td className="num" onClick={(e) => e.stopPropagation()}>
                       <input
                         inputMode="decimal"
                         placeholder="1"
@@ -853,7 +854,7 @@ function ProdutoPickerMulti({ produtos, items, permiteVendaSemEstoque, onAdd, on
                       />
                     </td>
                     <td className="num bold">{qty > 0 ? `${String(qty).replace(".", ",")}×` : "—"}</td>
-                    <td className="actions">
+                    <td className="actions" onClick={(e) => e.stopPropagation()}>
                       {qty > 0 && <button type="button" className="btn-erp ghost xs icon-only" aria-label="Remover" onClick={() => onRemove(p.id)}>✕</button>}
                       <button type="button" className="btn-erp primary xs" onClick={() => tentarAdd(p)}>+ Add</button>
                     </td>
