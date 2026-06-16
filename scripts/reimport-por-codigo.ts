@@ -76,11 +76,12 @@ async function main() {
   for (const [codigo, rows] of byCod) {
     const sku = codigo.toUpperCase();
     const r0 = rows[0];
-    const nome = base(r0.descricao) || r0.descricao;
+    const nomeBase = base(r0.descricao);             // forma usada na busca fiscal (= chave do mapa)
+    const nome = nomeBase.replace(/\s*-\s*$/, "").trim() || r0.descricao; // exibição (sem "-" pendurado)
     const saldo = Math.max(0, rows.reduce((a, r) => a + r.qtd, 0));
     const precoVenda = Math.max(...rows.map((r) => r.precoVenda), 0);
     const precoCusto = Math.max(...rows.map((r) => r.precoCusto), 0);
-    const fis = fiscalDe(nome);
+    const fis = fiscalDe(nomeBase);
 
     const existe = await prisma.produto.findUnique({ where: { tenantId_empresaId_sku: { tenantId: scope.tenantId, empresaId: scope.empresaId, sku } }, select: { id: true } });
     if (existe) { pulados++; continue; }
