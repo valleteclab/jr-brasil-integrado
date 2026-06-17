@@ -59,6 +59,39 @@ async function diagEmpresa(emp: { id: string; tenantId: string; razaoSocial: str
   });
   console.log("\nÚltimas 5 notas:", ultimas);
   const ultima = ultimas.find((n) => n.modelo === "NFE" && n.providerRef);
+
+  // Probe: endpoints alternativos do DANFE/empresa
+  if (ultima?.providerRef) {
+    const probes = [
+      `/nfe/${ultima.providerRef}/pdf`,
+      `/nfe/${ultima.providerRef}/danfe`,
+      `/nfe/${ultima.providerRef}/pdf?logotipo=true`,
+      `/nfe/${ultima.providerRef}/pdf?logo=true`
+    ];
+    for (const path of probes) {
+      const r = await fetch(`${baseUrl}${path}`, { headers: { ...auth } });
+      const len = r.headers.get("content-length") ?? "?";
+      console.log(`  ${path} → ${r.status} ${r.headers.get("content-type") ?? ""} len=${len}`);
+      if (!r.ok && r.status < 500) console.log(`    body: ${(await r.text()).slice(0, 200)}`);
+    }
+  }
+
+  // Probe: endpoints relacionados a logo da empresa
+  const empProbes = [
+    `/empresas/${cnpj}/logotipo`,
+    `/empresas/${cnpj}/danfe`,
+    `/empresas/${cnpj}/config`,
+    `/empresas/${cnpj}/config_danfe`,
+    `/empresas/${cnpj}/config_nfe`
+  ];
+  console.log("\nProbes empresa:");
+  for (const path of empProbes) {
+    const r = await fetch(`${baseUrl}${path}`, { headers: { ...auth, Accept: "application/json" } });
+    const ct = r.headers.get("content-type") ?? "";
+    const body = ct.includes("json") ? await r.text() : `<${ct}>`;
+    console.log(`  ${path} → ${r.status} ${ct}`);
+    if (r.ok && ct.includes("json")) console.log(`    ${body.slice(0, 300)}`);
+  }
   if (ultima?.providerRef) {
     const pdfRes = await fetch(`${baseUrl}/nfe/${ultima.providerRef}/pdf`, { headers: { ...auth, Accept: "application/pdf" } });
     console.log(`PDF status: ${pdfRes.status}`);
