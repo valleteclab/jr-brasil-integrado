@@ -3,27 +3,18 @@ import { AcbrFiscalProvider } from "../src/domains/fiscal/providers/acbr-provide
 import { getFiscalRuntimeConfig } from "../src/domains/fiscal/application/fiscal-config-use-cases";
 import type { ProviderContext } from "../src/domains/fiscal/providers/types";
 
-/**
- * Diagnóstico: consulta o cadastro da empresa na ACBr e mostra se a logo está lá.
- */
-async function main() {
-  const empresa = await prisma.empresa.findFirst({
-    select: { id: true, tenantId: true, razaoSocial: true, cnpj: true }
-  });
-  if (!empresa) throw new Error("Sem empresa cadastrada.");
+async function diagEmpresa(emp: { id: string; tenantId: string; razaoSocial: string; cnpj: string }) {
+  console.log("\n\n========================================");
+  console.log(`EMPRESA: ${emp.razaoSocial} (CNPJ ${emp.cnpj})`);
+  console.log("========================================");
 
   const localConfig = await prisma.configuracaoFiscal.findFirst({
-    where: { empresaId: empresa.id },
+    where: { empresaId: emp.id },
     select: { provedor: true, ambiente: true, logotipoInfo: true, certificadoInfo: true }
   });
+  console.log("Config local:", localConfig);
 
-  console.log("== Empresa ==");
-  console.log({ id: empresa.id, razao: empresa.razaoSocial, cnpj: empresa.cnpj });
-  console.log("== Config local ==");
-  console.log(localConfig);
-
-  const runtime = await getFiscalRuntimeConfig({ tenantId: empresa.tenantId, empresaId: empresa.id });
-
+  const runtime = await getFiscalRuntimeConfig({ tenantId: emp.tenantId, empresaId: emp.id });
   const ctx: ProviderContext = {
     ambiente: runtime.ambiente,
     provedor: runtime.provider,
@@ -40,71 +31,56 @@ async function main() {
   };
   const { baseUrl } = access.resolveConfig(ctx);
   const token = await access.getAccessToken(ctx);
-  console.log("\n== ACBr baseUrl ==", baseUrl);
+  const cnpj = emp.cnpj.replace(/\D/g, "");
+  const auth = { Authorization: `Bearer ${token}` };
 
-  const cnpj = empresa.cnpj.replace(/\D/g, "");
-
-  const empRes = await fetch(`${baseUrl}/empresas/${cnpj}`, {
-    headers: { Authorization: `Bearer ${token}`, Accept: "application/json" }
-  });
-  console.log("\n== GET /empresas/{cnpj} ==", empRes.status);
-  const empBody = await empRes.text();
-  try {
-    const parsed = JSON.parse(empBody);
-    console.log(JSON.stringify(parsed, null, 2));
-  } catch {
-    console.log(empBody.slice(0, 2000));
+  const empRes = await fetch(`${baseUrl}/empresas/${cnpj}`, { headers: { ...auth, Accept: "application/json" } });
+  console.log(`\nGET /empresas/${cnpj} → ${empRes.status}`);
+  if (empRes.ok) {
+    const j = JSON.parse(await empRes.text());
+    console.log("Campos config*:", Object.keys(j).filter((k) => k.startsWith("config_")));
   }
 
-  const logoRes = await fetch(`${baseUrl}/empresas/${cnpj}/logotipo`, {
-    headers: { Authorization: `Bearer ${token}`, Accept: "image/*,application/json" }
-  });
-  console.log("\n== GET /empresas/{cnpj}/logotipo ==", logoRes.status, logoRes.headers.get("content-type"));
-  if (!logoRes.ok) {
-    console.log(await logoRes.text().then((t) => t.slice(0, 800)));
-  } else {
+  const logoRes = await fetch(`${baseUrl}/empresas/${cnpj}/logotipo`, { headers: { ...auth, Accept: "image/*" } });
+  console.log(`GET /empresas/${cnpj}/logotipo → ${logoRes.status} ${logoRes.headers.get("content-type") ?? ""}`);
+  if (logoRes.ok) {
     const buf = Buffer.from(await logoRes.arrayBuffer());
-    console.log(`Bytes recebidos: ${buf.length}`);
+    console.log(`  Logo bytes: ${buf.length}`);
+  } else {
+    console.log("  Logo body:", (await logoRes.text()).slice(0, 200));
   }
 
-  // Última NF-e autorizada: baixa o PDF e checa se tem imagem embutida.
+  // Última NF-e autorizada DESTA empresa
   const ultima = await prisma.notaFiscal.findFirst({
-    where: { empresaId: empresa.id, modelo: "NFE", status: "AUTORIZADA", providerRef: { not: null } },
+    where: { empresaId: emp.id, modelo: "NFE", status: "AUTORIZADA", providerRef: { not: null } },
     orderBy: { criadoEm: "desc" },
-    select: { id: true, numero: true, providerRef: true, modelo: true, criadoEm: true }
+    select: { id: true, numero: true, providerRef: true, criadoEm: true }
   });
-  console.log("\n== Última NF-e autorizada ==", ultima);
+  console.log("\nÚltima NF-e autorizada:", ultima);
   if (ultima?.providerRef) {
-    const pdfRes = await fetch(`${baseUrl}/nfe/${ultima.providerRef}/pdf`, {
-      headers: { Authorization: `Bearer ${token}`, Accept: "application/pdf" }
-    });
+    const pdfRes = await fetch(`${baseUrl}/nfe/${ultima.providerRef}/pdf`, { headers: { ...auth, Accept: "application/pdf" } });
     console.log(`PDF status: ${pdfRes.status}`);
     if (pdfRes.ok) {
       const pdf = Buffer.from(await pdfRes.arrayBuffer());
-      console.log(`PDF bytes: ${pdf.length}`);
-      // Procura marcadores de imagem dentro do PDF.
       const pdfStr = pdf.toString("latin1");
       const imgCount = (pdfStr.match(/\/Subtype\s*\/Image/g) ?? []).length;
       const dctCount = (pdfStr.match(/\/DCTDecode/g) ?? []).length;
-      const flateCount = (pdfStr.match(/\/FlateDecode/g) ?? []).length;
-      console.log(`Imagens (/Subtype /Image): ${imgCount}`);
-      console.log(`Streams JPEG (/DCTDecode): ${dctCount}`);
-      console.log(`Streams FlateDecode: ${flateCount}`);
-      // Salva pro user inspecionar.
+      console.log(`  PDF bytes: ${pdf.length}, imagens embutidas: ${imgCount}, JPEG (DCT): ${dctCount}`);
       const fs = await import("node:fs");
-      fs.writeFileSync("/tmp/nfe-ultima.pdf", pdf);
-      console.log("PDF salvo em /tmp/nfe-ultima.pdf");
+      fs.writeFileSync(`/tmp/nfe-${cnpj}.pdf`, pdf);
+      console.log(`  PDF salvo em /tmp/nfe-${cnpj}.pdf`);
+    } else {
+      console.log("  PDF body:", (await pdfRes.text()).slice(0, 300));
     }
   }
+}
 
-  // Lista de endpoints/configs alternativos pra ver se existe DANFE config explícito.
-  console.log("\n== GET /empresas (lista, primeiras) ==");
-  const list = await fetch(`${baseUrl}/empresas?$top=2`, {
-    headers: { Authorization: `Bearer ${token}`, Accept: "application/json" }
+async function main() {
+  const empresas = await prisma.empresa.findMany({
+    select: { id: true, tenantId: true, razaoSocial: true, cnpj: true }
   });
-  console.log(`status ${list.status}, body:`);
-  console.log((await list.text()).slice(0, 1500));
-
+  console.log(`Empresas locais: ${empresas.length}`);
+  for (const e of empresas) await diagEmpresa(e);
   await prisma.$disconnect();
 }
 
