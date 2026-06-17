@@ -1,6 +1,7 @@
 import { getDevelopmentTenantScope, scopedByTenantCompany } from "@/lib/auth/dev-session";
 import { prisma } from "@/lib/db/prisma";
 import { formatBrl } from "@/lib/formatters/currency";
+import { getSession } from "@/lib/auth/session";
 import type { StatusPedido, ModeloFiscal, FinalidadeNfe, StatusNotaFiscal } from "@prisma/client";
 
 const MODELO_NOTA_LABEL: Record<ModeloFiscal, string> = { NFE: "NF-e", NFCE: "NFC-e", NFSE: "NFS-e" };
@@ -39,6 +40,8 @@ export type SaleSummary = {
   /** NF-e/NFC-e de venda autorizada (para atalho de PDF/XML direto na lista). */
   notaFiscalId: string | null;
   notaCanDownload: boolean;
+  /** Pedido ainda pode ser editado (estoque/itens). Clique na linha → /editar quando true. */
+  editavel: boolean;
 };
 
 export type SaleDetail = SaleSummary & {
@@ -94,6 +97,10 @@ export type SaleFormData = {
   produtos: Array<{ id: string; sku: string; nome: string; descricao: string | null; descricaoComercial: string | null; gtin: string | null; codigoOriginal: string | null; codigoFabricante: string | null; preco: number; disponivel: number; unidade: string }>;
   vendedores: Array<{ id: string; nome: string }>;
   formas: Array<{ id: string; nome: string; tipo: string }>;
+  /** Vendedor vinculado ao usuário logado (pelo nome). Criado on-the-fly se não existia. */
+  vendedorLogadoId: string | null;
+  /** Nome do usuário logado — mostrado na UI ("Vendedor: …"). */
+  vendedorLogadoNome: string | null;
   /** Empresa permite finalizar a venda direto no atendimento (sem caixa). Padrão false. */
   permiteVendaDiretaBalcao: boolean;
   /** Empresa aceita vender produto sem saldo (estoque negativo). Padrão false. */
@@ -175,7 +182,9 @@ export async function listSales(): Promise<SaleSummary[]> {
         canCancel: p.status !== "CANCELADO" && !temNota,
         temNotaAutorizada: temNota,
         notaFiscalId: notaVenda?.id ?? null,
-        notaCanDownload: Boolean(notaVenda?.providerRef)
+        notaCanDownload: Boolean(notaVenda?.providerRef),
+        // Edição reaproveita a regra de "ainda não saiu da casa": sem NF e em status mutável.
+        editavel: !temNota && ["RASCUNHO", "AGUARDANDO_PAGAMENTO", "AGUARDANDO_NOTA", "SEPARACAO"].includes(p.status)
       };
     });
   } catch (error) {
@@ -267,6 +276,7 @@ export async function getSaleDetail(id: string): Promise<SaleDetail | null> {
       temNotaAutorizada: temNota,
       notaFiscalId: notaVendaPrincipal?.id ?? null,
       notaCanDownload: Boolean(notaVendaPrincipal?.providerRef),
+      editavel: !temNota && ["RASCUNHO", "AGUARDANDO_PAGAMENTO", "AGUARDANDO_NOTA", "SEPARACAO"].includes(p.status),
       canReturn: temNotaVendaComChave && (p.status === "ENVIADO" || p.status === "ENTREGUE"),
       itens: p.itens.map((item) => {
         // Distribui o devolvido do produto pelas linhas, na ordem (cobre produto repetido).
@@ -367,6 +377,26 @@ export async function listSaleFormData(): Promise<SaleFormData> {
       })
     ]);
 
+    // Vendedor = usuário logado. Match por nome (Vendedor.nome == sessão.nome). Se não houver,
+    // cria um vendedor com esse nome (ativo, comissão 0) — pra próxima venda já estar no select.
+    const sessao = await getSession();
+    const nomeLogado = sessao?.nome?.trim() ?? null;
+    let vendedorLogadoId: string | null = null;
+    let vendedorLogadoNome: string | null = nomeLogado;
+    if (nomeLogado) {
+      const existente = vendedores.find((v) => v.nome.trim().toLowerCase() === nomeLogado.toLowerCase());
+      if (existente) {
+        vendedorLogadoId = existente.id;
+      } else {
+        const criado = await prisma.vendedor.create({
+          data: { tenantId: scope.tenantId, empresaId: scope.empresaId, nome: nomeLogado, email: sessao?.email ?? null, ativo: true }
+        });
+        vendedorLogadoId = criado.id;
+        vendedores.push({ id: criado.id, nome: criado.nome });
+        vendedores.sort((a, b) => a.nome.localeCompare(b.nome));
+      }
+    }
+
     return {
       clientes: clientes.map((c) => ({
         id: c.id,
@@ -394,6 +424,8 @@ export async function listSaleFormData(): Promise<SaleFormData> {
       }),
       vendedores,
       formas,
+      vendedorLogadoId,
+      vendedorLogadoNome,
       permiteVendaDiretaBalcao: Boolean(empresa?.permiteVendaDiretaBalcao),
       permiteVendaSemEstoque: Boolean(empresa?.permiteVendaSemEstoque)
     };

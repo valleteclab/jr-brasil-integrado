@@ -131,7 +131,8 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
   const [clienteId, setClienteId] = useState("");
   const [clienteModalAberto, setClienteModalAberto] = useState(false);
   const [novoClienteAberto, setNovoClienteAberto] = useState(false);
-  const [vendedorId, setVendedorId] = useState("");
+  // Default = vendedor do usuário logado (pode trocar manualmente no select).
+  const [vendedorId, setVendedorId] = useState(data.vendedorLogadoId ?? "");
   const [modeloProduto, setModeloProduto] = useState<"NFCE" | "NFE">("NFCE");
   /** Última credencial de admin validada (enviada no checkout p/ revalidação no servidor). */
   const [autorizacao, setAutorizacao] = useState<AutorizacaoAdmin | null>(null);
@@ -279,7 +280,7 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
     setCart([]);
     setQtdInputs({});
     setClienteId("");
-    setVendedorId("");
+    setVendedorId(data.vendedorLogadoId ?? "");
     setAutorizacao(null);
     setResultado(null);
     setError("");

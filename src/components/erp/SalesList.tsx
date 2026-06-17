@@ -174,8 +174,13 @@ export function SalesList({ sales, isAdmin = false }: Props) {
           </thead>
           <tbody>
             {filtered.map((row) => (
-              <tr key={row.id}>
-                <td>
+              <tr
+                key={row.id}
+                style={{ cursor: "pointer" }}
+                onClick={() => router.push(row.editavel ? `/erp/vendas/${row.id}/editar` : `/erp/vendas/${row.id}`)}
+                title={row.editavel ? "Abrir para edição" : "Abrir detalhes"}
+              >
+                <td onClick={(e) => e.stopPropagation()}>
                   <Link className="mono bold link-detalhe" href={`/erp/vendas/${row.id}`}>{row.numero}</Link>
                   {row.canal === "LOJA" && <span className="canal-loja" title="Pedido recebido pela loja virtual">🛒 Loja</span>}
                   {row.faturadoEm && (
@@ -202,7 +207,7 @@ export function SalesList({ sales, isAdmin = false }: Props) {
                     <small className="block-muted">Conf. {row.confirmadoEm}</small>
                   )}
                 </td>
-                <td className="actions">
+                <td className="actions" onClick={(e) => e.stopPropagation()}>
                   <a className="btn-erp ghost xs" href={`/api/erp/vendas/${row.id}/recibo?formato=a4`} target="_blank" rel="noopener noreferrer" title="Reimprimir recibo (A4)">🖨 Recibo</a>
                   {row.notaFiscalId && row.notaCanDownload && (
                     <>

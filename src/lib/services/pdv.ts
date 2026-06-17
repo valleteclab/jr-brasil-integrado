@@ -1,5 +1,6 @@
 import { getDevelopmentTenantScope, scopedByTenantCompany } from "@/lib/auth/dev-session";
 import { prisma } from "@/lib/db/prisma";
+import { getSession } from "@/lib/auth/session";
 import type { TipoNegocio } from "@/lib/auth/modules";
 
 export type PdvProduto = { id: string; sku: string; nome: string; descricao: string | null; descricaoComercial: string | null; gtin: string | null; codigoOriginal: string | null; codigoFabricante: string | null; preco: number; disponivel: number; unidade: string };
@@ -21,6 +22,8 @@ export type PdvData = {
   produtos: PdvProduto[];
   servicos: PdvServico[];
   vendedores: Array<{ id: string; nome: string }>;
+  /** Vendedor do usuário logado (pré-selecionado no PDV). Criado on-the-fly se faltar. */
+  vendedorLogadoId: string | null;
   /** Contas recebedoras (PIX/transferência) e maquininhas (cartão) para detalhar o recebimento. */
   contas: PdvContaRecebedora[];
   maquinas: PdvMaquinaCartao[];
@@ -108,6 +111,24 @@ export async function getPdvData(): Promise<PdvData> {
     }
   }
 
+  // Vendedor = usuário logado: match por nome. Cria se não existir, pra cair pré-selecionado.
+  const sessao = await getSession();
+  const nomeLogado = sessao?.nome?.trim() ?? null;
+  let vendedorLogadoId: string | null = null;
+  if (nomeLogado) {
+    const existente = vendedores.find((v) => v.nome.trim().toLowerCase() === nomeLogado.toLowerCase());
+    if (existente) {
+      vendedorLogadoId = existente.id;
+    } else {
+      const criado = await prisma.vendedor.create({
+        data: { tenantId: scope.tenantId, empresaId: scope.empresaId, nome: nomeLogado, email: sessao?.email ?? null, ativo: true }
+      });
+      vendedorLogadoId = criado.id;
+      vendedores.push({ id: criado.id, nome: criado.nome });
+      vendedores.sort((a, b) => a.nome.localeCompare(b.nome));
+    }
+  }
+
   return {
     tipoNegocio: empresa?.tipoNegocio ?? "AMBOS",
     lc116Padrao: config?.codigoServicoLc116Padrao || null,
@@ -122,6 +143,7 @@ export async function getPdvData(): Promise<PdvData> {
     produtos,
     servicos,
     vendedores,
+    vendedorLogadoId,
     contas,
     maquinas,
     formas
