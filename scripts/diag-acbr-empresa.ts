@@ -58,7 +58,7 @@ async function diagEmpresa(emp: { id: string; tenantId: string; razaoSocial: str
     select: { id: true, numero: true, modelo: true, status: true, providerRef: true, criadoEm: true, motivo: true }
   });
   console.log("\nÚltimas 5 notas:", ultimas);
-  const ultima = ultimas.find((n) => n.modelo === "NFE" && n.status === "AUTORIZADA" && n.providerRef);
+  const ultima = ultimas.find((n) => n.modelo === "NFE" && n.providerRef);
   if (ultima?.providerRef) {
     const pdfRes = await fetch(`${baseUrl}/nfe/${ultima.providerRef}/pdf`, { headers: { ...auth, Accept: "application/pdf" } });
     console.log(`PDF status: ${pdfRes.status}`);
