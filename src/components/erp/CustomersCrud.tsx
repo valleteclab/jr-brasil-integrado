@@ -37,6 +37,8 @@ type EnderecoForm = {
 
 type CustomerFormState = {
   id?: string;
+  /** Escolhido pelo usuário; define labels (Razão social vs Nome) e campos visíveis (fantasia/IE só PJ). */
+  tipoPessoa: "PJ" | "PF";
   razaoSocial: string;
   nomeFantasia: string;
   documento: string;
@@ -84,6 +86,7 @@ const emptyEndereco = (): EnderecoForm => ({
 });
 
 const emptyForm = (): CustomerFormState => ({
+  tipoPessoa: "PJ",
   razaoSocial: "",
   nomeFantasia: "",
   documento: "",
@@ -92,7 +95,8 @@ const emptyForm = (): CustomerFormState => ({
   limiteCredito: "0",
   condicaoPagamento: "",
   tabelaPrecoId: "",
-  status: "PENDENTE_APROVACAO",
+  // Cadastros novos já entram ATIVOS — vão direto pra venda. Bloqueio é manual depois.
+  status: "ATIVO",
   contatos: [emptyContato()],
   enderecos: [emptyEndereco()]
 });
@@ -248,6 +252,8 @@ export function CustomersCrud({ initialCustomers, tabelasPreco }: CustomersCrudP
 
       setForm({
         id: detail.id,
+        // Cliente existente: detecta PF/PJ pelo documento gravado (11 dígitos = CPF).
+        tipoPessoa: detail.documento.replace(/\D/g, "").length === 11 ? "PF" : "PJ",
         razaoSocial: detail.razaoSocial,
         nomeFantasia: detail.nomeFantasia ?? "",
         documento: detail.documento,
@@ -389,7 +395,7 @@ export function CustomersCrud({ initialCustomers, tabelasPreco }: CustomersCrudP
   // ---------------------------------------------------------------------------
 
   async function saveCustomer() {
-    const isPf = form.documento.replace(/\D/g, "").length === 11;
+    const isPf = form.tipoPessoa === "PF";
     if (!form.razaoSocial.trim()) {
       setError(isPf ? "Nome completo é obrigatório." : "Razão social é obrigatória.");
       setActiveTab("dados");
@@ -403,9 +409,10 @@ export function CustomersCrud({ initialCustomers, tabelasPreco }: CustomersCrudP
 
     const payload = {
       razaoSocial: form.razaoSocial.trim(),
-      nomeFantasia: form.nomeFantasia.trim() || null,
+      // PF não tem nome fantasia nem IE — força null no payload pra não persistir lixo de troca de PJ→PF.
+      nomeFantasia: isPf ? null : (form.nomeFantasia.trim() || null),
       documento: form.documento.trim(),
-      inscricaoEstadual: form.inscricaoEstadual.trim() || null,
+      inscricaoEstadual: isPf ? null : (form.inscricaoEstadual.trim() || null),
       segmento: form.segmento.trim() || null,
       limiteCredito: Number(form.limiteCredito) || 0,
       condicaoPagamento: form.condicaoPagamento.trim() || null,
@@ -534,17 +541,15 @@ export function CustomersCrud({ initialCustomers, tabelasPreco }: CustomersCrudP
 
   function renderTab() {
     if (activeTab === "dados") {
-      // Auto-detecta tipo de pessoa pelo documento (11 dígitos = CPF/PF, 14 = CNPJ/PJ).
-      // Letras no documento (CNPJ alfanumérico) caem em PJ por padrão.
-      const docDigitos = form.documento.replace(/\D/g, "");
-      const isPf = docDigitos.length === 11;
+      // O usuário escolhe PJ/PF no toggle. A escolha controla labels e visibilidade dos campos.
+      const isPf = form.tipoPessoa === "PF";
       return (
         <div className="erp-form">
           <div className="full" style={{ display: "flex", gap: 6, marginBottom: 4 }}>
-            <button type="button" className={`btn-erp ${!isPf ? "primary" : "ghost"} sm`} style={{ flex: 1 }} onClick={() => updateField("documento", form.documento.replace(/\D/g, "").slice(0, 14))}>
+            <button type="button" className={`btn-erp ${!isPf ? "primary" : "ghost"} sm`} style={{ flex: 1 }} onClick={() => updateField("tipoPessoa", "PJ")}>
               Pessoa Jurídica
             </button>
-            <button type="button" className={`btn-erp ${isPf ? "primary" : "ghost"} sm`} style={{ flex: 1 }} onClick={() => updateField("documento", form.documento.replace(/\D/g, "").slice(0, 11))}>
+            <button type="button" className={`btn-erp ${isPf ? "primary" : "ghost"} sm`} style={{ flex: 1 }} onClick={() => updateField("tipoPessoa", "PF")}>
               Pessoa Física
             </button>
           </div>
