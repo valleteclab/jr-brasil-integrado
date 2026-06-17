@@ -6,6 +6,7 @@ import { correspondeBusca } from "@/lib/search/normalize";
 import type { SaleFormData } from "@/lib/services/sales";
 import { useRealtime } from "@/lib/realtime/useRealtime";
 import { NovoClienteDrawer } from "./NovoClienteDrawer";
+import { AdminPasswordModal } from "./AdminPasswordModal";
 
 type Tipo = "VENDA_BALCAO" | "PEDIDO_FATURADO" | "ORCAMENTO" | "OS";
 type Produto = SaleFormData["produtos"][number];
@@ -63,6 +64,9 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO", allow
   const [descGlobal, setDescGlobal] = useState(0);
   const [frete, setFrete] = useState(0);
   const [obs, setObs] = useState("");
+  /** Senha de admin validada (vai junto no payload — o servidor revalida). Some quando muda o desconto. */
+  const [senhaAdmin, setSenhaAdmin] = useState<string>("");
+  const [adminModal, setAdminModal] = useState<{ motivo: string; onOk: (senha: string) => void } | null>(null);
   // Vendedor = usuário logado (resolvido no servidor). Fica fixo na UI; sem seleção manual.
   const vendedor = data.vendedorLogadoNome ?? "";
   // Condição de pagamento foi removida do fluxo de venda — não faz sentido p/ o usuário hoje.
@@ -98,6 +102,22 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO", allow
   const subtotal = subtotalItens + subtotalServ;
   const descontoVal = subtotal * (descGlobal / 100);
   const total = Math.max(subtotal - descontoVal + (isVendaPedido ? Number(frete) || 0 : 0), 0);
+
+  // Desconto % efetivo sobre o bruto (itens × qtd × preço + serviços), sem descontar nada.
+  // Se passa do limite da empresa, exige senha de admin antes de finalizar.
+  const subtotalBruto = items.reduce((s, it) => s + it.quantidade * it.preco, 0) + subtotalServ;
+  const descontoPctEfetivo = subtotalBruto > 0 ? ((subtotalBruto - (subtotal - descontoVal)) / subtotalBruto) * 100 : 0;
+  const limiteDescSemAuth = Number(data.descontoSemAutorizacaoPct ?? 0);
+  const precisaAdmin = descontoPctEfetivo > limiteDescSemAuth + 0.01;
+
+  /** Roda a ação se desconto está dentro do limite; senão abre o modal de admin antes. */
+  function comAdmin(action: () => void) {
+    if (!precisaAdmin || senhaAdmin) { action(); return; }
+    setAdminModal({
+      motivo: `Desconto de ${descontoPctEfetivo.toFixed(2)}% acima do limite (${limiteDescSemAuth.toFixed(2)}%). Informe a senha de um administrador.`,
+      onOk: (s) => { setSenhaAdmin(s); setAdminModal(null); action(); }
+    });
+  }
 
   // Adiciona/incrementa um produto SEM fechar o seletor — permite adicionar vários itens seguidos.
   // Aceita quantidade fracionada do picker (default 1).
@@ -148,7 +168,8 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO", allow
       body: JSON.stringify({
         clienteId: cliente?.id ?? null, canal: "BALCAO", statusInicial,
         itens: itensPayload, desconto: descontoVal, frete: Number(frete) || 0,
-        formaPagamento: pagamento, condicaoPagamento: condicao, observacoes: obs
+        formaPagamento: pagamento, condicaoPagamento: condicao, observacoes: obs,
+        senhaAdmin: senhaAdmin || undefined
       })
     });
     const p = await res.json();
@@ -222,7 +243,8 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO", allow
           desconto: descontoVal, frete: Number(frete) || 0,
           formaPagamento: pagamento, condicaoPagamento: condicao, observacoes: obs,
           modelo: isRecibo ? "NFCE" : modelo,
-          emitirFiscal: !isRecibo
+          emitirFiscal: !isRecibo,
+          senhaAdmin: senhaAdmin || undefined
         })
       });
       const p = await res.json();
@@ -270,7 +292,7 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO", allow
       if (isOrcamento) {
         const res = await fetch("/api/erp/orcamentos", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ clienteId: cliente.id, itens: itensPayload, validadeDias, desconto: descontoVal, vendedor, condicaoPagamento: condicao, observacaoVendedor: obs })
+          body: JSON.stringify({ clienteId: cliente.id, itens: itensPayload, validadeDias, desconto: descontoVal, vendedor, condicaoPagamento: condicao, observacaoVendedor: obs, senhaAdmin: senhaAdmin || undefined })
         });
         const p = await res.json();
         if (!res.ok) throw new Error(p.error || "Falha ao criar orçamento.");
@@ -292,7 +314,7 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO", allow
       } else {
         const res = await fetch("/api/erp/vendas", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ clienteId: cliente.id, canal: tipo === "VENDA_BALCAO" ? "BALCAO" : "FATURADO", itens: itensPayload, desconto: descontoVal, frete: Number(frete) || 0, formaPagamento: pagamento, condicaoPagamento: condicao, observacoes: obs })
+          body: JSON.stringify({ clienteId: cliente.id, canal: tipo === "VENDA_BALCAO" ? "BALCAO" : "FATURADO", itens: itensPayload, desconto: descontoVal, frete: Number(frete) || 0, formaPagamento: pagamento, condicaoPagamento: condicao, observacoes: obs, senhaAdmin: senhaAdmin || undefined })
         });
         const p = await res.json();
         if (!res.ok) throw new Error(p.error || "Falha ao concluir a venda.");
@@ -436,7 +458,7 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO", allow
                             />
                           </td>
                           <td className="num bold">{brl(it.preco)}</td>
-                          <td className="num"><input type="number" min={0} max={100} value={it.desconto} onChange={(e) => updItem(it.produto.id, { desconto: Math.min(100, Math.max(0, Number(e.target.value) || 0)) })} style={cellNum} /></td>
+                          <td className="num"><input type="number" min={0} max={100} value={it.desconto} onChange={(e) => { setSenhaAdmin(""); updItem(it.produto.id, { desconto: Math.min(100, Math.max(0, Number(e.target.value) || 0)) }); }} style={cellNum} /></td>
                           <td className="num bold">{brl(sub)}</td>
                           <td className="actions"><button type="button" className="btn-erp ghost xs icon-only" onClick={() => { setQtdInputs((s) => { const n = { ...s }; delete n[it.produto.id]; return n; }); rmItem(it.produto.id); }}>✕</button></td>
                         </tr>
@@ -468,7 +490,7 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO", allow
               <div className="atend-total-row">
                 <span>Desconto global</span>
                 <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                  <input className="pct-input" type="number" min={0} max={100} value={descGlobal} onChange={(e) => setDescGlobal(Math.min(100, Math.max(0, Number(e.target.value) || 0)))} /> %
+                  <input className="pct-input" type="number" min={0} max={100} value={descGlobal} onChange={(e) => { setSenhaAdmin(""); setDescGlobal(Math.min(100, Math.max(0, Number(e.target.value) || 0))); }} /> %
                   <span style={{ minWidth: 70, textAlign: "right", color: "var(--erp-danger)", fontWeight: 600 }}>{descontoVal > 0 ? `-${brl(descontoVal)}` : "—"}</span>
                 </span>
               </div>
@@ -518,22 +540,22 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO", allow
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {tipo === "VENDA_BALCAO" ? (
               <>
-                <button type="button" className="btn-erp primary lg" disabled={!canFinalize || saving} onClick={enviarParaCaixa}>
+                <button type="button" className="btn-erp primary lg" disabled={!canFinalize || saving} onClick={() => comAdmin(enviarParaCaixa)}>
                   {saving ? "Processando…" : `Enviar para o caixa · ${brl(total)}`}
                 </button>
                 {/* Finalizar direto (sem caixa) só quando a empresa habilita nas configurações. */}
                 {data.permiteVendaDiretaBalcao && (
                   <>
                     <div style={{ display: "flex", gap: 8 }}>
-                      <button type="button" className="btn-erp ghost sm" style={{ flex: 1 }} disabled={!canFinalize || saving} onClick={() => finalizeBalcao("NFCE")}>
+                      <button type="button" className="btn-erp ghost sm" style={{ flex: 1 }} disabled={!canFinalize || saving} onClick={() => comAdmin(() => finalizeBalcao("NFCE"))}>
                         Finalizar direto + NFC-e
                       </button>
-                      <button type="button" className="btn-erp ghost sm" style={{ flex: 1 }} disabled={!cliente || !canFinalize || saving} onClick={() => finalizeBalcao("NFE")}>
+                      <button type="button" className="btn-erp ghost sm" style={{ flex: 1 }} disabled={!cliente || !canFinalize || saving} onClick={() => comAdmin(() => finalizeBalcao("NFE"))}>
                         + NF-e
                       </button>
                     </div>
                     {data.permiteVendaNaoFiscal && (
-                      <button type="button" className="btn-erp ghost sm" style={{ width: "100%" }} disabled={!canFinalize || saving} onClick={() => finalizeBalcao("RECIBO")} title="Finalizar a venda só com recibo (sem NF). Estoque e financeiro rodam normalmente.">
+                      <button type="button" className="btn-erp ghost sm" style={{ width: "100%" }} disabled={!canFinalize || saving} onClick={() => comAdmin(() => finalizeBalcao("RECIBO"))} title="Finalizar a venda só com recibo (sem NF). Estoque e financeiro rodam normalmente.">
                         Finalizar (só recibo, não fiscal)
                       </button>
                     )}
@@ -541,12 +563,12 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO", allow
                 )}
               </>
             ) : (
-              <button type="button" className="btn-erp primary lg" disabled={!cliente || !canFinalize || saving} onClick={finalize}>{saving ? "Processando…" : acaoLabel}</button>
+              <button type="button" className="btn-erp primary lg" disabled={!cliente || !canFinalize || saving} onClick={() => comAdmin(finalize)}>{saving ? "Processando…" : acaoLabel}</button>
             )}
             {isVendaPedido && (
               <div style={{ display: "flex", gap: 8 }}>
-                <button type="button" className="btn-erp ghost sm" style={{ flex: 1 }} disabled={!canFinalize || saving} onClick={imprimirRecibo} title="Cria a pré-venda e imprime o recibo para o cliente levar ao caixa">🖨 Imprimir recibo</button>
-                <button type="button" className="btn-erp ghost sm" style={{ flex: 1 }} disabled={!canFinalize || saving} onClick={salvarRascunho}>Salvar rascunho</button>
+                <button type="button" className="btn-erp ghost sm" style={{ flex: 1 }} disabled={!canFinalize || saving} onClick={() => comAdmin(imprimirRecibo)} title="Cria a pré-venda e imprime o recibo para o cliente levar ao caixa">🖨 Imprimir recibo</button>
+                <button type="button" className="btn-erp ghost sm" style={{ flex: 1 }} disabled={!canFinalize || saving} onClick={() => comAdmin(salvarRascunho)}>Salvar rascunho</button>
               </div>
             )}
           </div>
@@ -572,6 +594,11 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO", allow
       {/* NOVO CLIENTE (PJ/PF com busca por CNPJ/CEP) */}
       {showNovoCli && (
         <NovoClienteDrawer onClose={() => setShowNovoCli(false)} onCreated={onClienteCriado} />
+      )}
+
+      {/* AUTORIZAÇÃO DE ADMIN — quando o desconto efetivo passa do limite da empresa. */}
+      {adminModal && (
+        <AdminPasswordModal motivo={adminModal.motivo} onAutorizado={(s) => adminModal.onOk(s)} onClose={() => setAdminModal(null)} />
       )}
 
       {/* PRODUTO PICKER — adiciona vários sem fechar */}

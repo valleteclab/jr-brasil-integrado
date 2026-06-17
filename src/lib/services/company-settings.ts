@@ -32,6 +32,7 @@ export type CompanySettings = {
   permiteVendaSemEstoque: boolean;
   permiteVendaDiretaBalcao: boolean;
   permiteVendaNaoFiscal: boolean;
+  descontoSemAutorizacaoPct: number;
   enderecoLogradouro: string;
   enderecoNumero: string;
   enderecoComplemento: string;
@@ -114,6 +115,7 @@ function toSettings(empresa: Awaited<ReturnType<typeof prisma.empresa.findUnique
     permiteVendaSemEstoque: empresa.permiteVendaSemEstoque,
     permiteVendaDiretaBalcao: empresa.permiteVendaDiretaBalcao,
     permiteVendaNaoFiscal: empresa.permiteVendaNaoFiscal,
+    descontoSemAutorizacaoPct: Number(empresa.descontoSemAutorizacaoPct ?? 0),
     enderecoLogradouro: empresa.enderecoLogradouro ?? "",
     enderecoNumero: empresa.enderecoNumero ?? "",
     enderecoComplemento: empresa.enderecoComplemento ?? "",
@@ -170,6 +172,7 @@ export async function saveCompanySettings(
         permiteVendaSemEstoque: Boolean(input.permiteVendaSemEstoque),
         permiteVendaDiretaBalcao: Boolean(input.permiteVendaDiretaBalcao),
         permiteVendaNaoFiscal: Boolean(input.permiteVendaNaoFiscal),
+        descontoSemAutorizacaoPct: Math.max(0, Math.min(100, Number(input.descontoSemAutorizacaoPct) || 0)),
         enderecoLogradouro: optional(input.enderecoLogradouro),
         enderecoNumero: optional(input.enderecoNumero),
         enderecoComplemento: optional(input.enderecoComplemento),

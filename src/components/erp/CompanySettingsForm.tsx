@@ -230,6 +230,22 @@ export function CompanySettingsForm({ initialSettings }: Props) {
               </span>
             </label>
 
+            <label className="span-2">
+              Desconto sem autorização (%)
+              <input
+                type="number"
+                min={0}
+                max={100}
+                step="0.01"
+                value={form.descontoSemAutorizacaoPct}
+                onChange={(event) => update("descontoSemAutorizacaoPct", Math.max(0, Math.min(100, Number(event.target.value) || 0)))}
+                style={{ maxWidth: 140 }}
+              />
+              <span className="field-hint" style={{ color: "var(--muted)", fontSize: 12 }}>
+                Vendedor pode aplicar até este % de desconto (por item ou global) sem pedir senha de admin. Padrão 0 = todo desconto exige senha de um administrador.
+              </span>
+            </label>
+
             <p className="span-2 field-hint" style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
               <strong>PDV recomendado:</strong> {PDV_RECOMENDADO[form.tipoNegocio] ?? PDV_RECOMENDADO.AMBOS}
               {form.tipoNegocio === "SERVICO" && " O menu oculta compras, estoque e notas de entrada."}

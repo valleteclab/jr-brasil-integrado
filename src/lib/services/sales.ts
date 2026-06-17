@@ -107,6 +107,8 @@ export type SaleFormData = {
   permiteVendaSemEstoque: boolean;
   /** Empresa permite fechar a venda só com RECIBO (sem NF-e/NFC-e). Padrão false. */
   permiteVendaNaoFiscal: boolean;
+  /** % de desconto que o vendedor pode aplicar sem senha de admin (0 = sempre exige). */
+  descontoSemAutorizacaoPct: number;
 };
 
 function statusLabel(status: StatusPedido): string {
@@ -342,7 +344,7 @@ export async function listSaleFormData(): Promise<SaleFormData> {
     const scope = await getDevelopmentTenantScope();
 
     const [empresa, clientes, produtos, vendedores, formas] = await Promise.all([
-      prisma.empresa.findUnique({ where: { id: scope.empresaId }, select: { permiteVendaDiretaBalcao: true, permiteVendaSemEstoque: true, permiteVendaNaoFiscal: true } }),
+      prisma.empresa.findUnique({ where: { id: scope.empresaId }, select: { permiteVendaDiretaBalcao: true, permiteVendaSemEstoque: true, permiteVendaNaoFiscal: true, descontoSemAutorizacaoPct: true } }),
       prisma.cliente.findMany({
         where: { ...scopedByTenantCompany(scope), status: "ATIVO" },
         select: { id: true, razaoSocial: true, nomeFantasia: true, documento: true },
@@ -430,7 +432,8 @@ export async function listSaleFormData(): Promise<SaleFormData> {
       vendedorLogadoNome,
       permiteVendaDiretaBalcao: Boolean(empresa?.permiteVendaDiretaBalcao),
       permiteVendaSemEstoque: Boolean(empresa?.permiteVendaSemEstoque),
-      permiteVendaNaoFiscal: Boolean(empresa?.permiteVendaNaoFiscal)
+      permiteVendaNaoFiscal: Boolean(empresa?.permiteVendaNaoFiscal),
+      descontoSemAutorizacaoPct: Number(empresa?.descontoSemAutorizacaoPct ?? 0)
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : "erro desconhecido";

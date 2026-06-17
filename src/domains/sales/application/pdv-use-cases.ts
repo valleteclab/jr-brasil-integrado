@@ -3,7 +3,7 @@ import type { TenantScope } from "@/lib/auth/dev-session";
 import { scopedByTenantCompany } from "@/lib/auth/dev-session";
 import { createAuditLog } from "@/lib/audit/audit-service";
 import { gerarParcelas, rotuloParcela } from "@/lib/finance/condicao-pagamento";
-import { validarCredencialAdmin, type CredencialAdmin } from "@/lib/auth/admin-credential";
+import { validarSenhaAdmin } from "@/lib/auth/admin-credential";
 import { checkoutSale } from "./sale-use-cases";
 import { criarRetiradaExpedicao } from "./expedicao-use-cases";
 import { emitServiceInvoiceAvulsa } from "@/domains/fiscal/application/standalone-emission-use-cases";
@@ -28,8 +28,10 @@ export type PdvCheckoutInput = {
   pagamentos: PagamentoDetalhado[];
   /** Condição do crediário ("30", "30/60/90"...) quando há forma CREDIARIO. Padrão: 30 dias. */
   condicaoCrediario?: string | null;
-  /** Credencial de um administrador — obrigatória quando há desconto em itens. */
-  autorizacaoAdmin?: CredencialAdmin | null;
+  /** Desconto global em R$ (rateado nos itens pelo document-builder antes de emitir). */
+  descontoGlobal?: number;
+  /** Senha de um administrador (qualquer admin do tenant). Exigida quando o desconto efetivo > limite. */
+  senhaAdmin?: string;
   /** Gera recibo de retirada na expedição (exige módulo habilitado e venda com produtos). */
   retiradaExpedicao?: boolean;
 };
@@ -108,30 +110,40 @@ export async function pdvCheckout(scope: TenantScope, input: PdvCheckoutInput): 
     throw new Error("A NFS-e dos serviços exige um cliente identificado.");
   }
 
-  // Desconto por item: só com autorização de um administrador (validada AQUI, no servidor —
-  // a senha pedida na tela é pré-checagem de UX). Auditado com quem autorizou.
-  const descontoTotal = round2(input.produtos.reduce((s, p) => s + Math.max(0, Number(p.desconto) || 0), 0));
+  // Desconto: % efetivo (item + global) versus limite da empresa.
+  // Acima do limite, exige senha de um admin (validada AQUI no servidor — UI pré-valida pra UX).
+  for (const p of input.produtos) {
+    const desconto = Math.max(0, Number(p.desconto) || 0);
+    if (desconto > p.precoUnitario * p.quantidade) {
+      throw new Error("Desconto de um item não pode ser maior que o valor do item.");
+    }
+  }
+  const descontoItens = round2(input.produtos.reduce((s, p) => s + Math.max(0, Number(p.desconto) || 0), 0));
+  const descontoGlobal = round2(Math.max(0, Number(input.descontoGlobal) || 0));
+  const subtotalBruto = round2(input.produtos.reduce((s, p) => s + p.precoUnitario * p.quantidade, 0)
+    + input.servicos.reduce((s, v) => s + v.valor, 0));
+  const descontoTotal = round2(descontoItens + descontoGlobal);
+  const descontoPctEfetivo = subtotalBruto > 0 ? (descontoTotal / subtotalBruto) * 100 : 0;
+  const empresaCfg = await prisma.empresa.findUnique({
+    where: { id: scope.empresaId },
+    select: { descontoSemAutorizacaoPct: true }
+  });
+  const limiteSemAuth = Number(empresaCfg?.descontoSemAutorizacaoPct ?? 0);
   let autorizadoPor: { usuarioId: string; nome: string } | null = null;
-  if (descontoTotal > 0) {
-    for (const p of input.produtos) {
-      const desconto = Math.max(0, Number(p.desconto) || 0);
-      if (desconto > p.precoUnitario * p.quantidade) {
-        throw new Error("Desconto de um item não pode ser maior que o valor do item.");
-      }
+  if (descontoPctEfetivo > limiteSemAuth + 0.01) {
+    if (!input.senhaAdmin?.trim()) {
+      throw new Error(`Desconto de ${descontoPctEfetivo.toFixed(2)}% acima do limite (${limiteSemAuth.toFixed(2)}%). Exige senha de administrador.`);
     }
-    if (!input.autorizacaoAdmin) {
-      throw new Error("Desconto em itens exige autorização de um administrador (e-mail e senha).");
-    }
-    autorizadoPor = await validarCredencialAdmin(scope, input.autorizacaoAdmin);
+    autorizadoPor = await validarSenhaAdmin(scope, input.senhaAdmin);
   }
 
-  // Total que o cliente paga = soma dos produtos (líquidos de desconto) + serviços.
+  // Total que o cliente paga = soma dos produtos (líquidos de desconto de linha) + serviços − desconto global.
   const totalProdutos = input.produtos.reduce(
     (s, p) => s + p.precoUnitario * p.quantidade - Math.max(0, Number(p.desconto) || 0),
     0
   );
   const totalServicos = input.servicos.reduce((s, v) => s + v.valor, 0);
-  const total = round2(totalProdutos + totalServicos);
+  const total = round2(Math.max(0, totalProdutos + totalServicos - descontoGlobal));
   const pagamentos = (input.pagamentos ?? []).filter((p) => Number(p.valor) > 0);
   const somaPago = round2(pagamentos.reduce((s, p) => s + Number(p.valor), 0));
   if (somaPago + 0.0001 < total) {
@@ -174,6 +186,7 @@ export async function pdvCheckout(scope: TenantScope, input: PdvCheckoutInput): 
           canal: "PDV",
           formaPagamento: formaResumo || undefined,
           condicaoPagamento: valorCrediario > 0 ? (input.condicaoCrediario ?? "30") : undefined,
+          desconto: descontoGlobal,
           itens: input.produtos.map((p) => ({
             produtoId: p.produtoId,
             quantidade: p.quantidade,
@@ -198,6 +211,10 @@ export async function pdvCheckout(scope: TenantScope, input: PdvCheckoutInput): 
             payload: {
               autorizadoPor: admin.nome,
               descontoTotal,
+              descontoItens,
+              descontoGlobal,
+              descontoPctEfetivo: Number(descontoPctEfetivo.toFixed(2)),
+              limiteSemAuth,
               itens: input.produtos
                 .filter((p) => (Number(p.desconto) || 0) > 0)
                 .map((p) => ({ produtoId: p.produtoId, desconto: Number(p.desconto) }))

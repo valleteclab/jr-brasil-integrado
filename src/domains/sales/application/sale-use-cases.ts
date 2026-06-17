@@ -14,6 +14,7 @@ import {
 import { buildDocumentFromPedido, type ClienteLike } from "@/domains/fiscal/document-builder";
 import { emitFiscalDocument, previewFiscalDocument } from "@/domains/fiscal/application/fiscal-emission-use-cases";
 import { gerarParcelas, rotuloParcela } from "@/lib/finance/condicao-pagamento";
+import { validarSenhaAdmin } from "@/lib/auth/admin-credential";
 import { criarComissaoVenda, cancelarComissaoPedido } from "./comissao-use-cases";
 import { publishRealtime } from "@/lib/realtime/broker";
 
@@ -37,6 +38,8 @@ export type CreateSaleInput = {
   frete?: number;
   /** Reservar estoque na criação (padrão true). A loja cria pedidos a aprovar sem reservar. */
   reservarEstoque?: boolean;
+  /** Senha de admin para autorizar desconto acima do limite da empresa. */
+  senhaAdmin?: string;
   itens: Array<{
     produtoId: string;
     quantidade: number;
@@ -47,6 +50,28 @@ export type CreateSaleInput = {
 
 export async function createSale(scope: TenantScope, input: CreateSaleInput) {
   if (!input.itens || input.itens.length === 0) throw new Error("Pedido deve ter ao menos um item.");
+
+  // Guard: desconto acima do limite da empresa exige senha de admin (qualquer admin do tenant).
+  // Calcula o % efetivo sobre o subtotal bruto (preço × qtd) somando desconto de linha + global.
+  const subtotalBruto = input.itens.reduce((s, i) => s + i.quantidade * i.precoUnitario, 0);
+  const descontoItens = input.itens.reduce((s, i) => s + Math.max(0, i.desconto ?? 0), 0);
+  const descontoGlobalIn = Math.max(0, input.desconto ?? 0);
+  const descontoTotalAuth = descontoItens + descontoGlobalIn;
+  const descontoPctAuth = subtotalBruto > 0 ? (descontoTotalAuth / subtotalBruto) * 100 : 0;
+  let autorizadoPorVenda: { usuarioId: string; nome: string } | null = null;
+  if (descontoTotalAuth > 0) {
+    const empresaAuth = await prisma.empresa.findUnique({
+      where: { id: scope.empresaId },
+      select: { descontoSemAutorizacaoPct: true }
+    });
+    const limite = Number(empresaAuth?.descontoSemAutorizacaoPct ?? 0);
+    if (descontoPctAuth > limite + 0.01) {
+      if (!input.senhaAdmin?.trim()) {
+        throw new Error(`Desconto de ${descontoPctAuth.toFixed(2)}% acima do limite (${limite.toFixed(2)}%). Exige senha de administrador.`);
+      }
+      autorizadoPorVenda = await validarSenhaAdmin(scope, input.senhaAdmin);
+    }
+  }
 
   const pedidoCriado = await runInTransaction(async (tx) => {
     const numero = await nextDocumentNumber(tx, scope, "PV", tx.pedidoVenda);
@@ -149,6 +174,23 @@ export async function createSale(scope: TenantScope, input: CreateSaleInput) {
       acao: "CREATE",
       payload: { numero, clienteId: input.clienteId, total, itens: itensMapped.length }
     });
+
+    if (autorizadoPorVenda) {
+      await createAuditLog(tx, {
+        scope,
+        entidade: "PedidoVenda",
+        entidadeId: pedido.id,
+        acao: "DESCONTO_AUTORIZADO",
+        usuarioId: autorizadoPorVenda.usuarioId,
+        payload: {
+          autorizadoPor: autorizadoPorVenda.nome,
+          descontoItens,
+          descontoGlobal: descontoGlobalIn,
+          descontoTotal: descontoTotalAuth,
+          descontoPctEfetivo: Number(descontoPctAuth.toFixed(2))
+        }
+      });
+    }
 
     return pedido;
   }, TX_OPTIONS);
@@ -255,6 +297,8 @@ export type EditSaleInput = {
   vendedorId?: string | null;
   desconto?: number;
   frete?: number;
+  /** Senha de admin para autorizar desconto acima do limite da empresa. */
+  senhaAdmin?: string;
   itens: Array<{
     produtoId: string;
     quantidade: number;
@@ -311,6 +355,28 @@ export async function setSaleCliente(scope: TenantScope, id: string, clienteId: 
 
 export async function editConfirmedSale(scope: TenantScope, id: string, input: EditSaleInput) {
   if (!input.itens || input.itens.length === 0) throw new Error("Pedido deve ter ao menos um item.");
+
+  // Mesmo guard de desconto que createSale: se o efetivo (item + global) excede o limite
+  // da empresa, exige senha de admin. Validação fora de tx (bcrypt é caro).
+  const _subtotalBrutoEdit = input.itens.reduce((s, i) => s + i.quantidade * i.precoUnitario, 0);
+  const _descontoItensEdit = input.itens.reduce((s, i) => s + Math.max(0, i.desconto ?? 0), 0);
+  const _descontoGlobalEdit = Math.max(0, input.desconto ?? 0);
+  const _descontoTotalEdit = _descontoItensEdit + _descontoGlobalEdit;
+  const _descontoPctEdit = _subtotalBrutoEdit > 0 ? (_descontoTotalEdit / _subtotalBrutoEdit) * 100 : 0;
+  let autorizadoPorEdit: { usuarioId: string; nome: string } | null = null;
+  if (_descontoTotalEdit > 0) {
+    const empresaAuth = await prisma.empresa.findUnique({
+      where: { id: scope.empresaId },
+      select: { descontoSemAutorizacaoPct: true }
+    });
+    const limite = Number(empresaAuth?.descontoSemAutorizacaoPct ?? 0);
+    if (_descontoPctEdit > limite + 0.01) {
+      if (!input.senhaAdmin?.trim()) {
+        throw new Error(`Desconto de ${_descontoPctEdit.toFixed(2)}% acima do limite (${limite.toFixed(2)}%). Exige senha de administrador.`);
+      }
+      autorizadoPorEdit = await validarSenhaAdmin(scope, input.senhaAdmin);
+    }
+  }
 
   const pedido = await prisma.pedidoVenda.findFirst({
     where: { id, ...scopedByTenantCompany(scope) },
@@ -520,6 +586,23 @@ export async function editConfirmedSale(scope: TenantScope, id: string, input: E
       acao: "EDIT",
       payload: { numero: pedido.numero, total, itens: itensMapped.length }
     });
+
+    if (autorizadoPorEdit) {
+      await createAuditLog(tx, {
+        scope,
+        entidade: "PedidoVenda",
+        entidadeId: id,
+        acao: "DESCONTO_AUTORIZADO",
+        usuarioId: autorizadoPorEdit.usuarioId,
+        payload: {
+          autorizadoPor: autorizadoPorEdit.nome,
+          descontoItens: _descontoItensEdit,
+          descontoGlobal: _descontoGlobalEdit,
+          descontoTotal: _descontoTotalEdit,
+          descontoPctEfetivo: Number(_descontoPctEdit.toFixed(2))
+        }
+      });
+    }
 
     return updated;
   }, TX_OPTIONS);

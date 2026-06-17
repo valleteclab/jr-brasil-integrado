@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { PdvData, PdvProduto, PdvServico, PdvCliente, PdvContaRecebedora, PdvMaquinaCartao } from "@/lib/services/pdv";
 import { correspondeBusca } from "@/lib/search/normalize";
+import { AdminPasswordModal } from "./AdminPasswordModal";
 
 type CartItem = {
   key: string;
@@ -14,15 +15,13 @@ type CartItem = {
   qtd: number;
   /** Unidade de medida do produto (UN/KG/M/L…) — só p/ exibir na linha. */
   unidade?: string;
-  /** Desconto em R$ da LINHA (total = preço × qtd − desconto). Exige autorização de admin. */
-  desconto: number;
+  /** Desconto em % da LINHA. Total da linha = preço × qtd × (1 − descontoPct/100). */
+  descontoPct: number;
   /** Saldo disponível do produto no momento (para validar venda sem estoque). */
   disponivel?: number;
   codigoServicoLc116?: string | null;
   codigoNbs?: string | null;
 };
-
-type AutorizacaoAdmin = { email: string; senha: string; nome: string };
 
 type NotaResultado = {
   tipo: "PRODUTOS" | "SERVICOS";
@@ -135,9 +134,13 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
   const [vendedorId, setVendedorId] = useState(data.vendedorLogadoId ?? "");
   // RECIBO = venda não fiscal (só recibo HTML). Só disponível se a empresa permitir.
   const [modeloProduto, setModeloProduto] = useState<"NFCE" | "NFE" | "RECIBO">("NFCE");
-  /** Última credencial de admin validada (enviada no checkout p/ revalidação no servidor). */
-  const [autorizacao, setAutorizacao] = useState<AutorizacaoAdmin | null>(null);
+  /** Senha de admin validada (vai junto no checkout — o servidor revalida). */
+  const [senhaAdmin, setSenhaAdmin] = useState<string>("");
+  /** Desconto global em % da venda (igual ao atendimento). */
+  const [descGlobalPct, setDescGlobalPct] = useState(0);
+  /** Modal "Aplicar desconto no item" (X) ou modal de senha admin (objeto). */
   const [descontoItem, setDescontoItem] = useState<CartItem | null>(null);
+  const [adminModal, setAdminModal] = useState<{ motivo: string; onOk: (senha: string) => void } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [aviso, setAviso] = useState("");
@@ -161,7 +164,13 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
     window.open(`/erp/produtos?novo=1${nome ? `&nome=${encodeURIComponent(nome)}` : ""}`, "_blank", "noopener");
   }
 
-  const total = useMemo(() => round2(cart.reduce((sum, i) => sum + i.preco * i.qtd - i.desconto, 0)), [cart]);
+  // Subtotal líquido por linha (após desconto %); total final aplica também o desconto global %.
+  const subtotalLiquido = useMemo(
+    () => round2(cart.reduce((sum, i) => sum + i.preco * i.qtd * (1 - (i.descontoPct ?? 0) / 100), 0)),
+    [cart]
+  );
+  const descontoGlobalVal = round2(subtotalLiquido * (descGlobalPct / 100));
+  const total = round2(Math.max(0, subtotalLiquido - descontoGlobalVal));
   const temServicoNoCart = cart.some((i) => i.kind === "servico");
   // Recibo (não fiscal) e NFC-e aceitam consumidor anônimo. NF-e e serviços (NFS-e) exigem cliente.
   const precisaCliente = temServicoNoCart || modeloProduto === "NFE";
@@ -200,7 +209,7 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
     setCart((cur) => {
       const ex = cur.find((i) => i.kind === "produto" && i.refId === p.id);
       if (ex) return cur.map((i) => (i === ex ? { ...i, qtd: i.qtd + 1 } : i));
-      return [...cur, { key: `p-${p.id}`, kind: "produto", refId: p.id, nome: p.nome, preco: p.preco, qtd: 1, desconto: 0, disponivel: p.disponivel, unidade: p.unidade }];
+      return [...cur, { key: `p-${p.id}`, kind: "produto", refId: p.id, nome: p.nome, preco: p.preco, qtd: 1, descontoPct: 0, disponivel: p.disponivel, unidade: p.unidade }];
     });
     setBusca("");
     buscaRef.current?.focus();
@@ -210,7 +219,7 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
     setCart((cur) => {
       const ex = cur.find((i) => i.kind === "servico" && i.refId === s.id);
       if (ex) return cur.map((i) => (i === ex ? { ...i, qtd: i.qtd + 1 } : i));
-      return [...cur, { key: `s-${s.id}`, kind: "servico", refId: s.id, nome: s.nome, preco: s.preco, qtd: 1, desconto: 0, codigoServicoLc116: s.codigoServicoLc116, codigoNbs: s.codigoNbs }];
+      return [...cur, { key: `s-${s.id}`, kind: "servico", refId: s.id, nome: s.nome, preco: s.preco, qtd: 1, descontoPct: 0, codigoServicoLc116: s.codigoServicoLc116, codigoNbs: s.codigoNbs }];
     });
     setBusca("");
     buscaRef.current?.focus();
@@ -256,8 +265,8 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
       setAviso("");
     }
     setError("");
-    // Mantém o desconto da linha, limitado ao novo valor dela.
-    setCart((cur) => cur.map((i) => (i.key === key ? { ...i, qtd: q, desconto: Math.min(i.desconto, round2(i.preco * q)) } : i)));
+    // Desconto é em %, independe da quantidade — só atualiza a qtd.
+    setCart((cur) => cur.map((i) => (i.key === key ? { ...i, qtd: q } : i)));
   }
 
   // Define a quantidade absoluta (permite fração, ex.: 0,5 metro). Mesma checagem de saldo do +/-.
@@ -271,7 +280,7 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
       setAviso(`${msg} Venda liberada (empresa aceita venda sem estoque).`);
     } else { setAviso(""); }
     setError("");
-    setCart((cur) => cur.map((i) => (i.key === key ? { ...i, qtd: q, desconto: Math.min(i.desconto, round2(i.preco * q)) } : i)));
+    setCart((cur) => cur.map((i) => (i.key === key ? { ...i, qtd: q } : i)));
   }
 
   function removerItem(key: string) {
@@ -284,10 +293,19 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
     setQtdInputs({});
     setClienteId("");
     setVendedorId(data.vendedorLogadoId ?? "");
-    setAutorizacao(null);
+    setSenhaAdmin("");
+    setDescGlobalPct(0);
     setResultado(null);
     setError("");
     setPagamentoAberto(false);
+  }
+
+  // Desconto efetivo % = (subtotal bruto − total) / subtotal bruto × 100. Compara com o limite
+  // da empresa (data.descontoSemAutorizacaoPct). Acima disso, abre modal de senha antes do pagto.
+  function calcularDescontoPctEfetivo(): number {
+    const bruto = cart.reduce((s, i) => s + i.preco * i.qtd, 0);
+    if (bruto <= 0) return 0;
+    return ((bruto - total) / bruto) * 100;
   }
 
   function abrirPagamento() {
@@ -299,6 +317,15 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
     }
     setError("");
     setResultado(null);
+    const pctEfetivo = calcularDescontoPctEfetivo();
+    const limite = Number(data.descontoSemAutorizacaoPct ?? 0);
+    if (pctEfetivo > limite + 0.01 && !senhaAdmin) {
+      setAdminModal({
+        motivo: `Desconto de ${pctEfetivo.toFixed(2)}% acima do limite (${limite.toFixed(2)}%). Informe a senha de um administrador para liberar.`,
+        onOk: (s) => { setSenhaAdmin(s); setAdminModal(null); setPagamentoAberto(true); }
+      });
+      return;
+    }
     setPagamentoAberto(true);
   }
 
@@ -307,19 +334,25 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
     setError("");
     setResultado(null);
     try {
-      const temDesconto = cart.some((i) => i.kind === "produto" && i.desconto > 0);
+      // Converte % de linha para R$ no payload (o servidor persiste em R$ por compatibilidade).
       const payload = {
         clienteId: clienteId || null,
         vendedorId: vendedorId || null,
         // No modelo RECIBO mandamos NFCE como placeholder e o flag emitirFiscal=false separa o fluxo.
         modeloProduto: isRecibo ? "NFCE" : modeloProduto,
         emitirFiscal: !isRecibo,
-        produtos: cart.filter((i) => i.kind === "produto").map((i) => ({ produtoId: i.refId, quantidade: i.qtd, precoUnitario: i.preco, desconto: i.desconto })),
+        produtos: cart.filter((i) => i.kind === "produto").map((i) => ({
+          produtoId: i.refId,
+          quantidade: i.qtd,
+          precoUnitario: i.preco,
+          desconto: round2(i.preco * i.qtd * ((i.descontoPct ?? 0) / 100))
+        })),
         servicos: cart.filter((i) => i.kind === "servico").map((i) => ({ descricao: i.nome, valor: i.preco * i.qtd, codigoServicoLc116: i.codigoServicoLc116, codigoNbs: i.codigoNbs })),
         pagamentos,
         condicaoCrediario: condicaoCrediario || null,
-        // O servidor revalida a credencial do admin no checkout (a senha do modal é pré-checagem).
-        autorizacaoAdmin: temDesconto && autorizacao ? { email: autorizacao.email, senha: autorizacao.senha } : null,
+        descontoGlobal: descontoGlobalVal,
+        // Senha de admin (qualquer admin do tenant) — o servidor revalida e exige se desconto > limite.
+        senhaAdmin: senhaAdmin || undefined,
         retiradaExpedicao: retiradaExpedicao && cart.some((i) => i.kind === "produto")
       };
       const res = await fetch("/api/erp/pdv/checkout", {
@@ -477,7 +510,7 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
               <div key={i.key} className="pdv-item">
                 <div className="pdv-item-top">
                   <span className="pdv-item-nome">{i.nome}</span>
-                  <span className="pdv-item-total">{brl(i.preco * i.qtd - i.desconto)}</span>
+                  <span className="pdv-item-total">{brl(i.preco * i.qtd * (1 - (i.descontoPct ?? 0) / 100))}</span>
                 </div>
                 <div className="pdv-item-bot">
                   <div className="pdv-item-qtd">
@@ -497,9 +530,9 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
                     <button onClick={() => { setQtdInputs((s) => { const n = { ...s }; delete n[i.key]; return n; }); mudarQtd(i.key, 1); }}>+</button>
                     {i.unidade && <span style={{ fontSize: 11, color: "var(--erp-mute)", marginLeft: 4 }}>{i.unidade}</span>}
                   </div>
-                  <span className="pdv-item-unit">× {brl(i.preco)}{i.desconto > 0 ? ` − ${brl(i.desconto)} desc.` : ""}</span>
+                  <span className="pdv-item-unit">× {brl(i.preco)}{(i.descontoPct ?? 0) > 0 ? ` − ${i.descontoPct.toFixed(2)}% desc.` : ""}</span>
                   {i.kind === "produto" && (
-                    <button className="pdv-item-pct" title="Desconto no item (exige administrador)" onClick={() => setDescontoItem(i)}>%</button>
+                    <button className="pdv-item-pct" title="Desconto no item (%)" onClick={() => setDescontoItem(i)}>%</button>
                   )}
                   <button className="pdv-item-x" onClick={() => removerItem(i.key)}>×</button>
                 </div>
@@ -542,6 +575,18 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
                 <button className={modeloProduto === "RECIBO" ? "active" : ""} onClick={() => setModeloProduto("RECIBO")} title="Fechar a venda só com recibo (sem NF). Estoque e financeiro rodam normalmente.">Recibo (não fiscal)</button>
               )}
             </div>
+            <label className="pdv-cliente" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ flex: 1 }}>Desconto global (%)</span>
+              <input
+                type="number"
+                min={0}
+                max={100}
+                step="0.01"
+                value={descGlobalPct}
+                onChange={(e) => { setDescGlobalPct(Math.max(0, Math.min(100, Number(e.target.value) || 0))); setSenhaAdmin(""); }}
+                style={{ width: 90, height: 32, padding: "0 8px", border: "1px solid var(--erp-line)", borderRadius: 4, textAlign: "right" }}
+              />
+            </label>
             <div className="pdv-total"><span>Total</span><strong>{brl(total)}</strong></div>
 
             {aviso && <div className="alert warn">{aviso}</div>}
@@ -589,15 +634,22 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
         <MovimentoModal onClose={() => setMovimentoAberto(false)} />
       )}
       {descontoItem && (
-        <DescontoModal
+        <DescontoPctModal
           item={descontoItem}
           onClose={() => setDescontoItem(null)}
-          onAutorizado={(key, desconto, credencial) => {
-            setCart((cur) => cur.map((i) => (i.key === key ? { ...i, desconto } : i)));
-            // Remoção de desconto vem com credencial vazia — não sobrescreve a autorização.
-            if (credencial.email) setAutorizacao(credencial);
+          onAplicar={(key, descontoPct) => {
+            setCart((cur) => cur.map((i) => (i.key === key ? { ...i, descontoPct } : i)));
+            // Mudou desconto → senha anterior pode não bastar mais; invalida pra revalidar no checkout.
+            setSenhaAdmin("");
             setDescontoItem(null);
           }}
+        />
+      )}
+      {adminModal && (
+        <AdminPasswordModal
+          motivo={adminModal.motivo}
+          onAutorizado={(senha) => adminModal.onOk(senha)}
+          onClose={() => setAdminModal(null)}
         />
       )}
       {clienteModalAberto && (
@@ -746,69 +798,37 @@ function NovoClientePdvModal({ onCriado, onClose }: { onCriado: (c: PdvCliente) 
   );
 }
 
-// ─── Modal de desconto por item (sempre exige a senha de um administrador) ───────
+// ─── Modal de desconto por item (%). Senha de admin é cobrada só no fim, se necessário. ────
 
-function DescontoModal({
+function DescontoPctModal({
   item,
   onClose,
-  onAutorizado
+  onAplicar
 }: {
   item: CartItem;
   onClose: () => void;
-  onAutorizado: (key: string, desconto: number, credencial: AutorizacaoAdmin) => void;
+  onAplicar: (key: string, descontoPct: number) => void;
 }) {
-  const [valor, setValor] = useState(item.desconto > 0 ? String(item.desconto) : "");
-  const [email, setEmail] = useState("");
-  const [senha, setSenha] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-
+  const [valor, setValor] = useState(item.descontoPct > 0 ? String(item.descontoPct) : "");
   const linha = round2(item.preco * item.qtd);
-  const desconto = round2(Number(valor.replace(",", ".")) || 0);
-  const invalido = desconto < 0 || desconto > linha;
-
-  async function autorizar() {
-    if (invalido) { setError(`Desconto deve ficar entre 0 e ${brl(linha)}.`); return; }
-    // Remover desconto (0) não precisa de autorização.
-    if (desconto === 0) { onAutorizado(item.key, 0, { email: "", senha: "", nome: "" }); return; }
-    if (!email.trim() || !senha) { setError("Informe e-mail e senha de um administrador."); return; }
-    setLoading(true);
-    setError("");
-    try {
-      const res = await fetch("/api/erp/pdv/autorizar-admin", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim(), senha })
-      });
-      const d = (await res.json().catch(() => ({}))) as { nome?: string; error?: string };
-      if (!res.ok) throw new Error(d.error || "Credencial de administrador inválida.");
-      onAutorizado(item.key, desconto, { email: email.trim(), senha, nome: d.nome ?? "" });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Credencial de administrador inválida.");
-      setLoading(false);
-    }
-  }
+  const pct = round2(Number(valor.replace(",", ".")) || 0);
+  const invalido = pct < 0 || pct > 100;
+  const liquido = round2(linha * (1 - pct / 100));
 
   return (
     <div className="pdv-modal-bg" onClick={onClose}>
       <div className="pdv-modal" onClick={(e) => e.stopPropagation()}>
         <h2>Desconto — {item.nome}</h2>
-        <p className="block-muted">Linha: {item.qtd} × {brl(item.preco)} = {brl(linha)}. O desconto exige autorização de um administrador.</p>
-        {error && <div className="alert danger">{error}</div>}
-        <label className="pdv-cliente">Desconto na linha (R$)
+        <p className="block-muted">Linha: {item.qtd} × {brl(item.preco)} = {brl(linha)}.</p>
+        {invalido && <div className="alert danger">Desconto deve ficar entre 0 e 100%.</div>}
+        <label className="pdv-cliente">Desconto na linha (%)
           <input autoFocus inputMode="decimal" value={valor} onChange={(e) => setValor(e.target.value)} placeholder="0,00" />
         </label>
-        {desconto > 0 && <div className="alert info">Item ficará em <strong>{brl(round2(linha - desconto))}</strong>.</div>}
-        <label className="pdv-cliente">E-mail do administrador
-          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="admin@empresa.com.br" />
-        </label>
-        <label className="pdv-cliente">Senha do administrador
-          <input type="password" value={senha} onChange={(e) => setSenha(e.target.value)} />
-        </label>
+        {pct > 0 && !invalido && <div className="alert info">Item ficará em <strong>{brl(liquido)}</strong>.</div>}
         <div className="pdv-acoes">
-          <button className="pdv-limpar" onClick={onClose} disabled={loading}>Cancelar</button>
-          <button className="pdv-finalizar" onClick={autorizar} disabled={loading || invalido}>
-            {loading ? "Validando..." : desconto === 0 ? "Remover desconto" : "Autorizar desconto"}
+          <button className="pdv-limpar" onClick={onClose}>Cancelar</button>
+          <button className="pdv-finalizar" onClick={() => { if (!invalido) onAplicar(item.key, pct); }} disabled={invalido}>
+            {pct === 0 ? "Remover desconto" : "Aplicar"}
           </button>
         </div>
       </div>

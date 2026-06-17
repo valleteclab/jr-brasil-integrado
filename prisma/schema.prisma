@@ -392,6 +392,9 @@ model Empresa {
   // Quando true, libera fechar a venda só com RECIBO (cupom não fiscal) — sem emitir NF-e/NFC-e.
   // Estoque e financeiro rodam normalmente. Decisão operacional da empresa cliente (risco fiscal).
   permiteVendaNaoFiscal  Boolean        @default(false)
+  // % de desconto que QUALQUER vendedor pode aplicar sem pedir senha de admin. Acima disso
+  // (item OU global), a UI exige autorização. 0 (padrão) = todo desconto exige senha.
+  descontoSemAutorizacaoPct Decimal     @default(0) @db.Decimal(5, 2)
   criadoEm           DateTime           @default(now())
   atualizadoEm       DateTime           @updatedAt
 

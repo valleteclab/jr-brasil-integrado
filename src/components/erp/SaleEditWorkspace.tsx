@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { SaleDetail, SaleFormData } from "@/lib/services/sales";
 import { NovoClienteDrawer } from "./NovoClienteDrawer";
+import { AdminPasswordModal } from "./AdminPasswordModal";
 
 const brl = (v: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
 const round2 = (v: number) => Math.round((v + Number.EPSILON) * 100) / 100;
@@ -82,6 +83,22 @@ export function SaleEditWorkspace({ venda, form }: { venda: SaleDetail; form: Sa
   const descontoGlobalVal = round2(subtotal * (descGlobalPct / 100));
   const total = Math.max(0, round2(subtotal - descontoGlobalVal + Number(frete || 0)));
 
+  // Auth admin: % efetivo sobre o bruto; modal abre antes do save se passar do limite.
+  const [senhaAdmin, setSenhaAdmin] = useState<string>("");
+  const [adminModal, setAdminModal] = useState<{ motivo: string; onOk: (senha: string) => void } | null>(null);
+  const subtotalBruto = linhas.reduce((s, l) => s + l.quantidade * l.precoUnitario, 0);
+  const totalLiquido = subtotal - descontoGlobalVal;
+  const descontoPctEfetivo = subtotalBruto > 0 ? ((subtotalBruto - totalLiquido) / subtotalBruto) * 100 : 0;
+  const limiteDescSemAuth = Number(form.descontoSemAutorizacaoPct ?? 0);
+  const precisaAdmin = descontoPctEfetivo > limiteDescSemAuth + 0.01;
+  function comAdmin(action: () => void) {
+    if (!precisaAdmin || senhaAdmin) { action(); return; }
+    setAdminModal({
+      motivo: `Desconto de ${descontoPctEfetivo.toFixed(2)}% acima do limite (${limiteDescSemAuth.toFixed(2)}%). Informe a senha de um administrador.`,
+      onOk: (s) => { setSenhaAdmin(s); setAdminModal(null); action(); }
+    });
+  }
+
   const sugestoes = useMemo(() => {
     const termo = busca.trim().toLowerCase();
     if (!termo) return [];
@@ -120,6 +137,7 @@ export function SaleEditWorkspace({ venda, form }: { venda: SaleDetail; form: Sa
   }
 
   function atualizar(produtoId: string, campo: "quantidade" | "descontoPct", valor: number) {
+    if (campo === "descontoPct") setSenhaAdmin("");
     setLinhas((cur) => cur.map((l) => {
       if (l.produtoId !== produtoId) return l;
       const v = Math.max(0, valor);
@@ -171,7 +189,8 @@ export function SaleEditWorkspace({ venda, form }: { venda: SaleDetail; form: Sa
           observacoes: observacoes.trim() || null,
           desconto: descontoGlobalVal,
           frete: Number(frete) || 0,
-          itens: itensPayload
+          itens: itensPayload,
+          senhaAdmin: senhaAdmin || undefined
         })
       });
       const data = (await res.json().catch(() => ({}))) as { error?: string };
@@ -289,7 +308,7 @@ export function SaleEditWorkspace({ venda, form }: { venda: SaleDetail; form: Sa
           </table>
         </div>
         <div className="erp-form" style={{ marginTop: 8 }}>
-          <label>Desconto global (%)<input type="number" min={0} max={100} step="0.01" value={descGlobalPct} onChange={(e) => setDescGlobalPct(Math.min(100, Math.max(0, Number(e.target.value) || 0)))} /></label>
+          <label>Desconto global (%)<input type="number" min={0} max={100} step="0.01" value={descGlobalPct} onChange={(e) => { setSenhaAdmin(""); setDescGlobalPct(Math.min(100, Math.max(0, Number(e.target.value) || 0))); }} /></label>
           <label>Frete (R$)<input type="number" min={0} step="0.01" value={frete} onChange={(e) => setFrete(parseFloat(e.target.value) || 0)} /></label>
         </div>
         <div className="erp-table-foot">
@@ -302,11 +321,15 @@ export function SaleEditWorkspace({ venda, form }: { venda: SaleDetail; form: Sa
 
       <div className="detalhe-acoes" style={{ display: "flex", gap: 8 }}>
         <button type="button" className="btn-erp ghost sm" onClick={() => router.push(`/erp/vendas/${venda.id}`)} disabled={salvando}>Cancelar</button>
-        <button type="button" className="btn-erp primary sm" onClick={salvar} disabled={salvando}>{salvando ? "Salvando…" : "Salvar alterações"}</button>
+        <button type="button" className="btn-erp primary sm" onClick={() => comAdmin(salvar)} disabled={salvando}>{salvando ? "Salvando…" : "Salvar alterações"}</button>
       </div>
 
       {showNovoCli && (
         <NovoClienteDrawer onClose={() => setShowNovoCli(false)} onCreated={onClienteCriado} />
+      )}
+
+      {adminModal && (
+        <AdminPasswordModal motivo={adminModal.motivo} onAutorizado={(s) => adminModal.onOk(s)} onClose={() => setAdminModal(null)} />
       )}
     </>
   );
