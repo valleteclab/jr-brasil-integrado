@@ -605,8 +605,15 @@ export async function getPedidoVendaParaRecibo(scope: TenantScope, id: string) {
   const pedido = await prisma.pedidoVenda.findFirst({
     where: { id, ...scopedByTenantCompany(scope) },
     include: {
-      cliente: { select: { razaoSocial: true, nomeFantasia: true, documento: true } },
-      itens: { orderBy: { id: "asc" }, include: { produto: { select: { nome: true, sku: true } } } }
+      cliente: {
+        select: {
+          razaoSocial: true, nomeFantasia: true, documento: true, inscricaoEstadual: true,
+          enderecos: { select: { logradouro: true, numero: true, bairro: true, cidade: true, uf: true, cep: true, padrao: true } },
+          contatos: { select: { nome: true, email: true, telefone: true, principal: true } }
+        }
+      },
+      vendedorRef: { select: { nome: true } },
+      itens: { orderBy: { id: "asc" }, include: { produto: { select: { nome: true, sku: true, unidade: true } } } }
     }
   });
   if (!pedido) throw new Error("Pedido de venda não encontrado.");
