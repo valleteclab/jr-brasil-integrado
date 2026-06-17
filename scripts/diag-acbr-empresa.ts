@@ -67,6 +67,44 @@ async function main() {
     console.log(`Bytes recebidos: ${buf.length}`);
   }
 
+  // Última NF-e autorizada: baixa o PDF e checa se tem imagem embutida.
+  const ultima = await prisma.notaFiscal.findFirst({
+    where: { empresaId: empresa.id, modelo: "NFE", status: "AUTORIZADA", providerRef: { not: null } },
+    orderBy: { criadoEm: "desc" },
+    select: { id: true, numero: true, providerRef: true, modelo: true, criadoEm: true }
+  });
+  console.log("\n== Última NF-e autorizada ==", ultima);
+  if (ultima?.providerRef) {
+    const pdfRes = await fetch(`${baseUrl}/nfe/${ultima.providerRef}/pdf`, {
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/pdf" }
+    });
+    console.log(`PDF status: ${pdfRes.status}`);
+    if (pdfRes.ok) {
+      const pdf = Buffer.from(await pdfRes.arrayBuffer());
+      console.log(`PDF bytes: ${pdf.length}`);
+      // Procura marcadores de imagem dentro do PDF.
+      const pdfStr = pdf.toString("latin1");
+      const imgCount = (pdfStr.match(/\/Subtype\s*\/Image/g) ?? []).length;
+      const dctCount = (pdfStr.match(/\/DCTDecode/g) ?? []).length;
+      const flateCount = (pdfStr.match(/\/FlateDecode/g) ?? []).length;
+      console.log(`Imagens (/Subtype /Image): ${imgCount}`);
+      console.log(`Streams JPEG (/DCTDecode): ${dctCount}`);
+      console.log(`Streams FlateDecode: ${flateCount}`);
+      // Salva pro user inspecionar.
+      const fs = await import("node:fs");
+      fs.writeFileSync("/tmp/nfe-ultima.pdf", pdf);
+      console.log("PDF salvo em /tmp/nfe-ultima.pdf");
+    }
+  }
+
+  // Lista de endpoints/configs alternativos pra ver se existe DANFE config explícito.
+  console.log("\n== GET /empresas (lista, primeiras) ==");
+  const list = await fetch(`${baseUrl}/empresas?$top=2`, {
+    headers: { Authorization: `Bearer ${token}`, Accept: "application/json" }
+  });
+  console.log(`status ${list.status}, body:`);
+  console.log((await list.text()).slice(0, 1500));
+
   await prisma.$disconnect();
 }
 
