@@ -1006,7 +1006,10 @@ export class AcbrFiscalProvider implements FiscalProvider {
     const { baseUrl } = this.resolveConfig(ctx);
     const token = await this.getAccessToken(ctx);
     const resource = ACBR_RESOURCE[ref.modelo];
-    const url = `${baseUrl}/${resource}/${encodeURIComponent(ref.providerRef)}/${kind}`;
+    // ACBr/Nuvem Fiscal NÃO inclui a logo cadastrada no DANFE/DANFCE/DANFSE sem o
+    // query param `?logotipo=true`. Sem o flag o PDF sai sem a logo mesmo com upload feito.
+    const params = kind === "pdf" ? "?logotipo=true" : "";
+    const url = `${baseUrl}/${resource}/${encodeURIComponent(ref.providerRef)}/${kind}${params}`;
     const contentType = kind === "pdf" ? "application/pdf" : "application/xml";
 
     let response: Response;

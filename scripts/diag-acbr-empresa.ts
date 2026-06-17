@@ -60,38 +60,28 @@ async function diagEmpresa(emp: { id: string; tenantId: string; razaoSocial: str
   console.log("\nÚltimas 5 notas:", ultimas);
   const ultima = ultimas.find((n) => n.modelo === "NFE" && n.providerRef);
 
-  // Probe: endpoints alternativos do DANFE/empresa
+  // Probe: ?logotipo=true em NFE, NFCE, NFSE
+  const nfce = ultimas.find((n) => n.modelo === "NFCE" && n.providerRef);
+  const nfse = ultimas.find((n) => n.modelo === "NFSE" && n.providerRef);
   if (ultima?.providerRef) {
-    const probes = [
-      `/nfe/${ultima.providerRef}/pdf`,
-      `/nfe/${ultima.providerRef}/danfe`,
-      `/nfe/${ultima.providerRef}/pdf?logotipo=true`,
-      `/nfe/${ultima.providerRef}/pdf?logo=true`
-    ];
-    for (const path of probes) {
-      const r = await fetch(`${baseUrl}${path}`, { headers: { ...auth } });
-      const len = r.headers.get("content-length") ?? "?";
-      console.log(`  ${path} → ${r.status} ${r.headers.get("content-type") ?? ""} len=${len}`);
-      if (!r.ok && r.status < 500) console.log(`    body: ${(await r.text()).slice(0, 200)}`);
-    }
+    const r1 = await fetch(`${baseUrl}/nfe/${ultima.providerRef}/pdf`, { headers: auth });
+    const r2 = await fetch(`${baseUrl}/nfe/${ultima.providerRef}/pdf?logotipo=true`, { headers: auth });
+    console.log(`  NFE sem logo: ${r1.status} len=${r1.headers.get("content-length")}`);
+    console.log(`  NFE com logo: ${r2.status} len=${r2.headers.get("content-length")}`);
+  }
+  if (nfce?.providerRef) {
+    const r1 = await fetch(`${baseUrl}/nfce/${nfce.providerRef}/pdf`, { headers: auth });
+    const r2 = await fetch(`${baseUrl}/nfce/${nfce.providerRef}/pdf?logotipo=true`, { headers: auth });
+    console.log(`  NFCE sem logo: ${r1.status} len=${r1.headers.get("content-length")}`);
+    console.log(`  NFCE com logo: ${r2.status} len=${r2.headers.get("content-length")}`);
+  }
+  if (nfse?.providerRef) {
+    const r1 = await fetch(`${baseUrl}/nfse/${nfse.providerRef}/pdf`, { headers: auth });
+    const r2 = await fetch(`${baseUrl}/nfse/${nfse.providerRef}/pdf?logotipo=true`, { headers: auth });
+    console.log(`  NFSE sem logo: ${r1.status} len=${r1.headers.get("content-length")}`);
+    console.log(`  NFSE com logo: ${r2.status} len=${r2.headers.get("content-length")}`);
   }
 
-  // Probe: endpoints relacionados a logo da empresa
-  const empProbes = [
-    `/empresas/${cnpj}/logotipo`,
-    `/empresas/${cnpj}/danfe`,
-    `/empresas/${cnpj}/config`,
-    `/empresas/${cnpj}/config_danfe`,
-    `/empresas/${cnpj}/config_nfe`
-  ];
-  console.log("\nProbes empresa:");
-  for (const path of empProbes) {
-    const r = await fetch(`${baseUrl}${path}`, { headers: { ...auth, Accept: "application/json" } });
-    const ct = r.headers.get("content-type") ?? "";
-    const body = ct.includes("json") ? await r.text() : `<${ct}>`;
-    console.log(`  ${path} → ${r.status} ${ct}`);
-    if (r.ok && ct.includes("json")) console.log(`    ${body.slice(0, 300)}`);
-  }
   if (ultima?.providerRef) {
     const pdfRes = await fetch(`${baseUrl}/nfe/${ultima.providerRef}/pdf`, { headers: { ...auth, Accept: "application/pdf" } });
     console.log(`PDF status: ${pdfRes.status}`);
