@@ -389,8 +389,9 @@ export function CustomersCrud({ initialCustomers, tabelasPreco }: CustomersCrudP
   // ---------------------------------------------------------------------------
 
   async function saveCustomer() {
+    const isPf = form.documento.replace(/\D/g, "").length === 11;
     if (!form.razaoSocial.trim()) {
-      setError("Razão social é obrigatória.");
+      setError(isPf ? "Nome completo é obrigatório." : "Razão social é obrigatória.");
       setActiveTab("dados");
       return;
     }
@@ -533,32 +534,56 @@ export function CustomersCrud({ initialCustomers, tabelasPreco }: CustomersCrudP
 
   function renderTab() {
     if (activeTab === "dados") {
+      // Auto-detecta tipo de pessoa pelo documento (11 dígitos = CPF/PF, 14 = CNPJ/PJ).
+      // Letras no documento (CNPJ alfanumérico) caem em PJ por padrão.
+      const docDigitos = form.documento.replace(/\D/g, "");
+      const isPf = docDigitos.length === 11;
       return (
         <div className="erp-form">
+          <div className="full" style={{ display: "flex", gap: 6, marginBottom: 4 }}>
+            <button type="button" className={`btn-erp ${!isPf ? "primary" : "ghost"} sm`} style={{ flex: 1 }} onClick={() => updateField("documento", form.documento.replace(/\D/g, "").slice(0, 14))}>
+              Pessoa Jurídica
+            </button>
+            <button type="button" className={`btn-erp ${isPf ? "primary" : "ghost"} sm`} style={{ flex: 1 }} onClick={() => updateField("documento", form.documento.replace(/\D/g, "").slice(0, 11))}>
+              Pessoa Física
+            </button>
+          </div>
           <label className="full">
-            CNPJ / CPF
+            {isPf ? "CPF" : "CNPJ"}
             <span style={{ display: "flex", gap: 6 }}>
-              <input value={form.documento} onChange={(e) => updateField("documento", e.target.value.toUpperCase())} placeholder="CNPJ (aceita letras) ou CPF" maxLength={18} style={{ flex: 1 }} />
-              <button type="button" className="btn-erp light sm" onClick={preencherPorCnpj} disabled={buscandoCnpj} style={{ flexShrink: 0, whiteSpace: "nowrap" }}>
-                {buscandoCnpj ? "Buscando…" : "Buscar CNPJ"}
-              </button>
+              <input
+                value={form.documento}
+                onChange={(e) => updateField("documento", e.target.value.toUpperCase())}
+                placeholder={isPf ? "Somente números" : "CNPJ (aceita letras) ou CPF"}
+                maxLength={isPf ? 14 : 18}
+                style={{ flex: 1 }}
+              />
+              {!isPf && (
+                <button type="button" className="btn-erp light sm" onClick={preencherPorCnpj} disabled={buscandoCnpj} style={{ flexShrink: 0, whiteSpace: "nowrap" }}>
+                  {buscandoCnpj ? "Buscando…" : "Buscar CNPJ"}
+                </button>
+              )}
             </span>
           </label>
           <label className="full">
-            Razão social
+            {isPf ? "Nome completo" : "Razão social"}
             <input value={form.razaoSocial} onChange={(e) => updateField("razaoSocial", e.target.value)} />
           </label>
-          <label className="full">
-            Nome fantasia
-            <input value={form.nomeFantasia} onChange={(e) => updateField("nomeFantasia", e.target.value)} />
-          </label>
-          <label>
-            Inscrição estadual
-            <input value={form.inscricaoEstadual} onChange={(e) => updateField("inscricaoEstadual", e.target.value)} />
-          </label>
+          {!isPf && (
+            <label className="full">
+              Nome fantasia
+              <input value={form.nomeFantasia} onChange={(e) => updateField("nomeFantasia", e.target.value)} />
+            </label>
+          )}
+          {!isPf && (
+            <label>
+              Inscrição estadual
+              <input value={form.inscricaoEstadual} onChange={(e) => updateField("inscricaoEstadual", e.target.value)} />
+            </label>
+          )}
           <label>
             Segmento
-            <input value={form.segmento} placeholder="Ex.: Oficinas, Revenda..." onChange={(e) => updateField("segmento", e.target.value)} />
+            <input value={form.segmento} placeholder={isPf ? "Ex.: Consumidor final, Autônomo…" : "Ex.: Oficinas, Revenda…"} onChange={(e) => updateField("segmento", e.target.value)} />
           </label>
           <label>
             Status
