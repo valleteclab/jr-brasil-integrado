@@ -58,7 +58,8 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
 
   const [sel, setSel] = useState<PreVendaResumo | null>(null);
   const [pagamentos, setPagamentos] = useState<PagamentoLinha[]>([]);
-  const [modelo, setModelo] = useState<"NFCE" | "NFE">("NFCE");
+  // RECIBO = venda não fiscal (só recibo HTML). Só disponível se a empresa permitir.
+  const [modelo, setModelo] = useState<"NFCE" | "NFE" | "RECIBO">("NFCE");
   const [query, setQuery] = useState("");
   const [pedidoAbertoId, setPedidoAbertoId] = useState<string | null>(null);
   const [retiradaExpedicao, setRetiradaExpedicao] = useState(false);
@@ -227,11 +228,14 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
     if (!sel) return;
     if (somaPago + 0.0001 < sel.total) { setError(`Pagamento insuficiente: faltam ${brl(falta)}.`); return; }
     if (modelo === "NFE" && !sel.temCliente) { setError("NF-e exige cliente identificado. Use NFC-e para consumidor anônimo."); return; }
+    const isRecibo = modelo === "RECIBO";
     setBusy(true);
     try {
       const r = await post("/api/erp/caixa/receber", {
         pedidoId: sel.id,
-        modelo,
+        // Modelo "RECIBO" vira NFCE+emitirFiscal=false no servidor (placeholder ignorado).
+        modelo: isRecibo ? "NFCE" : modelo,
+        emitirFiscal: !isRecibo,
         pagamentos: pagamentos.filter((p) => Number(p.valor) > 0).map((p) => ({
           forma: p.forma,
           valor: Number(p.valor),
@@ -244,8 +248,10 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
         retiradaExpedicao: data.expedicaoHabilitada && retiradaExpedicao
       });
       setResultado({ pedidoNumero: r.pedidoNumero, troco: r.troco, notaId: r.nota?.id ?? null, notaStatus: r.nota?.status ?? null, emitErro: r.emitErro ?? null, retirada: r.retirada ?? null });
-      // Impressão automática do cupom (DANFE/DANFCE) ao autorizar.
-      if (r.nota?.status === "AUTORIZADA" && r.nota?.id) {
+      // Impressão automática: DANFE/DANFCE quando fiscal; recibo HTML do pedido quando não fiscal.
+      if (isRecibo) {
+        window.open(`/api/erp/vendas/${sel.id}/recibo`, "_blank", "noopener,noreferrer");
+      } else if (r.nota?.status === "AUTORIZADA" && r.nota?.id) {
         window.open(`/api/erp/fiscal/${r.nota.id}/pdf`, "_blank", "noopener,noreferrer");
       }
       // Recibo de retirada: abre para imprimir junto com o cupom.
@@ -467,6 +473,9 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
                 <div style={{ display: "flex", gap: 6 }}>
                   <button type="button" className={`btn-erp ${modelo === "NFCE" ? "primary" : "ghost"} sm`} style={{ flex: 1 }} onClick={() => setModelo("NFCE")}>NFC-e</button>
                   <button type="button" className={`btn-erp ${modelo === "NFE" ? "primary" : "ghost"} sm`} style={{ flex: 1 }} onClick={() => setModelo("NFE")} disabled={!sel.temCliente} title={!sel.temCliente ? "Requer cliente identificado" : ""}>NF-e</button>
+                  {data.permiteVendaNaoFiscal && (
+                    <button type="button" className={`btn-erp ${modelo === "RECIBO" ? "primary" : "ghost"} sm`} style={{ flex: 1 }} onClick={() => setModelo("RECIBO")} title="Fechar a venda só com recibo (sem NF). Estoque e financeiro rodam normalmente.">Recibo</button>
+                  )}
                 </div>
                 {data.expedicaoHabilitada && (
                   <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, fontSize: 13 }}>
@@ -475,7 +484,7 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
                   </label>
                 )}
                 <button type="button" className="btn-erp primary lg" style={{ marginTop: 12, width: "100%" }} disabled={busy || falta > 0} onClick={receber}>
-                  {busy ? "Processando…" : `Receber e emitir · ${brl(sel.total)}`}
+                  {busy ? "Processando…" : `${modelo === "RECIBO" ? "Receber (só recibo)" : "Receber e emitir"} · ${brl(sel.total)}`}
                 </button>
                 <button type="button" className="btn-erp ghost sm" style={{ marginTop: 6, width: "100%" }} onClick={() => setSel(null)}>Cancelar</button>
               </div>

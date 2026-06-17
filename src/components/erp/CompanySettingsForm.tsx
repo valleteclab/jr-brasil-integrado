@@ -218,6 +218,18 @@ export function CompanySettingsForm({ initialSettings }: Props) {
               <span>Permitir finalizar a venda direto no atendimento (emite NFC-e/NF-e sem passar pelo caixa). Desligado: toda venda vai ao caixa.</span>
             </label>
 
+            <label className="span-2" style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <input
+                type="checkbox"
+                checked={form.permiteVendaNaoFiscal}
+                onChange={(event) => update("permiteVendaNaoFiscal", event.target.checked)}
+                style={{ width: "auto" }}
+              />
+              <span>
+                Permitir <strong>venda não fiscal</strong> (cupom/recibo, sem NF-e/NFC-e). PDV, caixa e atendimento mostram a opção &quot;Recibo&quot;. Estoque e financeiro são baixados normalmente — risco fiscal por conta da empresa.
+              </span>
+            </label>
+
             <p className="span-2 field-hint" style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
               <strong>PDV recomendado:</strong> {PDV_RECOMENDADO[form.tipoNegocio] ?? PDV_RECOMENDADO.AMBOS}
               {form.tipoNegocio === "SERVICO" && " O menu oculta compras, estoque e notas de entrada."}

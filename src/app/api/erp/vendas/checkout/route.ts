@@ -12,13 +12,16 @@ export async function POST(request: Request) {
     await requireModulo("vendas");
     const scope = await getDevelopmentTenantScope();
     // Finalizar direto (sem caixa) só é permitido se a empresa habilitou nas configurações.
-    const empresa = await prisma.empresa.findUnique({ where: { id: scope.empresaId }, select: { permiteVendaDiretaBalcao: true } });
+    const empresa = await prisma.empresa.findUnique({ where: { id: scope.empresaId }, select: { permiteVendaDiretaBalcao: true, permiteVendaNaoFiscal: true } });
     if (!empresa?.permiteVendaDiretaBalcao) {
       return NextResponse.json({ error: "Finalizar venda direto está desabilitado. Envie a venda para o caixa receber e emitir." }, { status: 400 });
     }
-    const body = (await request.json()) as CreateSaleInput & { modelo?: "NFE" | "NFCE" };
-    const { modelo, ...sale } = body;
-    const result = await checkoutSale(scope, sale, { modelo: modelo === "NFE" ? "NFE" : "NFCE" });
+    const body = (await request.json()) as CreateSaleInput & { modelo?: "NFE" | "NFCE"; emitirFiscal?: boolean };
+    const { modelo, emitirFiscal, ...sale } = body;
+    if (emitirFiscal === false && !empresa.permiteVendaNaoFiscal) {
+      return NextResponse.json({ error: "Venda não fiscal não habilitada para esta empresa." }, { status: 400 });
+    }
+    const result = await checkoutSale(scope, sale, { modelo: modelo === "NFE" ? "NFE" : "NFCE", emitirFiscal });
     return NextResponse.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro ao finalizar a venda.";

@@ -201,11 +201,12 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO", allow
     }
   }
 
-  async function finalizeBalcao(modelo: "NFCE" | "NFE") {
+  async function finalizeBalcao(modelo: "NFCE" | "NFE" | "RECIBO") {
     setError("");
     if (!cliente && modelo === "NFE") { setError("NF-e exige cliente. Selecione o cliente ou use NFC-e."); return; }
     if (!items.length) { setError("Adicione ao menos um item."); return; }
 
+    const isRecibo = modelo === "RECIBO";
     setSaving(true);
     try {
       const itensPayload = items.map((it) => ({
@@ -219,7 +220,9 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO", allow
         body: JSON.stringify({
           clienteId: cliente?.id ?? null, canal: "BALCAO", itens: itensPayload,
           desconto: descontoVal, frete: Number(frete) || 0,
-          formaPagamento: pagamento, condicaoPagamento: condicao, observacoes: obs, modelo
+          formaPagamento: pagamento, condicaoPagamento: condicao, observacoes: obs,
+          modelo: isRecibo ? "NFCE" : modelo,
+          emitirFiscal: !isRecibo
         })
       });
       const p = await res.json();
@@ -228,16 +231,18 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO", allow
         tipo: "Venda",
         total,
         route: "/erp/vendas",
+        pedidoId: p.pedidoId,
         pedidoNumero: p.pedidoNumero,
-        modeloLabel: modelo === "NFCE" ? "NFC-e" : "NF-e",
+        modeloLabel: isRecibo ? "Recibo" : (modelo === "NFCE" ? "NFC-e" : "NF-e"),
         nota: p.nota
           ? { id: p.nota.id, status: p.nota.status, numero: p.nota.numero, chave: p.nota.chaveAcesso, motivo: p.nota.motivo }
           : null,
         emitErro: p.emitErro ?? null
       });
-      // Nota autorizada: abre o cupom/DANFE para impressão imediata (o painel de sucesso
-      // mantém o link "Baixar PDF" caso o navegador bloqueie o pop-up).
-      if (p.nota?.status === "AUTORIZADA" && p.nota?.id) {
+      // Impressão automática: recibo HTML para venda não fiscal; cupom/DANFE para nota autorizada.
+      if (isRecibo && p.pedidoId) {
+        window.open(`/api/erp/vendas/${p.pedidoId}/recibo?formato=a4`, "_blank", "noopener,noreferrer");
+      } else if (p.nota?.status === "AUTORIZADA" && p.nota?.id) {
         window.open(`/api/erp/fiscal/${p.nota.id}/pdf`, "_blank", "noopener,noreferrer");
       }
     } catch (err) {
@@ -518,14 +523,21 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO", allow
                 </button>
                 {/* Finalizar direto (sem caixa) só quando a empresa habilita nas configurações. */}
                 {data.permiteVendaDiretaBalcao && (
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <button type="button" className="btn-erp ghost sm" style={{ flex: 1 }} disabled={!canFinalize || saving} onClick={() => finalizeBalcao("NFCE")}>
-                      Finalizar direto + NFC-e
-                    </button>
-                    <button type="button" className="btn-erp ghost sm" style={{ flex: 1 }} disabled={!cliente || !canFinalize || saving} onClick={() => finalizeBalcao("NFE")}>
-                      + NF-e
-                    </button>
-                  </div>
+                  <>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button type="button" className="btn-erp ghost sm" style={{ flex: 1 }} disabled={!canFinalize || saving} onClick={() => finalizeBalcao("NFCE")}>
+                        Finalizar direto + NFC-e
+                      </button>
+                      <button type="button" className="btn-erp ghost sm" style={{ flex: 1 }} disabled={!cliente || !canFinalize || saving} onClick={() => finalizeBalcao("NFE")}>
+                        + NF-e
+                      </button>
+                    </div>
+                    {data.permiteVendaNaoFiscal && (
+                      <button type="button" className="btn-erp ghost sm" style={{ width: "100%" }} disabled={!canFinalize || saving} onClick={() => finalizeBalcao("RECIBO")} title="Finalizar a venda só com recibo (sem NF). Estoque e financeiro rodam normalmente.">
+                        Finalizar (só recibo, não fiscal)
+                      </button>
+                    )}
+                  </>
                 )}
               </>
             ) : (

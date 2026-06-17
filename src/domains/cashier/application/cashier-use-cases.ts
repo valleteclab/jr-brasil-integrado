@@ -467,6 +467,8 @@ export type ReceberPagamentoInput = {
   pagamentos: PagamentoDetalhado[];
   /** Gera recibo de retirada na expedição (exige módulo habilitado para o tenant). */
   retiradaExpedicao?: boolean;
+  /** Quando false, fecha só com RECIBO (cupom não fiscal) — exige Empresa.permiteVendaNaoFiscal. */
+  emitirFiscal?: boolean;
 };
 
 export type ReceberPagamentoResult = {
@@ -634,24 +636,35 @@ export async function receberPagamentoEEmitir(
   // Pagamentos do XML: líquidos por forma (somam o total da nota; troco fica fora).
   doc.pagamentos = liquidoPorForma;
 
-  // 3) Emite. Rejeição/erro não desfaz o recebimento — a venda fica para reemitir.
+  // 3) Emite (ou fecha só com recibo, se a empresa permite e o input pedir).
   let nota: ReceberPagamentoResult["nota"] = null;
   let emitErro: string | null = null;
-  try {
-    const emitida = await emitFiscalDocument(scope, doc, { clienteId: pedido.clienteId, pedidoVendaId: pedido.id });
-    nota = { id: emitida.id, status: emitida.status, numero: emitida.numero ?? null, chaveAcesso: emitida.chaveAcesso ?? null, motivo: emitida.motivo ?? null };
-    if (emitida.status === "AUTORIZADA") {
-      await prisma.pedidoVenda.update({ where: { id: pedido.id }, data: { status: "ENVIADO", faturadoEm: new Date() } });
-    } else {
-      emitErro = emitida.motivo ?? "Nota não autorizada.";
-    }
-  } catch (error) {
-    emitErro = error instanceof Error ? error.message : "Falha ao emitir a nota.";
-    const rejeitada = await prisma.notaFiscal.findFirst({
-      where: { pedidoVendaId: pedido.id, ...scopedByTenantCompany(scope) },
-      orderBy: { criadoEm: "desc" }
+  if (input.emitirFiscal === false) {
+    const empresa = await prisma.empresa.findUnique({
+      where: { id: scope.empresaId },
+      select: { permiteVendaNaoFiscal: true }
     });
-    if (rejeitada) nota = { id: rejeitada.id, status: rejeitada.status, numero: rejeitada.numero ?? null, chaveAcesso: rejeitada.chaveAcesso ?? null, motivo: rejeitada.motivo ?? null };
+    if (!empresa?.permiteVendaNaoFiscal) {
+      throw new CaixaError("Venda não fiscal não habilitada para esta empresa.");
+    }
+    await prisma.pedidoVenda.update({ where: { id: pedido.id }, data: { status: "ENVIADO", faturadoEm: new Date() } });
+  } else {
+    try {
+      const emitida = await emitFiscalDocument(scope, doc, { clienteId: pedido.clienteId, pedidoVendaId: pedido.id });
+      nota = { id: emitida.id, status: emitida.status, numero: emitida.numero ?? null, chaveAcesso: emitida.chaveAcesso ?? null, motivo: emitida.motivo ?? null };
+      if (emitida.status === "AUTORIZADA") {
+        await prisma.pedidoVenda.update({ where: { id: pedido.id }, data: { status: "ENVIADO", faturadoEm: new Date() } });
+      } else {
+        emitErro = emitida.motivo ?? "Nota não autorizada.";
+      }
+    } catch (error) {
+      emitErro = error instanceof Error ? error.message : "Falha ao emitir a nota.";
+      const rejeitada = await prisma.notaFiscal.findFirst({
+        where: { pedidoVendaId: pedido.id, ...scopedByTenantCompany(scope) },
+        orderBy: { criadoEm: "desc" }
+      });
+      if (rejeitada) nota = { id: rejeitada.id, status: rejeitada.status, numero: rejeitada.numero ?? null, chaveAcesso: rejeitada.chaveAcesso ?? null, motivo: rejeitada.motivo ?? null };
+    }
   }
 
   // 4) Recibo de retirada na expedição (o pagamento já foi recebido; a nota pode reemitir depois).

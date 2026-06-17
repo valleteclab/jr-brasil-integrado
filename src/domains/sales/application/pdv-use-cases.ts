@@ -19,6 +19,8 @@ export type PdvCheckoutInput = {
   /** Vendedor cadastrado (gera comissão conforme o percentual dele). */
   vendedorId?: string | null;
   modeloProduto?: "NFE" | "NFCE";
+  /** Quando false, fecha a venda só com RECIBO (cupom não fiscal) — exige Empresa.permiteVendaNaoFiscal. */
+  emitirFiscal?: boolean;
   /** desconto: valor em R$ da LINHA (quantidade × preço − desconto). Exige autorização de admin. */
   produtos: Array<{ produtoId: string; quantidade: number; precoUnitario: number; desconto?: number }>;
   servicos: Array<{ descricao: string; valor: number; codigoServicoLc116?: string | null; codigoNbs?: string | null }>;
@@ -47,6 +49,8 @@ export type PdvCheckoutResult = {
   notas: PdvNotaResultado[];
   troco: number;
   total: number;
+  /** ID do pedido criado (para imprimir recibo HTML ou re-emitir nota depois). null se só serviços. */
+  pedidoVendaId: string | null;
   /** Parcelas geradas no contas a receber quando parte da venda foi em crediário. */
   crediario: { valor: number; parcelas: number; primeiroVencimento: string } | null;
   /** Recibo de retirada na expedição (quando solicitado). */
@@ -84,7 +88,20 @@ export async function pdvCheckout(scope: TenantScope, input: PdvCheckoutInput): 
   }
 
   const modeloProduto = input.modeloProduto ?? "NFCE";
-  if (modeloProduto === "NFE" && !input.clienteId) {
+  // Venda não fiscal só com a flag da empresa ligada — defesa em profundidade do gate da UI.
+  if (input.emitirFiscal === false) {
+    const empresa = await prisma.empresa.findUnique({
+      where: { id: scope.empresaId },
+      select: { permiteVendaNaoFiscal: true }
+    });
+    if (!empresa?.permiteVendaNaoFiscal) {
+      throw new Error("Venda não fiscal não habilitada para esta empresa.");
+    }
+    if (temServicos) {
+      throw new Error("Serviços exigem NFS-e — não é possível finalizar sem nota.");
+    }
+  }
+  if (input.emitirFiscal !== false && modeloProduto === "NFE" && !input.clienteId) {
     throw new Error("NF-e exige um cliente identificado.");
   }
   if (temServicos && !input.clienteId) {
@@ -166,7 +183,7 @@ export async function pdvCheckout(scope: TenantScope, input: PdvCheckoutInput): 
         },
         // O PDV recebe à vista no caixa e trata o crediário aqui — a confirmação da venda
         // não deve gerar contas a receber.
-        { modelo: modeloProduto, contasReceber: "NENHUMA" }
+        { modelo: modeloProduto, contasReceber: "NENHUMA", emitirFiscal: input.emitirFiscal }
       );
       // Auditoria do desconto autorizado (vinculada ao pedido criado).
       const admin = autorizadoPor;
@@ -190,14 +207,16 @@ export async function pdvCheckout(scope: TenantScope, input: PdvCheckoutInput): 
       }
       pedidoVendaId = r.pedidoId;
       pedidoNumero = r.pedidoNumero;
+      // Venda não fiscal: não há nota; consideramos OK (venda fechada). Modelo "RECIBO" sinaliza.
+      const naoFiscal = input.emitirFiscal === false;
       notas.push({
         tipo: "PRODUTOS",
-        modelo: modeloProduto,
-        ok: Boolean(r.nota && !r.emitErro),
+        modelo: naoFiscal ? "RECIBO" : modeloProduto,
+        ok: naoFiscal ? true : Boolean(r.nota && !r.emitErro),
         id: r.nota?.id ?? null,
         numero: r.nota?.numero ?? null,
         chaveAcesso: r.nota?.chaveAcesso ?? null,
-        status: r.nota?.status ?? null,
+        status: naoFiscal ? "RECIBO" : (r.nota?.status ?? null),
         erro: r.emitErro ?? r.nota?.motivo ?? null
       });
     } catch (error) {
@@ -331,5 +350,5 @@ export async function pdvCheckout(scope: TenantScope, input: PdvCheckoutInput): 
     retirada = { id: r.id, codigo: r.codigo };
   }
 
-  return { notas, troco, total, crediario, retirada, avisoRecebimento };
+  return { notas, troco, total, pedidoVendaId, crediario, retirada, avisoRecebimento };
 }

@@ -16,6 +16,8 @@ export type PdvData = {
   nbsPadrao: string | null;
   /** Regra da empresa: permite vender produtos sem saldo (não bloqueia ao adicionar). */
   permiteVendaSemEstoque: boolean;
+  /** Empresa permite fechar a venda só com RECIBO (sem NF-e/NFC-e). Mostra opção "Recibo" no PDV. */
+  permiteVendaNaoFiscal: boolean;
   /** Módulo Expedição habilitado para o tenant (mostra a opção de recibo de retirada). */
   expedicaoHabilitada: boolean;
   clientes: PdvCliente[];
@@ -40,7 +42,7 @@ export async function getPdvData(): Promise<PdvData> {
   const base = scopedByTenantCompany(scope);
 
   const [empresa, tenant, config, clientes, itens, vendedores, contas, maquinas, formas] = await Promise.all([
-    prisma.empresa.findUnique({ where: { id: scope.empresaId }, select: { tipoNegocio: true, permiteVendaSemEstoque: true } }),
+    prisma.empresa.findUnique({ where: { id: scope.empresaId }, select: { tipoNegocio: true, permiteVendaSemEstoque: true, permiteVendaNaoFiscal: true } }),
     prisma.tenant.findUnique({ where: { id: scope.tenantId }, select: { expedicaoHabilitada: true } }),
     prisma.configuracaoFiscal.findUnique({
       where: { empresaId: scope.empresaId },
@@ -134,6 +136,7 @@ export async function getPdvData(): Promise<PdvData> {
     lc116Padrao: config?.codigoServicoLc116Padrao || null,
     nbsPadrao: config?.codigoNbsPadrao || null,
     permiteVendaSemEstoque: Boolean(empresa?.permiteVendaSemEstoque),
+    permiteVendaNaoFiscal: Boolean(empresa?.permiteVendaNaoFiscal),
     expedicaoHabilitada: Boolean(tenant?.expedicaoHabilitada),
     clientes: clientes.map((c) => ({
       id: c.id,

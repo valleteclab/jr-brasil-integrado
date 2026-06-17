@@ -133,7 +133,8 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
   const [novoClienteAberto, setNovoClienteAberto] = useState(false);
   // Default = vendedor do usuário logado (pode trocar manualmente no select).
   const [vendedorId, setVendedorId] = useState(data.vendedorLogadoId ?? "");
-  const [modeloProduto, setModeloProduto] = useState<"NFCE" | "NFE">("NFCE");
+  // RECIBO = venda não fiscal (só recibo HTML). Só disponível se a empresa permitir.
+  const [modeloProduto, setModeloProduto] = useState<"NFCE" | "NFE" | "RECIBO">("NFCE");
   /** Última credencial de admin validada (enviada no checkout p/ revalidação no servidor). */
   const [autorizacao, setAutorizacao] = useState<AutorizacaoAdmin | null>(null);
   const [descontoItem, setDescontoItem] = useState<CartItem | null>(null);
@@ -162,7 +163,9 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
 
   const total = useMemo(() => round2(cart.reduce((sum, i) => sum + i.preco * i.qtd - i.desconto, 0)), [cart]);
   const temServicoNoCart = cart.some((i) => i.kind === "servico");
+  // Recibo (não fiscal) e NFC-e aceitam consumidor anônimo. NF-e e serviços (NFS-e) exigem cliente.
   const precisaCliente = temServicoNoCart || modeloProduto === "NFE";
+  const isRecibo = modeloProduto === "RECIBO";
   const clienteSelecionado = clientes.find((c) => c.id === clienteId) ?? null;
 
   const produtosFiltrados = useMemo(() => {
@@ -308,7 +311,9 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
       const payload = {
         clienteId: clienteId || null,
         vendedorId: vendedorId || null,
-        modeloProduto,
+        // No modelo RECIBO mandamos NFCE como placeholder e o flag emitirFiscal=false separa o fluxo.
+        modeloProduto: isRecibo ? "NFCE" : modeloProduto,
+        emitirFiscal: !isRecibo,
         produtos: cart.filter((i) => i.kind === "produto").map((i) => ({ produtoId: i.refId, quantidade: i.qtd, precoUnitario: i.preco, desconto: i.desconto })),
         servicos: cart.filter((i) => i.kind === "servico").map((i) => ({ descricao: i.nome, valor: i.preco * i.qtd, codigoServicoLc116: i.codigoServicoLc116, codigoNbs: i.codigoNbs })),
         pagamentos,
@@ -325,6 +330,7 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
       const dataRes = await res.json() as {
         notas?: NotaResultado[];
         troco?: number;
+        pedidoVendaId?: string | null;
         crediario?: { valor: number; parcelas: number; primeiroVencimento: string } | null;
         retirada?: { id: string; codigo: string } | null;
         // Recebimento não lançado no caixa — operador precisa lançar manualmente.
@@ -338,9 +344,14 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
       setClienteId("");
       setRetiradaExpedicao(false);
       setPagamentoAberto(false);
-      // Impressão automática: abre o cupom/DANFE de cada nota autorizada.
+      // Impressão automática: abre o cupom/DANFE de cada nota autorizada. Para venda RECIBO
+      // (modelo "RECIBO"), abre o recibo HTML do pedido (não há nota fiscal).
       for (const n of notas) {
-        if (n.ok && n.id) window.open(`/api/erp/fiscal/${n.id}/pdf`, "_blank", "noopener,noreferrer");
+        if (n.ok && n.modelo === "RECIBO" && dataRes.pedidoVendaId) {
+          window.open(`/api/erp/vendas/${dataRes.pedidoVendaId}/recibo`, "_blank", "noopener,noreferrer");
+        } else if (n.ok && n.id) {
+          window.open(`/api/erp/fiscal/${n.id}/pdf`, "_blank", "noopener,noreferrer");
+        }
       }
       // Recibo de retirada: abre para imprimir junto com o cupom.
       if (dataRes.retirada?.id) {
@@ -393,8 +404,8 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
           <div className="fiscal-busy-card">
             <div className="fiscal-spinner" aria-hidden="true" />
             <div>
-              <strong>Emitindo {modeloProduto === "NFE" ? "NF-e" : "NFC-e"}…</strong>
-              <small>Enviando à SEFAZ pela ACBr. Pode levar alguns segundos — não feche a tela.</small>
+              <strong>{isRecibo ? "Fechando venda…" : `Emitindo ${modeloProduto === "NFE" ? "NF-e" : "NFC-e"}…`}</strong>
+              <small>{isRecibo ? "Baixando estoque e registrando o caixa." : "Enviando à SEFAZ pela ACBr. Pode levar alguns segundos — não feche a tela."}</small>
             </div>
           </div>
         </div>
@@ -527,6 +538,9 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
             <div className="pdv-modelo">
               <button className={modeloProduto === "NFCE" ? "active" : ""} onClick={() => setModeloProduto("NFCE")}>NFC-e (cupom)</button>
               <button className={modeloProduto === "NFE" ? "active" : ""} onClick={() => setModeloProduto("NFE")}>NF-e</button>
+              {data.permiteVendaNaoFiscal && (
+                <button className={modeloProduto === "RECIBO" ? "active" : ""} onClick={() => setModeloProduto("RECIBO")} title="Fechar a venda só com recibo (sem NF). Estoque e financeiro rodam normalmente.">Recibo (não fiscal)</button>
+              )}
             </div>
             <div className="pdv-total"><span>Total</span><strong>{brl(total)}</strong></div>
 

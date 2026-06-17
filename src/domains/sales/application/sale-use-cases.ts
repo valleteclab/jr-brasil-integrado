@@ -739,10 +739,36 @@ export type CheckoutResult = {
 export async function checkoutSale(
   scope: TenantScope,
   input: CreateSaleInput,
-  options: { modelo: "NFE" | "NFCE"; contasReceber?: ConfirmSaleOptions["contasReceber"] }
+  options: { modelo: "NFE" | "NFCE"; contasReceber?: ConfirmSaleOptions["contasReceber"]; emitirFiscal?: boolean }
 ): Promise<CheckoutResult> {
   const pedido = await createSale(scope, input);
   await confirmSale(scope, pedido.id, { contasReceber: options.contasReceber });
+
+  // Venda NÃO fiscal: estoque e financeiro já rodaram em confirmSale; agora só fechamos
+  // o pedido como ENVIADO sem chamar a SEFAZ. Exige flag da empresa (validada no entry point).
+  if (options.emitirFiscal === false) {
+    await prisma.pedidoVenda.update({
+      where: { id: pedido.id },
+      data: { status: "ENVIADO", faturadoEm: new Date() }
+    });
+    await prisma.$transaction(async (tx) => {
+      await createAuditLog(tx, {
+        scope,
+        entidade: "PedidoVenda",
+        entidadeId: pedido.id,
+        acao: "FECHAR_SEM_NOTA",
+        payload: { motivo: "Empresa permite venda não fiscal (recibo)", pedido: pedido.numero }
+      });
+    });
+    publishRealtime(scope, "vendas");
+    return {
+      pedidoId: pedido.id,
+      pedidoNumero: pedido.numero,
+      pedidoStatus: "ENVIADO",
+      nota: null,
+      emitErro: null
+    };
+  }
 
   try {
     const nota = await invoiceSale(scope, pedido.id, { modelo: options.modelo });

@@ -13,13 +13,15 @@ export async function POST(request: Request) {
       modelo?: "NFE" | "NFCE";
       pagamentos?: PagamentoDetalhado[];
       retiradaExpedicao?: boolean;
+      emitirFiscal?: boolean;
     };
     if (!body.pedidoId) return NextResponse.json({ error: "Pré-venda não informada." }, { status: 400 });
     const result = await receberPagamentoEEmitir(scope, {
       pedidoId: body.pedidoId,
       modelo: body.modelo === "NFE" ? "NFE" : "NFCE",
       pagamentos: body.pagamentos ?? [],
-      retiradaExpedicao: body.retiradaExpedicao
+      retiradaExpedicao: body.retiradaExpedicao,
+      emitirFiscal: body.emitirFiscal
     });
     return NextResponse.json(result);
   } catch (error) {

@@ -105,6 +105,8 @@ export type SaleFormData = {
   permiteVendaDiretaBalcao: boolean;
   /** Empresa aceita vender produto sem saldo (estoque negativo). Padrão false. */
   permiteVendaSemEstoque: boolean;
+  /** Empresa permite fechar a venda só com RECIBO (sem NF-e/NFC-e). Padrão false. */
+  permiteVendaNaoFiscal: boolean;
 };
 
 function statusLabel(status: StatusPedido): string {
@@ -340,7 +342,7 @@ export async function listSaleFormData(): Promise<SaleFormData> {
     const scope = await getDevelopmentTenantScope();
 
     const [empresa, clientes, produtos, vendedores, formas] = await Promise.all([
-      prisma.empresa.findUnique({ where: { id: scope.empresaId }, select: { permiteVendaDiretaBalcao: true, permiteVendaSemEstoque: true } }),
+      prisma.empresa.findUnique({ where: { id: scope.empresaId }, select: { permiteVendaDiretaBalcao: true, permiteVendaSemEstoque: true, permiteVendaNaoFiscal: true } }),
       prisma.cliente.findMany({
         where: { ...scopedByTenantCompany(scope), status: "ATIVO" },
         select: { id: true, razaoSocial: true, nomeFantasia: true, documento: true },
@@ -427,7 +429,8 @@ export async function listSaleFormData(): Promise<SaleFormData> {
       vendedorLogadoId,
       vendedorLogadoNome,
       permiteVendaDiretaBalcao: Boolean(empresa?.permiteVendaDiretaBalcao),
-      permiteVendaSemEstoque: Boolean(empresa?.permiteVendaSemEstoque)
+      permiteVendaSemEstoque: Boolean(empresa?.permiteVendaSemEstoque),
+      permiteVendaNaoFiscal: Boolean(empresa?.permiteVendaNaoFiscal)
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : "erro desconhecido";

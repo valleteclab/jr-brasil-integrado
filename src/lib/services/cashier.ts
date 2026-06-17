@@ -41,6 +41,8 @@ export type CaixaPageData = {
   clientes: Array<{ id: string; label: string; documento: string | null }>;
   /** Módulo Expedição habilitado para o tenant (mostra a opção de recibo de retirada). */
   expedicaoHabilitada: boolean;
+  /** Empresa permite fechar a venda só com RECIBO (sem NF). Mostra opção no caixa. */
+  permiteVendaNaoFiscal: boolean;
 };
 
 /** Dados da tela de caixa: turno aberto (com resumo) e pré-vendas aguardando pagamento. */
@@ -50,6 +52,10 @@ export async function getCaixaPageData(): Promise<CaixaPageData> {
   const tenant = await prisma.tenant.findUnique({
     where: { id: scope.tenantId },
     select: { expedicaoHabilitada: true }
+  });
+  const empresa = await prisma.empresa.findUnique({
+    where: { id: scope.empresaId },
+    select: { permiteVendaNaoFiscal: true }
   });
 
   const [contasRaw, maquinasRaw, clientesRaw] = await Promise.all([
@@ -128,6 +134,7 @@ export async function getCaixaPageData(): Promise<CaixaPageData> {
       label: c.nomeFantasia ? `${c.nomeFantasia} (${c.razaoSocial})` : c.razaoSocial,
       documento: c.documento ?? null
     })),
-    expedicaoHabilitada: Boolean(tenant?.expedicaoHabilitada)
+    expedicaoHabilitada: Boolean(tenant?.expedicaoHabilitada),
+    permiteVendaNaoFiscal: Boolean(empresa?.permiteVendaNaoFiscal)
   };
 }
