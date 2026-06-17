@@ -1,45 +1,36 @@
 import { prisma } from "../src/lib/db/prisma";
 import { AcbrFiscalProvider } from "../src/domains/fiscal/providers/acbr-provider";
+import { getFiscalRuntimeConfig } from "../src/domains/fiscal/application/fiscal-config-use-cases";
 import type { ProviderContext } from "../src/domains/fiscal/providers/types";
 
 /**
- * Diagnóstico: consulta o cadastro da empresa na ACBr e mostra se a logo está lá
- * (header X-Logotipo / propriedade no payload) + chama o endpoint do logotipo.
- *
- * Uso (na VPS):
- *   docker run --rm --network container:$(docker ps -q --filter name=erp_erp) \
- *     -e DATABASE_URL=... jrb-erp:tools npx tsx scripts/diag-acbr-empresa.ts
+ * Diagnóstico: consulta o cadastro da empresa na ACBr e mostra se a logo está lá.
  */
 async function main() {
   const empresa = await prisma.empresa.findFirst({
-    select: { id: true, razaoSocial: true, cnpj: true }
+    select: { id: true, tenantId: true, razaoSocial: true, cnpj: true }
   });
   if (!empresa) throw new Error("Sem empresa cadastrada.");
 
-  const config = await prisma.configuracaoFiscal.findFirst({
+  const localConfig = await prisma.configuracaoFiscal.findFirst({
     where: { empresaId: empresa.id },
-    select: { provedor: true, ambiente: true, baseUrl: true, token: true, logotipoInfo: true }
+    select: { provedor: true, ambiente: true, logotipoInfo: true, certificadoInfo: true }
   });
-  if (!config) throw new Error("Sem ConfiguracaoFiscal.");
 
   console.log("== Empresa ==");
   console.log({ id: empresa.id, razao: empresa.razaoSocial, cnpj: empresa.cnpj });
   console.log("== Config local ==");
-  console.log({
-    provedor: config.provedor,
-    ambiente: config.ambiente,
-    baseUrl: config.baseUrl,
-    tokenSet: Boolean(config.token),
-    logotipoInfo: config.logotipoInfo
-  });
+  console.log(localConfig);
+
+  const runtime = await getFiscalRuntimeConfig({ tenantId: empresa.tenantId, empresaId: empresa.id });
 
   const ctx: ProviderContext = {
-    ambiente: config.ambiente,
-    provedor: config.provedor,
-    baseUrl: config.baseUrl,
-    token: config.token ?? null,
-    cscId: null,
-    cscToken: null
+    ambiente: runtime.ambiente,
+    provedor: runtime.provider,
+    baseUrl: runtime.baseUrl,
+    token: runtime.token,
+    cscId: runtime.cscId,
+    cscToken: runtime.cscToken
   } as ProviderContext;
 
   const provider = new AcbrFiscalProvider();
@@ -53,7 +44,6 @@ async function main() {
 
   const cnpj = empresa.cnpj.replace(/\D/g, "");
 
-  // 1. Estado da empresa no ACBr
   const empRes = await fetch(`${baseUrl}/empresas/${cnpj}`, {
     headers: { Authorization: `Bearer ${token}`, Accept: "application/json" }
   });
@@ -66,7 +56,6 @@ async function main() {
     console.log(empBody.slice(0, 2000));
   }
 
-  // 2. Logotipo da empresa (se a API expor)
   const logoRes = await fetch(`${baseUrl}/empresas/${cnpj}/logotipo`, {
     headers: { Authorization: `Bearer ${token}`, Accept: "image/*,application/json" }
   });
