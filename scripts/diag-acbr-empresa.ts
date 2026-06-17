@@ -50,13 +50,15 @@ async function diagEmpresa(emp: { id: string; tenantId: string; razaoSocial: str
     console.log("  Logo body:", (await logoRes.text()).slice(0, 200));
   }
 
-  // Última NF-e autorizada DESTA empresa
-  const ultima = await prisma.notaFiscal.findFirst({
-    where: { empresaId: emp.id, modelo: "NFE", status: "AUTORIZADA", providerRef: { not: null } },
+  // Últimas 5 notas (qualquer modelo/status) pra ver o que está sendo emitido
+  const ultimas = await prisma.notaFiscal.findMany({
+    where: { empresaId: emp.id },
     orderBy: { criadoEm: "desc" },
-    select: { id: true, numero: true, providerRef: true, criadoEm: true }
+    take: 5,
+    select: { id: true, numero: true, modelo: true, status: true, providerRef: true, criadoEm: true, motivo: true }
   });
-  console.log("\nÚltima NF-e autorizada:", ultima);
+  console.log("\nÚltimas 5 notas:", ultimas);
+  const ultima = ultimas.find((n) => n.modelo === "NFE" && n.status === "AUTORIZADA" && n.providerRef);
   if (ultima?.providerRef) {
     const pdfRes = await fetch(`${baseUrl}/nfe/${ultima.providerRef}/pdf`, { headers: { ...auth, Accept: "application/pdf" } });
     console.log(`PDF status: ${pdfRes.status}`);
