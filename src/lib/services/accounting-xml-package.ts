@@ -1,5 +1,5 @@
 import type { ModeloFiscal } from "@prisma/client";
-import { getDevelopmentTenantScope, scopedByTenantCompany, type TenantScope } from "@/lib/auth/dev-session";
+import { getDevelopmentTenantScope, scopedByTenantCompanyAmbiente, type TenantScope } from "@/lib/auth/dev-session";
 import { prisma } from "@/lib/db/prisma";
 import { createZip } from "@/lib/zip/create-zip";
 import { downloadNotaFiscalDocumento } from "@/domains/fiscal/application/fiscal-emission-use-cases";
@@ -36,12 +36,12 @@ export async function buildOutboundXmlPackage(
   scopeArg?: TenantScope
 ): Promise<XmlPackageResult> {
   const scope = scopeArg ?? (await getDevelopmentTenantScope());
-  const base = scopedByTenantCompany(scope);
   const { inicio, fim, competencia } = monthRange(params?.mes, params?.ano);
 
   const notas = await prisma.notaFiscal.findMany({
     where: {
-      ...base,
+      // Pacote do contador: apenas notas do ambiente vigente (homologação não vai pro contador).
+      ...scopedByTenantCompanyAmbiente(scope),
       emitidaEm: { gte: inicio, lte: fim },
       status: { in: ["AUTORIZADA", "CANCELADA"] }
     },

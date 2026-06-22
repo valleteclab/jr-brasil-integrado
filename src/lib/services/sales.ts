@@ -1,4 +1,4 @@
-import { getDevelopmentTenantScope, scopedByTenantCompany } from "@/lib/auth/dev-session";
+import { getDevelopmentTenantScope, scopedByTenantCompany, scopedByTenantCompanyAmbiente } from "@/lib/auth/dev-session";
 import { prisma } from "@/lib/db/prisma";
 import { formatBrl } from "@/lib/formatters/currency";
 import { getSession } from "@/lib/auth/session";
@@ -150,7 +150,8 @@ export async function listSales(): Promise<SaleSummary[]> {
   try {
     const scope = await getDevelopmentTenantScope();
     const pedidos = await prisma.pedidoVenda.findMany({
-      where: scopedByTenantCompany(scope),
+      // Isola por ambiente: vendas de homologação não aparecem quando a empresa está em produção.
+      where: scopedByTenantCompanyAmbiente(scope),
       include: {
         cliente: { select: { razaoSocial: true, nomeFantasia: true } },
         itens: { select: { id: true } },

@@ -123,6 +123,7 @@ export async function createSale(scope: TenantScope, input: CreateSaleInput) {
       data: {
         tenantId: scope.tenantId,
         empresaId: scope.empresaId,
+        ambiente: scope.ambiente ?? "HOMOLOGACAO",
         numero,
         clienteId: input.clienteId ?? null,
         depositoId,
@@ -241,6 +242,7 @@ export async function confirmSale(scope: TenantScope, id: string, options?: Conf
           data: {
             tenantId: scope.tenantId,
             empresaId: scope.empresaId,
+            ambiente: scope.ambiente ?? "HOMOLOGACAO",
             clienteId: pedido.clienteId,
             pedidoVendaId: pedido.id,
             descricao: `Pedido ${pedido.numero}${rotuloParcela(parcela)}`,
@@ -558,6 +560,7 @@ export async function editConfirmedSale(scope: TenantScope, id: string, input: E
           data: {
             tenantId: scope.tenantId,
             empresaId: scope.empresaId,
+            ambiente: scope.ambiente ?? "HOMOLOGACAO",
             clienteId,
             pedidoVendaId: id,
             descricao: `Pedido ${pedido.numero}${rotuloParcela(parcela)}`,

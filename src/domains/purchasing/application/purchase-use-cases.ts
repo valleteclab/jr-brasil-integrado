@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
-import { scopedByTenantCompany } from "@/lib/auth/dev-session";
+import { scopedByTenantCompany, scopedByTenantCompanyAmbiente } from "@/lib/auth/dev-session";
 import { createAuditLog } from "@/lib/audit/audit-service";
 import { nextDocumentNumber } from "@/lib/numbering";
 import { applyStockMovement, getDefaultDeposito } from "@/domains/stock/application/stock-service";
@@ -257,7 +257,7 @@ export async function receivePurchaseOrder(scope: TenantScope, id: string, input
 
       await tx.contaPagar.create({
         data: {
-          ...scopedByTenantCompany(scope),
+          ...scopedByTenantCompanyAmbiente(scope),
           fornecedorId: pedido.fornecedorId,
           pedidoCompraId: id,
           descricao: `Pedido de compra ${pedido.numero}`,

@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
-import { scopedByTenantCompany } from "@/lib/auth/dev-session";
+import { scopedByTenantCompany, scopedByTenantCompanyAmbiente } from "@/lib/auth/dev-session";
 import { createAuditLog } from "@/lib/audit/audit-service";
 import { commitReservationsAsExit } from "@/domains/stock/application/stock-service";
 import { buildDocumentFromPedido } from "@/domains/fiscal/document-builder";
@@ -84,7 +84,7 @@ async function rotearDestinosPagamento(
       await tx.contaBancaria.update({ where: { id: conta.id }, data: { saldoAtual: saldoPosterior } });
       await tx.movimentoFinanceiro.create({
         data: {
-          ...scopedByTenantCompany(scope),
+          ...scopedByTenantCompanyAmbiente(scope),
           contaBancariaId: conta.id,
           contaReceberId: null,
           tipo: "CREDITO",
@@ -111,7 +111,7 @@ async function rotearDestinosPagamento(
       const clienteId = ctx.clienteId ?? (await getClienteConsumidorPadrao(tx, scope));
       await tx.contaReceber.create({
         data: {
-          ...scopedByTenantCompany(scope),
+          ...scopedByTenantCompanyAmbiente(scope),
           clienteId,
           pedidoVendaId: ctx.pedidoVendaId,
           contaBancariaId: maq.contaBancariaId,
@@ -135,7 +135,8 @@ async function rotearDestinosPagamento(
 /** Caixa aberto da empresa — no máximo um por vez. */
 export async function getCaixaAberto(scope: TenantScope) {
   return prisma.caixa.findFirst({
-    where: { ...scopedByTenantCompany(scope), status: "ABERTO" },
+    // O caixa aberto é do ambiente atual (homologação × produção).
+    where: { ...scopedByTenantCompanyAmbiente(scope), status: "ABERTO" },
     orderBy: { abertoEm: "desc" }
   });
 }
@@ -176,7 +177,7 @@ export async function abrirCaixa(
   return prisma.$transaction(async (tx) => {
     const caixa = await tx.caixa.create({
       data: {
-        ...scopedByTenantCompany(scope),
+        ...scopedByTenantCompanyAmbiente(scope),
         operador,
         status: "ABERTO",
         saldoInicial,
@@ -186,7 +187,7 @@ export async function abrirCaixa(
     if (saldoInicial > 0) {
       await tx.caixaMovimento.create({
         data: {
-          ...scopedByTenantCompany(scope),
+          ...scopedByTenantCompanyAmbiente(scope),
           caixaId: caixa.id,
           tipo: "ABERTURA",
           formaPagamento: FORMA_DINHEIRO,
@@ -272,7 +273,7 @@ export async function registrarRecebimentoPdv(
     for (const m of liquidoPorForma) {
       await tx.caixaMovimento.create({
         data: {
-          ...scopedByTenantCompany(scope),
+          ...scopedByTenantCompanyAmbiente(scope),
           caixaId: caixa.id,
           tipo: "VENDA",
           formaPagamento: m.forma,
@@ -321,7 +322,7 @@ export async function registrarMovimentoCaixa(
 
   return prisma.caixaMovimento.create({
     data: {
-      ...scopedByTenantCompany(scope),
+      ...scopedByTenantCompanyAmbiente(scope),
       caixaId: caixa.id,
       tipo: input.tipo,
       formaPagamento: FORMA_DINHEIRO,
@@ -563,7 +564,7 @@ export async function receberPagamentoEEmitir(
     for (const m of liquidoPorForma) {
       await tx.caixaMovimento.create({
         data: {
-          ...scopedByTenantCompany(scope),
+          ...scopedByTenantCompanyAmbiente(scope),
           caixaId: caixa.id,
           tipo: "VENDA",
           formaPagamento: m.forma,

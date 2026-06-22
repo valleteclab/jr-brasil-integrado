@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
-import { scopedByTenantCompany } from "@/lib/auth/dev-session";
+import { scopedByTenantCompany, scopedByTenantCompanyAmbiente } from "@/lib/auth/dev-session";
 import { createAuditLog } from "@/lib/audit/audit-service";
 import { nextDocumentNumber } from "@/lib/numbering";
 import { getDefaultDeposito, reserveStock } from "@/domains/stock/application/stock-service";
@@ -57,7 +57,7 @@ export async function createQuote(scope: TenantScope, input: CreateQuoteInput) {
 
     const orcamento = await tx.orcamento.create({
       data: {
-        ...scopedByTenantCompany(scope),
+        ...scopedByTenantCompanyAmbiente(scope),
         numero,
         clienteId: input.clienteId,
         canal: input.canal ?? "MANUAL",
@@ -205,7 +205,7 @@ export async function convertQuoteToPedido(scope: TenantScope, id: string) {
 
     const pedido = await tx.pedidoVenda.create({
       data: {
-        ...scopedByTenantCompany(scope),
+        ...scopedByTenantCompanyAmbiente(scope),
         numero: numeroPedido,
         clienteId: orc.clienteId,
         depositoId: deposito.id,

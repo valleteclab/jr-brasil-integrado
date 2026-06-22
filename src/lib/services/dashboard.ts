@@ -1,4 +1,4 @@
-import { getDevelopmentTenantScope, scopedByTenantCompany, type TenantScope } from "@/lib/auth/dev-session";
+import { getDevelopmentTenantScope, scopedByTenantCompany, scopedByTenantCompanyAmbiente, type TenantScope } from "@/lib/auth/dev-session";
 import { prisma } from "@/lib/db/prisma";
 import { formatBrl } from "@/lib/formatters/currency";
 
@@ -32,6 +32,9 @@ export type DashboardData = {
 export async function getDashboardData(scopeArg?: TenantScope): Promise<DashboardData> {
   const scope = scopeArg ?? (await getDevelopmentTenantScope());
   const base = scopedByTenantCompany(scope);
+  // Base com filtro de ambiente (homologação × produção) para documentos que têm essa coluna.
+  // O estoque (EstoqueSaldo) é físico/global e segue usando `base`.
+  const baseAmb = scopedByTenantCompanyAmbiente(scope);
   const erros: string[] = [];
 
   const agora = new Date();
@@ -43,7 +46,7 @@ export async function getDashboardData(scopeArg?: TenantScope): Promise<Dashboar
   try {
     const pedidos = await prisma.pedidoVenda.findMany({
       where: {
-        ...base,
+        ...baseAmb,
         status: { in: ["AGUARDANDO_NOTA", "SEPARACAO", "ENVIADO", "ENTREGUE"] },
         confirmadoEm: { gte: inicioMes, lte: fimMes }
       },
@@ -59,7 +62,7 @@ export async function getDashboardData(scopeArg?: TenantScope): Promise<Dashboar
   let aReceberAberto: DashboardData["aReceberAberto"] = null;
   try {
     const contas = await prisma.contaReceber.findMany({
-      where: { ...base, status: { in: ["ABERTO", "PARCIAL"] } },
+      where: { ...baseAmb, status: { in: ["ABERTO", "PARCIAL"] } },
       select: { valor: true, valorPago: true }
     });
     const totalNum = contas.reduce(
@@ -75,7 +78,7 @@ export async function getDashboardData(scopeArg?: TenantScope): Promise<Dashboar
   let aPagarAberto: DashboardData["aPagarAberto"] = null;
   try {
     const contas = await prisma.contaPagar.findMany({
-      where: { ...base, status: { in: ["ABERTO", "PARCIAL"] } },
+      where: { ...baseAmb, status: { in: ["ABERTO", "PARCIAL"] } },
       select: { valor: true, valorPago: true }
     });
     const totalNum = contas.reduce(
@@ -92,7 +95,7 @@ export async function getDashboardData(scopeArg?: TenantScope): Promise<Dashboar
   try {
     const notas = await prisma.notaFiscal.findMany({
       where: {
-        ...base,
+        ...baseAmb,
         status: "AUTORIZADA",
         autorizadaEm: { gte: inicioMes, lte: fimMes }
       },
@@ -158,7 +161,7 @@ export async function getDashboardData(scopeArg?: TenantScope): Promise<Dashboar
   let pedidosRecentes: DashboardData["pedidosRecentes"] = null;
   try {
     const pedidos = await prisma.pedidoVenda.findMany({
-      where: { ...base },
+      where: { ...baseAmb },
       orderBy: { criadoEm: "desc" },
       take: 5,
       select: {
@@ -185,7 +188,7 @@ export async function getDashboardData(scopeArg?: TenantScope): Promise<Dashboar
   try {
     const contagem = await prisma.ordemServico.count({
       where: {
-        ...base,
+        ...baseAmb,
         status: { notIn: ["FATURADA", "CANCELADA"] }
       }
     });

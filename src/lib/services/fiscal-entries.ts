@@ -1,4 +1,4 @@
-import { getDevelopmentTenantScope, scopedByTenantCompany } from "@/lib/auth/dev-session";
+import { getDevelopmentTenantScope, scopedByTenantCompanyAmbiente } from "@/lib/auth/dev-session";
 import { prisma } from "@/lib/db/prisma";
 import { formatBrl } from "@/lib/formatters/currency";
 
@@ -79,7 +79,8 @@ export async function listFiscalEntrySummaries(): Promise<FiscalEntrySummary[]> 
   try {
     const scope = await getDevelopmentTenantScope();
     const entries = await prisma.entradaFiscal.findMany({
-      where: scopedByTenantCompany(scope),
+      // Isola por ambiente: entradas de homologação não aparecem em produção.
+      where: scopedByTenantCompanyAmbiente(scope),
       include: {
         fornecedor: true,
         itens: {

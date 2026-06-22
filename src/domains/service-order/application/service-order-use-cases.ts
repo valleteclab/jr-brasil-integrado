@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
-import { scopedByTenantCompany } from "@/lib/auth/dev-session";
+import { scopedByTenantCompany, scopedByTenantCompanyAmbiente } from "@/lib/auth/dev-session";
 import { createAuditLog } from "@/lib/audit/audit-service";
 import { nextDocumentNumber } from "@/lib/numbering";
 import {
@@ -42,7 +42,7 @@ export async function createOrdemServico(scope: TenantScope, input: CreateOrdemS
 
     const os = await tx.ordemServico.create({
       data: {
-        ...scopedByTenantCompany(scope),
+        ...scopedByTenantCompanyAmbiente(scope),
         numero,
         clienteId: input.clienteId,
         equipamento: input.equipamento,
@@ -418,7 +418,7 @@ export async function faturarOrdemServico(scope: TenantScope, id: string, input:
     for (const parcela of parcelas) {
       const cr = await tx.contaReceber.create({
         data: {
-          ...scopedByTenantCompany(scope),
+          ...scopedByTenantCompanyAmbiente(scope),
           clienteId: os.clienteId,
           ordemServicoId: id,
           descricao: `OS ${os.numero} — ${os.equipamento}${rotuloParcela(parcela)}`,

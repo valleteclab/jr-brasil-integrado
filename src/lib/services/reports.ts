@@ -1,4 +1,4 @@
-import { getDevelopmentTenantScope, scopedByTenantCompany, type TenantScope } from "@/lib/auth/dev-session";
+import { getDevelopmentTenantScope, scopedByTenantCompany, scopedByTenantCompanyAmbiente, type TenantScope } from "@/lib/auth/dev-session";
 import { prisma } from "@/lib/db/prisma";
 import { formatBrl } from "@/lib/formatters/currency";
 
@@ -244,7 +244,7 @@ export async function salesReport(periodoDias = 30, scopeArg?: TenantScope): Pro
 
   const pedidos = await prisma.pedidoVenda.findMany({
     where: {
-      ...base,
+      ...scopedByTenantCompanyAmbiente(scope),
       status: { notIn: ["RASCUNHO", "CANCELADO"] },
       confirmadoEm: { gte: inicio }
     },
@@ -434,11 +434,11 @@ export async function financeReport(scopeArg?: TenantScope): Promise<FinanceRepo
 
   const [receber, pagar] = await Promise.all([
     prisma.contaReceber.findMany({
-      where: { ...base, status: { notIn: ["CANCELADO"] } },
+      where: { ...scopedByTenantCompanyAmbiente(scope), status: { notIn: ["CANCELADO"] } },
       select: { valor: true, valorPago: true, juros: true, multa: true, descontoBaixa: true, vencimento: true, status: true }
     }),
     prisma.contaPagar.findMany({
-      where: { ...base, status: { notIn: ["CANCELADO"] } },
+      where: { ...scopedByTenantCompanyAmbiente(scope), status: { notIn: ["CANCELADO"] } },
       select: { valor: true, valorPago: true, juros: true, multa: true, descontoBaixa: true, vencimento: true, status: true }
     })
   ]);
@@ -539,7 +539,7 @@ export async function fiscalReport(scopeArg?: TenantScope): Promise<FiscalReport
 
   const notas = await prisma.notaFiscal.findMany({
     where: {
-      ...base,
+      ...scopedByTenantCompanyAmbiente(scope),
       emitidaEm: { gte: inicioMes, lte: fimMes }
     },
     select: {
@@ -617,12 +617,12 @@ export async function dreSimplificado(periodoDias = 30, scopeArg?: TenantScope):
   const [recebimentos, notasAutorizadas, saidasEstoque, pagamentos] = await Promise.all([
     // Receita caixa: contas recebidas no período
     prisma.contaReceber.findMany({
-      where: { ...base, status: "PAGO", pagoEm: { gte: inicio } },
+      where: { ...scopedByTenantCompanyAmbiente(scope), status: "PAGO", pagoEm: { gte: inicio } },
       select: { valor: true, valorPago: true, juros: true, multa: true, descontoBaixa: true }
     }),
     // Receita competência: NF-e autorizadas no período
     prisma.notaFiscal.findMany({
-      where: { ...base, status: "AUTORIZADA", autorizadaEm: { gte: inicio } },
+      where: { ...scopedByTenantCompanyAmbiente(scope), status: "AUTORIZADA", autorizadaEm: { gte: inicio } },
       select: { total: true }
     }),
     // CMV: saídas de estoque no período
@@ -632,7 +632,7 @@ export async function dreSimplificado(periodoDias = 30, scopeArg?: TenantScope):
     }),
     // Despesas: contas pagas no período
     prisma.contaPagar.findMany({
-      where: { ...base, status: "PAGO", pagoEm: { gte: inicio } },
+      where: { ...scopedByTenantCompanyAmbiente(scope), status: "PAGO", pagoEm: { gte: inicio } },
       select: { valor: true, valorPago: true, juros: true, multa: true, descontoBaixa: true }
     })
   ]);
@@ -714,7 +714,7 @@ export async function accountingPackageReport(
 
   const [notas, entradas, receber, pagar, movimentos, saldos] = await Promise.all([
     prisma.notaFiscal.findMany({
-      where: { ...base, emitidaEm: { gte: inicio, lte: fim } },
+      where: { ...scopedByTenantCompanyAmbiente(scope), emitidaEm: { gte: inicio, lte: fim } },
       orderBy: { emitidaEm: "asc" },
       select: {
         modelo: true,
@@ -732,7 +732,7 @@ export async function accountingPackageReport(
       }
     }),
     prisma.entradaFiscal.findMany({
-      where: { ...base, OR: [{ emitidaEm: { gte: inicio, lte: fim } }, { recebidaEm: { gte: inicio, lte: fim } }] },
+      where: { ...scopedByTenantCompanyAmbiente(scope), OR: [{ emitidaEm: { gte: inicio, lte: fim } }, { recebidaEm: { gte: inicio, lte: fim } }] },
       orderBy: [{ emitidaEm: "asc" }, { recebidaEm: "asc" }],
       select: {
         modelo: true,
@@ -748,7 +748,7 @@ export async function accountingPackageReport(
       }
     }),
     prisma.contaReceber.findMany({
-      where: { ...base, vencimento: { gte: inicio, lte: fim } },
+      where: { ...scopedByTenantCompanyAmbiente(scope), vencimento: { gte: inicio, lte: fim } },
       orderBy: { vencimento: "asc" },
       select: {
         numeroDocumento: true,
@@ -761,7 +761,7 @@ export async function accountingPackageReport(
       }
     }),
     prisma.contaPagar.findMany({
-      where: { ...base, vencimento: { gte: inicio, lte: fim } },
+      where: { ...scopedByTenantCompanyAmbiente(scope), vencimento: { gte: inicio, lte: fim } },
       orderBy: { vencimento: "asc" },
       select: {
         numeroDocumento: true,
@@ -920,7 +920,7 @@ export async function apuracaoImpostosReport(
 
   const [entradas, saidas] = await Promise.all([
     prisma.entradaFiscal.findMany({
-      where: { ...base, status: "ESTOQUE_PROCESSADO", emitidaEm: { gte: inicio, lte: fim } },
+      where: { ...scopedByTenantCompanyAmbiente(scope), status: "ESTOQUE_PROCESSADO", emitidaEm: { gte: inicio, lte: fim } },
       orderBy: { emitidaEm: "asc" },
       select: {
         numero: true,
@@ -930,7 +930,7 @@ export async function apuracaoImpostosReport(
       }
     }),
     prisma.notaFiscal.findMany({
-      where: { ...base, status: "AUTORIZADA", emitidaEm: { gte: inicio, lte: fim } },
+      where: { ...scopedByTenantCompanyAmbiente(scope), status: "AUTORIZADA", emitidaEm: { gte: inicio, lte: fim } },
       orderBy: { emitidaEm: "asc" },
       select: {
         modelo: true,

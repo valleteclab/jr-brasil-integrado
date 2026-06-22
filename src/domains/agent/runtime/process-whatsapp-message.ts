@@ -48,6 +48,14 @@ export async function processWhatsappMessage(input: { telefone: string; texto: s
     clienteId = contato.clienteId;
   }
 
+  // Ambiente fiscal vigente da empresa — isola dados de homologação (teste) dos de produção
+  // nas consultas do agente (ex.: pedidos do cliente). Sem isso, o scope manual não traria ambiente.
+  const cfgFiscalAmbiente = await prisma.configuracaoFiscal.findUnique({
+    where: { empresaId: scope.empresaId },
+    select: { ambiente: true }
+  });
+  scope.ambiente = cfgFiscalAmbiente?.ambiente ?? "HOMOLOGACAO";
+
   // WhatsApp precisa estar ativo na empresa para responder.
   const whats = await getWhatsappRuntime(scope);
   if (!whats?.ativo) return;

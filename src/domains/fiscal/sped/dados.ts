@@ -214,6 +214,8 @@ export async function carregarSpedInput(scope: TenantScope, params: CarregarSped
   const notasTodas = await prisma.notaFiscal.findMany({
     where: {
       ...base,
+      // SPED reflete o ambiente vigente: notas de homologação (teste) nunca entram num SPED de produção.
+      ambiente: scope.ambiente ?? "HOMOLOGACAO",
       modelo: { in: ["NFE", "NFCE"] },
       status: { in: ["AUTORIZADA", "CANCELADA"] },
       emitidaEm: { gte: inicio, lte: fim }
@@ -353,6 +355,7 @@ export async function carregarSpedInput(scope: TenantScope, params: CarregarSped
   const entradas = await prisma.entradaFiscal.findMany({
     where: {
       ...base,
+      ambiente: scope.ambiente ?? "HOMOLOGACAO",
       status: { in: ["CONFERIDA", "ESTOQUE_PROCESSADO"] },
       OR: [
         { recebidaEm: { gte: inicio, lte: fim } },

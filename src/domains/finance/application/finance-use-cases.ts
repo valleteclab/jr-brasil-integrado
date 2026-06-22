@@ -158,6 +158,7 @@ export async function settlePayable(
       data: {
         tenantId: scope.tenantId,
         empresaId: scope.empresaId,
+        ambiente: scope.ambiente ?? "HOMOLOGACAO",
         contaBancariaId: input.contaBancariaId ?? null,
         contaPagarId,
         tipo: "DEBITO",
@@ -292,6 +293,7 @@ export async function settleReceivable(
       data: {
         tenantId: scope.tenantId,
         empresaId: scope.empresaId,
+        ambiente: scope.ambiente ?? "HOMOLOGACAO",
         contaBancariaId: input.contaBancariaId ?? null,
         contaReceberId,
         tipo: "CREDITO",
@@ -343,6 +345,7 @@ export async function createPayable(scope: TenantScope, input: CreatePayableInpu
       data: {
         tenantId: scope.tenantId,
         empresaId: scope.empresaId,
+        ambiente: scope.ambiente ?? "HOMOLOGACAO",
         descricao: input.descricao.trim(),
         fornecedorId: input.fornecedorId ?? null,
         valor: input.valor,
@@ -397,6 +400,7 @@ export async function createReceivable(scope: TenantScope, input: CreateReceivab
       data: {
         tenantId: scope.tenantId,
         empresaId: scope.empresaId,
+        ambiente: scope.ambiente ?? "HOMOLOGACAO",
         descricao: input.descricao.trim(),
         clienteId: input.clienteId,
         valor: input.valor,
@@ -505,6 +509,7 @@ export async function estornarBaixaPayable(scope: TenantScope, contaPagarId: str
         data: {
           tenantId: scope.tenantId,
           empresaId: scope.empresaId,
+          ambiente: scope.ambiente ?? "HOMOLOGACAO",
           contaBancariaId: mov.contaBancariaId,
           contaPagarId,
           tipo: "CREDITO", // inverso do DEBITO da baixa original
@@ -607,6 +612,7 @@ export async function estornarBaixaReceivable(scope: TenantScope, contaReceberId
         data: {
           tenantId: scope.tenantId,
           empresaId: scope.empresaId,
+          ambiente: scope.ambiente ?? "HOMOLOGACAO",
           contaBancariaId: mov.contaBancariaId,
           contaReceberId,
           tipo: "DEBITO", // inverso do CREDITO da baixa original

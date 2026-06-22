@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { FinalidadeEntrada, Prisma, RegimeTributario, TipoTributo } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
-import { scopedByTenantCompany } from "@/lib/auth/dev-session";
+import { scopedByTenantCompany, scopedByTenantCompanyAmbiente } from "@/lib/auth/dev-session";
 import { createAuditLog } from "@/lib/audit/audit-service";
 import { parseNfeXml } from "@/domains/products/xml/nfe-server-parser";
 import type { ParsedNfeItem } from "@/domains/products/xml/nfe-server-parser";
@@ -503,6 +503,7 @@ export async function importNfeXml(scope: TenantScope, xmlText: string) {
       data: {
         tenantId: scope.tenantId,
         empresaId: scope.empresaId,
+        ambiente: scope.ambiente ?? "HOMOLOGACAO",
         fornecedorId: fornecedor?.id,
         xmlImportacaoId: xmlImportacao.id,
         chaveAcesso: parsed.accessKey,
@@ -1105,6 +1106,7 @@ export async function processFiscalEntry(
         data: {
           tenantId: scope.tenantId,
           empresaId: scope.empresaId,
+          ambiente: scope.ambiente ?? "HOMOLOGACAO",
           fornecedorId: entrada.fornecedorId,
           entradaFiscalId: entrada.id,
           entradaFiscalParcelaId: parcela.id,
@@ -2133,7 +2135,7 @@ export async function createManualFiscalEntry(scope: TenantScope, input: ManualF
 
     const entrada = await tx.entradaFiscal.create({
       data: {
-        ...scopedByTenantCompany(scope),
+        ...scopedByTenantCompanyAmbiente(scope),
         fornecedorId,
         chaveAcesso: input.chaveAcesso?.trim() || null,
         numero: input.numero?.trim() || null,

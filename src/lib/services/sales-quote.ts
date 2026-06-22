@@ -1,4 +1,4 @@
-import { getDevelopmentTenantScope, scopedByTenantCompany } from "@/lib/auth/dev-session";
+import { getDevelopmentTenantScope, scopedByTenantCompany, scopedByTenantCompanyAmbiente } from "@/lib/auth/dev-session";
 import { prisma } from "@/lib/db/prisma";
 import { formatBrl } from "@/lib/formatters/currency";
 import { expireQuotesVencidos } from "@/domains/sales-quote/application/quote-use-cases";
@@ -118,7 +118,8 @@ export async function listQuotes(): Promise<QuoteSummary[]> {
     // Expiração preguiçosa: marca vencidos como EXPIRADO antes de listar.
     await expireQuotesVencidos(scope);
     const orcamentos = await prisma.orcamento.findMany({
-      where: scopedByTenantCompany(scope),
+      // Isola por ambiente: orçamentos de homologação não aparecem em produção.
+      where: scopedByTenantCompanyAmbiente(scope),
       include: {
         cliente: { select: { razaoSocial: true, nomeFantasia: true } },
       },

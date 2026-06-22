@@ -1,4 +1,4 @@
-import { getDevelopmentTenantScope, scopedByTenantCompany } from "@/lib/auth/dev-session";
+import { getDevelopmentTenantScope, scopedByTenantCompany, scopedByTenantCompanyAmbiente } from "@/lib/auth/dev-session";
 import { getSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/db/prisma";
 import type { TipoNegocio } from "@/lib/auth/modules";
@@ -65,6 +65,9 @@ export async function getErpShellContext(): Promise<ErpShellContext> {
   try {
     const scope = await getDevelopmentTenantScope();
     const base = scopedByTenantCompany(scope);
+    // Badges dos documentos com ambiente: isola homologação × produção. Compras e estoque
+    // (PedidoCompra/EstoqueSaldo) não têm ambiente e seguem usando `base`.
+    const baseAmb = scopedByTenantCompanyAmbiente(scope);
     const agora = new Date();
 
     const [
@@ -93,13 +96,13 @@ export async function getErpShellContext(): Promise<ErpShellContext> {
         select: { ambiente: true, ativo: true }
       }),
       prisma.pedidoVenda.count({
-        where: { ...base, status: { in: ["RASCUNHO", "AGUARDANDO_PAGAMENTO", "AGUARDANDO_NOTA", "SEPARACAO"] } }
+        where: { ...baseAmb, status: { in: ["RASCUNHO", "AGUARDANDO_PAGAMENTO", "AGUARDANDO_NOTA", "SEPARACAO"] } }
       }),
       prisma.orcamento.count({
-        where: { ...base, status: { in: ["EM_ANALISE", "AGUARDANDO_CLIENTE"] } }
+        where: { ...baseAmb, status: { in: ["EM_ANALISE", "AGUARDANDO_CLIENTE"] } }
       }),
       prisma.ordemServico.count({
-        where: { ...base, status: { notIn: ["FATURADA", "CANCELADA"] } }
+        where: { ...baseAmb, status: { notIn: ["FATURADA", "CANCELADA"] } }
       }),
       prisma.pedidoCompra.count({
         where: { ...base, status: { in: ["RASCUNHO", "ENVIADO", "PARCIAL"] } }
@@ -109,10 +112,10 @@ export async function getErpShellContext(): Promise<ErpShellContext> {
         select: { produtoId: true, quantidade: true, minimo: true }
       }),
       prisma.contaPagar.count({
-        where: { ...base, status: { in: ["ABERTO", "PARCIAL"] }, vencimento: { lt: agora } }
+        where: { ...baseAmb, status: { in: ["ABERTO", "PARCIAL"] }, vencimento: { lt: agora } }
       }),
       prisma.contaReceber.count({
-        where: { ...base, status: { in: ["ABERTO", "PARCIAL"] }, vencimento: { lt: agora } }
+        where: { ...baseAmb, status: { in: ["ABERTO", "PARCIAL"] }, vencimento: { lt: agora } }
       })
     ]);
 

@@ -151,7 +151,13 @@ export async function getSessionScope(): Promise<TenantScope> {
   const session = await getSession();
   if (!session) throw new SessionError("Sessão expirada ou inexistente. Faça login.");
   if (!session.scope) throw new SessionError("Sessão sem cliente selecionado.");
-  return session.scope;
+  // Carrega o ambiente fiscal vigente da empresa para que as listagens isolem
+  // homologação × produção. Sem ConfiguracaoFiscal, assume HOMOLOGACAO.
+  const config = await prisma.configuracaoFiscal.findUnique({
+    where: { empresaId: session.scope.empresaId },
+    select: { ambiente: true }
+  });
+  return { ...session.scope, ambiente: config?.ambiente ?? "HOMOLOGACAO" };
 }
 
 export class SessionError extends Error {}

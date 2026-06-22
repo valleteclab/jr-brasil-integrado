@@ -1,5 +1,5 @@
 import type { FinalidadeNfe, ModeloFiscal, StatusNotaFiscal } from "@prisma/client";
-import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
+import { getDevelopmentTenantScope, scopedByTenantCompanyAmbiente } from "@/lib/auth/dev-session";
 import { prisma } from "@/lib/db/prisma";
 import { formatBrl } from "@/lib/formatters/currency";
 
@@ -68,7 +68,8 @@ export async function listNotasFiscais(): Promise<NotaFiscalSummary[]> {
 
   const scope = await getDevelopmentTenantScope();
   const notas = await prisma.notaFiscal.findMany({
-    where: { tenantId: scope.tenantId, empresaId: scope.empresaId },
+    // Isola por ambiente: em produção não lista notas emitidas em homologação (teste) e vice-versa.
+    where: scopedByTenantCompanyAmbiente(scope),
     orderBy: { criadoEm: "desc" },
     take: 200
   });

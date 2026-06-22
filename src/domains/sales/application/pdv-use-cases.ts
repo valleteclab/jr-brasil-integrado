@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
-import { scopedByTenantCompany } from "@/lib/auth/dev-session";
+import { scopedByTenantCompany, scopedByTenantCompanyAmbiente } from "@/lib/auth/dev-session";
 import { createAuditLog } from "@/lib/audit/audit-service";
 import { gerarParcelas, rotuloParcela } from "@/lib/finance/condicao-pagamento";
 import { validarSenhaAdmin } from "@/lib/auth/admin-credential";
@@ -328,7 +328,7 @@ export async function pdvCheckout(scope: TenantScope, input: PdvCheckoutInput): 
       for (const parcela of parcelas) {
         await tx.contaReceber.create({
           data: {
-            ...scopedByTenantCompany(scope),
+            ...scopedByTenantCompanyAmbiente(scope),
             clienteId: input.clienteId as string,
             pedidoVendaId: pedidoVendaId ?? null,
             descricao: `${descricaoBase} crediário${rotuloParcela(parcela)}`,

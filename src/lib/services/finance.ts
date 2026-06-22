@@ -1,4 +1,4 @@
-import { getDevelopmentTenantScope, scopedByTenantCompany } from "@/lib/auth/dev-session";
+import { getDevelopmentTenantScope, scopedByTenantCompany, scopedByTenantCompanyAmbiente } from "@/lib/auth/dev-session";
 import { prisma } from "@/lib/db/prisma";
 import { formatBrl } from "@/lib/formatters/currency";
 
@@ -143,7 +143,7 @@ export async function listPayables(filtroStatus?: string): Promise<PayableSummar
     : { status: { in: ["ABERTO", "PARCIAL", "VENCIDO", "PAGO", "CANCELADO"] as RawStatus[] } };
 
   const contas = await prisma.contaPagar.findMany({
-    where: { ...scopedByTenantCompany(scope), ...whereStatus },
+    where: { ...scopedByTenantCompanyAmbiente(scope), ...whereStatus },
     include: { fornecedor: { select: { razaoSocial: true, nomeFantasia: true } } },
     orderBy: [{ vencimento: "asc" }, { criadoEm: "desc" }]
   });
@@ -154,7 +154,7 @@ export async function listPayables(filtroStatus?: string): Promise<PayableSummar
   const movPorConta = new Map<string, { formaPagamento: string | null; parcelas: number | null; bandeira: string | null; maquinaCartaoId: string | null; contaNome: string | null; data: Date }>();
   if (idsComPagamento.length) {
     const movs = await prisma.movimentoFinanceiro.findMany({
-      where: { ...scopedByTenantCompany(scope), origem: "CONTA_PAGAR", contaPagarId: { in: idsComPagamento } },
+      where: { ...scopedByTenantCompanyAmbiente(scope), origem: "CONTA_PAGAR", contaPagarId: { in: idsComPagamento } },
       select: { contaPagarId: true, formaPagamento: true, parcelas: true, bandeira: true, maquinaCartaoId: true, dataMovimento: true, contaBancaria: { select: { nome: true } } },
       orderBy: { dataMovimento: "desc" }
     });
@@ -244,7 +244,7 @@ export async function listReceivables(filtroStatus?: string): Promise<Receivable
     : { status: { in: ["ABERTO", "PARCIAL", "VENCIDO", "PAGO", "CANCELADO"] as RawStatus[] } };
 
   const contas = await prisma.contaReceber.findMany({
-    where: { ...scopedByTenantCompany(scope), ...whereStatus },
+    where: { ...scopedByTenantCompanyAmbiente(scope), ...whereStatus },
     include: { cliente: { select: { razaoSocial: true, nomeFantasia: true } } },
     orderBy: [{ vencimento: "asc" }, { criadoEm: "desc" }]
   });
@@ -357,14 +357,14 @@ export async function getFinanceSummary(): Promise<FinanceSummary> {
   const [pagar, receber, bancos] = await Promise.all([
     prisma.contaPagar.findMany({
       where: {
-        ...scopedByTenantCompany(scope),
+        ...scopedByTenantCompanyAmbiente(scope),
         status: { in: ["ABERTO", "PARCIAL"] }
       },
       select: { valor: true, valorPago: true, juros: true, multa: true, descontoBaixa: true, vencimento: true }
     }),
     prisma.contaReceber.findMany({
       where: {
-        ...scopedByTenantCompany(scope),
+        ...scopedByTenantCompanyAmbiente(scope),
         status: { in: ["ABERTO", "PARCIAL"] }
       },
       select: { valor: true, valorPago: true, juros: true, multa: true, descontoBaixa: true, vencimento: true }
@@ -431,7 +431,7 @@ export async function getCashFlow(): Promise<CashFlowData> {
   const [pagarProjetado, receberProjetado, movimentosRealizados, bancos] = await Promise.all([
     prisma.contaPagar.findMany({
       where: {
-        ...scopedByTenantCompany(scope),
+        ...scopedByTenantCompanyAmbiente(scope),
         status: { in: ["ABERTO", "PARCIAL"] },
         vencimento: { gte: hoje, lte: fim90 }
       },
@@ -439,7 +439,7 @@ export async function getCashFlow(): Promise<CashFlowData> {
     }),
     prisma.contaReceber.findMany({
       where: {
-        ...scopedByTenantCompany(scope),
+        ...scopedByTenantCompanyAmbiente(scope),
         status: { in: ["ABERTO", "PARCIAL"] },
         vencimento: { gte: hoje, lte: fim90 }
       },
@@ -447,7 +447,7 @@ export async function getCashFlow(): Promise<CashFlowData> {
     }),
     prisma.movimentoFinanceiro.findMany({
       where: {
-        ...scopedByTenantCompany(scope),
+        ...scopedByTenantCompanyAmbiente(scope),
         dataMovimento: { gte: inicio30Atras, lt: hoje }
       },
       select: { tipo: true, valor: true }

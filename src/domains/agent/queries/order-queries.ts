@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
-import { scopedByTenantCompany } from "@/lib/auth/dev-session";
+import { scopedByTenantCompanyAmbiente } from "@/lib/auth/dev-session";
 
 /**
  * Situação de um pedido de venda pelo número (ex.: "PV-000003"). Read-only,
@@ -11,7 +11,7 @@ export async function getOrderStatus(scope: TenantScope, args: { numero?: string
   if (!numero) return { encontrado: false, motivo: "Informe o número do pedido." };
 
   const pedido = await prisma.pedidoVenda.findFirst({
-    where: { ...scopedByTenantCompany(scope), numero },
+    where: { ...scopedByTenantCompanyAmbiente(scope), numero },
     select: {
       id: true,
       numero: true,

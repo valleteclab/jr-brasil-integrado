@@ -1,5 +1,5 @@
 import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
-import { scopedByTenantCompany } from "@/lib/auth/dev-session";
+import { scopedByTenantCompany, scopedByTenantCompanyAmbiente } from "@/lib/auth/dev-session";
 import { prisma } from "@/lib/db/prisma";
 import { getCaixaAberto, getResumoCaixa, type ResumoCaixa } from "@/domains/cashier/application/cashier-use-cases";
 
@@ -78,7 +78,7 @@ export async function getCaixaPageData(): Promise<CaixaPageData> {
   ]);
 
   const pedidos = await prisma.pedidoVenda.findMany({
-    where: { ...scopedByTenantCompany(scope), status: "AGUARDANDO_PAGAMENTO" },
+    where: { ...scopedByTenantCompanyAmbiente(scope), status: "AGUARDANDO_PAGAMENTO" },
     orderBy: { criadoEm: "desc" },
     take: 100,
     include: {

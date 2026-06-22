@@ -1,4 +1,4 @@
-import { getDevelopmentTenantScope, scopedByTenantCompany } from "@/lib/auth/dev-session";
+import { getDevelopmentTenantScope, scopedByTenantCompany, scopedByTenantCompanyAmbiente } from "@/lib/auth/dev-session";
 import { prisma } from "@/lib/db/prisma";
 import { formatBrl } from "@/lib/formatters/currency";
 
@@ -117,7 +117,8 @@ export async function listOrdensServico(): Promise<OrdemServicoSummary[]> {
   try {
     const scope = await getDevelopmentTenantScope();
     const oss = await prisma.ordemServico.findMany({
-      where: scopedByTenantCompany(scope),
+      // Isola por ambiente: OS de homologação não aparecem em produção.
+      where: scopedByTenantCompanyAmbiente(scope),
       include: {
         cliente: { select: { razaoSocial: true, nomeFantasia: true } },
       },
