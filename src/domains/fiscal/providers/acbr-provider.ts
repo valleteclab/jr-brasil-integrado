@@ -1070,9 +1070,15 @@ export async function registrarEmpresaAcbr(
 ): Promise<{ ok: boolean; created: boolean; message: string }> {
   const provider = new AcbrFiscalProvider();
   const documento = normalizeDocumento(empresa.cpf_cnpj);
+  // IE do emitente: a SEFAZ exige 2–14 dígitos OU o literal "ISENTO". Remove máscara
+  // (pontos/traços/espaços) e caracteres ocultos; se não sobrar dígito, envia "ISENTO".
+  // Sem isso, uma IE mascarada/vazia no cadastro faz a emissão falhar no InfNFe.Emit.IE.
+  const ieDigits = (empresa.inscricao_estadual ?? "").replace(/\D/g, "");
+  const inscricao_estadual = ieDigits.length >= 2 ? ieDigits : "ISENTO";
   const body = {
     ...empresa,
     cpf_cnpj: documento,
+    inscricao_estadual,
     endereco: { ...empresa.endereco, codigo_pais: "1058", pais: "BRASIL" }
   };
   // Chama via o objeto (não destacar o método) para preservar o `this` dentro de request/resolveConfig.
