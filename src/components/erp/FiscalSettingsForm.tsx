@@ -175,7 +175,9 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          provider: config.provider,
+          // NÃO enviamos `provider`: ele é global (definido em /admin/provedor-fiscal). Sem provider,
+          // o backend herda o provedor ativo da plataforma e não exige credencial por empresa —
+          // assim a "Emissão ativa" não fica travada por um Client ID que é da plataforma.
           environment: config.environment,
           regime: config.regime,
           baseUrl: config.baseUrl,
@@ -224,9 +226,14 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
         <div className="erp-form">
           <label>
             Provedor de emissão
-            <select value={config.provider} onChange={(e) => update("provider", e.target.value as FiscalConfigSummary["provider"])}>
-              {PROVIDERS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
-            </select>
+            {/* O provedor (e suas credenciais) é definido pela PLATAFORMA, em /admin/provedor-fiscal.
+                A empresa não escolhe nem configura credenciais aqui — só vê qual está ativo. */}
+            <input
+              value={PROVIDERS.find((p) => p.value === config.provider)?.label ?? config.provider}
+              readOnly
+              disabled
+              title="O provedor de emissão é definido pelo administrador da plataforma."
+            />
           </label>
           <label>
             Ambiente
@@ -281,38 +288,37 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
             <div className="alert info">
               <strong>ACBr API</strong>
               <span>
-                A ACBr usa <strong>OAuth 2.0</strong>. Informe o <strong>Client ID</strong> e o{" "}
-                <strong>Client Secret</strong> da credencial (console da ACBr). A URL base
-                (<code>prod.acbr.api.br</code> ou <code>hom.acbr.api.br</code>) é definida pelo
-                ambiente — deixe a URL base em branco. A empresa e o <strong>certificado A1</strong>{" "}
-                ficam no cadastro da ACBr (use o envio de certificado abaixo). Credenciais
-                <em> Sandbox</em> só funcionam em homologação.
+                As credenciais da ACBr (Client ID/Secret e URL base) são configuradas pelo{" "}
+                <strong>administrador da plataforma</strong> e valem para todas as empresas — você
+                não precisa informá-las aqui. Nesta tela ficam só os dados da sua empresa:{" "}
+                <strong>CSC da NFC-e</strong>, <strong>certificado A1</strong> e logo. Use{" "}
+                &ldquo;Testar conexão&rdquo; para validar.
               </span>
             </div>
           )}
           <div className="erp-form">
-            <label>
-              URL base da API {baseUrlOpcional ? "(opcional)" : ""}
-              <input
-                value={config.baseUrl}
-                onChange={(e) => update("baseUrl", e.target.value)}
-                placeholder={baseUrlOpcional ? "Definida pelo ambiente — deixe em branco" : "https://api.exemplo.com.br"}
-              />
-            </label>
-            {isAcbr && (
+            {/* ACBr: URL base, Client ID e Client Secret são da PLATAFORMA — não aparecem aqui.
+                Demais provedores (legado) ainda informam credencial própria. */}
+            {!isAcbr && (
               <label>
-                Client ID
-                <input value={config.cscId} onChange={(e) => update("cscId", e.target.value)} placeholder="client_id da credencial ACBr" />
+                URL base da API {baseUrlOpcional ? "(opcional)" : ""}
+                <input
+                  value={config.baseUrl}
+                  onChange={(e) => update("baseUrl", e.target.value)}
+                  placeholder={baseUrlOpcional ? "Definida pelo ambiente — deixe em branco" : "https://api.exemplo.com.br"}
+                />
               </label>
             )}
-            <label>
-              {isAcbr ? "Client Secret" : "Token de integração"} {config.tokenLast4 ? `(atual ••••${config.tokenLast4})` : ""}
-              <input
-                value={token}
-                onChange={(e) => setToken(e.target.value)}
-                placeholder={config.hasToken ? (isAcbr ? "Manter client_secret atual" : "Manter token atual") : isAcbr ? "Informe o client_secret" : "Informe o token"}
-              />
-            </label>
+            {!isAcbr && (
+              <label>
+                Token de integração {config.tokenLast4 ? `(atual ••••${config.tokenLast4})` : ""}
+                <input
+                  value={token}
+                  onChange={(e) => setToken(e.target.value)}
+                  placeholder={config.hasToken ? "Manter token atual" : "Informe o token"}
+                />
+              </label>
+            )}
             {isAcbr && (
               <>
                 <label>
