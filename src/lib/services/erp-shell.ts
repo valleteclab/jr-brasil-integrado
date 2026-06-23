@@ -138,7 +138,10 @@ export async function getErpShellContext(): Promise<ErpShellContext> {
       usuarioNome,
       usuarioIniciais: iniciais(usuarioNome),
       usuarioPerfil: session?.perfilNome ?? SHELL_FALLBACK.usuarioPerfil,
-      ambiente: configFiscal?.ativo && configFiscal.ambiente === "PRODUCAO" ? "PRODUCAO" : "HOMOLOGACAO",
+      // Selo do cabeçalho = ambiente fiscal REAL (o que carimba a nota e define validade na SEFAZ).
+      // Não depende de `ativo` (a flag "Emissão ativa" liga/desliga o módulo, não muda o ambiente):
+      // antes, ambiente=PRODUCAO com emissão inativa mostrava "Homologação" e enganava o usuário.
+      ambiente: configFiscal?.ambiente === "PRODUCAO" ? "PRODUCAO" : "HOMOLOGACAO",
       tipoNegocio: empresa?.tipoNegocio ?? "AMBOS",
       logoSistema: empresa?.logoSistema ?? null,
       corDestaque: empresa?.corDestaque ?? null,
