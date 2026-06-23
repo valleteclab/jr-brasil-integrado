@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { correspondeBusca } from "@/lib/search/normalize";
 import type { EmissaoFormData } from "@/lib/services/fiscal-emit";
@@ -224,6 +224,35 @@ export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormDat
   const isNfce = tipo === "NFCE";
   const tipoLabel = tipo === "NFE" ? "NF-e" : tipo === "NFCE" ? "NFC-e" : "NFS-e";
 
+  // UF de destino da operação: cliente cadastrado, consumidor da NFC-e (mesma UF do emitente) ou
+  // destinatário avulso. Define o CFOP de saída ser interno (5xxx) ou interestadual (6xxx).
+  const destinoUf =
+    modoDest === "cadastrado" || isNfce
+      ? clientes.find((c) => c.id === clienteId)?.uf ?? (isNfce ? data.emitterUf : null)
+      : avUf;
+
+  // Ajusta o 1º dígito do CFOP de saída conforme a operação: mesma UF → 5xxx, outra UF → 6xxx.
+  // Evita herdar do cadastro do produto um CFOP de outro estado (ex.: produto 6102 numa venda interna).
+  function cfopParaOperacao(cfop: string, uf: string | null | undefined): string {
+    const c = (cfop ?? "").replace(/\D/g, "");
+    if (c.length !== 4 || (c[0] !== "5" && c[0] !== "6")) return cfop;
+    const origem = (data.emitterUf ?? "").trim().toUpperCase();
+    const destino = (uf ?? "").trim().toUpperCase();
+    if (!origem || !destino) return cfop;
+    return (origem === destino ? "5" : "6") + c.slice(1);
+  }
+
+  // Ao trocar a UF de destino, re-deriva o CFOP de saída dos itens (mantém o resto do que foi digitado).
+  useEffect(() => {
+    setItens((cur) =>
+      cur.map((it) => {
+        const novo = cfopParaOperacao(it.cfop, destinoUf);
+        return novo === it.cfop ? it : { ...it, cfop: novo };
+      })
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [destinoUf]);
+
   const subtotalItens = useMemo(
     () => itens.reduce((s, it) => s + Math.max(it.quantidade * it.precoUnitario - it.desconto, 0), 0),
     [itens]
@@ -253,7 +282,8 @@ export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormDat
           codigo: p.sku,
           descricao: p.nome,
           ncm: p.ncm ?? "",
-          cfop: p.cfop ?? "",
+          // CFOP do produto ajustado à operação (interno/interestadual) pela UF do destinatário.
+          cfop: cfopParaOperacao(p.cfop ?? "", destinoUf),
           origem: p.origem ?? "0",
           unidade: p.unidade,
           quantidade: 1,
