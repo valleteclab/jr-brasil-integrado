@@ -7,7 +7,7 @@ import { exitStock, getDefaultDeposito, applyStockMovement } from "@/domains/sto
 import { buildDocumentFromPedido, buildNfseFromOrdemServico } from "@/domains/fiscal/document-builder";
 import { emitFiscalDocument, previewFiscalDocument } from "@/domains/fiscal/application/fiscal-emission-use-cases";
 import { getFiscalRuntimeConfig } from "@/domains/fiscal/application/fiscal-config-use-cases";
-import { isValidLc116 } from "@/domains/fiscal/lc116";
+import { isCodigoServicoValido } from "@/domains/fiscal/codigo-tributacao-nacional";
 import { sugerirPorLc116 } from "@/domains/fiscal/nbs";
 import type { TaxationTypeIss } from "@/domains/fiscal/types";
 import { computeRetencoes, issPorServico } from "@/domains/fiscal/nfse-tax";
@@ -398,8 +398,8 @@ export async function emitServiceInvoiceAvulsa(scope: TenantScope, input: Servic
   if (!input.servicos?.length) throw new StandaloneEmissionError("Informe ao menos um serviço.");
 
   const docDefault = input.codigoServicoLc116?.trim() || null;
-  if (docDefault && !isValidLc116(docDefault)) {
-    throw new StandaloneEmissionError("Código de serviço LC 116 inválido.");
+  if (docDefault && !isCodigoServicoValido(docDefault)) {
+    throw new StandaloneEmissionError("Código de Tributação Nacional (serviço) inválido.");
   }
 
   const cliente = await resolveReceiver(scope, input.receiver, "NFSE");
@@ -427,8 +427,8 @@ export async function emitServiceInvoiceAvulsa(scope: TenantScope, input: Servic
     if (!s.descricao?.trim()) throw new StandaloneEmissionError(`Informe a descrição do serviço ${index + 1}.`);
     if (s.valor <= 0) throw new StandaloneEmissionError(`Valor inválido no serviço ${index + 1}.`);
     const codigo = s.codigoServicoLc116?.trim() || fallback;
-    if (codigo && !isValidLc116(codigo)) {
-      throw new StandaloneEmissionError(`Código LC 116 inválido no serviço ${index + 1}.`);
+    if (codigo && !isCodigoServicoValido(codigo)) {
+      throw new StandaloneEmissionError(`Código de Tributação Nacional inválido no serviço ${index + 1}.`);
     }
     // Sugestão automática (tabela oficial): NBS e cClassTrib derivados do LC 116, quando o
     // serviço não trouxer os próprios. O informado pelo usuário sempre tem prioridade.

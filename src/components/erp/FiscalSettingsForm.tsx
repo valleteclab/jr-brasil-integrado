@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/shared/Button";
 import type { FiscalConfigSummary } from "@/domains/fiscal/application/fiscal-config-use-cases";
-import { LC116_LIST } from "@/domains/fiscal/lc116";
+import { CODIGO_SERVICO_OPTIONS } from "@/domains/fiscal/codigo-tributacao-nacional";
 import { ajustarLogoFiscal } from "@/lib/images/logo-fiscal";
 
 const PROVIDERS = [
@@ -391,10 +391,10 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
             <input value={config.codigoMunicipioIbge} onChange={(e) => update("codigoMunicipioIbge", e.target.value)} placeholder="Ex.: 2919207" />
           </label>
           <label className="full">
-            Código de serviço padrão (LC 116) — usado na NFS-e quando o serviço da OS não tem código próprio
+            Código de Tributação Nacional padrão (NFS-e) — usado quando o serviço não tem código próprio
             <select value={config.codigoServicoLc116Padrao} onChange={(e) => update("codigoServicoLc116Padrao", e.target.value)}>
               <option value="">Sem padrão</option>
-              {LC116_LIST.map((item) => (
+              {CODIGO_SERVICO_OPTIONS.map((item) => (
                 <option key={item.code} value={item.code}>{item.code} — {item.description}</option>
               ))}
             </select>

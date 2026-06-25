@@ -1,6 +1,6 @@
 import { getDevelopmentTenantScope, scopedByTenantCompany } from "@/lib/auth/dev-session";
 import { prisma } from "@/lib/db/prisma";
-import { LC116_LIST } from "@/domains/fiscal/lc116";
+import { CODIGO_SERVICO_OPTIONS } from "@/domains/fiscal/codigo-tributacao-nacional";
 
 export type EmissaoCliente = {
   id: string;
@@ -70,7 +70,7 @@ export async function getEmissaoFormData(): Promise<EmissaoFormData> {
   return {
     emitterUf: empresa?.enderecoUf ?? null,
     nfseAmbienteNacional: cfgFiscal?.nfseAmbienteNacional ?? null,
-    lc116: LC116_LIST,
+    lc116: CODIGO_SERVICO_OPTIONS,
     clientes: clientes.map((c) => {
       const endereco = c.enderecos[0];
       const contato = c.contatos[0];

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { OrdemServicoDetail as OsDetail } from "@/lib/services/service-order";
 import type { OsFormData } from "@/lib/services/service-order";
-import { LC116_LIST } from "@/domains/fiscal/lc116";
+import { CODIGO_SERVICO_OPTIONS } from "@/domains/fiscal/codigo-tributacao-nacional";
 
 type Props = {
   os: OsDetail;
@@ -385,10 +385,10 @@ export function OrdemServicoDetail({ os: initialOs, formData }: Props) {
                 />
               </label>
               <label className="full">
-                Código de serviço (LC 116) — para NFS-e
+                Código de Tributação Nacional — para NFS-e
                 <select value={codigoServLc116} onChange={(e) => setCodigoServLc116(e.target.value)}>
                   <option value="">Usar padrão da empresa (config. fiscal)</option>
-                  {LC116_LIST.map((item) => (
+                  {CODIGO_SERVICO_OPTIONS.map((item) => (
                     <option key={item.code} value={item.code}>{item.code} — {item.description}</option>
                   ))}
                 </select>

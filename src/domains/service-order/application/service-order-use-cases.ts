@@ -12,7 +12,7 @@ import {
 } from "@/domains/stock/application/stock-service";
 import { buildNfseFromOrdemServico } from "@/domains/fiscal/document-builder";
 import { emitFiscalDocument } from "@/domains/fiscal/application/fiscal-emission-use-cases";
-import { isValidLc116 } from "@/domains/fiscal/lc116";
+import { isCodigoServicoValido } from "@/domains/fiscal/codigo-tributacao-nacional";
 import { computeRetencoes, issPorServico } from "@/domains/fiscal/nfse-tax";
 import type { RetencoesInput } from "@/domains/fiscal/nfse-tax";
 import type { StatusOrdemServico } from "@prisma/client";
@@ -84,7 +84,7 @@ export async function addServico(scope: TenantScope, osId: string, input: AddSer
   if (input.valorHora <= 0) throw new Error("Valor por hora deve ser maior que zero.");
 
   const codigoServicoLc116 = input.codigoServicoLc116?.trim() || null;
-  if (codigoServicoLc116 && !isValidLc116(codigoServicoLc116)) {
+  if (codigoServicoLc116 && !isCodigoServicoValido(codigoServicoLc116)) {
     throw new Error("Código de serviço LC 116 inválido.");
   }
 

@@ -821,7 +821,7 @@ export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormDat
               {servicos.length === 0 ? (
                 <div className="empty-st">
                   <h4>Nenhum serviço</h4>
-                  <p>Adicione os serviços prestados e selecione o código LC 116 correspondente.</p>
+                  <p>Adicione os serviços prestados e selecione o Código de Tributação Nacional correspondente.</p>
                   <button type="button" className="btn-erp primary sm" style={{ marginTop: 8 }} onClick={addServico}>+ Adicionar serviço</button>
                 </div>
               ) : (
@@ -830,7 +830,7 @@ export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormDat
                     <thead>
                       <tr>
                         <th style={{ minWidth: 200 }}>Descrição</th>
-                        <th style={{ minWidth: 220 }}>Código LC 116</th>
+                        <th style={{ minWidth: 220 }}>Código de Tributação Nacional</th>
                         <th className="num">Valor</th>
                         <th className="actions" />
                       </tr>
@@ -844,7 +844,7 @@ export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormDat
                               value={sv.codigoServicoLc116}
                               onChange={(e) => updServ(sv.uid, { codigoServicoLc116: e.target.value })}
                               style={{ ...cellInput, width: "100%" }}
-                              aria-label="Código LC 116 do serviço"
+                              aria-label="Código de Tributação Nacional do serviço"
                             >
                               <option value="">Usar código padrão do documento</option>
                               {data.lc116.map((l) => <option key={l.code} value={l.code}>{l.code} — {l.description}</option>)}
@@ -957,7 +957,7 @@ export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormDat
                   </select>
                 </label>
                 <label>
-                  Código LC 116 padrão do documento
+                  Código de Tributação Nacional padrão do documento
                   <select value={codigoLc116Doc} onChange={(e) => setCodigoLc116Doc(e.target.value)}>
                     <option value="">Usar padrão da configuração fiscal</option>
                     {data.lc116.map((l) => <option key={l.code} value={l.code}>{l.code} — {l.description}</option>)}

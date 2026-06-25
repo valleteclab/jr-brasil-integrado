@@ -6,9 +6,15 @@ export { NBS_LIST, CLASS_TRIB_LIST };
 const NBS_BY_CODE = new Map(NBS_LIST.map((n) => [n.code, n]));
 const CT_BY_CODE = new Map(CLASS_TRIB_LIST.map((c) => [c.code, c]));
 
-/** Normaliza um código LC 116 ("1.07" ou "1.7" ou "01.07") para o formato da tabela ("01.07"). */
+/**
+ * Normaliza o código de serviço para o formato "II.SS" (subitem LC 116), que é a chave da correlação NBS.
+ * Aceita LC 116 ("1.07"/"1.7"/"01.07") e também o cTribNac de 6 dígitos novo ("010701" → "01.07"),
+ * já que a correlação NBS é por subitem (os 4 primeiros dígitos: item+subitem).
+ */
 function normalizeLc116(code: string | null | undefined): string {
   const raw = (code ?? "").trim();
+  const d = raw.replace(/\D/g, "");
+  if (d.length === 6 && !raw.includes(".")) return `${d.slice(0, 2)}.${d.slice(2, 4)}`;
   const m = raw.match(/^(\d{1,2})\.(\d{1,2})$/);
   if (!m) return raw;
   return `${m[1].padStart(2, "0")}.${m[2].padStart(2, "0")}`;

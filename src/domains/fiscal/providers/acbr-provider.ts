@@ -13,6 +13,7 @@ import type {
 import { randomBytes } from "node:crypto";
 import type { ItemTaxResult } from "@/domains/fiscal/types";
 import { normalizeDocumento } from "@/lib/fiscal/documento";
+import { cTribNacFromCodigo } from "@/domains/fiscal/codigo-tributacao-nacional";
 
 /**
  * Provedor fiscal ACBr API (https://dev.acbr.api.br) para NF-e, NFC-e e NFS-e.
@@ -395,18 +396,13 @@ function icmsGroup(
 }
 
 /**
- * Deriva o código de tributação nacional (cTribNac, 6 dígitos) a partir do item LC116.
- * Formato: item(2) + subitem(2) + desdobro(2). Ex.: "1.01" → "010101".
- * Best-effort — a lista nacional pode ter desdobros específicos; revisar por serviço.
+ * Código de tributação nacional (cTribNac, 6 dígitos) para o XML da NFS-e.
+ * Quando o código já vem no formato nacional (6 dígitos da tabela oficial) é usado direto;
+ * códigos LC 116 legados (X.XX) são derivados (item+subitem+desdobro). Ver
+ * `cTribNacFromCodigo` em domains/fiscal/codigo-tributacao-nacional.
  */
 function cTribNacFromLc116(lc116: string | null | undefined): string {
-  const parts = (lc116 ?? "").split(".");
-  if (parts.length < 2) return "010101";
-  const item = parts[0].replace(/\D/g, "").padStart(2, "0").slice(-2);
-  const sub = parts[1].replace(/\D/g, "").padStart(2, "0").slice(0, 2);
-  // Desdobro: usa o 3º grupo do código quando informado (ex.: "99.01.01" → "990101"); senão "01".
-  const desdobro = (parts[2] ?? "").replace(/\D/g, "").padStart(2, "0").slice(0, 2) || "01";
-  return `${item}${sub}${desdobro}`;
+  return cTribNacFromCodigo(lc116);
 }
 
 /**
