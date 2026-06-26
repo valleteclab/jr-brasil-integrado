@@ -737,7 +737,11 @@ export async function emitFiscalDocument(
     cscId: config.cscId,
     cscToken: config.cscToken,
     // Certificado A1 só é necessário (e só é carregado) para o NACIONAL na NFS-e.
-    ...(isNfse && provedorAlvo === "NACIONAL" ? { certificado: config.certificado } : {})
+    ...(isNfse && provedorAlvo === "NACIONAL" ? { certificado: config.certificado } : {}),
+    // NF-e direto na SEFAZ: precisa do A1 (assinar + TLS-mútuo) e da UF do emitente (autorizadora/cUF).
+    ...(!isNfse && provedorAlvo === "SEFAZ"
+      ? { certificado: config.certificado, ufEmitente: config.emitter.uf }
+      : {})
   };
 
   let emitResult;

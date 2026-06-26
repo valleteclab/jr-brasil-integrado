@@ -146,6 +146,8 @@ enum ProvedorFiscal {
   MANUAL
   // NFS-e direto no Sistema Nacional (SEFIN), assinado com o A1 da empresa (sem intermediário).
   NACIONAL
+  // NF-e (modelo 55) direto nos web services da SEFAZ (SVRS/própria), assinada com o A1 da empresa.
+  SEFAZ
 }
 
 enum RegimeTributario {

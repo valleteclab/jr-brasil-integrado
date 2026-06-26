@@ -33,9 +33,15 @@ export type ProviderContext = {
   nfseAmbienteNacional?: boolean | null;
   /**
    * Certificado digital A1 da empresa (.pfx já descriptografado, em memória) + senha. Necessário
-   * SÓ para o provedor NACIONAL (assinar o DPS + mTLS na SEFIN). Nunca logar/persistir em claro.
+   * para os provedores diretos: NACIONAL (assinar o DPS + mTLS na SEFIN) e SEFAZ (assinar a NF-e +
+   * TLS-mútuo nos web services). Nunca logar/persistir em claro.
    */
   certificado?: { pfx: Buffer; senha: string } | null;
+  /**
+   * UF do emitente (sigla, ex.: "RS"). Necessária SÓ para o provedor SEFAZ — resolve a
+   * autorizadora da NF-e (SVRS/própria) e compõe o cUF da chave de acesso.
+   */
+  ufEmitente?: string | null;
 };
 
 export type EmitInput = {

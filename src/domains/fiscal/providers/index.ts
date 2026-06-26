@@ -6,6 +6,7 @@ import { SpedyFiscalProvider } from "./spedy-provider";
 import { FocusNfeProvider } from "./focus-nfe-provider";
 import { AcbrFiscalProvider } from "./acbr-provider";
 import { NacionalFiscalProvider } from "./nacional-provider";
+import { SefazFiscalProvider } from "./sefaz-provider";
 
 const manual = new ManualFiscalProvider();
 
@@ -28,6 +29,8 @@ export function resolveFiscalProvider(provedor: ProvedorFiscal): FiscalProvider 
       return new AcbrFiscalProvider();
     case "NACIONAL":
       return new NacionalFiscalProvider();
+    case "SEFAZ":
+      return new SefazFiscalProvider();
     case "NFEIO":
     case "PLUGNOTAS":
     case "WEBMANIA":
