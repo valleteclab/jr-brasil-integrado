@@ -9,7 +9,7 @@ import { emitFiscalDocument, previewFiscalDocument } from "@/domains/fiscal/appl
 import { getFiscalRuntimeConfig } from "@/domains/fiscal/application/fiscal-config-use-cases";
 import { isCodigoServicoValido } from "@/domains/fiscal/codigo-tributacao-nacional";
 import { sugerirPorLc116 } from "@/domains/fiscal/nbs";
-import type { TaxationTypeIss } from "@/domains/fiscal/types";
+import type { ObraInfo, TaxationTypeIss } from "@/domains/fiscal/types";
 import { computeRetencoes, issPorServico } from "@/domains/fiscal/nfse-tax";
 import type { RetencoesInput } from "@/domains/fiscal/nfse-tax";
 
@@ -110,6 +110,8 @@ export type ServiceInvoiceAvulsaInput = {
   taxationType?: TaxationTypeIss | null;
   servicos: Array<{ descricao: string; valor: number; codigoServicoLc116?: string | null; codigoNbs?: string | null; cClassTrib?: string | null }>;
   retencoes?: RetencoesInput | null;
+  /** Informações da obra (construção civil) — exigidas no DPS para certos códigos de tributação. */
+  obra?: ObraInfo | null;
   /** Reenvio: id de uma NFS-e anterior rejeitada/erro a reaproveitar. */
   retryNotaId?: string | null;
 };
@@ -453,7 +455,8 @@ export async function emitServiceInvoiceAvulsa(scope: TenantScope, input: Servic
     formaPagamento: input.formaPagamento ?? null,
     servicos,
     retencoes,
-    taxationType: input.taxationType ?? null
+    taxationType: input.taxationType ?? null,
+    obra: input.obra ?? null
   });
 
   return emitFiscalDocument(scope, doc, {

@@ -802,6 +802,28 @@ export class AcbrFiscalProvider implements FiscalProvider {
     // Determina provedor (nacional para municípios PadraoNacional). Best-effort, cai para "padrao".
     const provedor = await this.resolveNfseProvider(ctx, input.emitter.codigoMunicipioIbge);
 
+    // Grupo de informações da OBRA (construção civil): exigido no DPS para alguns códigos de
+    // tributação (07.02.x, 07.04.01, 07.05.x, 07.06.x, 07.07.01, 07.08.01, 07.17.01, 07.19.01,
+    // 14.14.03/04). Identifica-se por CNO e/ou inscrição imobiliária, com o endereço da obra.
+    const obraInfo = input.document.obra;
+    let obra: Record<string, unknown> | undefined;
+    if (obraInfo && (obraInfo.cObra?.trim() || obraInfo.inscricaoImobiliaria?.trim() || obraInfo.endereco)) {
+      obra = {};
+      if (obraInfo.cObra?.trim()) obra.cObra = obraInfo.cObra.trim();
+      if (obraInfo.inscricaoImobiliaria?.trim()) obra.inscImobFisc = obraInfo.inscricaoImobiliaria.trim();
+      const eo = obraInfo.endereco;
+      if (eo && (eo.logradouro?.trim() || eo.codigoMunicipioIbge?.trim() || onlyDigits(eo.cep).length === 8)) {
+        const cepObra = onlyDigits(eo.cep);
+        obra.end = {
+          endNac: { cMun: eo.codigoMunicipioIbge ?? "", CEP: cepObra.length === 8 ? cepObra : undefined },
+          xLgr: eo.logradouro ?? undefined,
+          nro: eo.numero ?? undefined,
+          xCpl: eo.complemento ?? undefined,
+          xBairro: eo.bairro ?? undefined
+        };
+      }
+    }
+
     // Quando o município de incidência está ATIVO no Sistema Nacional NFS-e (provedor "nacional"),
     // a alíquota do ISSQN é parametrizada pelo próprio sistema e NÃO pode ser informada na DPS —
     // isso vale para qualquer regime (Simples ou não). Informar pAliq nesse caso é denegado.
@@ -851,7 +873,8 @@ export class AcbrFiscalProvider implements FiscalProvider {
             cTribNac: cTribNacFromLc116(itemLc116),
             ...(cNbs.length === 9 ? { cNBS: cNbs } : {}),
             xDescServ: descricao
-          }
+          },
+          ...(obra ? { obra } : {})
         },
         valores: {
           vServPrest: { vServ: input.totals.valorServicos || input.total },

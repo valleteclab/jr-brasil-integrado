@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { EmissaoFormData } from "@/lib/services/fiscal-emit";
 import type { EmissaoPrefill } from "@/lib/services/fiscal";
 import { sugerirPorLc116 } from "@/domains/fiscal/nbs";
+import { exigeGrupoObra } from "@/domains/fiscal/codigo-tributacao-nacional";
 import { useCadastroLookup } from "./useCadastroLookup";
 import { correspondeBusca } from "@/lib/search/normalize";
 
@@ -205,6 +206,18 @@ export function NfseWizard({ data, initial = null }: { data: EmissaoFormData; in
   const [retPis, setRetPis] = useState(0);
   const [retCofins, setRetCofins] = useState(0);
   const [baseRetencao, setBaseRetencao] = useState(0);
+  // Material embutido no serviço (nota de obra): deduz só a base do INSS.
+  const [valorMaterial, setValorMaterial] = useState(0);
+  // Obra (construção civil) — exigida pela NFS-e para certos códigos de tributação.
+  const [obraCno, setObraCno] = useState("");
+  const [obraInscImob, setObraInscImob] = useState("");
+  const [obraLogradouro, setObraLogradouro] = useState("");
+  const [obraNumero, setObraNumero] = useState("");
+  const [obraComplemento, setObraComplemento] = useState("");
+  const [obraBairro, setObraBairro] = useState("");
+  const [obraCep, setObraCep] = useState("");
+  const [obraMunicipioIbge, setObraMunicipioIbge] = useState("");
+  const [obraUf, setObraUf] = useState("");
   // Outros
   const [condicaoPagamento, setCondicaoPagamento] = useState(ini?.condicaoPagamento ?? "");
   const [observacoes, setObservacoes] = useState(ini?.observacoes ?? "");
@@ -251,10 +264,17 @@ export function NfseWizard({ data, initial = null }: { data: EmissaoFormData; in
     [tributavel, exigibilidadeSuspensa, baseIss, aliquotaIss]
   );
   const baseRetencaoEfetiva = baseRetencao > 0 ? baseRetencao : valorServico;
+  // INSS de obra incide só sobre a mão de obra: base do INSS = base − material.
+  const baseInssEfetiva = Math.max(baseRetencaoEfetiva - valorMaterial, 0);
   const totalFederalRetido = useMemo(
-    () => Math.round(baseRetencaoEfetiva * ((retIr + retCsll + retInss + retPis + retCofins) / 100) * 100) / 100,
-    [baseRetencaoEfetiva, retIr, retCsll, retInss, retPis, retCofins]
+    () =>
+      Math.round(
+        (baseRetencaoEfetiva * ((retIr + retCsll + retPis + retCofins) / 100) + baseInssEfetiva * (retInss / 100)) * 100
+      ) / 100,
+    [baseRetencaoEfetiva, baseInssEfetiva, retIr, retCsll, retInss, retPis, retCofins]
   );
+  // Serviço de construção civil: o DPS exige o grupo de obra.
+  const precisaObra = exigeGrupoObra(codigoLc116);
   const issRetidoValor = issRetido && !exigibilidadeSuspensa ? valorIss : 0;
   const valorLiquido = Math.max(valorServico - descontoIncondicionado - descontoCondicionado - totalFederalRetido, 0);
 
@@ -274,6 +294,10 @@ export function NfseWizard({ data, initial = null }: { data: EmissaoFormData; in
       if (valorServico <= 0) return "Informe o Valor do Serviço.";
       // Município no Ambiente Nacional: a alíquota é definida pelo sistema — não exigir.
       if (data.nfseAmbienteNacional !== true && tributavel && !exigibilidadeSuspensa && aliquotaIss <= 0) return "Informe a Alíquota do ISSQN.";
+      // Serviço de obra: o DPS exige a obra (endereço, CNO ou inscrição imobiliária).
+      if (precisaObra && !obraLogradouro.trim() && !obraCno.trim() && !obraInscImob.trim()) {
+        return "Este é um serviço de obra: informe a obra (endereço, CNO ou inscrição imobiliária).";
+      }
     }
     return "";
   }
@@ -373,12 +397,28 @@ export function NfseWizard({ data, initial = null }: { data: EmissaoFormData; in
         retencoes: {
           issRetido: issRetido && !exigibilidadeSuspensa,
           baseRetencao: baseRetencao > 0 ? baseRetencao : undefined,
+          valorMaterial: valorMaterial > 0 ? valorMaterial : undefined,
           ir: retIr > 0 ? { aliquota: retIr } : undefined,
           csll: retCsll > 0 ? { aliquota: retCsll } : undefined,
           inss: retInss > 0 ? { aliquota: retInss } : undefined,
           pis: retPis > 0 ? { aliquota: retPis } : undefined,
           cofins: retCofins > 0 ? { aliquota: retCofins } : undefined
-        }
+        },
+        obra: precisaObra
+          ? {
+              cObra: obraCno.trim() || undefined,
+              inscricaoImobiliaria: obraInscImob.trim() || undefined,
+              endereco: {
+                logradouro: obraLogradouro.trim() || undefined,
+                numero: obraNumero.trim() || undefined,
+                complemento: obraComplemento.trim() || undefined,
+                bairro: obraBairro.trim() || undefined,
+                cep: obraCep.replace(/\D/g, "") || undefined,
+                codigoMunicipioIbge: obraMunicipioIbge.replace(/\D/g, "") || undefined,
+                uf: obraUf.trim().toUpperCase() || undefined
+              }
+            }
+          : undefined
       };
 
       const res = await fetch("/api/erp/fiscal/emitir/servico", {
@@ -639,6 +679,13 @@ export function NfseWizard({ data, initial = null }: { data: EmissaoFormData; in
             <div className="erp-card-head"><h3>Tributação federal (retenções)</h3></div>
             <div className="erp-form">
               <label className="full">Base de cálculo das retenções (R$)<MoneyInput value={baseRetencao} onChange={setBaseRetencao} placeholder={`Padrão: valor do serviço (${brl(valorServico)})`} /></label>
+              <label className="full">
+                Valor de material (R$) — deduz só a base do INSS
+                <MoneyInput value={valorMaterial} onChange={setValorMaterial} placeholder="0,00 — em nota de obra, INSS incide sobre serviço − material" />
+                {valorMaterial > 0 && retInss > 0 && (
+                  <small className="block-muted">Base do INSS: {brl(baseInssEfetiva)} (ISS e demais retenções seguem sobre a base cheia).</small>
+                )}
+              </label>
               <label>IRRF %<PercentInput value={retIr} onChange={setRetIr} /></label>
               <label>CSLL %<PercentInput value={retCsll} onChange={setRetCsll} /></label>
               <label>CP / INSS %<PercentInput value={retInss} onChange={setRetInss} /></label>
@@ -646,6 +693,27 @@ export function NfseWizard({ data, initial = null }: { data: EmissaoFormData; in
               <label>COFINS %<PercentInput value={retCofins} onChange={setRetCofins} /></label>
             </div>
           </div>
+
+          {precisaObra && (
+            <div className="erp-card">
+              <div className="erp-card-head"><h3>Obra (construção civil)</h3></div>
+              <p className="muted" style={{ margin: "0 0 8px" }}>
+                Este código de tributação é de obra — a NFS-e exige as informações da obra. Informe o
+                endereço e, se tiver, o CNO (Cadastro Nacional de Obras) e/ou a inscrição imobiliária.
+              </p>
+              <div className="erp-form">
+                <label>Código da Obra (CNO)<input value={obraCno} onChange={(e) => setObraCno(e.target.value)} placeholder="Cadastro Nacional de Obras (opcional)" /></label>
+                <label>Inscrição imobiliária<input value={obraInscImob} onChange={(e) => setObraInscImob(e.target.value)} placeholder="Inscrição do imóvel na prefeitura (opcional)" /></label>
+                <label className="full">Logradouro da obra<input value={obraLogradouro} onChange={(e) => setObraLogradouro(e.target.value)} placeholder="Rua/Av. e nome" /></label>
+                <label>Número<input value={obraNumero} onChange={(e) => setObraNumero(e.target.value)} placeholder="Nº" /></label>
+                <label>Complemento<input value={obraComplemento} onChange={(e) => setObraComplemento(e.target.value)} /></label>
+                <label>Bairro<input value={obraBairro} onChange={(e) => setObraBairro(e.target.value)} /></label>
+                <label>CEP<input value={obraCep} onChange={(e) => setObraCep(e.target.value.replace(/\D/g, "").slice(0, 8))} placeholder="Somente números" inputMode="numeric" /></label>
+                <label>Código IBGE do município<input value={obraMunicipioIbge} onChange={(e) => setObraMunicipioIbge(e.target.value.replace(/\D/g, "").slice(0, 7))} placeholder="7 dígitos" inputMode="numeric" /></label>
+                <label>UF<input value={obraUf} onChange={(e) => setObraUf(e.target.value.toUpperCase().slice(0, 2))} placeholder="Ex.: BA" /></label>
+              </div>
+            </div>
+          )}
 
           <div className="erp-card">
             <div className="erp-card-head"><h3>Outras informações</h3></div>

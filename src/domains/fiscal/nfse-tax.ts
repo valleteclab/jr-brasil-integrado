@@ -21,6 +21,12 @@ export type RetencoesInput = {
   inss?: RetencaoFederalInput | null;
   /** Base de cálculo das retenções federais (quando diferente do valor dos serviços). */
   baseRetencao?: number | null;
+  /**
+   * Valor de material embutido no serviço (R$). Em notas de obra, o INSS incide só sobre a
+   * mão de obra: a base do INSS = base federal − material. NÃO afeta ISS nem as demais
+   * retenções federais (IR/PIS/COFINS/CSLL), que seguem sobre a base cheia.
+   */
+  valorMaterial?: number | null;
 };
 
 /** Parâmetros de ISS informados na emissão (alíquota, deduções e base). */
@@ -37,16 +43,19 @@ export type IssInput = {
 export function computeRetencoes(valorServicos: number, input?: RetencoesInput | null): RetencoesFiscais | null {
   if (!input) return null;
   const baseCalc = input.baseRetencao != null && input.baseRetencao > 0 ? round2(input.baseRetencao) : valorServicos;
-  const calc = (r?: RetencaoFederalInput | null): RetencaoTributo | null => {
+  // INSS de obra incide só sobre a mão de obra: deduz o material da base (sem afetar as demais).
+  const material = input.valorMaterial != null && input.valorMaterial > 0 ? round2(input.valorMaterial) : 0;
+  const baseInss = round2(Math.max(baseCalc - material, 0));
+  const calc = (r: RetencaoFederalInput | null | undefined, base: number): RetencaoTributo | null => {
     const aliquota = Number(r?.aliquota ?? 0);
     if (!aliquota || aliquota <= 0) return null;
-    return { aliquota, valor: round2(baseCalc * (aliquota / 100)) };
+    return { aliquota, valor: round2(base * (aliquota / 100)) };
   };
-  const ir = calc(input.ir);
-  const pis = calc(input.pis);
-  const cofins = calc(input.cofins);
-  const csll = calc(input.csll);
-  const inss = calc(input.inss);
+  const ir = calc(input.ir, baseCalc);
+  const pis = calc(input.pis, baseCalc);
+  const cofins = calc(input.cofins, baseCalc);
+  const csll = calc(input.csll, baseCalc);
+  const inss = calc(input.inss, baseInss);
   const issRetido = Boolean(input.issRetido);
 
   if (!ir && !pis && !cofins && !csll && !inss && !issRetido) return null;

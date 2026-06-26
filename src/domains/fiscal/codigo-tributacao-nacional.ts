@@ -48,3 +48,18 @@ export function cTribNacFromCodigo(code: string | null | undefined): string {
 
 /** Opções {code, description} para os seletores de serviço da NFS-e (rótulo = descrição oficial). */
 export const CODIGO_SERVICO_OPTIONS = CTRIB_NAC_LIST.map((i) => ({ code: i.code, description: i.descricao }));
+
+/**
+ * Códigos de tributação (construção civil) em que o DPS EXIGE o grupo de informações da obra.
+ * Lista conforme a regra da NFS-e nacional (subitens 07.02.01, 07.02.02, 07.04.01, 07.05.01,
+ * 07.05.02, 07.06.01, 07.06.02, 07.07.01, 07.08.01, 07.17.01, 07.19.01, 14.14.03, 14.14.04).
+ */
+const CODIGOS_EXIGEM_OBRA = new Set([
+  "070201", "070202", "070401", "070501", "070502", "070601", "070602",
+  "070701", "070801", "071701", "071901", "141403", "141404"
+]);
+
+/** Indica se o código de serviço exige o grupo de obra no DPS (aceita cTribNac 6 díg. ou LC 116 X.XX). */
+export function exigeGrupoObra(code: string | null | undefined): boolean {
+  return CODIGOS_EXIGEM_OBRA.has(cTribNacFromCodigo(code));
+}

@@ -123,6 +123,30 @@ export type NormalizedFiscalDocument = {
   retencoes?: RetencoesFiscais | null;
   /** NFS-e: natureza/exigibilidade do ISS (valor do enum do provedor). */
   taxationType?: TaxationTypeIss | null;
+  /** NFS-e de obra/construção civil: grupo de informações da obra (exigido em alguns subitens). */
+  obra?: ObraInfo | null;
+};
+
+/**
+ * Informações da obra (construção civil) exigidas no DPS da NFS-e nacional para certos códigos
+ * de tributação (07.02.x, 07.04.01, 07.05.x, 07.06.x, 07.07.01, 07.08.01, 07.17.01, 07.19.01,
+ * 14.14.03/04). Identifica-se a obra por CNO e/ou inscrição imobiliária, com o endereço.
+ */
+export type ObraInfo = {
+  /** Código da Obra (CNO — Cadastro Nacional de Obras da Receita; antigo CEI). */
+  cObra?: string | null;
+  /** Inscrição imobiliária fiscal (código do imóvel/obra na prefeitura). */
+  inscricaoImobiliaria?: string | null;
+  /** Endereço da obra (logradouro, número, bairro, CEP, município IBGE, UF). */
+  endereco?: {
+    logradouro?: string | null;
+    numero?: string | null;
+    complemento?: string | null;
+    bairro?: string | null;
+    cep?: string | null;
+    codigoMunicipioIbge?: string | null;
+    uf?: string | null;
+  } | null;
 };
 
 /** Natureza/exigibilidade do ISS na NFS-e (alinhado ao enum ServiceInvoiceTaxationType da Spedy). */
