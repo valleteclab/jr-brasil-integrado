@@ -197,6 +197,15 @@ depois.
   HTML A4 com Code-128C da chave em SVG (sem lib de PDF no projeto), servido por
   `downloadNotaFiscalDocumento` direto do `nota.xml` local. PDF real pode ser adicionado depois
   (puppeteer/pdfkit) reusando `parseNfeProc`/`code128cBars`.
+- **F6 — Distribuição DFe + Manifestação** ✅ feito (direto, sem API paga): puxa as NF-e emitidas
+  **contra** o CNPJ (entradas/compras) no **Ambiente Nacional** e responde com a Manifestação do
+  Destinatário. `sefaz/distribuicao.ts` (`consultarDistribuicaoDFe` por NSU + `consultarDistribuicaoPorChave`,
+  envelope `nfeDistDFeInteresse`, gunzip dos `docZip`, classifica resNFe/procNFe/eventos);
+  `sefaz/eventos.ts#enviarManifestacao` (210200/210210/210220/210240, `cOrgao=91`, ao `AN_RECEPCAO_EVENTO`);
+  endpoints AN em `endpoints.ts`. Integrado em `nfe-distribution.ts` roteando **ACBr × SEFAZ** sem
+  migration (reusa `acbrDocumentoId=NSU` e `payload.xml`); Ciência (210210) → baixa `procNFe` →
+  `importNfeXml` (vira `EntradaFiscal`). Trata throttling 656. Script: `scripts/sefaz-distribuicao-test.ts`.
+  **Pendente:** teste real (distribuição só tem documentos em produção; homologação devolve 137).
 - **F5 — multi-UF** 🟡 em andamento: **BA (Bahia) ✅ feito** — autorizadora própria
   (`nfe.sefaz.ba.gov.br` / `hnfe.sefaz.ba.gov.br`) na tabela `endpoints.ts`, roteamento por
   `UF_PROPRIA`, e o grupo **`autXML`** (CNPJ da SEFAZ-BA `13937073000156`) no builder — **a BA

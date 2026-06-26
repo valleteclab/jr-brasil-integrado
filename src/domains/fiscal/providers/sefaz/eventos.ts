@@ -5,7 +5,7 @@
  * transporte SOAP 1.2 com TLS-mútuo (soapEnvelope/postSoap), espelhando os padrões do nfe-xml.ts.
  */
 import type { AmbienteFiscal } from "@prisma/client";
-import { cUFFromUF, resolveSefazEndpoints } from "./endpoints";
+import { AN_RECEPCAO_EVENTO, cUFFromUF, resolveSefazEndpoints } from "./endpoints";
 import { NFE_NS, WSDL_NS, pickBlock, pickTag, postSoap, soapEnvelope } from "./soap";
 import { signXml } from "./sign";
 
@@ -270,4 +270,99 @@ export async function consultarProtocolo(
     raw: res.body,
     statusCode: res.statusCode
   };
+}
+
+/**
+ * Tipos de evento da Manifestação do Destinatário:
+ *  - 210200 Confirmação da Operação
+ *  - 210210 Ciência da Operação
+ *  - 210220 Desconhecimento da Operação
+ *  - 210240 Operação não Realizada (exige justificativa com ≥15 caracteres)
+ */
+export type ManifestacaoTipo = "210200" | "210210" | "210220" | "210240";
+
+/** descEvento oficial por tipo de manifestação. */
+const DESC_MANIFESTACAO: Record<ManifestacaoTipo, string> = {
+  "210200": "Confirmacao da Operacao",
+  "210210": "Ciencia da Operacao",
+  "210220": "Desconhecimento da Operacao",
+  "210240": "Operacao nao Realizada"
+};
+
+/**
+ * Manifestação do Destinatário (eventos 210200/210210/210220/210240) DIRETO no Ambiente Nacional.
+ *
+ * cOrgao=91 (AN). O infEvento é assinado (signXml "infEvento"), envolto em <evento versao="1.00"> e
+ * enviado ao AN_RECEPCAO_EVENTO[ambiente] — NÃO ao RecepcaoEvento da UF. cStat 135/136 = evento
+ * registrado/vinculado à NF-e. O tipo 210240 (Operação não Realizada) exige <xJust> com ≥15 chars.
+ */
+export async function enviarManifestacao(params: {
+  ambiente: AmbienteFiscal;
+  cnpj: string;
+  chNFe: string;
+  tipoEvento: ManifestacaoTipo;
+  justificativa?: string;
+  nSeqEvento?: number;
+  cert: { pfx: Buffer; senha: string };
+  pem: { privateKeyPem: string; certPem: string };
+}): Promise<EventoResult> {
+  const tpEvento = params.tipoEvento;
+  const nSeq = params.nSeqEvento ?? 1;
+  const chNFe = onlyDigits(params.chNFe);
+  const Id = idEvento(tpEvento, chNFe, nSeq);
+
+  // Só a "Operação não Realizada" leva (e exige) justificativa (≥15 caracteres).
+  const exigeJust = tpEvento === "210240";
+  const xJust = sanitize(params.justificativa);
+  if (exigeJust && xJust.length < 15) {
+    throw new Error("A Operação não Realizada (210240) exige justificativa com pelo menos 15 caracteres.");
+  }
+
+  const detEvento =
+    `<detEvento versaoEvento="1.00">` +
+    `<descEvento>${DESC_MANIFESTACAO[tpEvento]}</descEvento>` +
+    (exigeJust ? `<xJust>${esc(xJust)}</xJust>` : "") +
+    `</detEvento>`;
+
+  const infEvento =
+    `<infEvento Id="${Id}">` +
+    `<cOrgao>91</cOrgao>` +
+    `<tpAmb>${tpAmbDe(params.ambiente)}</tpAmb>` +
+    `<CNPJ>${onlyDigits(params.cnpj)}</CNPJ>` +
+    `<chNFe>${chNFe}</chNFe>` +
+    `<dhEvento>${dhEventoBrasilia()}</dhEvento>` +
+    `<tpEvento>${tpEvento}</tpEvento>` +
+    `<nSeqEvento>${nSeq}</nSeqEvento>` +
+    `<verEvento>1.00</verEvento>` +
+    detEvento +
+    `</infEvento>`;
+
+  const eventoBase = `<evento versao="1.00" xmlns="${NFE_NS}">${infEvento}</evento>`;
+  const eventoAssinado = signXml(eventoBase, "infEvento", params.pem.privateKeyPem, params.pem.certPem);
+  const envEvento =
+    `<envEvento versao="1.00" xmlns="${NFE_NS}">` +
+    `<idLote>1</idLote>` +
+    eventoAssinado +
+    `</envEvento>`;
+
+  const res = await postSoap(
+    AN_RECEPCAO_EVENTO[params.ambiente],
+    soapEnvelope(WSDL_NS.evento, envEvento),
+    params.cert
+  );
+
+  const retEvento = pickBlock(res.body, "retEvento");
+  const escopo = retEvento ?? res.body;
+  const cStat = pickTag(escopo, "cStat") ?? "";
+  const xMotivo = pickTag(escopo, "xMotivo") ?? "";
+  const nProt = pickTag(escopo, "nProt");
+  const motivo = `${cStat ? `${cStat} ` : ""}${xMotivo}`.trim() || `HTTP ${res.statusCode}`;
+
+  if (cStat === "135" || cStat === "136") {
+    return { status: "AUTORIZADO", protocolo: nProt, motivo, cStat };
+  }
+  if (cStat) {
+    return { status: "REJEITADO", protocolo: nProt, motivo, cStat };
+  }
+  return { status: "ERRO", motivo, cStat };
 }

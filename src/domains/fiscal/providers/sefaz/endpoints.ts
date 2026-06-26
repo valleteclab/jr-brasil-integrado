@@ -18,6 +18,27 @@ export type SefazEndpoints = {
   consultaCadastro?: string;
 };
 
+/**
+ * Endpoints do Ambiente Nacional (AN) — serviços NACIONAIS, não por UF.
+ *
+ * A Distribuição de DF-e (NFeDistribuicaoDFe) é centralizada no AN: a empresa baixa de um único
+ * endereço todos os documentos de seu interesse (NF-e em que é destinatária, eventos, etc),
+ * independentemente da UF emitente.
+ */
+export const AN_DISTRIBUICAO: Record<AmbienteFiscal, string> = {
+  PRODUCAO: "https://www1.nfe.fazenda.gov.br/NFeDistribuicaoDFe/NFeDistribuicaoDFe.asmx",
+  HOMOLOGACAO: "https://hom1.nfe.fazenda.gov.br/NFeDistribuicaoDFe/NFeDistribuicaoDFe.asmx"
+};
+
+/**
+ * RecepcaoEvento do AN — usado pela Manifestação do Destinatário (eventos cOrgao=91). A manifestação
+ * NÃO vai ao RecepcaoEvento da UF; é recebida pelo Ambiente Nacional.
+ */
+export const AN_RECEPCAO_EVENTO: Record<AmbienteFiscal, string> = {
+  PRODUCAO: "https://www.nfe.fazenda.gov.br/NFeRecepcaoEvento4/NFeRecepcaoEvento4.asmx",
+  HOMOLOGACAO: "https://hom1.nfe.fazenda.gov.br/NFeRecepcaoEvento4/NFeRecepcaoEvento4.asmx"
+};
+
 /** Código IBGE da UF (cUF) — usado na chave de acesso e nas consultas. */
 export const CODIGO_UF: Record<string, string> = {
   RO: "11", AC: "12", AM: "13", RR: "14", PA: "15", AP: "16", TO: "17",
