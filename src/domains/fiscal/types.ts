@@ -125,6 +125,18 @@ export type NormalizedFiscalDocument = {
   taxationType?: TaxationTypeIss | null;
   /** NFS-e de obra/construção civil: grupo de informações da obra (exigido em alguns subitens). */
   obra?: ObraInfo | null;
+  /** NFS-e de substituição: grupo `subst` do DPS (chave da NFS-e substituída + motivo). */
+  substituicao?: SubstituicaoNfse | null;
+};
+
+/** Substituição de NFS-e (grupo `subst` do DPS nacional). */
+export type SubstituicaoNfse = {
+  /** Chave de acesso (50 dígitos) da NFS-e substituída. */
+  chaveSubstituida: string;
+  /** Código do motivo: 01–05 da tabela oficial ou 99 (Outros). */
+  cMotivo: string;
+  /** Descrição do motivo (obrigatória quando cMotivo = 99). */
+  xMotivo?: string | null;
 };
 
 /**

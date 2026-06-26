@@ -29,6 +29,8 @@ export type NotaFiscalSummary = {
   canClone: boolean;
   /** Devolução exige NF-e autorizada com chave de acesso. */
   canDevolver: boolean;
+  /** Substituir exige NFS-e autorizada com chave de acesso. */
+  canSubstituir: boolean;
   /** Pode ser excluída (admin): notas SEM validade fiscal (rascunho/erro/rejeitada/denegada). */
   canDelete: boolean;
 };
@@ -40,7 +42,8 @@ const STATUS_LABEL: Record<StatusNotaFiscal, { label: string; tone: NotaFiscalSu
   CANCELADA: { label: "Cancelada", tone: "danger" },
   REJEITADA: { label: "Rejeitada", tone: "danger" },
   DENEGADA: { label: "Denegada", tone: "danger" },
-  ERRO: { label: "Erro", tone: "danger" }
+  ERRO: { label: "Erro", tone: "danger" },
+  SUBSTITUIDA: { label: "Substituída", tone: "mute" }
 };
 
 const MODELO_LABEL: Record<ModeloFiscal, string> = {
@@ -102,6 +105,8 @@ export async function listNotasFiscais(): Promise<NotaFiscalSummary[]> {
       canClone: true,
       // Não se gera devolução de uma devolução (nem de complementar/ajuste).
       canDevolver: (nota.modelo === "NFE" || nota.modelo === "NFCE") && nota.status === "AUTORIZADA" && Boolean(nota.chaveAcesso) && nota.finalidade === "NORMAL",
+      // Substituir: só NFS-e autorizada com chave de acesso.
+      canSubstituir: nota.modelo === "NFSE" && nota.status === "AUTORIZADA" && Boolean(nota.chaveAcesso),
       // Excluir (admin): só notas SEM validade fiscal. NUNCA AUTORIZADA/CANCELADA (documento legal).
       canDelete: ["RASCUNHO", "ERRO", "REJEITADA", "DENEGADA"].includes(nota.status)
     };
@@ -285,7 +290,7 @@ export type EmissaoPrefillServico = {
 };
 
 export type EmissaoPrefill = {
-  modo: "CLONE" | "DEVOLUCAO";
+  modo: "CLONE" | "DEVOLUCAO" | "SUBSTITUICAO";
   origemId: string;
   origemLabel: string;
   origemChave: string | null;
@@ -323,6 +328,8 @@ export type EmissaoPrefill = {
   codigoServicoLc116: string;
   aliquotaIss: number;
   issRetido: boolean;
+  /** Substituição de NFS-e: nota substituída (id + chave de 50 dígitos). Null fora desse modo. */
+  substituicao: { notaId: string; chaveSubstituida: string } | null;
 };
 
 /**
@@ -334,7 +341,7 @@ export type EmissaoPrefill = {
  */
 export async function getNotaFiscalPrefill(
   id: string,
-  modo: "CLONE" | "DEVOLUCAO"
+  modo: "CLONE" | "DEVOLUCAO" | "SUBSTITUICAO"
 ): Promise<EmissaoPrefill> {
   const scope = await getDevelopmentTenantScope();
   const nota = await prisma.notaFiscal.findFirst({
@@ -345,6 +352,7 @@ export async function getNotaFiscalPrefill(
 
   const isServico = nota.modelo === "NFSE";
   const isDevolucao = modo === "DEVOLUCAO";
+  const isSubstituicao = modo === "SUBSTITUICAO";
 
   if (isDevolucao) {
     if (nota.modelo === "NFSE") {
@@ -352,6 +360,15 @@ export async function getNotaFiscalPrefill(
     }
     if (nota.status !== "AUTORIZADA" || !nota.chaveAcesso) {
       throw new Error("Só é possível gerar devolução de uma nota autorizada (com chave de acesso).");
+    }
+  }
+
+  if (isSubstituicao) {
+    if (nota.modelo !== "NFSE") {
+      throw new Error("A substituição se aplica apenas a NFS-e (serviço).");
+    }
+    if (nota.status !== "AUTORIZADA" || !nota.chaveAcesso) {
+      throw new Error("Só é possível substituir uma NFS-e autorizada (com chave de acesso).");
     }
   }
 
@@ -445,6 +462,7 @@ export async function getNotaFiscalPrefill(
     servicos,
     codigoServicoLc116: primeiroItemServico?.itemListaServico ?? "",
     aliquotaIss: primeiroItemServico?.aliquotaIss != null ? Number(primeiroItemServico.aliquotaIss) : 0,
-    issRetido: nota.issRetido
+    issRetido: nota.issRetido,
+    substituicao: isSubstituicao ? { notaId: nota.id, chaveSubstituida: nota.chaveAcesso ?? "" } : null
   };
 }

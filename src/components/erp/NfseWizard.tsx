@@ -127,6 +127,16 @@ function statusTone(status: string): string {
   return map[status.toUpperCase()] ?? "default";
 }
 
+/** Motivos de substituição de NFS-e (tabela oficial cMotivo). 99 exige descrição (xMotivo). */
+const MOTIVOS_SUBST: Array<{ code: string; label: string }> = [
+  { code: "01", label: "01 — Desenquadramento de NFS-e do Simples Nacional" },
+  { code: "02", label: "02 — Enquadramento de NFS-e no Simples Nacional" },
+  { code: "03", label: "03 — Inclusão retroativa de imunidade/isenção" },
+  { code: "04", label: "04 — Exclusão retroativa de imunidade/isenção" },
+  { code: "05", label: "05 — Rejeição pelo tomador ou intermediário" },
+  { code: "99", label: "99 — Outros" }
+];
+
 export function NfseWizard({ data, initial = null }: { data: EmissaoFormData; initial?: EmissaoPrefill | null }) {
   const router = useRouter();
   const hoje = new Intl.DateTimeFormat("en-CA", {
@@ -138,6 +148,8 @@ export function NfseWizard({ data, initial = null }: { data: EmissaoFormData; in
 
   // Prefill ao clonar uma NFS-e: tomador + serviço (descrição/LC116/valor) da nota original.
   const ini = initial && initial.tipo === "NFSE" ? initial : null;
+  // Substituição de NFS-e: dados da nota substituída (id + chave) vindos do prefill.
+  const subst = ini?.substituicao ?? null;
   const iniEndereco = ini?.destinatario.endereco;
   const iniTomadorModo: TomadorModo = ini ? (ini.clienteId ? "cadastrado" : ini.destinatario.nome ? "brasil" : "cadastrado") : "cadastrado";
   const iniDescricao = ini?.servicos.length ? ini.servicos.map((s) => s.descricao).filter(Boolean).join("\n") : "";
@@ -216,6 +228,9 @@ export function NfseWizard({ data, initial = null }: { data: EmissaoFormData; in
   const [obraComplemento, setObraComplemento] = useState("");
   const [obraBairro, setObraBairro] = useState("");
   const [obraCep, setObraCep] = useState("");
+  // Substituição: motivo (cMotivo) + descrição (xMotivo, obrigatória quando 99).
+  const [substMotivo, setSubstMotivo] = useState("99");
+  const [substMotivoDesc, setSubstMotivoDesc] = useState("");
   // Outros
   const [condicaoPagamento, setCondicaoPagamento] = useState(ini?.condicaoPagamento ?? "");
   const [observacoes, setObservacoes] = useState(ini?.observacoes ?? "");
@@ -278,6 +293,7 @@ export function NfseWizard({ data, initial = null }: { data: EmissaoFormData; in
 
   function stepError(s: number): string {
     if (s === 0) {
+      if (subst && substMotivo === "99" && !substMotivoDesc.trim()) return "Informe a descrição do motivo da substituição (obrigatória para o motivo 99 - Outros).";
       if (!dataCompetencia) return "Informe a Data de Competência.";
       if (tomadorModo === "cadastrado" && !clienteId) return "Selecione o tomador (cliente cadastrado) ou troque o tipo de tomador.";
       if (tomadorModo === "brasil" && !tNome.trim()) return "Informe o nome/razão social do tomador.";
@@ -414,6 +430,14 @@ export function NfseWizard({ data, initial = null }: { data: EmissaoFormData; in
                 cep: obraCep.replace(/\D/g, "") || undefined
               }
             }
+          : undefined,
+        substituicao: subst
+          ? {
+              notaSubstituidaId: subst.notaId,
+              chaveSubstituida: subst.chaveSubstituida,
+              cMotivo: substMotivo,
+              xMotivo: substMotivoDesc.trim() || undefined
+            }
           : undefined
       };
 
@@ -475,6 +499,26 @@ export function NfseWizard({ data, initial = null }: { data: EmissaoFormData; in
       {error && (
         <div className="alert danger" style={{ marginBottom: 16 }}>
           <span className="lead">Atenção:</span><span>{error}</span>
+        </div>
+      )}
+
+      {subst && (
+        <div className="erp-card" style={{ marginBottom: 14 }}>
+          <div className="erp-card-head"><h3>Substituição de NFS-e</h3></div>
+          <p className="muted" style={{ margin: "0 0 8px" }}>
+            Esta nova NFS-e vai <b>substituir</b> a nota de chave <code style={{ fontSize: 11, wordBreak: "break-all" }}>{subst.chaveSubstituida}</code>.
+            Ao autorizar, a antiga é marcada como <b>Substituída</b> e o DANFSE referencia &ldquo;NFSe Subst&rdquo;.
+          </p>
+          <div className="erp-form">
+            <label className="full">Motivo da substituição
+              <select value={substMotivo} onChange={(e) => setSubstMotivo(e.target.value)}>
+                {MOTIVOS_SUBST.map((m) => <option key={m.code} value={m.code}>{m.label}</option>)}
+              </select>
+            </label>
+            <label className="full">Descrição do motivo{substMotivo === "99" ? " (obrigatória)" : " (opcional)"}
+              <input value={substMotivoDesc} onChange={(e) => setSubstMotivoDesc(e.target.value)} maxLength={255} placeholder="Ex.: correção de valores do serviço" />
+            </label>
+          </div>
         </div>
       )}
 

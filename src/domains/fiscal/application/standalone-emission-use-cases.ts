@@ -112,6 +112,13 @@ export type ServiceInvoiceAvulsaInput = {
   retencoes?: RetencoesInput | null;
   /** Informações da obra (construção civil) — exigidas no DPS para certos códigos de tributação. */
   obra?: ObraInfo | null;
+  /** Substituição de NFS-e: nota a ser substituída (id no nosso banco) + chave + motivo. */
+  substituicao?: {
+    notaSubstituidaId?: string | null;
+    chaveSubstituida: string;
+    cMotivo: string;
+    xMotivo?: string | null;
+  } | null;
   /** Reenvio: id de uma NFS-e anterior rejeitada/erro a reaproveitar. */
   retryNotaId?: string | null;
 };
@@ -456,13 +463,36 @@ export async function emitServiceInvoiceAvulsa(scope: TenantScope, input: Servic
     servicos,
     retencoes,
     taxationType: input.taxationType ?? null,
-    obra: input.obra ?? null
+    obra: input.obra ?? null,
+    substituicao: input.substituicao
+      ? {
+          chaveSubstituida: input.substituicao.chaveSubstituida,
+          cMotivo: input.substituicao.cMotivo,
+          xMotivo: input.substituicao.xMotivo ?? null
+        }
+      : null
   });
 
-  return emitFiscalDocument(scope, doc, {
+  const nota = await emitFiscalDocument(scope, doc, {
     clienteId: input.receiver.clienteId ?? null,
     retryNotaId: input.retryNotaId ?? null
   });
+
+  // Substituição autorizada: marca a NFS-e antiga como SUBSTITUIDA e liga a nova a ela.
+  if (input.substituicao?.notaSubstituidaId && nota.status === "AUTORIZADA") {
+    await prisma.$transaction([
+      prisma.notaFiscal.update({
+        where: { id: nota.id },
+        data: { notaSubstituidaId: input.substituicao.notaSubstituidaId }
+      }),
+      prisma.notaFiscal.updateMany({
+        where: { id: input.substituicao.notaSubstituidaId, ...scopedByTenantCompany(scope) },
+        data: { status: "SUBSTITUIDA" }
+      })
+    ]);
+  }
+
+  return nota;
 }
 
 /**

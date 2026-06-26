@@ -6,7 +6,7 @@ import { getNotaFiscalPrefill, type EmissaoPrefill } from "@/lib/services/fiscal
 
 export const dynamic = "force-dynamic";
 
-export default async function EmitirNfsePage({ searchParams }: { searchParams?: { clonar?: string } }) {
+export default async function EmitirNfsePage({ searchParams }: { searchParams?: { clonar?: string; substituir?: string } }) {
   let data: EmissaoFormData | null = null;
   let loadError = "";
 
@@ -16,12 +16,14 @@ export default async function EmitirNfsePage({ searchParams }: { searchParams?: 
     loadError = error instanceof Error ? error.message : "Não foi possível carregar os dados de emissão.";
   }
 
-  // Clonar NFS-e: pré-preenche o wizard (tomador + descrição do serviço) a partir da nota original.
+  // Clonar/Substituir NFS-e: pré-preenche o wizard (tomador + serviço) a partir da nota original.
+  // Substituir ainda referencia a chave da nota substituída (grupo subst do DPS).
   let initial: EmissaoPrefill | null = null;
   let prefillError = "";
-  if (searchParams?.clonar) {
+  const origemId = searchParams?.substituir || searchParams?.clonar;
+  if (origemId) {
     try {
-      initial = await getNotaFiscalPrefill(searchParams.clonar, "CLONE");
+      initial = await getNotaFiscalPrefill(origemId, searchParams?.substituir ? "SUBSTITUICAO" : "CLONE");
     } catch (error) {
       prefillError = error instanceof Error ? error.message : "Não foi possível carregar a nota de origem.";
     }
@@ -29,7 +31,7 @@ export default async function EmitirNfsePage({ searchParams }: { searchParams?: 
 
   return (
     <>
-      <PageHeader eyebrow="Fiscal / Emitir NFS-e" title={initial ? "Clonar NFS-e" : "Emitir NFS-e"}>
+      <PageHeader eyebrow="Fiscal / Emitir NFS-e" title={initial?.modo === "SUBSTITUICAO" ? "Substituir NFS-e" : initial ? "Clonar NFS-e" : "Emitir NFS-e"}>
         Emissão de Nota Fiscal de Serviço em etapas, no padrão do Emissor Nacional.
       </PageHeader>
 

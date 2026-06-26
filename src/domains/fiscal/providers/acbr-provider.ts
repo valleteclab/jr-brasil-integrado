@@ -806,6 +806,17 @@ export class AcbrFiscalProvider implements FiscalProvider {
         ? (input.document.informacoesComplementares ?? "").trim().slice(0, 2000) || undefined
         : undefined;
 
+    // Substituição de NFS-e (grupo subst): referencia a chave da nota substituída + motivo. A SEFAZ
+    // marca a antiga como substituída e o DANFSE mostra "NFSe Subst: <chave>".
+    const substInfo = input.document.substituicao;
+    const subst = substInfo?.chaveSubstituida?.trim()
+      ? {
+          chSubstda: onlyDigits(substInfo.chaveSubstituida),
+          cMotivo: substInfo.cMotivo || "99",
+          ...(substInfo.xMotivo?.trim() ? { xMotivo: substInfo.xMotivo.trim() } : {})
+        }
+      : undefined;
+
     // Determina provedor (nacional para municípios PadraoNacional). Best-effort, cai para "padrao".
     const provedor = await this.resolveNfseProvider(ctx, input.emitter.codigoMunicipioIbge);
 
@@ -872,6 +883,7 @@ export class AcbrFiscalProvider implements FiscalProvider {
         tpAmb: ctx.ambiente === "PRODUCAO" ? 1 : 2,
         dhEmi: dataFiscal.dhEmi,
         dCompet: dataFiscal.dCompet,
+        ...(subst ? { subst } : {}),
         prest: { CNPJ: normalizeDocumento(input.emitter.cnpj) },
         toma,
         serv: {

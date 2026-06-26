@@ -121,6 +121,7 @@ enum StatusNotaFiscal {
   REJEITADA
   DENEGADA
   ERRO
+  SUBSTITUIDA
 }
 
 enum ModeloFiscal {
@@ -1697,12 +1698,16 @@ model NotaFiscal {
   pedidoVendaId             String?
   ordemServicoId            String?
   notaOrigemId              String?
+  notaSubstituidaId         String?
   chaveReferenciada         String?
   cliente                   Cliente?           @relation(fields: [clienteId], references: [id])
   pedidoVenda               PedidoVenda?       @relation(fields: [pedidoVendaId], references: [id])
   ordemServico              OrdemServico?      @relation(fields: [ordemServicoId], references: [id])
   notaOrigem                NotaFiscal?        @relation("NotaDevolucao", fields: [notaOrigemId], references: [id])
   devolucoes                NotaFiscal[]       @relation("NotaDevolucao")
+  // NFS-e: nota que ESTA substitui (a antiga). A antiga vira status SUBSTITUIDA.
+  notaSubstituida           NotaFiscal?        @relation("NotaSubstituicao", fields: [notaSubstituidaId], references: [id])
+  substitutas               NotaFiscal[]       @relation("NotaSubstituicao")
   destinatarioNome          String?
   destinatarioDocumento     String?
   destinatarioIe            String?

@@ -15,7 +15,8 @@ const STATUS_NOTA_LABEL: Record<StatusNotaFiscal, { label: string; tone: SaleSum
   CANCELADA: { label: "Cancelada", tone: "danger" },
   REJEITADA: { label: "Rejeitada", tone: "danger" },
   DENEGADA: { label: "Denegada", tone: "danger" },
-  ERRO: { label: "Erro", tone: "danger" }
+  ERRO: { label: "Erro", tone: "danger" },
+  SUBSTITUIDA: { label: "Substituída", tone: "mute" }
 };
 
 export type SaleSummary = {

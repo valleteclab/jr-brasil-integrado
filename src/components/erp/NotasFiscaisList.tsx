@@ -187,6 +187,9 @@ export function NotasFiscaisList({ notas, isAdmin = false }: Props) {
                   {nota.canDevolver && (
                     <Link className="btn-erp ghost xs" href={`/erp/fiscal/emitir?devolucao=${nota.id}`}>Devolução</Link>
                   )}
+                  {nota.canSubstituir && (
+                    <Link className="btn-erp ghost xs" href={`/erp/fiscal/emitir/nfse?substituir=${nota.id}`}>Substituir</Link>
+                  )}
                   {nota.canCorrect && (
                     <button className="btn-erp ghost xs" type="button" disabled={busyId === nota.id} onClick={() => correct(nota)}>
                       Carta de correção
