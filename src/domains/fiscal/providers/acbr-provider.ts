@@ -798,6 +798,13 @@ export class AcbrFiscalProvider implements FiscalProvider {
       input.document.itens.map((i) => i.descricao).join("; ") ||
       input.document.informacoesComplementares?.trim() ||
       input.document.naturezaOperacao;
+    // Informações complementares (xInfComp) → campo "Informações Complementares" do DANFSE. Onde
+    // vai o que não cabe na descrição do serviço (xDescServ é limitado a 2000 pela SEFAZ), p.ex.
+    // a lista de materiais/medição. Só quando a descrição NÃO veio das próprias observações.
+    const infoComp =
+      input.document.itens.some((i) => i.descricao?.trim())
+        ? (input.document.informacoesComplementares ?? "").trim().slice(0, 2000) || undefined
+        : undefined;
 
     // Determina provedor (nacional para municípios PadraoNacional). Best-effort, cai para "padrao".
     const provedor = await this.resolveNfseProvider(ctx, input.emitter.codigoMunicipioIbge);
@@ -878,7 +885,8 @@ export class AcbrFiscalProvider implements FiscalProvider {
             ...(cNbs.length === 9 ? { cNBS: cNbs } : {}),
             xDescServ: descricao
           },
-          ...(obra ? { obra } : {})
+          ...(obra ? { obra } : {}),
+          ...(infoComp ? { infoCompl: { xInfComp: infoComp } } : {})
         },
         valores: {
           vServPrest: { vServ: input.totals.valorServicos || input.total },

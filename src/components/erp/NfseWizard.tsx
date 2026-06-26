@@ -579,7 +579,9 @@ export function NfseWizard({ data, initial = null }: { data: EmissaoFormData; in
                 placeholder="Descreva detalhadamente o serviço prestado (discriminação)…"
                 style={{ width: "100%", minHeight: 120, padding: "10px 12px", border: "1px solid var(--erp-line)", borderRadius: 6, fontSize: 13, resize: "vertical", fontFamily: "inherit", lineHeight: 1.5 }}
               />
-              <span style={{ fontSize: 11, color: "var(--erp-mute)", textAlign: "right" }}>{descricao.length}/2000</span>
+              <span style={{ fontSize: 11, color: descricao.length >= 2000 ? "var(--erp-danger, #c0392b)" : "var(--erp-mute)", textAlign: "right" }}>
+                {descricao.length}/2000{descricao.length >= 2000 ? " — limite da SEFAZ; detalhe materiais/medição em “Informações complementares”." : ""}
+              </span>
             </label>
             <label className="full">
               Código NBS (Nomenclatura Brasileira de Serviços)*
@@ -713,7 +715,11 @@ export function NfseWizard({ data, initial = null }: { data: EmissaoFormData; in
             <div className="erp-card-head"><h3>Outras informações</h3></div>
             <div className="erp-form">
               <label>Condição de pagamento<input value={condicaoPagamento} onChange={(e) => setCondicaoPagamento(e.target.value)} placeholder="Ex.: à vista, 30 dias" /></label>
-              <label className="full">Informações complementares<textarea value={observacoes} onChange={(e) => setObservacoes(e.target.value)} style={{ width: "100%", minHeight: 60, padding: "10px 12px", border: "1px solid var(--erp-line)", borderRadius: 5, fontSize: 12.5, resize: "vertical", fontFamily: "inherit" }} /></label>
+              <label className="full">
+                Informações complementares — saem no campo &ldquo;Informações Complementares&rdquo; da nota (use para materiais/medição que não couberam na descrição)
+                <textarea value={observacoes} onChange={(e) => setObservacoes(e.target.value)} rows={5} maxLength={2000} placeholder="Ex.: composição da medição, lista de materiais com quantidades…" style={{ width: "100%", minHeight: 100, padding: "10px 12px", border: "1px solid var(--erp-line)", borderRadius: 5, fontSize: 12.5, resize: "vertical", fontFamily: "inherit" }} />
+                <span style={{ fontSize: 11, color: "var(--erp-mute)", textAlign: "right", display: "block" }}>{observacoes.length}/2000</span>
+              </label>
             </div>
           </div>
         </div>
