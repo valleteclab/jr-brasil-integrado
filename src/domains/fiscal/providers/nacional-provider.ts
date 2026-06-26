@@ -88,11 +88,21 @@ function buildDpsXml(input: EmitInput, ctx: ProviderContext): { xml: string; id:
   const vTotFed = fmt((ret?.ir?.valor ?? 0) + (ret?.csll?.valor ?? 0) + (ret?.pis?.valor ?? 0) + (ret?.cofins?.valor ?? 0) + (ret?.inss?.valor ?? 0));
   const vISSQN = fmt(input.totals.valorIss || 0);
 
-  // Tomador (opcional no nacional, mas mandamos quando há documento).
+  // Tomador (opcional no nacional, mas mandamos quando há documento). Endereço é OBRIGATÓRIO
+  // quando o ISS é retido pelo tomador (E0237) — então o incluímos sempre que houver.
   const dest = doc.destinatario;
   const docToma = onlyDigits(dest.documento);
+  const endT = dest.endereco;
+  const cepT = onlyDigits(endT?.cep);
+  const tomaEnd =
+    endT && (endT.codigoMunicipioIbge?.trim() || endT.logradouro?.trim() || cepT.length === 8)
+      ? `<end><endNac><cMun>${onlyDigits(endT.codigoMunicipioIbge)}</cMun>${cepT.length === 8 ? `<CEP>${cepT}</CEP>` : ""}</endNac>` +
+        `${endT.logradouro?.trim() ? `<xLgr>${esc(sanitizeTextoNfse(endT.logradouro))}</xLgr>` : ""}` +
+        `${endT.numero?.trim() ? `<nro>${esc(sanitizeTextoNfse(endT.numero))}</nro>` : ""}` +
+        `${endT.bairro?.trim() ? `<xBairro>${esc(sanitizeTextoNfse(endT.bairro))}</xBairro>` : ""}</end>`
+      : "";
   const toma = docToma
-    ? `<toma>${docToma.length === 14 ? `<CNPJ>${docToma}</CNPJ>` : `<CPF>${docToma}</CPF>`}<xNome>${esc(sanitizeTextoNfse(dest.nome))}</xNome></toma>`
+    ? `<toma>${docToma.length === 14 ? `<CNPJ>${docToma}</CNPJ>` : `<CPF>${docToma}</CPF>`}<xNome>${esc(sanitizeTextoNfse(dest.nome))}</xNome>${tomaEnd}</toma>`
     : "";
 
   // regTrib.opSimpNac (tabela oficial): 1=Não optante (Lucro Presumido/Real) · 2=Optante MEI ·
