@@ -5,6 +5,7 @@ import { decryptSecret } from "@/lib/security/secret-crypto";
 /** Provedores de emissão integrados e o tipo de credencial de cada um. */
 export const PROVEDORES_FISCAIS = [
   { key: "ACBR", label: "ACBr", cred: "oauth" as const },
+  { key: "SEFAZ", label: "SEFAZ (NF-e direto)", cred: "certificado" as const },
   { key: "SPEDY", label: "Spedy", cred: "token" as const },
   { key: "FOCUS_NFE", label: "Focus NFe", cred: "token" as const },
   { key: "NFEIO", label: "NFe.io", cred: "token" as const },
@@ -12,7 +13,14 @@ export const PROVEDORES_FISCAIS = [
   { key: "WEBMANIA", label: "Webmania", cred: "token" as const }
 ];
 
-export type CredencialTipo = "oauth" | "token";
+/**
+ * Tipo de credencial do provedor:
+ * - "oauth": Client ID + Client Secret (ex.: ACBr).
+ * - "token": chave/token de API (demais intermediários).
+ * - "certificado": autentica direto na SEFAZ pelo certificado A1 da EMPRESA (sem credencial de
+ *   plataforma). Emite NF-e (modelo 55) nos web services da SEFAZ, sem intermediário.
+ */
+export type CredencialTipo = "oauth" | "token" | "certificado";
 
 export function provedorCred(provedor: string): CredencialTipo {
   return PROVEDORES_FISCAIS.find((p) => p.key === provedor)?.cred ?? "token";

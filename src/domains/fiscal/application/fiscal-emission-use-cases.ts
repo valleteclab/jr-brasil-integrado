@@ -14,6 +14,7 @@ import { isSubstituicaoTributaria, resolveCfopDevolucao, resolveCfopVenda } from
 import type { ItemTaxResult, NormalizedFiscalDocument, NormalizedFiscalItem } from "../types";
 import { resolveFiscalProvider } from "../providers";
 import type { ProviderContext } from "../providers/types";
+import { buildDanfe } from "../providers/sefaz/danfe";
 import { getFiscalRuntimeConfig } from "./fiscal-config-use-cases";
 import { lookupCep } from "@/lib/lookup/cadastro-lookup";
 import { isValidCnpj } from "@/lib/fiscal/documento";
@@ -737,7 +738,11 @@ export async function emitFiscalDocument(
     cscId: config.cscId,
     cscToken: config.cscToken,
     // Certificado A1 só é necessário (e só é carregado) para o NACIONAL na NFS-e.
-    ...(isNfse && provedorAlvo === "NACIONAL" ? { certificado: config.certificado } : {})
+    ...(isNfse && provedorAlvo === "NACIONAL" ? { certificado: config.certificado } : {}),
+    // NF-e direto na SEFAZ: precisa do A1 (assinar + TLS-mútuo) e da UF do emitente (autorizadora/cUF).
+    ...(!isNfse && provedorAlvo === "SEFAZ"
+      ? { certificado: config.certificado, ufEmitente: config.emitter.uf }
+      : {})
   };
 
   let emitResult;
@@ -1011,6 +1016,20 @@ export async function downloadNotaFiscalDocumento(
   }
   if (nota.status !== "AUTORIZADA" && nota.status !== "CANCELADA") {
     throw new Error("Só é possível baixar PDF/XML de notas autorizadas ou canceladas.");
+  }
+
+  // SEFAZ (NF-e direto): o XML autorizado (nfeProc) já está salvo localmente em nota.xml — o XML é
+  // servido direto e o DANFE é gerado a partir dele (buildDanfe). Sem round-trip no provedor: pela
+  // chave não é possível reconstruir o nfeProc completo, e nós já o temos.
+  if (nota.provedor === "SEFAZ") {
+    if (!nota.xml) {
+      throw new Error("XML autorizado (nfeProc) não disponível para gerar o documento da nota.");
+    }
+    if (kind === "xml") {
+      return { contentType: "application/xml", body: Buffer.from(nota.xml, "utf8"), filename: `${nota.modelo}-${nota.numero}.xml` };
+    }
+    const danfe = buildDanfe(nota.xml);
+    return { contentType: danfe.contentType, body: danfe.body, filename: danfe.filename };
   }
 
   const config = await getFiscalRuntimeConfig(scope);

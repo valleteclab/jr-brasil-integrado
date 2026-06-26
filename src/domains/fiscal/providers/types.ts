@@ -10,6 +10,19 @@ export type ProviderEmitter = {
   uf: string | null;
   codigoMunicipioIbge: string | null;
   regime: RegimeTributario;
+  /**
+   * Endereço/identificação do emitente para emissão DIRETA na SEFAZ (grupo `enderEmit`/`emit` do
+   * leiaute NF-e 4.00). Provedores intermediários (ACBr/Focus) não precisam — usam o cadastro da
+   * empresa no próprio provedor —, por isso são opcionais.
+   */
+  nomeFantasia?: string | null;
+  logradouro?: string | null;
+  numero?: string | null;
+  complemento?: string | null;
+  bairro?: string | null;
+  cidade?: string | null;
+  cep?: string | null;
+  telefone?: string | null;
 };
 
 /** Tributos calculados de um item, na ordem do documento — para provedores de modo completo. */
@@ -33,9 +46,15 @@ export type ProviderContext = {
   nfseAmbienteNacional?: boolean | null;
   /**
    * Certificado digital A1 da empresa (.pfx já descriptografado, em memória) + senha. Necessário
-   * SÓ para o provedor NACIONAL (assinar o DPS + mTLS na SEFIN). Nunca logar/persistir em claro.
+   * para os provedores diretos: NACIONAL (assinar o DPS + mTLS na SEFIN) e SEFAZ (assinar a NF-e +
+   * TLS-mútuo nos web services). Nunca logar/persistir em claro.
    */
   certificado?: { pfx: Buffer; senha: string } | null;
+  /**
+   * UF do emitente (sigla, ex.: "RS"). Necessária SÓ para o provedor SEFAZ — resolve a
+   * autorizadora da NF-e (SVRS/própria) e compõe o cUF da chave de acesso.
+   */
+  ufEmitente?: string | null;
 };
 
 export type EmitInput = {

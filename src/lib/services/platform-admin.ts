@@ -1371,7 +1371,7 @@ export type ProvedorFiscalAmbiente = {
 export type ProvedorFiscalInfo = {
   key: string;
   label: string;
-  cred: "oauth" | "token";
+  cred: "oauth" | "token" | "certificado";
   ambientes: ProvedorFiscalAmbiente[];
 };
 
@@ -1400,7 +1400,14 @@ export async function getProvedorFiscalPlataforma(): Promise<ProvedorFiscalPlata
         clientIdFinal: r?.clientIdFinal ?? null,
         secretFinal: r?.secretFinal ?? null,
         tokenFinal: r?.tokenFinal ?? null,
-        configurado: p.cred === "oauth" ? Boolean(r?.clientSecretCriptografado) : Boolean(r?.tokenCriptografado),
+        // SEFAZ (certificado): autentica pelo certificado A1 da empresa, sem credencial de
+        // plataforma — considera-se sempre "configurado" no nível do dono do SaaS.
+        configurado:
+          p.cred === "certificado"
+            ? true
+            : p.cred === "oauth"
+              ? Boolean(r?.clientSecretCriptografado)
+              : Boolean(r?.tokenCriptografado),
         ativo: r?.ativo ?? true
       };
     })
@@ -1497,6 +1504,18 @@ export async function testarCredenciaisProvedorPlataforma(
   const provider = resolveFiscalProvider(provedor as ProvedorFiscal);
   if (!provider.testConnection) {
     return { ok: false, message: "Teste de conexão não disponível para este provedor." };
+  }
+
+  // SEFAZ (NF-e direto): autentica pelo certificado A1 da EMPRESA, não por credencial de
+  // plataforma. O teste de conexão real (NFeStatusServico4) só pode ser feito no contexto da
+  // empresa (em /erp, "Testar conexão"), pois depende do certificado dela — aqui no painel do
+  // dono do SaaS não há o que validar.
+  if (provedorCred(provedor) === "certificado") {
+    return {
+      ok: true,
+      message:
+        "Provedor SEFAZ ativo. A autenticação é feita pelo certificado A1 de cada empresa — teste a conexão na configuração fiscal da empresa."
+    };
   }
 
   const cred = await getCredenciaisProvedorPlataforma(provedor, ambiente);

@@ -310,9 +310,11 @@ export async function getFiscalRuntimeConfig(scope: TenantScope) {
   // não define `provedorServicos`, usa o provedor de produtos resolvido acima (retrocompatível).
   const providerServicos = (config?.provedorServicos ?? provider) as ProvedorFiscal;
 
-  // O provedor NACIONAL (NFS-e direto na SEFIN) assina o DPS + faz mTLS com o certificado A1 da
-  // empresa. Só carregamos o certificado quando ele é realmente o provedor de serviços resolvido.
-  const certificado = providerServicos === "NACIONAL" ? await carregarCertificado(scope) : null;
+  // Os provedores diretos assinam + fazem TLS-mútuo com o certificado A1 da empresa: NACIONAL
+  // (NFS-e na SEFIN) e SEFAZ (NF-e nos web services). Só carregamos o certificado quando um deles
+  // for de fato o provedor resolvido (serviços=NACIONAL ou produtos=SEFAZ).
+  const precisaCertificado = providerServicos === "NACIONAL" || provider === "SEFAZ";
+  const certificado = precisaCertificado ? await carregarCertificado(scope) : null;
 
   return {
     provider,
@@ -338,7 +340,16 @@ export async function getFiscalRuntimeConfig(scope: TenantScope) {
       inscricaoEstadual: empresa.inscricaoEstadual,
       inscricaoMunicipal: empresa.inscricaoMunicipal,
       uf: empresa.enderecoUf,
-      codigoMunicipioIbge: config?.codigoMunicipioIbge ?? empresa.codigoMunicipioIbge ?? null
+      codigoMunicipioIbge: config?.codigoMunicipioIbge ?? empresa.codigoMunicipioIbge ?? null,
+      // Endereço/identificação para emissão direta na SEFAZ (enderEmit do leiaute 4.00).
+      nomeFantasia: empresa.nomeFantasia,
+      logradouro: empresa.enderecoLogradouro,
+      numero: empresa.enderecoNumero,
+      complemento: empresa.enderecoComplemento,
+      bairro: empresa.enderecoBairro,
+      cidade: empresa.enderecoCidade,
+      cep: empresa.enderecoCep,
+      telefone: empresa.telefone
     }
   };
 }
@@ -412,11 +423,12 @@ export async function testFiscalConnection(scope: TenantScope): Promise<TestFisc
   if (runtime.provider === "MANUAL" || runtime.provider === "INTERNO") {
     return { ok: true, message: "Provedor interno/homologação não requer credenciais externas." };
   }
-  if (!runtime.token) {
+  // SEFAZ (NF-e direto) autentica por certificado A1, não por token de API.
+  const provider = resolveFiscalProvider(runtime.provider);
+  if (runtime.provider !== "SEFAZ" && !runtime.token) {
     return { ok: false, message: "Nenhum token configurado. Salve a credencial do provedor antes de testar." };
   }
 
-  const provider = resolveFiscalProvider(runtime.provider);
   if (!provider.testConnection) {
     return { ok: false, message: "Teste de conexão ainda não disponível para este provedor." };
   }
@@ -429,7 +441,9 @@ export async function testFiscalConnection(scope: TenantScope): Promise<TestFisc
       emissionMode: runtime.emissionMode,
       token: runtime.token,
       cscId: runtime.cscId,
-      cscToken: runtime.cscToken
+      cscToken: runtime.cscToken,
+      certificado: runtime.certificado,
+      ufEmitente: runtime.emitter.uf
     });
     // Registra o último resultado para diagnóstico (sem expor o token).
     await prisma.configuracaoFiscal.update({
