@@ -216,8 +216,6 @@ export function NfseWizard({ data, initial = null }: { data: EmissaoFormData; in
   const [obraComplemento, setObraComplemento] = useState("");
   const [obraBairro, setObraBairro] = useState("");
   const [obraCep, setObraCep] = useState("");
-  const [obraMunicipioIbge, setObraMunicipioIbge] = useState("");
-  const [obraUf, setObraUf] = useState("");
   // Outros
   const [condicaoPagamento, setCondicaoPagamento] = useState(ini?.condicaoPagamento ?? "");
   const [observacoes, setObservacoes] = useState(ini?.observacoes ?? "");
@@ -413,9 +411,7 @@ export function NfseWizard({ data, initial = null }: { data: EmissaoFormData; in
                 numero: obraNumero.trim() || undefined,
                 complemento: obraComplemento.trim() || undefined,
                 bairro: obraBairro.trim() || undefined,
-                cep: obraCep.replace(/\D/g, "") || undefined,
-                codigoMunicipioIbge: obraMunicipioIbge.replace(/\D/g, "") || undefined,
-                uf: obraUf.trim().toUpperCase() || undefined
+                cep: obraCep.replace(/\D/g, "") || undefined
               }
             }
           : undefined
@@ -708,9 +704,7 @@ export function NfseWizard({ data, initial = null }: { data: EmissaoFormData; in
                 <label>Número<input value={obraNumero} onChange={(e) => setObraNumero(e.target.value)} placeholder="Nº" /></label>
                 <label>Complemento<input value={obraComplemento} onChange={(e) => setObraComplemento(e.target.value)} /></label>
                 <label>Bairro<input value={obraBairro} onChange={(e) => setObraBairro(e.target.value)} /></label>
-                <label>CEP<input value={obraCep} onChange={(e) => setObraCep(e.target.value.replace(/\D/g, "").slice(0, 8))} placeholder="Somente números" inputMode="numeric" /></label>
-                <label>Código IBGE do município<input value={obraMunicipioIbge} onChange={(e) => setObraMunicipioIbge(e.target.value.replace(/\D/g, "").slice(0, 7))} placeholder="7 dígitos" inputMode="numeric" /></label>
-                <label>UF<input value={obraUf} onChange={(e) => setObraUf(e.target.value.toUpperCase().slice(0, 2))} placeholder="Ex.: BA" /></label>
+                <label>CEP da obra<input value={obraCep} onChange={(e) => setObraCep(e.target.value.replace(/\D/g, "").slice(0, 8))} placeholder="Obrigatório — CEP do município da prestação" inputMode="numeric" /></label>
               </div>
             </div>
           )}

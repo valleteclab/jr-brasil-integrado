@@ -812,11 +812,11 @@ export class AcbrFiscalProvider implements FiscalProvider {
       if (obraInfo.cObra?.trim()) obra.cObra = obraInfo.cObra.trim();
       if (obraInfo.inscricaoImobiliaria?.trim()) obra.inscImobFisc = obraInfo.inscricaoImobiliaria.trim();
       const eo = obraInfo.endereco;
-      if (eo && (eo.logradouro?.trim() || eo.codigoMunicipioIbge?.trim() || onlyDigits(eo.cep).length === 8)) {
+      if (eo && (eo.logradouro?.trim() || onlyDigits(eo.cep).length === 8)) {
         const cepObra = onlyDigits(eo.cep);
-        // O endereço da obra (TEnderObraEvento) é FLAT — sem o invólucro `endNac` que o tomador usa.
+        // Endereço da obra (TEnderObraEvento): FLAT e SEM código de município — a obra é
+        // localizada pelo CEP (que precisa corresponder ao município da prestação do serviço).
         obra.end = {
-          cMun: eo.codigoMunicipioIbge || undefined,
           CEP: cepObra.length === 8 ? cepObra : undefined,
           xLgr: eo.logradouro ?? undefined,
           nro: eo.numero ?? undefined,
