@@ -197,8 +197,11 @@ depois.
   HTML A4 com Code-128C da chave em SVG (sem lib de PDF no projeto), servido por
   `downloadNotaFiscalDocumento` direto do `nota.xml` local. PDF real pode ser adicionado depois
   (puppeteer/pdfkit) reusando `parseNfeProc`/`code128cBars`.
-- **F5 — multi-UF** (pendente): autorizadoras próprias (SP, MG, PR, RS, BA, GO, MT, MS, PE, AM) na
-  tabela; contingência (SVC-AN/SVC-RS).
+- **F5 — multi-UF** 🟡 em andamento: **BA (Bahia) ✅ feito** — autorizadora própria
+  (`nfe.sefaz.ba.gov.br` / `hnfe.sefaz.ba.gov.br`) na tabela `endpoints.ts`, roteamento por
+  `UF_PROPRIA`, e o grupo **`autXML`** (CNPJ da SEFAZ-BA `13937073000156`) no builder — **a BA
+  rejeita a NF-e sem ele**. Demais autorizadoras próprias (SP, MG, PR, RS, GO, MT, MS, PE, AM, MA via
+  SVAN) e contingência (SVC-AN/SVC-RS) entram conforme a necessidade.
 
 > **Pendência transversal:** nenhum teste real contra a SEFAZ foi executado (precisa do A1 da
 > empresa) e o `tsc` não rodou no ambiente de desenvolvimento (registro npm bloqueado). Rodar

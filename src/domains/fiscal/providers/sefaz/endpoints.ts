@@ -47,19 +47,51 @@ const SVRS_HOM: SefazEndpoints = {
   // consultaCadastro não publicado para homologação no portal SVRS.
 };
 
+// BA (Bahia) — autorizadora PRÓPRIA (não usa SVRS/SVAN). Produção em nfe.sefaz.ba.gov.br,
+// homologação em hnfe.sefaz.ba.gov.br. URLs verificadas no wsnfe_4.00_mod55 (referência sped-nfe).
+const BA_PROD: SefazEndpoints = {
+  autorizacao: "https://nfe.sefaz.ba.gov.br/webservices/NFeAutorizacao4/NFeAutorizacao4.asmx",
+  retAutorizacao: "https://nfe.sefaz.ba.gov.br/webservices/NFeRetAutorizacao4/NFeRetAutorizacao4.asmx",
+  consultaProtocolo: "https://nfe.sefaz.ba.gov.br/webservices/NFeConsultaProtocolo4/NFeConsultaProtocolo4.asmx",
+  statusServico: "https://nfe.sefaz.ba.gov.br/webservices/NFeStatusServico4/NFeStatusServico4.asmx",
+  inutilizacao: "https://nfe.sefaz.ba.gov.br/webservices/NFeInutilizacao4/NFeInutilizacao4.asmx",
+  recepcaoEvento: "https://nfe.sefaz.ba.gov.br/webservices/NFeRecepcaoEvento4/NFeRecepcaoEvento4.asmx",
+  consultaCadastro: "https://nfe.sefaz.ba.gov.br/webservices/CadConsultaCadastro4/CadConsultaCadastro4.asmx"
+};
+
+const BA_HOM: SefazEndpoints = {
+  autorizacao: "https://hnfe.sefaz.ba.gov.br/webservices/NFeAutorizacao4/NFeAutorizacao4.asmx",
+  retAutorizacao: "https://hnfe.sefaz.ba.gov.br/webservices/NFeRetAutorizacao4/NFeRetAutorizacao4.asmx",
+  consultaProtocolo: "https://hnfe.sefaz.ba.gov.br/webservices/NFeConsultaProtocolo4/NFeConsultaProtocolo4.asmx",
+  statusServico: "https://hnfe.sefaz.ba.gov.br/webservices/NFeStatusServico4/NFeStatusServico4.asmx",
+  inutilizacao: "https://hnfe.sefaz.ba.gov.br/webservices/NFeInutilizacao4/NFeInutilizacao4.asmx",
+  recepcaoEvento: "https://hnfe.sefaz.ba.gov.br/webservices/NFeRecepcaoEvento4/NFeRecepcaoEvento4.asmx",
+  consultaCadastro: "https://hnfe.sefaz.ba.gov.br/webservices/CadConsultaCadastro4/CadConsultaCadastro4.asmx"
+};
+
 /** UFs cuja NF-e é autorizada pela SVRS. */
 const UF_SVRS = new Set([
   "AC", "AL", "AP", "CE", "DF", "ES", "PA", "PB", "PI", "RJ", "RN", "RO", "RR", "SC", "SE", "TO"
 ]);
 
+/** UFs com autorizadora PRÓPRIA já suportada (cada uma com seu conjunto de endpoints). */
+const UF_PROPRIA: Record<string, { PRODUCAO: SefazEndpoints; HOMOLOGACAO: SefazEndpoints }> = {
+  BA: { PRODUCAO: BA_PROD, HOMOLOGACAO: BA_HOM }
+};
+
 /** Autorizadora (conjunto de endpoints) para a UF + ambiente. Lança se a UF ainda não é suportada. */
 export function resolveSefazEndpoints(uf: string, ambiente: AmbienteFiscal): SefazEndpoints {
   const sigla = (uf ?? "").trim().toUpperCase();
+  const propria = UF_PROPRIA[sigla];
+  if (propria) {
+    return ambiente === "PRODUCAO" ? propria.PRODUCAO : propria.HOMOLOGACAO;
+  }
   if (UF_SVRS.has(sigla)) {
     return ambiente === "PRODUCAO" ? SVRS_PROD : SVRS_HOM;
   }
+  const suportadas = [...Object.keys(UF_PROPRIA), ...UF_SVRS].sort().join(", ");
   throw new Error(
-    `UF ${sigla || "(vazia)"} ainda não suportada pelo provedor SEFAZ (autorizadora própria fora do escopo inicial; suportadas via SVRS: ${[...UF_SVRS].join(", ")}).`
+    `UF ${sigla || "(vazia)"} ainda não suportada pelo provedor SEFAZ (suportadas: ${suportadas}).`
   );
 }
 

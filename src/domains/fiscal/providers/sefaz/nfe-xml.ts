@@ -46,6 +46,15 @@ function isSimplesRegime(regime: RegimeTributario): boolean {
   return regime === "SIMPLES_NACIONAL" || regime === "MEI" || regime === "SIMPLES_EXCESSO_SUBLIMITE";
 }
 
+/**
+ * CNPJ a informar no grupo de Autorização de download do XML (autXML), por UF que exige. A BAHIA
+ * REJEITA a NF-e sem esse grupo; na ausência de escritório de contabilidade, a própria SEFAZ-BA
+ * orienta informar o CNPJ dela. (Mesma regra já aplicada no provedor ACBr.)
+ */
+const UF_AUTXML_CNPJ: Record<string, string> = {
+  BA: "13937073000156" // SEFAZ Bahia
+};
+
 /** CRT: 1=Simples, 2=Simples excesso sublimite, 3=Normal/Presumido. */
 function crt(regime: RegimeTributario): number {
   if (regime === "SIMPLES_NACIONAL" || regime === "MEI") return 1;
@@ -269,6 +278,11 @@ export function buildNfeXml(input: EmitInput): BuildNfeResult {
 
   const dest = destXml(input, tpAmb);
 
+  // autXML: grupo de autorização de download do XML, exigido por algumas UFs (BA rejeita sem ele).
+  // Vai entre <dest> e <det> conforme a ordem do schema 4.00.
+  const autXmlCnpj = UF_AUTXML_CNPJ[ufEmit];
+  const autXML = autXmlCnpj ? `<autXML><CNPJ>${autXmlCnpj}</CNPJ></autXML>` : "";
+
   // Itens + acúmulo de totais a partir do que é REALMENTE emitido (a SEFAZ valida ICMSTot vs soma).
   const sum = { vBC: 0, vICMS: 0, vFCP: 0, vProd: 0, vDesc: 0, vPIS: 0, vCOFINS: 0, vBCST: 0, vST: 0 };
   const det = doc.itens.map((item, index) => {
@@ -370,7 +384,7 @@ export function buildNfeXml(input: EmitInput): BuildNfeResult {
   const infoCompl = sanitize(doc.informacoesComplementares);
   const infAdic = infoCompl ? `<infAdic><infCpl>${esc(infoCompl)}</infCpl></infAdic>` : "";
 
-  const infNFe = `<infNFe Id="NFe${chave}" versao="4.00">${ide}${emit}${dest}${det}${total}${transp}${pag}${infAdic}</infNFe>`;
+  const infNFe = `<infNFe Id="NFe${chave}" versao="4.00">${ide}${emit}${dest}${autXML}${det}${total}${transp}${pag}${infAdic}</infNFe>`;
   const xml = `<NFe xmlns="http://www.portalfiscal.inf.br/nfe">${infNFe}</NFe>`;
   return { xml, chave, cNF, cDV, nNF };
 }

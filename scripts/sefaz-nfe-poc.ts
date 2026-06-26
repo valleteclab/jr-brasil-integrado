@@ -38,17 +38,17 @@ const sampleInput: EmitInput = {
     cnpj: "15130181000148",
     inscricaoEstadual: "1234567",
     inscricaoMunicipal: null,
-    uf: "RJ",
-    codigoMunicipioIbge: "3304557",
+    uf: "BA",
+    codigoMunicipioIbge: "2927408",
     regime: "SIMPLES_NACIONAL",
     nomeFantasia: "Teste",
     logradouro: "Rua das Flores",
     numero: "100",
     complemento: null,
     bairro: "Centro",
-    cidade: "Rio de Janeiro",
-    cep: "20040002",
-    telefone: "2122223333"
+    cidade: "Salvador",
+    cep: "40010000",
+    telefone: "7122223333"
   },
   totals: {
     valorProdutos: 250, valorServicos: 0, valorDesconto: 0, valorIcms: 0, valorIcmsSt: 0, valorFcp: 0,
@@ -58,8 +58,8 @@ const sampleInput: EmitInput = {
     modelo: "NFE", finalidade: "NORMAL", naturezaOperacao: "VENDA DE MERCADORIA",
     ambiente: "HOMOLOGACAO", provedor: "SEFAZ", serie: "1", chaveReferenciada: null,
     destinatario: {
-      nome: "Cliente Teste", documento: "11444777000161", inscricaoEstadual: null, email: null, uf: "RJ",
-      endereco: { logradouro: "Av Brasil", numero: "200", complemento: null, bairro: "Centro", cep: "20040002", cidade: "Rio de Janeiro", uf: "RJ", codigoMunicipioIbge: "3304557" }
+      nome: "Cliente Teste", documento: "11444777000161", inscricaoEstadual: null, email: null, uf: "BA",
+      endereco: { logradouro: "Av Sete de Setembro", numero: "200", complemento: null, bairro: "Centro", cep: "40010000", cidade: "Salvador", uf: "BA", codigoMunicipioIbge: "2927408" }
     },
     formaPagamento: "Dinheiro", condicaoPagamento: null, pagamentos: null,
     informacoesComplementares: null, valorFrete: 0, modalidadeFrete: 9, valorSeguro: 0,
