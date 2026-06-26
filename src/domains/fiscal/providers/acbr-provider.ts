@@ -620,6 +620,9 @@ export class AcbrFiscalProvider implements FiscalProvider {
   }
 
   private toNfseResult(data: AcbrNfseResponse | undefined, ctx: ProviderContext): EmitResult {
+    // [TEMP DEBUG] Descobrir o nome do campo da chave de acesso na resposta NFS-e da ACBr.
+    // Remover após identificar (grep ACBR_NFSE_RESP nos logs).
+    try { console.log("[ACBR_NFSE_RESP]", JSON.stringify(data)); } catch { /* ignore */ }
     const { baseUrl } = this.resolveConfig(ctx);
     const id = data?.id;
     const motivo = data?.mensagens?.map((m) => m.descricao).filter(Boolean).join("; ") || data?.error?.message || undefined;
