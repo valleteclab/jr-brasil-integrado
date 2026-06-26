@@ -92,11 +92,7 @@ type AcbrNfseResponse = {
   id?: string;
   status?: string;
   numero?: string;
-  /** Chave de acesso da NFS-e (50 dígitos) — necessária para substituição/cancelamento.
-   *  Nomes possíveis na resposta da ACBr/Nuvem Fiscal: chave / chave_acesso / chNFSe. */
-  chave?: string;
-  chave_acesso?: string;
-  chNFSe?: string;
+  /** Na NFS-e nacional via ACBr, traz a CHAVE DE ACESSO (chNFSe, 50 dígitos) — também aparece no link_url. */
   codigo_verificacao?: string;
   link_url?: string;
   mensagens?: Array<{ codigo?: string; descricao?: string; correcao?: string }>;
@@ -620,18 +616,19 @@ export class AcbrFiscalProvider implements FiscalProvider {
   }
 
   private toNfseResult(data: AcbrNfseResponse | undefined, ctx: ProviderContext): EmitResult {
-    // [TEMP DEBUG] Descobrir o nome do campo da chave de acesso na resposta NFS-e da ACBr.
-    // Remover após identificar (grep ACBR_NFSE_RESP nos logs).
-    try { console.log("[ACBR_NFSE_RESP]", JSON.stringify(data)); } catch { /* ignore */ }
     const { baseUrl } = this.resolveConfig(ctx);
     const id = data?.id;
     const motivo = data?.mensagens?.map((m) => m.descricao).filter(Boolean).join("; ") || data?.error?.message || undefined;
+    // Chave de acesso da NFS-e (chNFSe, 50 díg.): a ACBr a entrega no `codigo_verificacao` e também
+    // embutida no `link_url` (?chave=...). Sem ela não dá para substituir nem cancelar referenciando.
+    const cvDigits = onlyDigits(data?.codigo_verificacao);
+    const chaveLink = (data?.link_url ?? "").match(/chave=(\d{40,60})/)?.[1];
+    const chaveAcesso = (cvDigits.length >= 40 ? cvDigits : undefined) ?? chaveLink ?? undefined;
     return {
       status: mapNfseStatus(data?.status),
       numero: data?.numero || undefined,
       providerRef: id,
-      // Chave de acesso da NFS-e (50 díg.) — sem ela não dá para substituir nem referenciar a nota.
-      chaveAcesso: data?.chave || data?.chave_acesso || data?.chNFSe || undefined,
+      chaveAcesso,
       protocolo: data?.codigo_verificacao || undefined,
       xmlUrl: id ? `${baseUrl}/nfse/${id}/xml` : undefined,
       danfeUrl: data?.link_url || (id ? `${baseUrl}/nfse/${id}/pdf` : undefined),
