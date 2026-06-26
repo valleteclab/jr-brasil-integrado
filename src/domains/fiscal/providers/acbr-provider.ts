@@ -103,6 +103,24 @@ function onlyDigits(value: string | null | undefined): string {
   return (value ?? "").replace(/\D/g, "");
 }
 
+/**
+ * Sanitiza textos livres da NFS-e nacional (xDescServ, xInfComp, xMotivo). O leiaute exige
+ * o padrão `^([!-ÿ][ -ÿ]*[!-ÿ]|[!-ÿ])$`: só caracteres 0x20–0xFF, sem quebra de linha/controle,
+ * e sem espaço no início/fim. Troca quebras por espaço, normaliza pontuação unicode (travessões,
+ * aspas curvas, reticências) para ASCII e remove o que ficar fora da faixa.
+ */
+function sanitizeTextoNfse(value: string | null | undefined): string {
+  return (value ?? "")
+    .replace(/[\r\n\t\f\v]+/g, " ")
+    .replace(/[‐-―−]/g, "-")
+    .replace(/[‘’‚′]/g, "'")
+    .replace(/[“”„″]/g, '"')
+    .replace(/…/g, "...")
+    .replace(/[^\x20-\xFF]/g, "")
+    .replace(/ {2,}/g, " ")
+    .trim();
+}
+
 function fiscalDateTimeSaoPaulo(date = new Date()): { dhEmi: string; dCompet: string } {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Sao_Paulo",
@@ -801,16 +819,17 @@ export class AcbrFiscalProvider implements FiscalProvider {
     // cNBS (Nomenclatura Brasileira de Serviços): exigido no cServ pela DPS nacional.
     const cNbs = onlyDigits(input.document.itens.find((i) => i.servico && i.codigoNbs)?.codigoNbs);
     const ret = input.document.retencoes ?? null;
-    const descricao =
+    const descricao = sanitizeTextoNfse(
       input.document.itens.map((i) => i.descricao).join("; ") ||
-      input.document.informacoesComplementares?.trim() ||
-      input.document.naturezaOperacao;
+        input.document.informacoesComplementares?.trim() ||
+        input.document.naturezaOperacao
+    );
     // Informações complementares (xInfComp) → campo "Informações Complementares" do DANFSE. Onde
     // vai o que não cabe na descrição do serviço (xDescServ é limitado a 2000 pela SEFAZ), p.ex.
     // a lista de materiais/medição. Só quando a descrição NÃO veio das próprias observações.
     const infoComp =
       input.document.itens.some((i) => i.descricao?.trim())
-        ? (input.document.informacoesComplementares ?? "").trim().slice(0, 2000) || undefined
+        ? sanitizeTextoNfse(input.document.informacoesComplementares).slice(0, 2000) || undefined
         : undefined;
 
     // Substituição de NFS-e (grupo subst): referencia a chave da nota substituída + motivo. A SEFAZ
@@ -820,7 +839,7 @@ export class AcbrFiscalProvider implements FiscalProvider {
       ? {
           chSubstda: onlyDigits(substInfo.chaveSubstituida),
           cMotivo: substInfo.cMotivo || "99",
-          ...(substInfo.xMotivo?.trim() ? { xMotivo: substInfo.xMotivo.trim() } : {})
+          ...(sanitizeTextoNfse(substInfo.xMotivo) ? { xMotivo: sanitizeTextoNfse(substInfo.xMotivo) } : {})
         }
       : undefined;
 
