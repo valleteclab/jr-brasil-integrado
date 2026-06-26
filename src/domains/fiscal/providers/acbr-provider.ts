@@ -92,6 +92,11 @@ type AcbrNfseResponse = {
   id?: string;
   status?: string;
   numero?: string;
+  /** Chave de acesso da NFS-e (50 dígitos) — necessária para substituição/cancelamento.
+   *  Nomes possíveis na resposta da ACBr/Nuvem Fiscal: chave / chave_acesso / chNFSe. */
+  chave?: string;
+  chave_acesso?: string;
+  chNFSe?: string;
   codigo_verificacao?: string;
   link_url?: string;
   mensagens?: Array<{ codigo?: string; descricao?: string; correcao?: string }>;
@@ -622,6 +627,8 @@ export class AcbrFiscalProvider implements FiscalProvider {
       status: mapNfseStatus(data?.status),
       numero: data?.numero || undefined,
       providerRef: id,
+      // Chave de acesso da NFS-e (50 díg.) — sem ela não dá para substituir nem referenciar a nota.
+      chaveAcesso: data?.chave || data?.chave_acesso || data?.chNFSe || undefined,
       protocolo: data?.codigo_verificacao || undefined,
       xmlUrl: id ? `${baseUrl}/nfse/${id}/xml` : undefined,
       danfeUrl: data?.link_url || (id ? `${baseUrl}/nfse/${id}/pdf` : undefined),
