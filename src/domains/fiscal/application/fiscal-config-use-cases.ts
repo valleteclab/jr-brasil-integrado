@@ -6,10 +6,13 @@ import { decryptSecret, encryptSecret, secretLastChars } from "@/lib/security/se
 import { resolveFiscalProvider } from "@/domains/fiscal/providers";
 import { updateAcbrNfceCsc, registrarEmpresaAcbr } from "@/domains/fiscal/providers/acbr-provider";
 import { getCredenciaisProvedorPlataforma, getProvedorFiscalAtivo, provedorCred } from "@/domains/fiscal/application/plataforma-provedor-use-cases";
+import { carregarCertificado } from "@/domains/fiscal/application/certificado-use-cases";
 
 export type FiscalConfigSummary = {
   configured: boolean;
   provider: ProvedorFiscal;
+  /** Provedor da NFS-e (serviços). null = usar o mesmo dos produtos. NACIONAL = direto na SEFIN. */
+  provedorServicos: ProvedorFiscal | null;
   environment: AmbienteFiscal;
   regime: RegimeTributario;
   baseUrl: string;
@@ -42,6 +45,8 @@ export type FiscalConfigSummary = {
 export type SaveFiscalConfigInput = {
   /** Opcional: quando omitido, herda o provedor ATIVO da plataforma (escolha de provedor é só global). */
   provider?: ProvedorFiscal;
+  /** Provedor da NFS-e (serviços): null/ausente = mesmo dos produtos; "NACIONAL" = direto na SEFIN. */
+  provedorServicos?: ProvedorFiscal | null;
   environment: AmbienteFiscal;
   regime: RegimeTributario;
   baseUrl?: string;
@@ -68,6 +73,7 @@ export type SaveFiscalConfigInput = {
 
 function toSummary(config: {
   provedor: ProvedorFiscal;
+  provedorServicos: ProvedorFiscal | null;
   ambiente: AmbienteFiscal;
   regimeTributario: RegimeTributario;
   baseUrl: string | null;
@@ -97,6 +103,7 @@ function toSummary(config: {
   return {
     configured: Boolean(config),
     provider: config?.provedor ?? "MANUAL",
+    provedorServicos: config?.provedorServicos ?? null,
     environment: config?.ambiente ?? "HOMOLOGACAO",
     regime: config?.regimeTributario ?? "SIMPLES_NACIONAL",
     baseUrl: config?.baseUrl ?? "",
@@ -162,10 +169,15 @@ export async function saveFiscalConfig(scope: TenantScope, input: SaveFiscalConf
   const cscData = input.cscToken?.trim() ? { cscTokenCriptografado: encryptSecret(input.cscToken.trim()) } : {};
   const nfceCscData = input.nfceCsc?.trim() ? { nfceCscCriptografado: encryptSecret(input.nfceCsc.trim()) } : {};
 
+  // Provedor de NFS-e: só altera quando o chamador envia (undefined = mantém o atual).
+  const provedorServicosData =
+    input.provedorServicos !== undefined ? { provedorServicos: input.provedorServicos || null } : {};
+
   const config = await prisma.configuracaoFiscal.upsert({
     where: { empresaId: scope.empresaId },
     update: {
       provedor: provider,
+      ...provedorServicosData,
       ambiente: input.environment,
       regimeTributario: input.regime,
       baseUrl: input.baseUrl?.trim() || null,
@@ -194,6 +206,7 @@ export async function saveFiscalConfig(scope: TenantScope, input: SaveFiscalConf
       tenantId: scope.tenantId,
       empresaId: scope.empresaId,
       provedor: provider,
+      provedorServicos: input.provedorServicos ?? null,
       ambiente: input.environment,
       regimeTributario: input.regime,
       baseUrl: input.baseUrl?.trim() || null,
@@ -293,8 +306,18 @@ export async function getFiscalRuntimeConfig(scope: TenantScope) {
     ? plataforma?.clientId ?? process.env.ACBR_CLIENT_ID?.trim() ?? null
     : config?.cscId ?? null;
 
+  // Provedor de SERVIÇOS (NFS-e): pode ser distinto do de PRODUTOS (NF-e/NFC-e). Quando a empresa
+  // não define `provedorServicos`, usa o provedor de produtos resolvido acima (retrocompatível).
+  const providerServicos = (config?.provedorServicos ?? provider) as ProvedorFiscal;
+
+  // O provedor NACIONAL (NFS-e direto na SEFIN) assina o DPS + faz mTLS com o certificado A1 da
+  // empresa. Só carregamos o certificado quando ele é realmente o provedor de serviços resolvido.
+  const certificado = providerServicos === "NACIONAL" ? await carregarCertificado(scope) : null;
+
   return {
     provider,
+    providerServicos,
+    certificado,
     ambiente,
     regime: config?.regimeTributario ?? empresa.regimeTributario,
     baseUrl: plataforma?.baseUrl ?? config?.baseUrl ?? null,

@@ -144,6 +144,8 @@ enum ProvedorFiscal {
   SPEDY
   ACBR
   MANUAL
+  // NFS-e direto no Sistema Nacional (SEFIN), assinado com o A1 da empresa (sem intermediário).
+  NACIONAL
 }
 
 enum RegimeTributario {
@@ -346,6 +348,7 @@ model Empresa {
   configuracoesIa           ConfiguracaoIa[]
   configuracoesIntegracao   ConfiguracaoIntegracao[]
   configuracaoFiscal        ConfiguracaoFiscal?
+  certificadoDigital        CertificadoDigital?
   sequenciasFiscais         SequenciaFiscal[]
   spedConfiguracao          SpedConfiguracao?
   spedArquivos              SpedArquivo[]
@@ -1832,12 +1835,35 @@ model NotaFiscalEvento {
   @@index([tenantId, empresaId, notaFiscalId])
 }
 
+/// Certificado digital A1 (.pfx) da empresa, criptografado. Necessário para o provedor NACIONAL
+/// (assina o DPS da NFS-e e faz o mTLS na SEFIN). Guardado só criptografado; decriptado em memória.
+model CertificadoDigital {
+  id                 String   @id @default(cuid())
+  tenantId           String
+  empresaId          String   @unique
+  empresa            Empresa  @relation(fields: [empresaId], references: [id])
+  /// .pfx criptografado (encryptSecret) — base64 dos bytes do certificado.
+  pfxCriptografado   String
+  /// Senha do .pfx criptografada (encryptSecret).
+  senhaCriptografada String
+  titularCnpj        String?
+  validade           DateTime?
+  arquivoNome        String?
+  criadoEm           DateTime @default(now())
+  atualizadoEm       DateTime @updatedAt
+
+  @@index([tenantId, empresaId])
+}
+
 model ConfiguracaoFiscal {
   id                       String           @id @default(cuid())
   tenantId                 String
   empresaId                String           @unique
   empresa                  Empresa          @relation(fields: [empresaId], references: [id])
   provedor                 ProvedorFiscal   @default(MANUAL)
+  /// Provedor da NFS-e (serviços). Quando null, usa `provedor`. Permite NF-e/NFC-e no ACBr e
+  /// NFS-e no NACIONAL (direto). Roteamento por modelo na emissão.
+  provedorServicos         ProvedorFiscal?
   ambiente                 AmbienteFiscal   @default(HOMOLOGACAO)
   regimeTributario         RegimeTributario @default(SIMPLES_NACIONAL)
   baseUrl                  String?

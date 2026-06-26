@@ -224,6 +224,13 @@ export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormDat
   const isNfce = tipo === "NFCE";
   const tipoLabel = tipo === "NFE" ? "NF-e" : tipo === "NFCE" ? "NFC-e" : "NFS-e";
 
+  // NFS-e: dispensa a alíquota do ISSQN quando o município usa o Ambiente Nacional ou o
+  // prestador é do Simples Nacional/MEI (ISS na guia única/DAS). Só Lucro Presumido/Real
+  // fora do ambiente nacional precisa informar a alíquota.
+  const dispensaAliquota =
+    data.nfseAmbienteNacional === true ||
+    ["SIMPLES_NACIONAL", "SIMPLES_EXCESSO_SUBLIMITE", "MEI"].includes(data.regime ?? "");
+
   // UF de destino da operação: cliente cadastrado, consumidor da NFC-e (mesma UF do emitente) ou
   // destinatário avulso. Define o CFOP de saída ser interno (5xxx) ou interestadual (6xxx).
   const destinoUf =
@@ -489,7 +496,7 @@ export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormDat
           formaPagamento: formaPagamento || undefined,
           codigoServicoLc116: codigoLc116Doc.trim() || undefined,
           taxationType,
-          aliquotaIss: aliquotaIss > 0 ? aliquotaIss : undefined,
+          aliquotaIss: !dispensaAliquota && aliquotaIss > 0 ? aliquotaIss : undefined,
           deducoes: deducoes > 0 ? deducoes : undefined,
           servicos: servicos.map((sv) => ({
             descricao: sv.descricao.trim(),
@@ -964,7 +971,7 @@ export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormDat
                   </select>
                 </label>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                  <label>Alíquota ISS %<input type="number" min={0} step="any" value={aliquotaIss} onChange={(e) => setAliquotaIss(Math.max(0, Number(e.target.value) || 0))} placeholder="Ex.: 5" /></label>
+                  <label>Alíquota ISS %<input type="number" min={0} step="any" value={dispensaAliquota ? "" : aliquotaIss} onChange={(e) => setAliquotaIss(Math.max(0, Number(e.target.value) || 0))} disabled={dispensaAliquota} placeholder={dispensaAliquota ? "Definida pelo sistema/regime — não informar" : "Ex.: 5"} /></label>
                   <label>Deduções (R$)<input type="number" min={0} step="any" value={deducoes} onChange={(e) => setDeducoes(Math.max(0, Number(e.target.value) || 0))} /></label>
                 </div>
                 <div className="atend-total-row"><span>Base de cálculo do ISS</span><b>{brl(baseIss)}</b></div>
@@ -977,7 +984,9 @@ export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormDat
                 </label>
                 <label>Condição de pagamento<input value={condicaoPagamento} onChange={(e) => setCondicaoPagamento(e.target.value)} placeholder="Ex.: à vista, 30 dias" /></label>
                 <p style={{ fontSize: 11.5, color: "var(--erp-mute)", margin: "2px 0 0" }}>
-                  Informe a alíquota de ISS aqui (sobrepõe a regra tributária). Se deixar 0, o ISS é calculado pela regra tributária/configuração fiscal da empresa.
+                  {dispensaAliquota
+                    ? "Alíquota definida pelo sistema/regime (Ambiente Nacional ou Simples/MEI) — não é necessário informar."
+                    : "Informe a alíquota de ISS aqui (sobrepõe a regra tributária). Se deixar 0, o ISS é calculado pela regra tributária/configuração fiscal da empresa."}
                 </p>
               </div>
             )}

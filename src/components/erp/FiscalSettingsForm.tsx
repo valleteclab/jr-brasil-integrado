@@ -37,6 +37,13 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
   const [certBusy, setCertBusy] = useState(false);
   const [certMsg, setCertMsg] = useState("");
   const [certErr, setCertErr] = useState("");
+  // Certificado A1 da emissão NACIONAL (armazenado criptografado no nosso banco).
+  const [certNacFile, setCertNacFile] = useState<File | null>(null);
+  const [certNacPassword, setCertNacPassword] = useState("");
+  const [certNacBusy, setCertNacBusy] = useState(false);
+  const [certNacMsg, setCertNacMsg] = useState("");
+  const [certNacErr, setCertNacErr] = useState("");
+  const [certNacInfo, setCertNacInfo] = useState<{ titularCnpj: string | null; validade: string | null; arquivoNome: string | null } | null>(null);
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoBusy, setLogoBusy] = useState(false);
   const [logoAjustando, setLogoAjustando] = useState(false);
@@ -80,6 +87,42 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
       setCertErr(e instanceof Error ? e.message : "Não foi possível enviar o certificado.");
     } finally {
       setCertBusy(false);
+    }
+  }
+
+  // Carrega o que já está guardado do certificado nacional (titular/validade) ao montar.
+  useEffect(() => {
+    let ativo = true;
+    fetch("/api/erp/configuracoes/fiscal/certificado-nacional")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { certificado?: typeof certNacInfo } | null) => {
+        if (ativo && data?.certificado) setCertNacInfo(data.certificado);
+      })
+      .catch(() => {});
+    return () => { ativo = false; };
+  }, []);
+
+  async function enviarCertificadoNacional() {
+    setCertNacErr("");
+    setCertNacMsg("");
+    if (!certNacFile) { setCertNacErr("Selecione o arquivo .pfx do certificado A1."); return; }
+    if (!certNacPassword.trim()) { setCertNacErr("Informe a senha do certificado."); return; }
+    setCertNacBusy(true);
+    try {
+      const form = new FormData();
+      form.append("file", certNacFile);
+      form.append("password", certNacPassword);
+      const res = await fetch("/api/erp/configuracoes/fiscal/certificado-nacional", { method: "POST", body: form });
+      const data = (await res.json()) as { titularCnpj?: string | null; validade?: string | null; arquivoNome?: string | null; error?: string };
+      if (!res.ok) throw new Error(data.error || "Não foi possível salvar o certificado.");
+      setCertNacInfo({ titularCnpj: data.titularCnpj ?? null, validade: data.validade ?? null, arquivoNome: data.arquivoNome ?? null });
+      setCertNacMsg("Certificado armazenado com segurança para a emissão nacional.");
+      setCertNacFile(null);
+      setCertNacPassword("");
+    } catch (e) {
+      setCertNacErr(e instanceof Error ? e.message : "Não foi possível salvar o certificado.");
+    } finally {
+      setCertNacBusy(false);
     }
   }
 
@@ -178,6 +221,7 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
           // NÃO enviamos `provider`: ele é global (definido em /admin/provedor-fiscal). Sem provider,
           // o backend herda o provedor ativo da plataforma e não exige credencial por empresa —
           // assim a "Emissão ativa" não fica travada por um Client ID que é da plataforma.
+          provedorServicos: config.provedorServicos,
           environment: config.environment,
           regime: config.regime,
           baseUrl: config.baseUrl,
@@ -234,6 +278,17 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
               disabled
               title="O provedor de emissão é definido pelo administrador da plataforma."
             />
+          </label>
+          <label>
+            Provedor da NFS-e (serviços)
+            {/* Permite NF-e/NFC-e pelo provedor padrão (ACBr) e NFS-e direto no Sistema Nacional. */}
+            <select
+              value={config.provedorServicos ?? ""}
+              onChange={(e) => update("provedorServicos", (e.target.value || null) as FiscalConfigSummary["provedorServicos"])}
+            >
+              <option value="">Padrão (mesmo dos produtos)</option>
+              <option value="NACIONAL">Nacional — direto na SEFIN (sem intermediário)</option>
+            </select>
           </label>
           <label>
             Ambiente
@@ -474,6 +529,42 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
           </div>
         </div>
       )}
+
+      <div className="erp-card">
+        <div className="erp-card-head"><h3>Certificado A1 — NFS-e Nacional</h3></div>
+        <div className="erp-card-body">
+          <p style={{ fontSize: 12.5, color: "var(--erp-mute)", margin: "0 0 12px" }}>
+            Envie o arquivo <b>.pfx</b> do certificado A1 da empresa. Diferente da seção acima, aqui o certificado é
+            <b> armazenado de forma criptografada</b> em nosso sistema para a <b>emissão nacional de NFS-e</b> (assinatura
+            do DPS e conexão segura direto com a SEFIN). A senha também é guardada criptografada.
+          </p>
+          {certNacInfo && (
+            <div className="alert info" style={{ marginBottom: 10 }}>
+              <span>
+                Certificado guardado{certNacInfo.arquivoNome ? `: ${certNacInfo.arquivoNome}` : ""}.
+                {certNacInfo.titularCnpj ? ` Titular (CNPJ): ${certNacInfo.titularCnpj}.` : ""}
+                {certNacInfo.validade ? ` Válido até: ${new Date(certNacInfo.validade).toLocaleDateString("pt-BR")}.` : ""}
+              </span>
+            </div>
+          )}
+          {certNacErr && <div className="alert danger" style={{ marginBottom: 10 }}><span>{certNacErr}</span></div>}
+          {certNacMsg && <div className="alert success" style={{ marginBottom: 10 }}><span>{certNacMsg}</span></div>}
+          <div className="erp-form" style={{ gridTemplateColumns: "1fr 1fr" }}>
+            <label>Arquivo do certificado (.pfx)
+              <input type="file" accept=".pfx,application/x-pkcs12" onChange={(e) => setCertNacFile(e.target.files?.[0] ?? null)} />
+            </label>
+            <label>Senha do certificado
+              <input type="password" value={certNacPassword} onChange={(e) => setCertNacPassword(e.target.value)} autoComplete="off" />
+            </label>
+          </div>
+          <div className="erp-toolbar" style={{ borderBottom: "none", paddingBottom: 0, marginTop: 8 }}>
+            <div className="grow" />
+            <button type="button" className="btn-erp primary sm" onClick={enviarCertificadoNacional} disabled={certNacBusy}>
+              {certNacBusy ? "Salvando…" : "Salvar certificado"}
+            </button>
+          </div>
+        </div>
+      </div>
 
       {isAcbr && (
         <div className="erp-card">

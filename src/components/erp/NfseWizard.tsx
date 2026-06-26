@@ -264,6 +264,13 @@ export function NfseWizard({ data, initial = null }: { data: EmissaoFormData; in
     if (d.uf) setTUf(d.uf);
   }
 
+  // Dispensa da alíquota do ISSQN: município no Ambiente Nacional define a alíquota, e no
+  // Simples Nacional/MEI o ISS está na guia única (DAS) — só Lucro Presumido/Real fora do
+  // ambiente nacional precisa informar a alíquota.
+  const dispensaAliquota =
+    data.nfseAmbienteNacional === true ||
+    ["SIMPLES_NACIONAL", "SIMPLES_EXCESSO_SUBLIMITE", "MEI"].includes(data.regime ?? "");
+
   // Exigibilidade suspensa não permite retenção de ISSQN (regra do Emissor Nacional).
   const exigibilidadeSuspensa = suspensao;
   const tributavel = tipoOperacao === "taxationInMunicipality" || tipoOperacao === "taxationOutsideMunicipality";
@@ -306,8 +313,8 @@ export function NfseWizard({ data, initial = null }: { data: EmissaoFormData; in
     }
     if (s === 2) {
       if (valorServico <= 0) return "Informe o Valor do Serviço.";
-      // Município no Ambiente Nacional: a alíquota é definida pelo sistema — não exigir.
-      if (data.nfseAmbienteNacional !== true && tributavel && !exigibilidadeSuspensa && aliquotaIss <= 0) return "Informe a Alíquota do ISSQN.";
+      // Ambiente Nacional ou Simples/MEI: a alíquota é definida pelo sistema/regime — não exigir.
+      if (!dispensaAliquota && tributavel && !exigibilidadeSuspensa && aliquotaIss <= 0) return "Informe a Alíquota do ISSQN.";
       // Serviço de obra: o DPS exige a obra (endereço, CNO ou inscrição imobiliária).
       if (precisaObra && !obraLogradouro.trim() && !obraCno.trim() && !obraInscImob.trim()) {
         return "Este é um serviço de obra: informe a obra (endereço, CNO ou inscrição imobiliária).";
@@ -401,7 +408,7 @@ export function NfseWizard({ data, initial = null }: { data: EmissaoFormData; in
         receiver,
         codigoServicoLc116: codigoLc116,
         codigoNbs: itemNbs.replace(/\D/g, "") || undefined,
-        aliquotaIss: aliquotaIss > 0 ? aliquotaIss : undefined,
+        aliquotaIss: !dispensaAliquota && aliquotaIss > 0 ? aliquotaIss : undefined,
         deducoes: descontoIncondicionado + deducaoBc > 0 ? descontoIncondicionado + deducaoBc : undefined,
         taxationType,
         condicaoPagamento: condicaoPagamento.trim() || undefined,
@@ -693,7 +700,7 @@ export function NfseWizard({ data, initial = null }: { data: EmissaoFormData; in
                 </>
               )}
               <label>Dedução / redução da BC (R$)<MoneyInput value={deducaoBc} onChange={setDeducaoBc} /></label>
-              <label>Alíquota do ISSQN %<PercentInput value={aliquotaIss} onChange={setAliquotaIss} disabled={!tributavel || exigibilidadeSuspensa || data.nfseAmbienteNacional === true} placeholder={data.nfseAmbienteNacional === true ? "Definida pelo sistema nacional" : undefined} /></label>
+              <label>Alíquota do ISSQN %<PercentInput value={aliquotaIss} onChange={setAliquotaIss} disabled={!tributavel || exigibilidadeSuspensa || dispensaAliquota} placeholder={dispensaAliquota ? "Definida pelo sistema/regime — não informar" : undefined} /></label>
               {!exigibilidadeSuspensa && tributavel && (
                 <>
                   <label className="check-row">

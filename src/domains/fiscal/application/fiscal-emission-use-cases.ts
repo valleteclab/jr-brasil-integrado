@@ -567,11 +567,15 @@ export async function emitFiscalDocument(
 
   // 1) Persiste a nota em PROCESSANDO com itens e tributos calculados (numeração atômica).
   // Campos escalares da nota — reutilizados tanto na criação quanto no reenvio de um rascunho.
+  // Provedor EFETIVO da nota, roteado por modelo: NFS-e → serviços (ex.: NACIONAL); demais → produtos.
+  // Persistir o provedor correto em `nota.provedor` garante que cancelamento/correção/download
+  // (que resolvem o provider por `nota.provedor`) usem a mesma implementação que emitiu a nota.
+  const provedorNota = modelo === "NFSE" ? config.providerServicos : config.provider;
   const notaScalarData = {
     modelo,
     finalidade: document.finalidade,
     ambiente: config.ambiente,
-    provedor: config.provider,
+    provedor: provedorNota,
     naturezaOperacao: document.naturezaOperacao,
     clienteId: links.clienteId ?? null,
     pedidoVendaId: links.pedidoVendaId ?? null,
@@ -718,16 +722,22 @@ export async function emitFiscalDocument(
   }, TX_OPTIONS);
 
   // 2) Chama o provedor (fora da transação, pois pode ser I/O externo).
-  const provider = resolveFiscalProvider(config.provider);
+  // ROTEAMENTO POR MODELO: NFS-e segue pelo provedor de SERVIÇOS (ex.: NACIONAL, direto na SEFIN);
+  // NF-e/NFC-e seguem pelo provedor de PRODUTOS (ex.: ACBr) — comportamento de hoje, sem regressão.
+  const isNfse = modelo === "NFSE";
+  const provedorAlvo = provedorNota;
+  const provider = resolveFiscalProvider(provedorAlvo);
   const ctx: ProviderContext = {
     ambiente: config.ambiente,
-    provedor: config.provider,
+    provedor: provedorAlvo,
     baseUrl: config.baseUrl,
     emissionMode: config.emissionMode,
     nfseAmbienteNacional: config.nfseAmbienteNacional,
     token: config.token,
     cscId: config.cscId,
-    cscToken: config.cscToken
+    cscToken: config.cscToken,
+    // Certificado A1 só é necessário (e só é carregado) para o NACIONAL na NFS-e.
+    ...(isNfse && provedorAlvo === "NACIONAL" ? { certificado: config.certificado } : {})
   };
 
   let emitResult;
@@ -831,6 +841,7 @@ export async function cancelNotaFiscal(scope: TenantScope, notaId: string, justi
   }
 
   const config = await getFiscalRuntimeConfig(scope);
+  // Provider resolvido pelo provedor EFETIVO persistido na nota (roteado por modelo na emissão).
   const provider = resolveFiscalProvider(nota.provedor);
   const result = await provider.cancel(
     {
@@ -845,7 +856,9 @@ export async function cancelNotaFiscal(scope: TenantScope, notaId: string, justi
       baseUrl: config.baseUrl,
       token: config.token,
       cscId: config.cscId,
-      cscToken: config.cscToken
+      cscToken: config.cscToken,
+      // NACIONAL (NFS-e): cancelamento também exige assinatura + mTLS com o certificado A1.
+      ...(nota.modelo === "NFSE" && nota.provedor === "NACIONAL" ? { certificado: config.certificado } : {})
     }
   );
 
@@ -1015,7 +1028,9 @@ export async function downloadNotaFiscalDocumento(
       baseUrl: config.baseUrl,
       token: config.token,
       cscId: config.cscId,
-      cscToken: config.cscToken
+      cscToken: config.cscToken,
+      // NACIONAL (NFS-e): download server-side pode exigir mTLS com o certificado A1.
+      ...(nota.modelo === "NFSE" && nota.provedor === "NACIONAL" ? { certificado: config.certificado } : {})
     }
   );
 
