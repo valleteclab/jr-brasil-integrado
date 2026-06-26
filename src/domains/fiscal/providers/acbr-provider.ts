@@ -844,11 +844,13 @@ export class AcbrFiscalProvider implements FiscalProvider {
     }
 
     const tribFed =
-      ret && (ret.ir || ret.pis || ret.cofins || ret.csll)
+      ret && (ret.ir || ret.pis || ret.cofins || ret.csll || ret.inss)
         ? {
             ...(ret.pis || ret.cofins
               ? { piscofins: { vPis: ret.pis?.valor ?? 0, vCofins: ret.cofins?.valor ?? 0 } }
               : {}),
+            // vRetCP = Contribuição Previdenciária retida (INSS). Sem isso o DANFSE sai sem o INSS.
+            ...(ret.inss ? { vRetCP: ret.inss.valor } : {}),
             ...(ret.ir ? { vRetIRRF: ret.ir.valor } : {}),
             ...(ret.csll ? { vRetCSLL: ret.csll.valor } : {})
           }
@@ -894,7 +896,7 @@ export class AcbrFiscalProvider implements FiscalProvider {
             // Total de tributos (obrigatório no DPS): federal/estadual/municipal.
             totTrib: {
               vTotTrib: {
-                vTotTribFed: (ret?.pis?.valor ?? 0) + (ret?.cofins?.valor ?? 0) + (ret?.ir?.valor ?? 0) + (ret?.csll?.valor ?? 0),
+                vTotTribFed: (ret?.pis?.valor ?? 0) + (ret?.cofins?.valor ?? 0) + (ret?.ir?.valor ?? 0) + (ret?.csll?.valor ?? 0) + (ret?.inss?.valor ?? 0),
                 vTotTribEst: 0,
                 vTotTribMun: operacaoTributavel ? (input.totals.valorIss || 0) : 0
               }
