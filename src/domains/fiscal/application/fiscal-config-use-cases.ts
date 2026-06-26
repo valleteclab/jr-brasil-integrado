@@ -340,7 +340,16 @@ export async function getFiscalRuntimeConfig(scope: TenantScope) {
       inscricaoEstadual: empresa.inscricaoEstadual,
       inscricaoMunicipal: empresa.inscricaoMunicipal,
       uf: empresa.enderecoUf,
-      codigoMunicipioIbge: config?.codigoMunicipioIbge ?? empresa.codigoMunicipioIbge ?? null
+      codigoMunicipioIbge: config?.codigoMunicipioIbge ?? empresa.codigoMunicipioIbge ?? null,
+      // Endereço/identificação para emissão direta na SEFAZ (enderEmit do leiaute 4.00).
+      nomeFantasia: empresa.nomeFantasia,
+      logradouro: empresa.enderecoLogradouro,
+      numero: empresa.enderecoNumero,
+      complemento: empresa.enderecoComplemento,
+      bairro: empresa.enderecoBairro,
+      cidade: empresa.enderecoCidade,
+      cep: empresa.enderecoCep,
+      telefone: empresa.telefone
     }
   };
 }

@@ -77,3 +77,9 @@ export function pickTag(xml: string, tag: string): string | undefined {
   const m = new RegExp(`<(?:\\w+:)?${tag}[^>]*>([\\s\\S]*?)</(?:\\w+:)?${tag}>`).exec(xml);
   return m?.[1]?.trim();
 }
+
+/** Extrai um elemento INTEIRO (com as tags de abertura/fechamento). Útil p/ aninhar no nfeProc. */
+export function pickBlock(xml: string, tag: string): string | undefined {
+  const m = new RegExp(`<(?:\\w+:)?${tag}(?:\\s[^>]*)?>[\\s\\S]*?</(?:\\w+:)?${tag}>`).exec(xml);
+  return m?.[0];
+}

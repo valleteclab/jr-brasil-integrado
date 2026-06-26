@@ -178,12 +178,14 @@ depois.
 
 ## 8. Fases
 
-- **F0 — fundação** (1 entrega curta): `testConnection` via `NFeStatusServico4` no SVRS
-  homologação. Valida ponta a ponta o transporte SOAP + cert de cliente **sem** montar NF-e.
-  Maior risco técnico isolado e barato.
-- **F1 — emissão síncrona**: `buildChaveAcesso` (+cDV), `buildNfeXml` (4.00), `assinarNfe`,
-  envelope `NFeAutorizacao4` `indSinc=1`, parse `cStat=100`, montagem do `nfeProc`. Testar em
-  homologação SVRS até autorizar uma NF-e real de teste.
+- **F0 — fundação** ✅ feito: `testConnection` via `NFeStatusServico4` no SVRS homologação. Valida
+  ponta a ponta o transporte SOAP + cert de cliente **sem** montar NF-e. (`providers/sefaz/soap.ts`,
+  `providers/sefaz/endpoints.ts`, `scripts/sefaz-status-test.ts`.)
+- **F1 — emissão síncrona** ✅ feito (código): `montarChave`/`calcDV` (`sefaz/chave.ts`),
+  `buildNfeXml` 4.00 (`sefaz/nfe-xml.ts`), `signNfe` (`sefaz/sign.ts`), envelope `NFeAutorizacao4`
+  `indSinc=1`, parse do `protNFe` (`cStat=100`) e montagem do `nfeProc` (`sefaz-provider.ts`). DV
+  validado contra exemplo oficial; PoC offline em `scripts/sefaz-nfe-poc.ts`. **Pendente:** teste de
+  autorização real em homologação SVRS (precisa do A1 da empresa).
 - **F2 — roteamento + config**: `SEFAZ` no enum, `case` em `resolveFiscalProvider`,
   `getFiscalRuntimeConfig` carrega cert quando `provedorProdutos==SEFAZ`, tabela UF→endpoints.
 - **F3 — eventos**: cancelamento (110111), CC-e (110110), inutilização — via `RecepcaoEvento4`/

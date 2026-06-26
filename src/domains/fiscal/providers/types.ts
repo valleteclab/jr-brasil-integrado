@@ -10,6 +10,19 @@ export type ProviderEmitter = {
   uf: string | null;
   codigoMunicipioIbge: string | null;
   regime: RegimeTributario;
+  /**
+   * Endereço/identificação do emitente para emissão DIRETA na SEFAZ (grupo `enderEmit`/`emit` do
+   * leiaute NF-e 4.00). Provedores intermediários (ACBr/Focus) não precisam — usam o cadastro da
+   * empresa no próprio provedor —, por isso são opcionais.
+   */
+  nomeFantasia?: string | null;
+  logradouro?: string | null;
+  numero?: string | null;
+  complemento?: string | null;
+  bairro?: string | null;
+  cidade?: string | null;
+  cep?: string | null;
+  telefone?: string | null;
 };
 
 /** Tributos calculados de um item, na ordem do documento — para provedores de modo completo. */
