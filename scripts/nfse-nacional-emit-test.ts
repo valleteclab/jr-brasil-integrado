@@ -59,7 +59,7 @@ const input = {
     inscricaoMunicipal: process.env.EMIT_IM || "987654",
     uf: "BA",
     codigoMunicipioIbge: process.env.COD_MUN || "2919553",
-    regime: "SIMPLES_NACIONAL"
+    regime: process.env.REGIME || "LUCRO_PRESUMIDO"
   },
   numero: 1,
   totals: { valorServicos: 100, valorIss: 5 } as never,

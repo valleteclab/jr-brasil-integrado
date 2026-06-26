@@ -95,9 +95,12 @@ function buildDpsXml(input: EmitInput, ctx: ProviderContext): { xml: string; id:
     ? `<toma>${docToma.length === 14 ? `<CNPJ>${docToma}</CNPJ>` : `<CPF>${docToma}</CPF>`}<xNome>${esc(sanitizeTextoNfse(dest.nome))}</xNome></toma>`
     : "";
 
-  // regTrib: opSimpNac (1=Simples, 2=não optante); regEspTrib 0=nenhum.
-  const simples = e.regime === "SIMPLES_NACIONAL" || e.regime === "SIMPLES_EXCESSO_SUBLIMITE" || e.regime === "MEI";
-  const opSimpNac = simples ? (e.regime === "MEI" ? "2" : "1") : "1"; // 1=Optante MEI? ajustar por NT; default optante
+  // regTrib.opSimpNac (tabela oficial): 1=Não optante (Lucro Presumido/Real) · 2=Optante MEI ·
+  // 3=Optante ME/EPP (Simples Nacional). regEspTrib 0=nenhum.
+  const opSimpNac =
+    e.regime === "MEI" ? "2"
+      : (e.regime === "SIMPLES_NACIONAL" || e.regime === "SIMPLES_EXCESSO_SUBLIMITE") ? "3"
+      : "1";
 
   const infDPS =
     `<infDPS Id="${id}">` +
