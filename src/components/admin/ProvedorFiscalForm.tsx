@@ -5,7 +5,7 @@ import type { ProvedorFiscalPlataforma, ProvedorFiscalInfo, ProvedorFiscalAmbien
 
 const ROTULO_AMB: Record<string, string> = { HOMOLOGACAO: "Homologação", PRODUCAO: "Produção" };
 
-function CardAmbiente({ provedor, cred, inicial }: { provedor: string; cred: "oauth" | "token"; inicial: ProvedorFiscalAmbiente }) {
+function CardAmbiente({ provedor, cred, inicial }: { provedor: string; cred: "oauth" | "token" | "certificado"; inicial: ProvedorFiscalAmbiente }) {
   const [baseUrl, setBaseUrl] = useState(inicial.baseUrl);
   const [clientId, setClientId] = useState("");
   const [clientSecret, setClientSecret] = useState("");
@@ -88,12 +88,22 @@ function CardAmbiente({ provedor, cred, inicial }: { provedor: string; cred: "oa
       </div>
 
       <div className="erp-form" style={{ gridTemplateColumns: "1fr 1fr" }}>
-        <label className="full">
-          URL base da API
-          <input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://…" />
-        </label>
+        {cred === "certificado" ? (
+          <div className="full alert info" style={{ margin: 0 }}>
+            <span>
+              A SEFAZ não usa credencial de plataforma: cada empresa autentica e assina as NF-e com o
+              próprio <strong>certificado A1</strong>, enviado na configuração fiscal da empresa. Não há
+              URL/token a preencher aqui — basta deixar este provedor ativo e definir o ambiente.
+            </span>
+          </div>
+        ) : (
+          <label className="full">
+            URL base da API
+            <input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://…" />
+          </label>
+        )}
 
-        {cred === "oauth" ? (
+        {cred === "certificado" ? null : cred === "oauth" ? (
           <>
             <label>
               Client ID{estado.clientIdFinal ? ` (salvo: …${estado.clientIdFinal})` : ""}

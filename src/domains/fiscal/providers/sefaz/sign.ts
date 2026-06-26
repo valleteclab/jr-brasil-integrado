@@ -1,7 +1,8 @@
 /**
  * Assinatura XMLDSig da NF-e (mesma mecânica ICP-Brasil do provedor NACIONAL): enveloped + C14N +
- * RSA-SHA256, com a Reference apontando para o `Id` do `infNFe` (`#NFe<chave>`). A `<Signature>`
- * fica como filha de `<NFe>`, logo após `<infNFe>`.
+ * RSA-SHA256, com a Reference apontando para o `Id` do elemento assinado. A `<Signature>` fica como
+ * irmã desse elemento, logo após ele (`<infNFe>` na NF-e, `<infEvento>` nos eventos, `<infInut>` na
+ * inutilização).
  */
 import forge from "node-forge";
 import { SignedXml } from "xml-crypto";
@@ -26,11 +27,14 @@ export function pfxToPem(pfx: Buffer, senha: string): { privateKeyPem: string; c
 }
 
 /**
- * Assina a NF-e. `xml` deve conter `<NFe>...<infNFe Id="NFe<chave>">...</infNFe></NFe>`. Retorna o
- * XML com a `<Signature>` inserida após o `infNFe` (sem prólogo — vai dentro do enviNFe).
+ * Assina genericamente um XML referenciando o elemento cujo local-name é `refLocalName` (ex.:
+ * "infNFe", "infEvento", "infInut"). A `<Signature>` é inserida logo APÓS esse elemento (mesma
+ * mecânica de todos os documentos da SEFAZ: enveloped + C14N + RSA-SHA256, Reference por `#Id`).
+ * Retorna o XML assinado (sem prólogo — vai dentro do envelope da mensagem).
  */
-export function signNfe(xml: string, privateKeyPem: string, certPem: string): string {
+export function signXml(xml: string, refLocalName: string, privateKeyPem: string, certPem: string): string {
   const certB64 = certPem.replace(/-----(BEGIN|END) CERTIFICATE-----/g, "").replace(/\s+/g, "");
+  const ref = `//*[local-name(.)='${refLocalName}']`;
   const sig = new SignedXml({
     privateKey: privateKeyPem,
     publicCert: certPem,
@@ -38,7 +42,15 @@ export function signNfe(xml: string, privateKeyPem: string, certPem: string): st
     canonicalizationAlgorithm: C14N,
     getKeyInfoContent: () => `<X509Data><X509Certificate>${certB64}</X509Certificate></X509Data>`
   });
-  sig.addReference({ xpath: "//*[local-name(.)='infNFe']", transforms: [ENVELOPED, C14N], digestAlgorithm: SHA256 });
-  sig.computeSignature(xml, { location: { reference: "//*[local-name(.)='infNFe']", action: "after" } });
+  sig.addReference({ xpath: ref, transforms: [ENVELOPED, C14N], digestAlgorithm: SHA256 });
+  sig.computeSignature(xml, { location: { reference: ref, action: "after" } });
   return sig.getSignedXml();
+}
+
+/**
+ * Assina a NF-e. `xml` deve conter `<NFe>...<infNFe Id="NFe<chave>">...</infNFe></NFe>`. Retorna o
+ * XML com a `<Signature>` inserida após o `infNFe` (sem prólogo — vai dentro do enviNFe).
+ */
+export function signNfe(xml: string, privateKeyPem: string, certPem: string): string {
+  return signXml(xml, "infNFe", privateKeyPem, certPem);
 }

@@ -13,7 +13,8 @@ const PROVIDERS = [
   { value: "PLUGNOTAS", label: "PlugNotas" },
   { value: "WEBMANIA", label: "WebmaniaBR" },
   { value: "SPEDY", label: "Spedy (NF-e/NFC-e/NFS-e)" },
-  { value: "ACBR", label: "ACBr API (NF-e/NFC-e/NFS-e)" }
+  { value: "ACBR", label: "ACBr API (NF-e/NFC-e/NFS-e)" },
+  { value: "SEFAZ", label: "SEFAZ (NF-e direto, com certificado A1)" }
 ];
 
 const REGIMES = [
@@ -196,10 +197,14 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
     }
   }
 
-  const externalProvider = !["MANUAL", "INTERNO"].includes(config.provider);
   const isSpedy = config.provider === "SPEDY";
   const isFocusNfe = config.provider === "FOCUS_NFE";
   const isAcbr = config.provider === "ACBR";
+  // SEFAZ emite NF-e direto nos web services da SEFAZ: autentica pelo certificado A1 da empresa
+  // (guardado criptografado), sem URL/token de intermediário.
+  const isSefaz = config.provider === "SEFAZ";
+  // SEFAZ não usa credencial de API (URL/token/oauth) — só o certificado A1 da empresa.
+  const externalProvider = !["MANUAL", "INTERNO", "SEFAZ"].includes(config.provider);
   // Provedores que derivam a URL base do ambiente — baseUrl é opcional.
   const baseUrlOpcional = isSpedy || isFocusNfe || isAcbr;
   // Provedores que aceitam envio de certificado pela plataforma.
@@ -531,12 +536,25 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
       )}
 
       <div className="erp-card">
-        <div className="erp-card-head"><h3>Certificado A1 — NFS-e Nacional</h3></div>
+        <div className="erp-card-head">
+          <h3>Certificado A1 — emissão direta{isSefaz ? " (SEFAZ / NFS-e Nacional)" : " NFS-e Nacional"}</h3>
+        </div>
         <div className="erp-card-body">
+          {isSefaz && (
+            <div className="alert info" style={{ marginBottom: 12 }}>
+              <strong>SEFAZ (NF-e direto)</strong>
+              <span>
+                O provedor ativo emite a <b>NF-e (modelo 55) direto nos web services da SEFAZ</b>, sem
+                intermediário. Para isso é <b>obrigatório</b> enviar aqui o certificado A1 da empresa: ele
+                assina os XML (XMLDSig) e faz a conexão TLS-mútua com a SEFAZ.
+              </span>
+            </div>
+          )}
           <p style={{ fontSize: 12.5, color: "var(--erp-mute)", margin: "0 0 12px" }}>
             Envie o arquivo <b>.pfx</b> do certificado A1 da empresa. Diferente da seção acima, aqui o certificado é
-            <b> armazenado de forma criptografada</b> em nosso sistema para a <b>emissão nacional de NFS-e</b> (assinatura
-            do DPS e conexão segura direto com a SEFIN). A senha também é guardada criptografada.
+            <b> armazenado de forma criptografada</b> em nosso sistema para a <b>emissão direta</b>{" "}
+            {isSefaz ? "de NF-e na SEFAZ e de NFS-e na SEFIN" : "nacional de NFS-e"} (assinatura
+            do XML e conexão segura direto com o web service oficial). A senha também é guardada criptografada.
           </p>
           {certNacInfo && (
             <div className="alert info" style={{ marginBottom: 10 }}>

@@ -186,13 +186,23 @@ depois.
   `indSinc=1`, parse do `protNFe` (`cStat=100`) e montagem do `nfeProc` (`sefaz-provider.ts`). DV
   validado contra exemplo oficial; PoC offline em `scripts/sefaz-nfe-poc.ts`. **Pendente:** teste de
   autorização real em homologação SVRS (precisa do A1 da empresa).
-- **F2 — roteamento + config**: `SEFAZ` no enum, `case` em `resolveFiscalProvider`,
-  `getFiscalRuntimeConfig` carrega cert quando `provedorProdutos==SEFAZ`, tabela UF→endpoints.
-- **F3 — eventos**: cancelamento (110111), CC-e (110110), inutilização — via `RecepcaoEvento4`/
-  `NFeInutilizacao4`. `queryStatus` via `NFeConsultaProtocolo4`.
-- **F4 — DANFE** (PDF + Code-128 da chave) e `downloadDocument`.
-- **F5 — multi-UF**: autorizadoras próprias (SP, MG, PR, RS, BA, GO, MT, MS, PE, AM) na tabela;
-  contingência (SVC-AN/SVC-RS).
+- **F2 — roteamento + config** ✅ feito: `SEFAZ` no enum + `case` em `resolveFiscalProvider`,
+  `getFiscalRuntimeConfig` carrega cert quando `provedorProdutos==SEFAZ`, tabela UF→endpoints, e o
+  provedor exposto na UI/admin como provedor de PRODUTOS por **certificado A1** (novo `cred:
+  "certificado"`; `PROVEDORES_FISCAIS`, `platform-admin`, `ProvedorFiscalForm`, `FiscalSettingsForm`).
+- **F3 — eventos** ✅ feito: cancelamento (110111), CC-e (110110) via `RecepcaoEvento4`; inutilização
+  via `NFeInutilizacao4`; `queryStatus` via `NFeConsultaProtocolo4` (`sefaz/eventos.ts`,
+  `sefaz/sign.ts#signXml`, métodos `cancel/correct/queryStatus/inutilizar` em `sefaz-provider.ts`).
+- **F4 — DANFE** ✅ feito (HTML+SVG): `buildDanfe(nfeProcXml)` (`sefaz/danfe.ts`) gera o DANFE em
+  HTML A4 com Code-128C da chave em SVG (sem lib de PDF no projeto), servido por
+  `downloadNotaFiscalDocumento` direto do `nota.xml` local. PDF real pode ser adicionado depois
+  (puppeteer/pdfkit) reusando `parseNfeProc`/`code128cBars`.
+- **F5 — multi-UF** (pendente): autorizadoras próprias (SP, MG, PR, RS, BA, GO, MT, MS, PE, AM) na
+  tabela; contingência (SVC-AN/SVC-RS).
+
+> **Pendência transversal:** nenhum teste real contra a SEFAZ foi executado (precisa do A1 da
+> empresa) e o `tsc` não rodou no ambiente de desenvolvimento (registro npm bloqueado). Rodar
+> `npm install && npx tsc --noEmit` + um teste de autorização em homologação SVRS antes de produção.
 
 ---
 

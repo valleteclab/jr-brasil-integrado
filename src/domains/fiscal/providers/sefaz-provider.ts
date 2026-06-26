@@ -18,6 +18,16 @@ import { cUFFromUF, resolveSefazEndpoints } from "./sefaz/endpoints";
 import { NFE_NS, WSDL_NS, pickBlock, pickTag, postSoap, soapEnvelope } from "./sefaz/soap";
 import { buildNfeXml } from "./sefaz/nfe-xml";
 import { pfxToPem, signNfe } from "./sefaz/sign";
+import {
+  buildEventoCCe, buildEventoCancelamento, consultarProtocolo, enviarEvento,
+  inutilizarNumeracao, type InutilizacaoResult
+} from "./sefaz/eventos";
+
+const onlyDigitsStr = (s: string | null | undefined) => String(s ?? "").replace(/\D/g, "");
+/** cUF embutido na chave de acesso (2 primeiros dígitos). */
+const cUFFromChave = (chave: string) => onlyDigitsStr(chave).slice(0, 2);
+/** CNPJ do emitente embutido na chave de acesso (dígitos 7–20, 14 chars). */
+const cnpjFromChave = (chave: string) => onlyDigitsStr(chave).slice(6, 20);
 
 /** cStat de autorização → status interno. 100/150 = autorizada; 110/301/302/303 = denegada. */
 function statusFromCStat(cStat: string): StatusNotaFiscal {
@@ -120,19 +130,157 @@ export class SefazFiscalProvider implements FiscalProvider {
     return { status, chaveAcesso: chNFe, motivo: `${cStat} ${xMotivo}`.trim() };
   }
 
-  async cancel(_input: CancelInput, _ctx: ProviderContext): Promise<CancelResult> {
-    // F3: evento 110111 via RecepcaoEvento4.
-    return { status: "ERRO", motivo: "Cancelamento NF-e (SEFAZ) ainda não implementado (F3)." };
+  async cancel(input: CancelInput, ctx: ProviderContext): Promise<CancelResult> {
+    if (!ctx.certificado?.pfx) {
+      return { status: "ERRO", motivo: "Certificado A1 não disponível para assinar/transmitir o cancelamento." };
+    }
+    const chave = onlyDigitsStr(input.chaveAcesso);
+    if (chave.length !== 44) {
+      return { status: "ERRO", motivo: "Chave de acesso da NF-e ausente/inválida — necessária para o cancelamento." };
+    }
+    const uf = (ctx.ufEmitente ?? "").trim();
+    if (!uf) {
+      return { status: "ERRO", motivo: "UF do emitente não definida — necessária para resolver a autorizadora da NF-e." };
+    }
+    if ((input.justificativa ?? "").trim().length < 15) {
+      return { status: "ERRO", motivo: "A justificativa de cancelamento deve ter ao menos 15 caracteres." };
+    }
+
+    try {
+      // O cancelamento exige o protocolo de AUTORIZAÇÃO da nota (nProt). O CancelInput não tem campo
+      // dedicado para isso e, no SEFAZ, o providerRef guarda a CHAVE (não o protocolo). Quando o
+      // providerRef vier como um nProt (15 dígitos) usa-o; senão consulta a SEFAZ para obtê-lo.
+      let nProt = onlyDigitsStr(input.providerRef);
+      if (nProt.length !== 15) {
+        const sit = await consultarProtocolo(chave, ctx.ambiente, ctx.certificado);
+        if (!sit.nProt) {
+          return { status: "ERRO", motivo: `Protocolo de autorização não localizado para cancelar (consulta: ${sit.cStat} ${sit.xMotivo}).`.trim() };
+        }
+        nProt = sit.nProt;
+      }
+
+      const { privateKeyPem, certPem } = pfxToPem(ctx.certificado.pfx, ctx.certificado.senha);
+      const evento = buildEventoCancelamento({
+        ambiente: ctx.ambiente,
+        cUF: cUFFromChave(chave),
+        cnpj: cnpjFromChave(chave),
+        chNFe: chave,
+        nProt,
+        xJust: input.justificativa,
+        nSeqEvento: 1
+      });
+      const r = await enviarEvento(evento.xml, uf, ctx.ambiente, ctx.certificado, { privateKeyPem, certPem });
+      return { status: r.status, protocolo: r.protocolo, motivo: r.motivo };
+    } catch (e) {
+      return { status: "ERRO", motivo: `Falha ao cancelar a NF-e: ${e instanceof Error ? e.message : String(e)}` };
+    }
   }
 
-  async correct(_input: CorrectionInput, _ctx: ProviderContext): Promise<CorrectionResult> {
-    // F3: evento 110110 (CC-e) via RecepcaoEvento4.
-    return { status: "ERRO", motivo: "Carta de correção NF-e (SEFAZ) ainda não implementada (F3)." };
+  async correct(input: CorrectionInput, ctx: ProviderContext): Promise<CorrectionResult> {
+    if (!ctx.certificado?.pfx) {
+      return { status: "ERRO", motivo: "Certificado A1 não disponível para assinar/transmitir a carta de correção." };
+    }
+    const chave = onlyDigitsStr(input.chaveAcesso);
+    if (chave.length !== 44) {
+      return { status: "ERRO", motivo: "Chave de acesso da NF-e ausente/inválida — necessária para a carta de correção." };
+    }
+    const uf = (ctx.ufEmitente ?? "").trim();
+    if (!uf) {
+      return { status: "ERRO", motivo: "UF do emitente não definida — necessária para resolver a autorizadora da NF-e." };
+    }
+    if ((input.correcao ?? "").trim().length < 15) {
+      return { status: "ERRO", motivo: "A correção da CC-e deve ter ao menos 15 caracteres." };
+    }
+
+    try {
+      const { privateKeyPem, certPem } = pfxToPem(ctx.certificado.pfx, ctx.certificado.senha);
+      const evento = buildEventoCCe({
+        ambiente: ctx.ambiente,
+        cUF: cUFFromChave(chave),
+        cnpj: cnpjFromChave(chave),
+        chNFe: chave,
+        xCorrecao: input.correcao,
+        nSeqEvento: input.sequencia
+      });
+      const r = await enviarEvento(evento.xml, uf, ctx.ambiente, ctx.certificado, { privateKeyPem, certPem });
+      return { status: r.status, protocolo: r.protocolo, motivo: r.motivo };
+    } catch (e) {
+      return { status: "ERRO", motivo: `Falha na carta de correção da NF-e: ${e instanceof Error ? e.message : String(e)}` };
+    }
   }
 
-  async queryStatus(_chaveAcesso: string, _ctx: ProviderContext): Promise<EmitResult> {
-    // F3: NFeConsultaProtocolo4.
-    return { status: "PROCESSANDO", motivo: "Consulta de protocolo NF-e (SEFAZ) ainda não implementada (F3)." };
+  async queryStatus(chaveAcesso: string, ctx: ProviderContext): Promise<EmitResult> {
+    if (!ctx.certificado?.pfx) {
+      return { status: "PROCESSANDO", motivo: "Certificado A1 não disponível para consultar a NF-e na SEFAZ." };
+    }
+    const chave = onlyDigitsStr(chaveAcesso);
+    if (chave.length !== 44) {
+      return { status: "PROCESSANDO", motivo: "Chave de acesso inválida para consulta de protocolo." };
+    }
+    const uf = (ctx.ufEmitente ?? "").trim();
+    if (!uf) {
+      return { status: "PROCESSANDO", motivo: "UF do emitente não definida — necessária para consultar a NF-e." };
+    }
+    try {
+      const sit = await consultarProtocolo(chave, ctx.ambiente, ctx.certificado);
+      const motivo = `${sit.cStat ? `${sit.cStat} ` : ""}${sit.xMotivo}`.trim() || `HTTP ${sit.statusCode}`;
+      // cStat 101 = nota cancelada (via consulta); demais usam o mapeamento de autorização.
+      if (sit.cStat === "101") {
+        return { status: "CANCELADA", chaveAcesso: chave, protocolo: sit.nProt, motivo };
+      }
+      const status = statusFromCStat(sit.cStat);
+      if (status === "AUTORIZADA") {
+        return { status, chaveAcesso: chave, protocolo: sit.nProt, providerRef: chave, motivo };
+      }
+      // Sem protNFe e cStat de processamento (105) ou vazio: a nota ainda está em processamento.
+      if (!sit.protNFe && (sit.cStat === "" || sit.cStat === "105")) {
+        return { status: "PROCESSANDO", chaveAcesso: chave, motivo };
+      }
+      return { status, chaveAcesso: chave, protocolo: sit.nProt, motivo };
+    } catch (e) {
+      return { status: "PROCESSANDO", motivo: `Falha ao consultar a NF-e na SEFAZ: ${e instanceof Error ? e.message : String(e)}` };
+    }
+  }
+
+  /**
+   * Inutilização de faixa de numeração (NFeInutilizacao4). Fora do contrato FiscalProvider — método
+   * EXTRA do provedor SEFAZ, para a camada de aplicação inutilizar números pulados/queimados. O CNPJ
+   * do emitente não está no ProviderContext, então é recebido explicitamente. cStat 102 = homologada.
+   */
+  async inutilizar(
+    params: { cnpj: string; ano: number; serie: number; nNFIni: number; nNFFin: number; justificativa: string; modelo?: string },
+    ctx: ProviderContext
+  ): Promise<InutilizacaoResult> {
+    if (!ctx.certificado?.pfx) {
+      return { status: "ERRO", motivo: "Certificado A1 não disponível para assinar/transmitir a inutilização." };
+    }
+    const uf = (ctx.ufEmitente ?? "").trim();
+    if (!uf) {
+      return { status: "ERRO", motivo: "UF do emitente não definida — necessária para resolver a autorizadora da NF-e." };
+    }
+    if ((params.justificativa ?? "").trim().length < 15) {
+      return { status: "ERRO", motivo: "A justificativa de inutilização deve ter ao menos 15 caracteres." };
+    }
+    try {
+      const { privateKeyPem, certPem } = pfxToPem(ctx.certificado.pfx, ctx.certificado.senha);
+      return await inutilizarNumeracao(
+        {
+          ambiente: ctx.ambiente,
+          uf,
+          cnpj: params.cnpj,
+          ano: params.ano,
+          serie: params.serie,
+          nNFIni: params.nNFIni,
+          nNFFin: params.nNFFin,
+          xJust: params.justificativa,
+          modelo: params.modelo
+        },
+        ctx.certificado,
+        { privateKeyPem, certPem }
+      );
+    } catch (e) {
+      return { status: "ERRO", motivo: `Falha ao inutilizar numeração: ${e instanceof Error ? e.message : String(e)}` };
+    }
   }
 
   async testConnection(ctx: ProviderContext): Promise<TestConnectionResult> {
