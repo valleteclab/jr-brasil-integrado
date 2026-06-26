@@ -19,3 +19,9 @@ docs/*.pdf
 docs/*.zip
 docs/*.oxps
 scripts/cls/
+
+# Certificados digitais (chave privada) — NUNCA versionar
+*.pfx
+*.p12
+*.pem
+*.key

@@ -31,6 +31,11 @@ export type ProviderContext = {
   emissionMode?: string | null;
   /** NFS-e: override do ambiente do município — true=nacional, false=padrão, null/undefined=auto. */
   nfseAmbienteNacional?: boolean | null;
+  /**
+   * Certificado digital A1 da empresa (.pfx já descriptografado, em memória) + senha. Necessário
+   * SÓ para o provedor NACIONAL (assinar o DPS + mTLS na SEFIN). Nunca logar/persistir em claro.
+   */
+  certificado?: { pfx: Buffer; senha: string } | null;
 };
 
 export type EmitInput = {
