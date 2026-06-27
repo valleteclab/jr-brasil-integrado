@@ -6,6 +6,12 @@
  * SOAP 1.2 (Content-Type application/soap+xml) no elemento `nfeDadosMsg` do WSDL do serviço.
  */
 import https from "node:https";
+import { rootCertificates } from "node:tls";
+import { ICP_BRASIL_ROOT_V10 } from "./icp-brasil-ca";
+
+// CAs aceitas no TLS dos web services da SEFAZ: as padrão do Node + a raiz ICP-Brasil v10 (os
+// servidores da SEFAZ usam certificados de servidor ICP-Brasil, ausentes da store pública do Node).
+const SEFAZ_CA = [...rootCertificates, ICP_BRASIL_ROOT_V10];
 
 /** WSDL namespace de cada serviço — usado no `xmlns` do `nfeDadosMsg`. */
 export const WSDL_NS = {
@@ -52,6 +58,7 @@ export function postSoap(
         path: url.pathname + url.search,
         pfx: cert.pfx,
         passphrase: cert.senha,
+        ca: SEFAZ_CA,
         minVersion: "TLSv1.2",
         headers: {
           "Content-Type": "application/soap+xml; charset=utf-8",
