@@ -13,7 +13,6 @@ import {
 import { isSubstituicaoTributaria, resolveCfopDevolucao, resolveCfopVenda } from "../cfop";
 import type { ItemTaxResult, NormalizedFiscalDocument, NormalizedFiscalItem } from "../types";
 import { resolveFiscalProvider } from "../providers";
-import { consultaPublicaNfseUrl } from "../providers/nacional-provider";
 import type { ProviderContext } from "../providers/types";
 import { buildDanfe } from "../providers/sefaz/danfe";
 import { getFiscalRuntimeConfig } from "./fiscal-config-use-cases";
@@ -1005,7 +1004,7 @@ export async function downloadNotaFiscalDocumento(
   scope: TenantScope,
   notaId: string,
   kind: "pdf" | "xml"
-): Promise<{ contentType: string; body: Buffer; filename: string; redirectUrl?: string }> {
+): Promise<{ contentType: string; body: Buffer; filename: string }> {
   const nota = await prisma.notaFiscal.findFirst({
     where: { id: notaId, tenantId: scope.tenantId, empresaId: scope.empresaId }
   });
@@ -1031,12 +1030,6 @@ export async function downloadNotaFiscalDocumento(
     }
     const danfe = buildDanfe(nota.xml);
     return { contentType: danfe.contentType, body: danfe.body, filename: danfe.filename };
-  }
-
-  // NFS-e nacional: a SEFIN não gera o DANFSE em PDF (501). O PDF é visualizado/impresso no
-  // portal público de consulta — então redirecionamos para lá em vez de baixar um arquivo.
-  if (kind === "pdf" && nota.modelo === "NFSE" && nota.provedor === "NACIONAL") {
-    return { contentType: "", body: Buffer.alloc(0), filename: "", redirectUrl: consultaPublicaNfseUrl(nota.providerRef) };
   }
 
   const config = await getFiscalRuntimeConfig(scope);

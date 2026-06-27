@@ -16,7 +16,7 @@
  * o DANFE precisa de campos repetidos (det[]) e atributos (Id da chave, nItem), implementamos
  * helpers locais mais ricos aqui, sem editar `soap.ts`.
  */
-import QRCode from "qrcode";
+import { qrCodeSvg } from "../_shared/qrcode-svg";
 
 const onlyDigits = (s: string | number | null | undefined) => String(s ?? "").replace(/\D/g, "");
 
@@ -333,30 +333,6 @@ export function code128cBars(chave44: string, opts?: { height?: number; module?:
 export function consultaNfeNacionalUrl(chave: string, tpAmb: string): string {
   const amb = tpAmb === "2" ? "2" : "1";
   return `https://www.nfe.fazenda.gov.br/portal/consultaResumo.aspx?chNFe=${onlyDigits(chave)}&tpAmb=${amb}`;
-}
-
-/**
- * QR Code como SVG inline (sem <img>/base64), no mesmo espírito do Code-128 desenhado à mão.
- * Usa a API SÍNCRONA `QRCode.create` (matriz de módulos) e desenha um <rect> por módulo escuro,
- * com zona de silêncio (margin) de 2 módulos. Mantém `buildDanfe`/`renderHtml` síncronos.
- */
-export function qrCodeSvg(text: string, displayPx = 96): string {
-  const qr = QRCode.create(text, { errorCorrectionLevel: "M" });
-  const n = qr.modules.size;
-  const bits = qr.modules.data;
-  const margin = 2;
-  const dim = n + margin * 2;
-  let rects = "";
-  for (let y = 0; y < n; y++) {
-    for (let x = 0; x < n; x++) {
-      if (bits[y * n + x]) rects += `<rect x="${x + margin}" y="${y + margin}" width="1" height="1"/>`;
-    }
-  }
-  return (
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${displayPx}" height="${displayPx}" ` +
-    `viewBox="0 0 ${dim} ${dim}" shape-rendering="crispEdges" role="img" aria-label="QR Code de consulta da NF-e">` +
-    `<rect width="${dim}" height="${dim}" fill="#fff"/><g fill="#000">${rects}</g></svg>`
-  );
 }
 
 // --------------------------------------------------------------------------------------------------

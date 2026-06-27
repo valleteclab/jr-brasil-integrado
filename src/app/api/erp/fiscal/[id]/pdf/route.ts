@@ -9,11 +9,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
   try {
     await requireModulo("fiscal");
     const scope = await getDevelopmentTenantScope();
-    const { contentType, body, filename, redirectUrl } = await downloadNotaFiscalDocumento(scope, params.id, "pdf");
-    // NFS-e nacional: a SEFIN não gera DANFSE em PDF — abre o portal público de consulta.
-    if (redirectUrl) {
-      return NextResponse.redirect(redirectUrl, 302);
-    }
+    const { contentType, body, filename } = await downloadNotaFiscalDocumento(scope, params.id, "pdf");
     return new NextResponse(new Uint8Array(body), {
       status: 200,
       headers: {
