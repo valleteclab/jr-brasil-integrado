@@ -158,7 +158,29 @@ function signDps(xml: string, privateKeyPem: string, certPem: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?>${sig.getSignedXml()}`;
 }
 
+/** URL do portal público de consulta da NFS-e nacional (onde se visualiza/imprime o DANFSE). */
+export function consultaPublicaNfseUrl(chave: string): string {
+  return `https://www.nfse.gov.br/consultapublica/?tpc=1&chave=${onlyDigits(chave)}`;
+}
+
 type SefinResp = { statusCode: number; body: string };
+
+/** GET autenticado por mTLS na SEFIN (consulta da NFS-e / XML autorizado). */
+function getSefin(baseUrl: string, path: string, cert: { pfx: Buffer; senha: string }): Promise<SefinResp> {
+  const url = new URL(`${baseUrl}${path}`);
+  return new Promise((resolve, reject) => {
+    const req = https.request(
+      { method: "GET", hostname: url.hostname, path: url.pathname, pfx: cert.pfx, passphrase: cert.senha },
+      (res) => {
+        let data = "";
+        res.on("data", (c) => (data += c));
+        res.on("end", () => resolve({ statusCode: res.statusCode ?? 0, body: data }));
+      }
+    );
+    req.on("error", reject);
+    req.end();
+  });
+}
 
 function postSefinNfse(baseUrl: string, dpsXmlGZipB64: string, cert: { pfx: Buffer; senha: string }): Promise<SefinResp> {
   const url = new URL(`${baseUrl}/nfse`);
@@ -221,7 +243,41 @@ export class NacionalFiscalProvider implements FiscalProvider {
     return { status: res.statusCode === 422 || res.statusCode === 400 ? "REJEITADA" : "ERRO", motivo };
   }
 
-  // F4: eventos/cancelamento/substituição/consulta/DANFSE.
+  /**
+   * Download do XML autorizado da NFS-e (GET /nfse/{chave} → JSON com nfseXmlGZipB64 → gunzip).
+   * O PDF (DANFSE) NÃO é gerado pela SEFIN (retorna 501); a visualização/impressão é feita no
+   * portal público de consulta — por isso o PDF é tratado como REDIRECT na camada de emissão.
+   */
+  async downloadDocument(
+    kind: "pdf" | "xml",
+    ref: { providerRef: string; modelo: import("@prisma/client").ModeloFiscal },
+    ctx: ProviderContext
+  ): Promise<{ ok: boolean; contentType: string; body: Buffer; filename: string; error?: string }> {
+    const chave = onlyDigits(ref.providerRef);
+    if (kind === "pdf") {
+      return { ok: false, contentType: "", body: Buffer.alloc(0), filename: "",
+        error: `O DANFSE da NFS-e nacional é visualizado no portal público: ${consultaPublicaNfseUrl(chave)}` };
+    }
+    if (!ctx.certificado?.pfx) {
+      return { ok: false, contentType: "", body: Buffer.alloc(0), filename: "",
+        error: "Certificado A1 não disponível para consultar o XML da NFS-e nacional." };
+    }
+    const res = await getSefin(SEFIN[ctx.ambiente], `/nfse/${chave}`, { pfx: ctx.certificado.pfx, senha: ctx.certificado.senha });
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      return { ok: false, contentType: "", body: Buffer.alloc(0), filename: "",
+        error: `Não foi possível obter o XML na SEFIN (HTTP ${res.statusCode}).` };
+    }
+    let data: { nfseXmlGZipB64?: string } = {};
+    try { data = JSON.parse(res.body); } catch { /* corpo não-JSON */ }
+    if (!data.nfseXmlGZipB64) {
+      return { ok: false, contentType: "", body: Buffer.alloc(0), filename: "",
+        error: "A SEFIN não retornou o XML da NFS-e (campo nfseXmlGZipB64 ausente)." };
+    }
+    const xml = gunzipSync(Buffer.from(data.nfseXmlGZipB64, "base64"));
+    return { ok: true, contentType: "application/xml", body: xml, filename: `NFSE-${chave}.xml` };
+  }
+
+  // F4: eventos/cancelamento/substituição/consulta. DANFSE = portal público (acima).
   async cancel(_input: CancelInput, _ctx: ProviderContext): Promise<CancelResult> {
     return { status: "ERRO", motivo: "Cancelamento NFS-e nacional ainda não implementado (F4)." };
   }
