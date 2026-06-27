@@ -293,6 +293,19 @@ function postSefinNfse(baseUrl: string, dpsXmlGZipB64: string, cert: { pfx: Buff
   });
 }
 
+/** Extrai chave (chNFSe, 50 díg.) e número oficial (nNFSe) da NFS-e retornada (XML GZip+Base64). */
+function parseNfseRetorno(nfseXmlGZipB64: string | undefined): { chave?: string; nNFSe?: string } {
+  if (!nfseXmlGZipB64) return {};
+  try {
+    const xml = gunzipSync(Buffer.from(nfseXmlGZipB64, "base64")).toString("utf8");
+    const chave = /Id="NFS([0-9]{50})"/.exec(xml)?.[1] ?? /<chNFSe>(\d{50})<\/chNFSe>/.exec(xml)?.[1];
+    const nNFSe = /<nNFSe>(\d+)<\/nNFSe>/.exec(xml)?.[1];
+    return { chave, nNFSe };
+  } catch {
+    return {};
+  }
+}
+
 /** Extrai a chave de acesso (chNFSe, 50 díg.) da NFS-e retornada (XML GZip+Base64 ou chave direta). */
 function chaveFromNfseB64(nfseXmlGZipB64: string | undefined): string | undefined {
   if (!nfseXmlGZipB64) return undefined;
@@ -329,8 +342,13 @@ export class NacionalFiscalProvider implements FiscalProvider {
     try { data = JSON.parse(res.body); } catch { /* corpo não-JSON */ }
 
     if (res.statusCode >= 200 && res.statusCode < 300) {
-      const chave = data.chaveAcesso || chaveFromNfseB64(data.nfseXmlGZipB64);
-      return { status: "AUTORIZADA", chaveAcesso: chave, providerRef: chave, xml: data.nfseXmlGZipB64, ...(numero !== input.numero ? { numero: String(numero) } : {}) };
+      const parsed = parseNfseRetorno(data.nfseXmlGZipB64);
+      const chave = data.chaveAcesso || parsed.chave;
+      return {
+        status: "AUTORIZADA", chaveAcesso: chave, providerRef: chave, xml: data.nfseXmlGZipB64,
+        ...(parsed.nNFSe ? { numeroNfse: parsed.nNFSe } : {}),
+        ...(numero !== input.numero ? { numero: String(numero) } : {})
+      };
     }
     const motivo = (data.erros ?? []).map((x) => `${x.Codigo ?? ""} ${x.Descricao ?? ""}${x.Complemento ? ` (${x.Complemento})` : ""}`.trim()).join("; ")
       || `Falha na SEFIN (HTTP ${res.statusCode}).`;

@@ -77,6 +77,8 @@ export type EmitInput = {
 export type EmitResult = {
   status: StatusNotaFiscal;
   numero?: string;
+  /** NFS-e nacional: número oficial (nNFSe) atribuído pela SEFIN, distinto do nosso nDPS. */
+  numeroNfse?: string;
   chaveAcesso?: string;
   protocolo?: string;
   reciboLote?: string;

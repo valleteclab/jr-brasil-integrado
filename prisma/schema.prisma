@@ -1692,6 +1692,9 @@ model NotaFiscal {
   ambiente                  AmbienteFiscal     @default(HOMOLOGACAO)
   provedor                  ProvedorFiscal     @default(MANUAL)
   numero                    String?
+  // NFS-e nacional: numero OFICIAL atribuido pela SEFIN (nNFSe), distinto do nosso nDPS (= numero).
+  // Quando preenchido, e o numero exibido (vai no DANFSE e e o que o tomador conhece).
+  numeroNfse                String?
   serie                     String?
   chaveAcesso               String?
   protocolo                 String?

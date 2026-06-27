@@ -85,7 +85,7 @@ export async function listNotasFiscais(): Promise<NotaFiscalSummary[]> {
       modeloLabel: MODELO_LABEL[nota.modelo],
       finalidade: nota.finalidade,
       finalidadeLabel: finalidadeLabel(nota.finalidade),
-      numero: nota.numero ?? "-",
+      numero: nota.numeroNfse ?? nota.numero ?? "-",
       serie: nota.serie ?? "-",
       status: nota.status,
       statusLabel: status.label,
@@ -213,7 +213,7 @@ export async function getNotaFiscalDetalhe(id: string): Promise<NotaFiscalDetalh
     modeloLabel: MODELO_LABEL[nota.modelo],
     finalidade: nota.finalidade,
     finalidadeLabel: finalidadeLabel(nota.finalidade),
-    numero: nota.numero ?? "-",
+    numero: nota.numeroNfse ?? nota.numero ?? "-",
     serie: nota.serie ?? "-",
     status: nota.status,
     statusLabel: status.label,
@@ -408,7 +408,7 @@ export async function getNotaFiscalPrefill(
     }
   }
 
-  const label = `${MODELO_LABEL[nota.modelo]} ${nota.numero ?? "-"}`;
+  const label = `${MODELO_LABEL[nota.modelo]} ${nota.numeroNfse ?? nota.numero ?? "-"}`;
 
   // NFS-e: reconstrói os serviços a partir dos itens persistidos da nota.
   const servicos: EmissaoPrefillServico[] = isServico
