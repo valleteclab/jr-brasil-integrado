@@ -379,13 +379,19 @@ export class NacionalFiscalProvider implements FiscalProvider {
     const cert = { pfx: ctx.certificado.pfx, senha: ctx.certificado.senha };
 
     if (kind === "pdf") {
-      // 1) DANFSE PDF oficial do ADN.
-      try {
-        const pdf = await getBinary(ADN[ctx.ambiente], `/danfse/${chave}`, cert);
-        if (pdf.statusCode >= 200 && pdf.statusCode < 300 && pdf.body.subarray(0, 4).toString("latin1") === "%PDF") {
-          return { ok: true, contentType: "application/pdf", body: pdf.body, filename: `NFSE-${chave}.pdf` };
-        }
-      } catch { /* cai no fallback */ }
+      // 1) DANFSE PDF oficial do ADN. O gateway do ADN às vezes responde 502/503/504 transitório
+      // (e notas recém-emitidas levam alguns minutos para o DANFSE propagar) — tenta 3x antes do
+      // fallback. Erro não-transitório (ex.: 404) vai direto pro fallback.
+      for (let tentativa = 0; tentativa < 3; tentativa++) {
+        try {
+          const pdf = await getBinary(ADN[ctx.ambiente], `/danfse/${chave}`, cert);
+          if (pdf.statusCode >= 200 && pdf.statusCode < 300 && pdf.body.subarray(0, 4).toString("latin1") === "%PDF") {
+            return { ok: true, contentType: "application/pdf", body: pdf.body, filename: `NFSE-${chave}.pdf` };
+          }
+          if (![502, 503, 504].includes(pdf.statusCode)) break; // 404/4xx → não adianta repetir
+        } catch { /* erro de rede: tenta de novo */ }
+        if (tentativa < 2) await new Promise((r) => setTimeout(r, 1200));
+      }
       // 2) Fallback: gera o DANFSE a partir do XML autorizado (HTML printable).
       const xml = await this.fetchNfseXml(chave, cert, ctx.ambiente);
       if (!xml) return fail("Não foi possível obter o DANFSE no ADN nem o XML na SEFIN.");

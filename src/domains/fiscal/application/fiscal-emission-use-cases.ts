@@ -1042,7 +1042,10 @@ export async function downloadNotaFiscalDocumento(
     kind,
     { providerRef: nota.providerRef, modelo: nota.modelo },
     {
-      ambiente: config.ambiente,
+      // O documento sai do ambiente em que a NOTA foi emitida (não o ambiente ATUAL da empresa):
+      // uma nota de produção sempre baixa do ADN/SEFIN de produção, mesmo se a empresa hoje está em
+      // homologação. Senão o download bate no ambiente errado (404) e cai no fallback.
+      ambiente: nota.ambiente,
       provedor: nota.provedor,
       baseUrl: config.baseUrl,
       token: config.token,
