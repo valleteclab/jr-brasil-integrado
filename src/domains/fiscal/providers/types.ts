@@ -55,6 +55,11 @@ export type ProviderContext = {
    * autorizadora da NF-e (SVRS/própria) e compõe o cUF da chave de acesso.
    */
   ufEmitente?: string | null;
+  /**
+   * Logo da empresa (data URL base64) para o cabeçalho do documento auxiliar gerado por nós
+   * (DANFSE da NFS-e nacional). Opcional — o documento é renderizado sem logo quando ausente.
+   */
+  logoDataUrl?: string | null;
 };
 
 export type EmitInput = {

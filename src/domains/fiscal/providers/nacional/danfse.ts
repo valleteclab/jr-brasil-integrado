@@ -185,24 +185,36 @@ export function parseNfse(nfseXml: string): DanfseData {
   };
 }
 
-function box(label: string, value: string): string {
-  return `<div class="cell"><span class="lbl">${escHtml(label)}</span><span class="val">${escHtml(value) || "&nbsp;"}</span></div>`;
+/** Célula rotulada (label em cima, valor embaixo) — unidade base do grid. */
+function cel(label: string, value: string, flex = 1): string {
+  return `<div class="cel" style="flex:${flex}"><span class="lbl">${escHtml(label)}</span><span class="val">${escHtml(value) || "&nbsp;"}</span></div>`;
 }
 
-function renderHtml(d: DanfseData): string {
+/** Linha da tabela de tributos (label + valor R$), só se o valor for > 0 ou forçado. */
+function tribRow(label: string, value: string): string {
+  return `<tr><td>${escHtml(label)}</td><td class="r">R$ ${escHtml(brl(value))}</td></tr>`;
+}
+
+export type DanfseOptions = { logoDataUrl?: string | null };
+
+function renderHtml(d: DanfseData, opts?: DanfseOptions): string {
   const homolog =
     d.tpAmb === "2"
-      ? `<div class="homolog">AMBIENTE DE HOMOLOGAÇÃO - SEM VALOR FISCAL</div>`
+      ? `<div class="homolog">AMBIENTE DE HOMOLOGAÇÃO — SEM VALOR FISCAL</div>`
       : "";
   const v = d.valores;
-  const retLinhas = [
-    v.issRetido ? box("ISS RETIDO (TOMADOR)", brl(v.vISSQN)) : "",
-    Number(v.vRetINSS) ? box("INSS RETIDO", brl(v.vRetINSS)) : "",
-    Number(v.vRetIRRF) ? box("IRRF RETIDO", brl(v.vRetIRRF)) : "",
-    Number(v.vRetCSLL) ? box("CSLL RETIDO", brl(v.vRetCSLL)) : "",
-    Number(v.vRetPis) ? box("PIS RETIDO", brl(v.vRetPis)) : "",
-    Number(v.vRetCofins) ? box("COFINS RETIDO", brl(v.vRetCofins)) : "",
-  ].filter(Boolean);
+  const logo = opts?.logoDataUrl
+    ? `<img class="logo" src="${escHtml(opts.logoDataUrl)}" alt="logo"/>`
+    : `<div class="logo-ph">NFS-e</div>`;
+
+  // Tributos federais retidos (só os preenchidos).
+  const fedRows = [
+    ["INSS", v.vRetINSS],
+    ["IRRF", v.vRetIRRF],
+    ["CSLL", v.vRetCSLL],
+    ["PIS", v.vRetPis],
+    ["COFINS", v.vRetCofins],
+  ].filter(([, val]) => Number(val) > 0) as [string, string][];
 
   return `<!DOCTYPE html>
 <html lang="pt-BR">
@@ -211,29 +223,53 @@ function renderHtml(d: DanfseData): string {
 <title>NFS-e ${escHtml(d.nNFSe)} - ${escHtml(d.chave)}</title>
 <style>
   * { box-sizing: border-box; }
-  @page { size: A4 portrait; margin: 8mm; }
-  body { font-family: Arial, Helvetica, sans-serif; font-size: 10px; color: #000; margin: 0; }
-  .danfse { width: 194mm; margin: 0 auto; }
-  .row { display: flex; }
-  .cell { border: 1px solid #000; padding: 2px 5px; flex: 1; overflow: hidden; }
-  .lbl { display: block; font-size: 7px; color: #333; text-transform: uppercase; }
-  .val { display: block; font-size: 11px; font-weight: bold; }
-  .header { display: flex; align-items: stretch; border: 1px solid #000; }
-  .header .id { flex: 2; padding: 6px; text-align: center; border-right: 1px solid #000; }
-  .header .qr { flex: 1; padding: 6px; text-align: center; }
-  .header .id .t1 { font-size: 13px; font-weight: bold; }
-  .header .id .t2 { font-size: 9px; }
-  .header .id .num { font-size: 16px; font-weight: bold; margin-top: 4px; }
-  .qr svg { width: 110px; height: 110px; }
-  .chave { font-family: "Courier New", monospace; font-size: 9px; word-spacing: 2px; margin-top: 3px; }
-  .secao { font-weight: bold; background: #eee; border: 1px solid #000; padding: 1px 5px; margin-top: 5px; text-transform: uppercase; }
-  .desc { border: 1px solid #000; padding: 4px 5px; white-space: pre-wrap; }
-  .homolog { text-align: center; color: #b00; font-weight: bold; border: 2px solid #b00; padding: 4px; margin: 4px 0; letter-spacing: 1px; }
-  .note { font-size: 7px; color: #555; margin-top: 6px; text-align: center; }
-  .toolbar { text-align: center; padding: 10px; background: #f3f4f6; border-bottom: 1px solid #ccc; }
-  .toolbar button { font-size: 13px; font-weight: bold; padding: 7px 16px; cursor: pointer; border: 1px solid #555; border-radius: 4px; background: #fff; }
-  .toolbar .hint { display: block; font-size: 10px; color: #555; margin-top: 4px; }
-  @media print { .no-print { display: none !important; } @page { size: A4 portrait; margin: 8mm; } }
+  @page { size: A4 portrait; margin: 7mm; }
+  body { font-family: Arial, Helvetica, sans-serif; font-size: 9.5px; color: #1a1a1a; margin: 0; background: #f5f6f8; }
+  .doc { width: 196mm; margin: 0 auto; background: #fff; border: 1px solid #243b53; }
+  /* Cabeçalho institucional */
+  .cab { display: flex; align-items: center; gap: 10px; background: #243b53; color: #fff; padding: 8px 12px; }
+  .cab .logo { max-height: 52px; max-width: 120px; background: #fff; padding: 3px; border-radius: 3px; }
+  .cab .logo-ph { font-size: 22px; font-weight: 800; letter-spacing: 1px; border: 2px solid #fff; padding: 4px 10px; border-radius: 4px; }
+  .cab .tit { flex: 1; line-height: 1.25; }
+  .cab .tit .t1 { font-size: 15px; font-weight: 800; letter-spacing: .5px; }
+  .cab .tit .t2 { font-size: 10px; opacity: .9; }
+  .cab .tit .t3 { font-size: 9px; opacity: .8; margin-top: 2px; }
+  .cab .qr { text-align: center; }
+  .cab .qr svg { width: 96px; height: 96px; background: #fff; padding: 3px; border-radius: 3px; }
+  .cab .qr div { font-size: 7px; margin-top: 2px; }
+  /* Faixa de identificação */
+  .ident { display: flex; border-bottom: 1px solid #243b53; }
+  .ident .cel { border-right: 1px solid #ccd3da; }
+  .ident .cel:last-child { border-right: 0; }
+  .chave-line { padding: 3px 8px; background: #eef1f5; border-bottom: 1px solid #ccd3da; font-size: 8px; }
+  .chave-line b { font-family: "Courier New", monospace; font-size: 10px; letter-spacing: .5px; }
+  /* Seções */
+  .sec { background: #243b53; color: #fff; font-weight: 700; font-size: 9px; text-transform: uppercase; letter-spacing: .5px; padding: 3px 8px; }
+  .grid { display: flex; flex-wrap: wrap; }
+  .cel { padding: 3px 8px; border-right: 1px solid #e2e6ea; border-bottom: 1px solid #e2e6ea; min-width: 0; overflow: hidden; }
+  .cel:last-child { border-right: 0; }
+  .lbl { display: block; font-size: 6.5px; color: #5a6b7b; text-transform: uppercase; letter-spacing: .3px; }
+  .val { display: block; font-size: 10.5px; font-weight: 700; word-wrap: break-word; }
+  .desc { padding: 5px 8px; white-space: pre-wrap; border-bottom: 1px solid #e2e6ea; line-height: 1.35; }
+  /* Valor total destaque */
+  .total { display: flex; align-items: center; justify-content: space-between; background: #eef7ee; border-top: 2px solid #2e7d32; border-bottom: 2px solid #2e7d32; padding: 7px 12px; }
+  .total .lab { font-size: 11px; font-weight: 700; color: #1b5e20; text-transform: uppercase; }
+  .total .num { font-size: 22px; font-weight: 800; color: #1b5e20; }
+  /* Tributos */
+  .tribs { display: flex; gap: 10px; padding: 6px 8px; }
+  .tribs table { border-collapse: collapse; width: 100%; font-size: 9px; }
+  .tribs caption { text-align: left; font-weight: 700; font-size: 8.5px; text-transform: uppercase; color: #243b53; padding-bottom: 2px; }
+  .tribs td { border: 1px solid #d6dbe1; padding: 2px 6px; }
+  .tribs td.r { text-align: right; font-weight: 700; }
+  .badge { display: inline-block; font-size: 9px; font-weight: 700; padding: 1px 7px; border-radius: 10px; }
+  .badge.sim { background: #fdecea; color: #b71c1c; }
+  .badge.nao { background: #e8f5e9; color: #1b5e20; }
+  .homolog { text-align: center; color: #b71c1c; font-weight: 800; border: 2px solid #b71c1c; padding: 4px; margin: 6px 8px 0; letter-spacing: 1px; }
+  .note { font-size: 7px; color: #5a6b7b; padding: 6px 8px; text-align: center; border-top: 1px solid #e2e6ea; }
+  .toolbar { text-align: center; padding: 10px; background: #fff; border-bottom: 1px solid #ddd; }
+  .toolbar button { font-size: 13px; font-weight: 700; padding: 8px 18px; cursor: pointer; border: 0; border-radius: 5px; background: #243b53; color: #fff; }
+  .toolbar .hint { display: block; font-size: 10px; color: #555; margin-top: 5px; }
+  @media print { body { background: #fff; } .no-print { display: none !important; } .doc { border: 0; width: auto; } @page { size: A4 portrait; margin: 7mm; } }
 </style>
 </head>
 <body>
@@ -241,72 +277,85 @@ function renderHtml(d: DanfseData): string {
   <button onclick="window.print()">🖨️ Imprimir / Salvar como PDF</button>
   <span class="hint">Na janela de impressão, escolha "Salvar como PDF" como destino.</span>
 </div>
-<div class="danfse">
-  ${homolog}
-
-  <div class="header">
-    <div class="id">
-      <div class="t1">NFS-e — Nota Fiscal de Serviços Eletrônica</div>
-      <div class="t2">Sistema Nacional NFS-e</div>
-      <div class="num">Nº ${escHtml(d.nNFSe)}</div>
-      <div class="t2">Série ${escHtml(d.serie)} · DPS ${escHtml(d.nDPS)} · DFe ${escHtml(d.nDFSe)}</div>
-      <div class="t2">Emissão ${escHtml(dhFmt(d.dhEmi))} · Competência ${escHtml(competFmt(d.dCompet))}</div>
-      <div class="chave">${escHtml(chaveFormatada(d.chave))}</div>
+<div class="doc">
+  <div class="cab">
+    ${logo}
+    <div class="tit">
+      <div class="t1">NOTA FISCAL DE SERVIÇOS ELETRÔNICA — NFS-e</div>
+      <div class="t2">DANFSE · Documento Auxiliar da NFS-e</div>
+      <div class="t3">Sistema Nacional da NFS-e</div>
     </div>
     <div class="qr">
       ${qrCodeSvg(consultaPublicaNfseUrl(d.chave))}
-      <div style="font-size:7px;margin-top:2px">Consulte em<br/>nfse.gov.br</div>
+      <div>Consulte em<br/>nfse.gov.br</div>
     </div>
   </div>
+  ${homolog}
 
-  <div class="secao">Prestador de Serviços</div>
-  <div class="row">
-    ${box("NOME / RAZÃO SOCIAL", d.emit.nome)}
-    ${box("CNPJ/CPF", docFmt(d.emit.doc))}
-    ${box("INSCRIÇÃO MUNICIPAL", d.emit.im)}
+  <div class="ident">
+    ${cel("Número da NFS-e", d.nNFSe, 1.2)}
+    ${cel("Competência", competFmt(d.dCompet))}
+    ${cel("Data/Hora da Emissão", dhFmt(d.dhEmi), 1.5)}
+    ${cel("Série / DPS", `${d.serie} / ${d.nDPS}`)}
+    ${cel("Situação", d.cStat === "100" ? "Autorizada" : d.cStat)}
   </div>
-  <div class="row">
-    ${box("ENDEREÇO", d.emit.ender)}
+  <div class="chave-line">CHAVE DE ACESSO &nbsp; <b>${escHtml(chaveFormatada(d.chave))}</b></div>
+
+  <div class="sec">Prestador de Serviços</div>
+  <div class="grid">
+    ${cel("Nome / Razão Social", d.emit.nome, 2)}
+    ${cel("CNPJ / CPF", docFmt(d.emit.doc))}
+    ${cel("Inscrição Municipal", d.emit.im)}
   </div>
-  <div class="row">
-    ${box("TELEFONE", d.emit.fone)}
-    ${box("E-MAIL", d.emit.email)}
+  <div class="grid">
+    ${cel("Endereço", d.emit.ender, 3)}
+    ${cel("Telefone", d.emit.fone)}
+    ${cel("E-mail", d.emit.email, 1.4)}
   </div>
 
-  <div class="secao">Tomador de Serviços</div>
-  <div class="row">
-    ${box("NOME / RAZÃO SOCIAL", d.toma.nome || "—")}
-    ${box("CNPJ/CPF", d.toma.doc ? docFmt(d.toma.doc) : "—")}
+  <div class="sec">Tomador de Serviços</div>
+  <div class="grid">
+    ${cel("Nome / Razão Social", d.toma.nome || "—", 2)}
+    ${cel("CNPJ / CPF", d.toma.doc ? docFmt(d.toma.doc) : "—")}
   </div>
-  ${d.toma.ender ? `<div class="row">${box("ENDEREÇO", d.toma.ender)}</div>` : ""}
+  ${d.toma.ender ? `<div class="grid">${cel("Endereço", d.toma.ender, 1)}</div>` : ""}
 
-  <div class="secao">Serviço Prestado</div>
-  <div class="row">
-    ${box("CÓD. TRIBUTAÇÃO NACIONAL", d.serv.cTribNac)}
-    ${box("LOCAL DA PRESTAÇÃO", d.xLocPrestacao)}
-    ${box("CÓD. NBS", d.serv.cNBS)}
+  <div class="sec">Serviço Prestado</div>
+  <div class="grid">
+    ${cel("Cód. Tributação Nacional", d.serv.cTribNac)}
+    ${cel("Cód. NBS", d.serv.cNBS)}
+    ${cel("Local da Prestação", d.xLocPrestacao, 1.5)}
   </div>
-  <div class="row">${box("TRIBUTAÇÃO NACIONAL", d.serv.xTribNac)}</div>
-  <div class="secao" style="margin-top:0;background:#fff;border-top:0">Discriminação dos Serviços</div>
+  ${d.serv.xTribNac ? `<div class="grid">${cel("Item da Lista de Serviços (Tributação Nacional)", d.serv.xTribNac, 1)}</div>` : ""}
+  <div class="cel" style="border-right:0;background:#f3f5f7"><span class="lbl">Discriminação dos Serviços</span></div>
   <div class="desc">${escHtml(d.serv.xDescServ)}</div>
 
-  <div class="secao">Valores e Tributos</div>
-  <div class="row">
-    ${box("VALOR DO SERVIÇO", brl(v.vServ))}
-    ${box("BASE DE CÁLCULO ISS", brl(v.vBC))}
-    ${box("ALÍQUOTA ISS (%)", brl(v.pAliq))}
-    ${box("VALOR DO ISS", brl(v.vISSQN))}
-    ${box("ISS RETIDO?", v.issRetido ? "SIM" : "NÃO")}
+  <div class="total">
+    <span class="lab">Valor Total da NFS-e</span>
+    <span class="num">R$ ${escHtml(brl(v.vServ))}</span>
   </div>
-  ${retLinhas.length ? `<div class="row">${retLinhas.join("")}</div>` : ""}
-  <div class="row">
-    ${box("TOTAL DE RETENÇÕES", brl(v.vTotalRet))}
-    ${box("VALOR LÍQUIDO", brl(v.vLiq))}
+
+  <div class="sec">Tributos</div>
+  <div class="tribs">
+    <table>
+      <caption>ISSQN — Município</caption>
+      ${tribRow("Base de Cálculo", v.vBC)}
+      <tr><td>Alíquota</td><td class="r">${escHtml(brl(v.pAliq))}%</td></tr>
+      ${tribRow("Valor do ISS", v.vISSQN)}
+      <tr><td>ISS Retido pelo Tomador</td><td class="r"><span class="badge ${v.issRetido ? "sim" : "nao"}">${v.issRetido ? "SIM" : "NÃO"}</span></td></tr>
+    </table>
+    <table>
+      <caption>Retenções Federais</caption>
+      ${fedRows.length ? fedRows.map(([k, val]) => tribRow(k, val)).join("") : `<tr><td colspan="2" style="text-align:center;color:#888">Sem retenções federais</td></tr>`}
+      ${tribRow("Total de Retenções", v.vTotalRet)}
+      <tr><td><b>Valor Líquido</b></td><td class="r"><b>R$ ${escHtml(brl(v.vLiq))}</b></td></tr>
+    </table>
   </div>
 
   <div class="note">
-    DANFSE gerado pela plataforma a partir do XML autorizado da NFS-e nacional. Para PDF, use
-    "Imprimir &rarr; Salvar como PDF" no navegador. Consulta de autenticidade: nfse.gov.br.
+    DANFSE gerado pela plataforma a partir do XML autorizado da NFS-e nacional (DFe ${escHtml(d.nDFSe)} ·
+    processada em ${escHtml(dhFmt(d.dhProc))}). Para salvar em PDF, use "Imprimir &rarr; Salvar como PDF".
+    A autenticidade pode ser verificada pelo QR Code ou em nfse.gov.br.
   </div>
 </div>
 </body>
@@ -317,9 +366,9 @@ function renderHtml(d: DanfseData): string {
  * Gera o DANFSE a partir do XML `<NFSe>` autorizado. Retorno pronto para `downloadDocument`
  * embrulhar: HTML printable (text/html), salvável como PDF pelo navegador.
  */
-export function buildDanfse(nfseXml: string): { contentType: string; body: Buffer; filename: string } {
+export function buildDanfse(nfseXml: string, opts?: DanfseOptions): { contentType: string; body: Buffer; filename: string } {
   const data = parseNfse(nfseXml);
-  const html = renderHtml(data);
+  const html = renderHtml(data, opts);
   return {
     contentType: "text/html; charset=utf-8",
     body: Buffer.from(html, "utf8"),

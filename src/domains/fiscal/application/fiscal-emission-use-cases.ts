@@ -1048,8 +1048,10 @@ export async function downloadNotaFiscalDocumento(
       token: config.token,
       cscId: config.cscId,
       cscToken: config.cscToken,
-      // NACIONAL (NFS-e): download server-side pode exigir mTLS com o certificado A1.
-      ...(nota.modelo === "NFSE" && nota.provedor === "NACIONAL" ? { certificado: config.certificado } : {})
+      // NACIONAL (NFS-e): download server-side exige mTLS com o A1 e gera o DANFSE com a logo da empresa.
+      ...(nota.modelo === "NFSE" && nota.provedor === "NACIONAL"
+        ? { certificado: config.certificado, logoDataUrl: config.logotipoInfo }
+        : {})
     }
   );
 

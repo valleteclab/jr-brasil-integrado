@@ -31,6 +31,13 @@ const SEFIN: Record<AmbienteFiscal, string> = {
   HOMOLOGACAO: "https://sefin.producaorestrita.nfse.gov.br/SefinNacional"
 };
 
+// ADN (Ambiente de Dados Nacional): gera o DANFSE em PDF OFICIAL — GET /danfse/{chave} (mTLS).
+// É infra distinta da SEFIN (a SEFIN /danfse devolve 501). Produção restrita = homologação.
+const ADN: Record<AmbienteFiscal, string> = {
+  PRODUCAO: "https://adn.nfse.gov.br",
+  HOMOLOGACAO: "https://adn.producaorestrita.nfse.gov.br"
+};
+
 const onlyDigits = (s: string | null | undefined) => (s ?? "").replace(/\D/g, "");
 const pad = (s: string | number, n: number) => onlyDigits(String(s)).padStart(n, "0").slice(-n);
 const esc = (s: string) =>
@@ -180,6 +187,23 @@ function getSefin(baseUrl: string, path: string, cert: { pfx: Buffer; senha: str
   });
 }
 
+/** GET binário por mTLS (ex.: DANFSE PDF do ADN). Acumula em Buffer — não corrompe o PDF. */
+function getBinary(baseUrl: string, path: string, cert: { pfx: Buffer; senha: string }): Promise<{ statusCode: number; contentType: string; body: Buffer }> {
+  const url = new URL(`${baseUrl}${path}`);
+  return new Promise((resolve, reject) => {
+    const req = https.request(
+      { method: "GET", hostname: url.hostname, path: url.pathname, pfx: cert.pfx, passphrase: cert.senha, headers: { Accept: "application/pdf" } },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on("data", (c) => chunks.push(c));
+        res.on("end", () => resolve({ statusCode: res.statusCode ?? 0, contentType: String(res.headers["content-type"] ?? ""), body: Buffer.concat(chunks) }));
+      }
+    );
+    req.on("error", reject);
+    req.end();
+  });
+}
+
 function postSefinNfse(baseUrl: string, dpsXmlGZipB64: string, cert: { pfx: Buffer; senha: string }): Promise<SefinResp> {
   const url = new URL(`${baseUrl}/nfse`);
   const payload = JSON.stringify({ dpsXmlGZipB64 });
@@ -242,11 +266,12 @@ export class NacionalFiscalProvider implements FiscalProvider {
   }
 
   /**
-   * Download dos documentos da NFS-e a partir do XML autorizado (GET /nfse/{chave} → JSON com
-   * nfseXmlGZipB64 → gunzip). A SEFIN NÃO gera o DANFSE em PDF (GET /danfse → 501): geramos o
-   * DANFSE NÓS MESMOS (HTML printable, salvável como PDF pelo navegador) a partir do XML.
-   *  - "xml": serve o XML autorizado da NFS-e.
-   *  - "pdf": gera o DANFSE (buildDanfse) — não manda mais o usuário ao portal público.
+   * Download dos documentos da NFS-e nacional (mTLS com o A1):
+   *  - "pdf": baixa o **DANFSE PDF OFICIAL** do ADN (`GET /danfse/{chave}`, infra nacional, layout
+   *    padrão — o mesmo que os integradores usam). Se o ADN falhar, FAZ FALLBACK gerando o DANFSE a
+   *    partir do XML autorizado (buildDanfse → HTML printable).
+   *  - "xml": serve o XML autorizado da NFS-e (SEFIN `GET /nfse/{chave}` → nfseXmlGZipB64 → gunzip).
+   * (A SEFIN não gera o PDF — `GET /SefinNacional/danfse` devolve 501; o PDF é só no ADN.)
    */
   async downloadDocument(
     kind: "pdf" | "xml",
@@ -258,21 +283,35 @@ export class NacionalFiscalProvider implements FiscalProvider {
     if (!ctx.certificado?.pfx) {
       return fail("Certificado A1 não disponível para consultar a NFS-e nacional.");
     }
-    const res = await getSefin(SEFIN[ctx.ambiente], `/nfse/${chave}`, { pfx: ctx.certificado.pfx, senha: ctx.certificado.senha });
-    if (res.statusCode < 200 || res.statusCode >= 300) {
-      return fail(`Não foi possível obter a NFS-e na SEFIN (HTTP ${res.statusCode}).`);
-    }
-    let data: { nfseXmlGZipB64?: string } = {};
-    try { data = JSON.parse(res.body); } catch { /* corpo não-JSON */ }
-    if (!data.nfseXmlGZipB64) {
-      return fail("A SEFIN não retornou o XML da NFS-e (campo nfseXmlGZipB64 ausente).");
-    }
-    const xml = gunzipSync(Buffer.from(data.nfseXmlGZipB64, "base64")).toString("utf8");
+    const cert = { pfx: ctx.certificado.pfx, senha: ctx.certificado.senha };
 
     if (kind === "pdf") {
-      return { ok: true, ...buildDanfse(xml) };
+      // 1) DANFSE PDF oficial do ADN.
+      try {
+        const pdf = await getBinary(ADN[ctx.ambiente], `/danfse/${chave}`, cert);
+        if (pdf.statusCode >= 200 && pdf.statusCode < 300 && pdf.body.subarray(0, 4).toString("latin1") === "%PDF") {
+          return { ok: true, contentType: "application/pdf", body: pdf.body, filename: `NFSE-${chave}.pdf` };
+        }
+      } catch { /* cai no fallback */ }
+      // 2) Fallback: gera o DANFSE a partir do XML autorizado (HTML printable).
+      const xml = await this.fetchNfseXml(chave, cert, ctx.ambiente);
+      if (!xml) return fail("Não foi possível obter o DANFSE no ADN nem o XML na SEFIN.");
+      return { ok: true, ...buildDanfse(xml, { logoDataUrl: ctx.logoDataUrl }) };
     }
+
+    const xml = await this.fetchNfseXml(chave, cert, ctx.ambiente);
+    if (!xml) return fail("Não foi possível obter o XML da NFS-e na SEFIN.");
     return { ok: true, contentType: "application/xml", body: Buffer.from(xml, "utf8"), filename: `NFSE-${chave}.xml` };
+  }
+
+  /** Busca o XML autorizado da NFS-e na SEFIN (GET /nfse/{chave} → nfseXmlGZipB64 → gunzip). */
+  private async fetchNfseXml(chave: string, cert: { pfx: Buffer; senha: string }, ambiente: AmbienteFiscal): Promise<string | null> {
+    const res = await getSefin(SEFIN[ambiente], `/nfse/${chave}`, cert);
+    if (res.statusCode < 200 || res.statusCode >= 300) return null;
+    let data: { nfseXmlGZipB64?: string } = {};
+    try { data = JSON.parse(res.body); } catch { return null; }
+    if (!data.nfseXmlGZipB64) return null;
+    return gunzipSync(Buffer.from(data.nfseXmlGZipB64, "base64")).toString("utf8");
   }
 
   // F4: eventos/cancelamento/substituição/consulta. DANFSE = portal público (acima).
