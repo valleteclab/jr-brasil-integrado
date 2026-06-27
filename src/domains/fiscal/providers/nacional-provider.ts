@@ -156,16 +156,59 @@ function pfxToPem(pfx: Buffer, senha: string): { privateKeyPem: string; certPem:
   return { privateKeyPem: forge.pki.privateKeyToPem(keyBag.key), certPem: forge.pki.certificateToPem(certBag.cert) };
 }
 
-function signDps(xml: string, privateKeyPem: string, certPem: string): string {
+/** Assina (XMLDSig enveloped) o elemento `localName` referenciado pelo seu Id. Prologo UTF-8. */
+function signInfoEl(xml: string, localName: string, privateKeyPem: string, certPem: string): string {
   const certB64 = certPem.replace(/-----(BEGIN|END) CERTIFICATE-----/g, "").replace(/\s+/g, "");
   const sig = new SignedXml({
     privateKey: privateKeyPem, publicCert: certPem,
     signatureAlgorithm: RSA_SHA256, canonicalizationAlgorithm: C14N,
     getKeyInfoContent: () => `<X509Data><X509Certificate>${certB64}</X509Certificate></X509Data>`
   });
-  sig.addReference({ xpath: "//*[local-name(.)='infDPS']", transforms: [ENVELOPED, C14N], digestAlgorithm: SHA256 });
-  sig.computeSignature(xml, { location: { reference: "//*[local-name(.)='infDPS']", action: "after" } });
+  const xpath = `//*[local-name(.)='${localName}']`;
+  sig.addReference({ xpath, transforms: [ENVELOPED, C14N], digestAlgorithm: SHA256 });
+  sig.computeSignature(xml, { location: { reference: xpath, action: "after" } });
   return `<?xml version="1.0" encoding="UTF-8"?>${sig.getSignedXml()}`;
+}
+
+const signDps = (xml: string, privateKeyPem: string, certPem: string) => signInfoEl(xml, "infDPS", privateKeyPem, certPem);
+
+/**
+ * Monta o XML do evento de CANCELAMENTO (e101101) da NFS-e nacional. O autor (CNPJ/CPF) e o tipo de
+ * inscrição saem da própria chave de acesso (cMun[7] + tpInsc[1] + inscFed[14] + ...). Id do
+ * infPedReg (59 chars) = "PRE" + chNFSe(50) + tpEvento(6). nPedRegEvento foi removido do leiaute.
+ */
+function buildCancelEventoXml(chave: string, ambiente: AmbienteFiscal, justificativa: string): { xml: string } {
+  const ch = onlyDigits(chave);
+  const tpInsc = ch.charAt(7);
+  const inscFed = ch.slice(8, tpInsc === "1" ? 19 : 22); // CPF(11) quando tpInsc=1, senão CNPJ(14)
+  const autor = tpInsc === "1" ? `<CPFAutor>${inscFed}</CPFAutor>` : `<CNPJAutor>${inscFed}</CNPJAutor>`;
+  const id = `PRE${ch}101101`;
+  const xMotivo = sanitizeTextoNfse(justificativa).slice(0, 255);
+  const infPedReg =
+    `<infPedReg Id="${id}">` +
+      `<tpAmb>${ambiente === "PRODUCAO" ? "1" : "2"}</tpAmb>` +
+      `<verAplic>ERP-1.0</verAplic>` +
+      `<dhEvento>${dhEmiBrasilia()}</dhEvento>` +
+      autor +
+      `<chNFSe>${ch}</chNFSe>` +
+      `<e101101><xDesc>Cancelamento de NFS-e</xDesc><cMotivo>1</cMotivo><xMotivo>${esc(xMotivo)}</xMotivo></e101101>` +
+    `</infPedReg>`;
+  return { xml: `<pedRegEvento xmlns="http://www.sped.fazenda.gov.br/nfse" versao="1.00">${infPedReg}</pedRegEvento>` };
+}
+
+/** POST do pedido de registro de evento (cancelamento) — body { pedidoRegistroEventoXmlGZipB64 }. */
+function postEventoNfse(baseUrl: string, chave: string, eventoGZipB64: string, cert: { pfx: Buffer; senha: string }): Promise<SefinResp> {
+  const url = new URL(`${baseUrl}/nfse/${onlyDigits(chave)}/eventos`);
+  const payload = JSON.stringify({ pedidoRegistroEventoXmlGZipB64: eventoGZipB64 });
+  return new Promise((resolve, reject) => {
+    const req = https.request(
+      { method: "POST", hostname: url.hostname, path: url.pathname, pfx: cert.pfx, passphrase: cert.senha,
+        headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(payload) } },
+      (res) => { let data = ""; res.on("data", (c) => (data += c)); res.on("end", () => resolve({ statusCode: res.statusCode ?? 0, body: data })); }
+    );
+    req.on("error", reject);
+    req.write(payload); req.end();
+  });
 }
 
 type SefinResp = { statusCode: number; body: string };
@@ -183,6 +226,19 @@ function getSefin(baseUrl: string, path: string, cert: { pfx: Buffer; senha: str
       }
     );
     req.on("error", reject);
+    req.end();
+  });
+}
+
+/** HEAD /dps/{id}: 200 = já existe NFS-e p/ esse DPS (número usado); 404 = livre. */
+function headDps(baseUrl: string, idDps: string, cert: { pfx: Buffer; senha: string }): Promise<boolean> {
+  const url = new URL(`${baseUrl}/dps/${idDps}`);
+  return new Promise((resolve) => {
+    const req = https.request(
+      { method: "HEAD", hostname: url.hostname, path: url.pathname, pfx: cert.pfx, passphrase: cert.senha },
+      (res) => { res.resume(); resolve((res.statusCode ?? 0) >= 200 && (res.statusCode ?? 0) < 300); }
+    );
+    req.on("error", () => resolve(false)); // erro de rede → não bloqueia a emissão (a SEFIN ainda valida)
     req.end();
   });
 }
@@ -247,7 +303,12 @@ export class NacionalFiscalProvider implements FiscalProvider {
     if (!ctx.certificado?.pfx) {
       return { status: "ERRO", motivo: "Certificado A1 não disponível para assinar/transmitir a NFS-e nacional." };
     }
-    const { xml } = buildDpsXml(input, ctx);
+    // Numeração: confirma com a SEFIN um nDPS livre (HEAD /dps) e pula os já usados — evita o E0014
+    // (duplicidade de série+número) quando a sequência local não acompanha o que a SEFIN já registrou.
+    const numero = await this.resolveNumeroLivre(input, ctx);
+    const emitInput = numero === input.numero ? input : { ...input, numero };
+
+    const { xml } = buildDpsXml(emitInput, ctx);
     const { privateKeyPem, certPem } = pfxToPem(ctx.certificado.pfx, ctx.certificado.senha);
     const signed = signDps(xml, privateKeyPem, certPem);
     const dpsXmlGZipB64 = gzipSync(Buffer.from(signed, "utf8")).toString("base64");
@@ -258,11 +319,32 @@ export class NacionalFiscalProvider implements FiscalProvider {
 
     if (res.statusCode >= 200 && res.statusCode < 300) {
       const chave = data.chaveAcesso || chaveFromNfseB64(data.nfseXmlGZipB64);
-      return { status: "AUTORIZADA", chaveAcesso: chave, providerRef: chave, xml: data.nfseXmlGZipB64 };
+      return { status: "AUTORIZADA", chaveAcesso: chave, providerRef: chave, xml: data.nfseXmlGZipB64, ...(numero !== input.numero ? { numero: String(numero) } : {}) };
     }
     const motivo = (data.erros ?? []).map((x) => `${x.Codigo ?? ""} ${x.Descricao ?? ""}${x.Complemento ? ` (${x.Complemento})` : ""}`.trim()).join("; ")
       || `Falha na SEFIN (HTTP ${res.statusCode}).`;
     return { status: res.statusCode === 422 || res.statusCode === 400 ? "REJEITADA" : "ERRO", motivo };
+  }
+
+  /**
+   * Acha o próximo nDPS LIVRE na SEFIN a partir do número candidato (sequência local), consultando
+   * HEAD /dps/{idDps}. Pula os números já usados (de emissões anteriores via ACBr/manual na mesma
+   * série) para não cair em E0014. Limite de 30 tentativas; em erro de rede, devolve o candidato
+   * (a própria SEFIN ainda valida na emissão).
+   */
+  private async resolveNumeroLivre(input: EmitInput, ctx: ProviderContext): Promise<number> {
+    if (!ctx.certificado?.pfx) return input.numero;
+    const cert = { pfx: ctx.certificado.pfx, senha: ctx.certificado.senha };
+    const cMun = pad(input.emitter.codigoMunicipioIbge ?? "", 7);
+    const cnpj = onlyDigits(input.emitter.cnpj);
+    const serie = input.document.serie?.trim() || "1";
+    let n = input.numero;
+    for (let i = 0; i < 30; i++) {
+      const usado = await headDps(SEFIN[ctx.ambiente], dpsId(cMun, cnpj, serie, String(n)), cert);
+      if (!usado) return n;
+      n++;
+    }
+    return n;
   }
 
   /**
@@ -314,9 +396,43 @@ export class NacionalFiscalProvider implements FiscalProvider {
     return gunzipSync(Buffer.from(data.nfseXmlGZipB64, "base64")).toString("utf8");
   }
 
-  // F4: eventos/cancelamento/substituição/consulta. DANFSE = portal público (acima).
-  async cancel(_input: CancelInput, _ctx: ProviderContext): Promise<CancelResult> {
-    return { status: "ERRO", motivo: "Cancelamento NFS-e nacional ainda não implementado (F4)." };
+  /**
+   * Cancelamento da NFS-e nacional — evento e101101 (POST /nfse/{chave}/eventos, mTLS + assinatura
+   * do infPedReg). A chave de acesso vem em providerRef. Sucesso (2xx) → AUTORIZADO.
+   */
+  async cancel(input: CancelInput, ctx: ProviderContext): Promise<CancelResult> {
+    if (!ctx.certificado?.pfx) {
+      return { status: "ERRO", motivo: "Certificado A1 não disponível para assinar/transmitir o cancelamento da NFS-e." };
+    }
+    const chave = onlyDigits(input.chaveAcesso || input.providerRef || "");
+    if (chave.length !== 50) {
+      return { status: "ERRO", motivo: "Chave de acesso da NFS-e ausente/inválida (50 dígitos) — necessária para cancelar." };
+    }
+    if ((input.justificativa ?? "").trim().length < 15) {
+      return { status: "REJEITADO", motivo: "A justificativa de cancelamento deve ter ao menos 15 caracteres." };
+    }
+    try {
+      const { xml } = buildCancelEventoXml(chave, ctx.ambiente, input.justificativa);
+      const { privateKeyPem, certPem } = pfxToPem(ctx.certificado.pfx, ctx.certificado.senha);
+      const signed = signInfoEl(xml, "infPedReg", privateKeyPem, certPem);
+      const gzipB64 = gzipSync(Buffer.from(signed, "utf8")).toString("base64");
+      const res = await postEventoNfse(SEFIN[ctx.ambiente], chave, gzipB64, ctx.certificado);
+
+      let data: { eventoXmlGZipB64?: string; erro?: Array<{ codigo?: string; descricao?: string; complemento?: string }> } = {};
+      try { data = JSON.parse(res.body); } catch { /* corpo não-JSON */ }
+
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        // Protocolo: nProt do evento autorizado (quando presente no XML do evento retornado).
+        const evtXml = data.eventoXmlGZipB64 ? gunzipSync(Buffer.from(data.eventoXmlGZipB64, "base64")).toString("utf8") : "";
+        const nProt = /<nProt>(\d+)<\/nProt>/.exec(evtXml)?.[1];
+        return { status: "AUTORIZADO", protocolo: nProt };
+      }
+      const motivo = (data.erro ?? []).map((x) => `${x.codigo ?? ""} ${x.descricao ?? ""}${x.complemento ? ` (${x.complemento})` : ""}`.trim()).join("; ")
+        || `Falha no cancelamento na SEFIN (HTTP ${res.statusCode}).`;
+      return { status: res.statusCode === 400 || res.statusCode === 422 ? "REJEITADO" : "ERRO", motivo };
+    } catch (e) {
+      return { status: "ERRO", motivo: `Falha ao cancelar a NFS-e: ${e instanceof Error ? e.message : String(e)}` };
+    }
   }
   async correct(_input: CorrectionInput, _ctx: ProviderContext): Promise<CorrectionResult> {
     return { status: "ERRO", motivo: "NFS-e nacional não tem carta de correção — use substituição." };
