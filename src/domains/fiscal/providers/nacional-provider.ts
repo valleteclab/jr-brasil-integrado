@@ -179,8 +179,9 @@ const signDps = (xml: string, privateKeyPem: string, certPem: string) => signInf
  */
 function buildCancelEventoXml(chave: string, ambiente: AmbienteFiscal, justificativa: string): { xml: string } {
   const ch = onlyDigits(chave);
-  const tpInsc = ch.charAt(7);
-  const inscFed = ch.slice(8, tpInsc === "1" ? 19 : 22); // CPF(11) quando tpInsc=1, senão CNPJ(14)
+  // chNFSe: cMun(0-6) + tpAmbGerador[7] + tpInsc[8] + inscFed(9..). CPF=11, CNPJ=14 dígitos.
+  const tpInsc = ch.charAt(8);
+  const inscFed = ch.slice(9, tpInsc === "1" ? 20 : 23);
   const autor = tpInsc === "1" ? `<CPFAutor>${inscFed}</CPFAutor>` : `<CNPJAutor>${inscFed}</CNPJAutor>`;
   const id = `PRE${ch}101101`;
   const xMotivo = sanitizeTextoNfse(justificativa).slice(0, 255);
