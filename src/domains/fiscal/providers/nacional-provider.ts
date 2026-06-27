@@ -122,6 +122,15 @@ function buildDpsXml(input: EmitInput, ctx: ProviderContext): { xml: string; id:
       : (e.regime === "SIMPLES_NACIONAL" || e.regime === "SIMPLES_EXCESSO_SUBLIMITE") ? "3"
       : "1";
 
+  // SUBSTITUIÇÃO: quando o documento aponta uma NFS-e a substituir, emite-se a nova DPS com o grupo
+  // <subst> (chave substituída + motivo). A SEFIN cancela a anterior por substituição e gera a nova.
+  const sub = doc.substituicao;
+  const chSubstda = onlyDigits(sub?.chaveSubstituida);
+  const subst = chSubstda.length === 50
+    ? `<subst><chSubstda>${chSubstda}</chSubstda><cMotivo>${pad(sub!.cMotivo || "99", 2)}</cMotivo>` +
+      `${sub!.xMotivo ? `<xMotivo>${esc(sanitizeTextoNfse(sub!.xMotivo))}</xMotivo>` : ""}</subst>`
+    : "";
+
   const infDPS =
     `<infDPS Id="${id}">` +
       `<tpAmb>${tpAmb}</tpAmb>` +
@@ -132,6 +141,7 @@ function buildDpsXml(input: EmitInput, ctx: ProviderContext): { xml: string; id:
       `<dCompet>${dhEmiBrasilia().slice(0, 10)}</dCompet>` +
       `<tpEmit>1</tpEmit>` +
       `<cLocEmi>${cMun}</cLocEmi>` +
+      subst +
       `<prest><CNPJ>${cnpjEmit}</CNPJ>${e.inscricaoMunicipal ? `<IM>${onlyDigits(e.inscricaoMunicipal)}</IM>` : ""}` +
         `<regTrib><opSimpNac>${opSimpNac}</opSimpNac><regEspTrib>0</regEspTrib></regTrib></prest>` +
       toma +
