@@ -152,7 +152,7 @@ export class SefazFiscalProvider implements FiscalProvider {
       // providerRef vier como um nProt (15 dígitos) usa-o; senão consulta a SEFAZ para obtê-lo.
       let nProt = onlyDigitsStr(input.providerRef);
       if (nProt.length !== 15) {
-        const sit = await consultarProtocolo(chave, ctx.ambiente, ctx.certificado);
+        const sit = await consultarProtocolo(chave, uf, ctx.ambiente, ctx.certificado);
         if (!sit.nProt) {
           return { status: "ERRO", motivo: `Protocolo de autorização não localizado para cancelar (consulta: ${sit.cStat} ${sit.xMotivo}).`.trim() };
         }
@@ -222,7 +222,7 @@ export class SefazFiscalProvider implements FiscalProvider {
       return { status: "PROCESSANDO", motivo: "UF do emitente não definida — necessária para consultar a NF-e." };
     }
     try {
-      const sit = await consultarProtocolo(chave, ctx.ambiente, ctx.certificado);
+      const sit = await consultarProtocolo(chave, uf, ctx.ambiente, ctx.certificado);
       const motivo = `${sit.cStat ? `${sit.cStat} ` : ""}${sit.xMotivo}`.trim() || `HTTP ${sit.statusCode}`;
       // cStat 101 = nota cancelada (via consulta); demais usam o mapeamento de autorização.
       if (sit.cStat === "101") {
