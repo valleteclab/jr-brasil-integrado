@@ -112,6 +112,7 @@ type Resultado = {
   id: string;
   status: string;
   numero?: string | null;
+  numeroNfse?: string | null;
   chaveAcesso?: string | null;
   motivo?: string | null;
 };
@@ -455,7 +456,7 @@ export function NfseWizard({ data, initial = null }: { data: EmissaoFormData; in
       });
       const payload = (await res.json()) as Resultado & { error?: string };
       if (!res.ok) throw new Error(payload.error || "Não foi possível emitir a NFS-e.");
-      setResultado({ id: payload.id, status: payload.status, numero: payload.numero, chaveAcesso: payload.chaveAcesso, motivo: payload.motivo });
+      setResultado({ id: payload.id, status: payload.status, numero: payload.numero, numeroNfse: payload.numeroNfse, chaveAcesso: payload.chaveAcesso, motivo: payload.motivo });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível emitir a NFS-e.");
     } finally {
@@ -476,7 +477,7 @@ export function NfseWizard({ data, initial = null }: { data: EmissaoFormData; in
             </span>
             <span>
               {autorizada
-                ? `NFS-e nº ${resultado.numero ?? "—"} autorizada.`
+                ? `NFS-e nº ${resultado.numeroNfse ?? resultado.numero ?? "—"} autorizada.`
                 : resultado.motivo || "A NFS-e não foi autorizada. Verifique os dados e tente novamente."}
             </span>
           </div>
@@ -484,7 +485,13 @@ export function NfseWizard({ data, initial = null }: { data: EmissaoFormData; in
             <p style={{ fontSize: 13 }}><b>Chave de acesso:</b> <span className="mono">{resultado.chaveAcesso}</span></p>
           )}
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 14 }}>
-            <button type="button" className="btn-erp primary sm" onClick={() => router.push("/erp/fiscal")}>NFS-e emitidas</button>
+            {autorizada && (
+              <>
+                <a className="btn-erp primary sm" href={`/api/erp/fiscal/${resultado.id}/pdf`} target="_blank" rel="noopener noreferrer">Baixar DANFSE (PDF)</a>
+                <a className="btn-erp ghost sm" href={`/api/erp/fiscal/${resultado.id}/xml`} target="_blank" rel="noopener noreferrer">Baixar XML</a>
+              </>
+            )}
+            <button type="button" className="btn-erp ghost sm" onClick={() => router.push("/erp/fiscal")}>NFS-e emitidas</button>
             <button type="button" className="btn-erp ghost sm" onClick={() => router.refresh()}>Nova NFS-e</button>
           </div>
         </div>

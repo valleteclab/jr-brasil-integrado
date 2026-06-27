@@ -9,7 +9,7 @@ export async function POST(request: Request) {
     await requireModulo("fiscal");
     const scope = await getDevelopmentTenantScope();
     const nota = await emitServiceInvoiceAvulsa(scope, await request.json());
-    return NextResponse.json({ id: nota.id, status: nota.status, numero: nota.numero, motivo: nota.motivo });
+    return NextResponse.json({ id: nota.id, status: nota.status, numero: nota.numero, numeroNfse: nota.numeroNfse, chaveAcesso: nota.chaveAcesso, motivo: nota.motivo });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro ao emitir a NFS-e.";
     const status = authErrorStatus(error, error instanceof StandaloneEmissionError ? 400 : 500);
