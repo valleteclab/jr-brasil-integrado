@@ -16,6 +16,7 @@
  * o DANFE precisa de campos repetidos (det[]) e atributos (Id da chave, nItem), implementamos
  * helpers locais mais ricos aqui, sem editar `soap.ts`.
  */
+import QRCode from "qrcode";
 
 const onlyDigits = (s: string | number | null | undefined) => String(s ?? "").replace(/\D/g, "");
 
@@ -322,6 +323,43 @@ export function code128cBars(chave44: string, opts?: { height?: number; module?:
 }
 
 // --------------------------------------------------------------------------------------------------
+// QR Code de consulta — leva à CONSULTA da NF-e no portal NACIONAL pela chave de acesso.
+// --------------------------------------------------------------------------------------------------
+
+/**
+ * URL de consulta da NF-e (modelo 55) no portal NACIONAL pela chave de acesso. Não depende de
+ * `infNFeSupl/qrCode` no XML (que nossa emissão não gera): monta a partir da chave + ambiente.
+ */
+export function consultaNfeNacionalUrl(chave: string, tpAmb: string): string {
+  const amb = tpAmb === "2" ? "2" : "1";
+  return `https://www.nfe.fazenda.gov.br/portal/consultaResumo.aspx?chNFe=${onlyDigits(chave)}&tpAmb=${amb}`;
+}
+
+/**
+ * QR Code como SVG inline (sem <img>/base64), no mesmo espírito do Code-128 desenhado à mão.
+ * Usa a API SÍNCRONA `QRCode.create` (matriz de módulos) e desenha um <rect> por módulo escuro,
+ * com zona de silêncio (margin) de 2 módulos. Mantém `buildDanfe`/`renderHtml` síncronos.
+ */
+export function qrCodeSvg(text: string, displayPx = 96): string {
+  const qr = QRCode.create(text, { errorCorrectionLevel: "M" });
+  const n = qr.modules.size;
+  const bits = qr.modules.data;
+  const margin = 2;
+  const dim = n + margin * 2;
+  let rects = "";
+  for (let y = 0; y < n; y++) {
+    for (let x = 0; x < n; x++) {
+      if (bits[y * n + x]) rects += `<rect x="${x + margin}" y="${y + margin}" width="1" height="1"/>`;
+    }
+  }
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${displayPx}" height="${displayPx}" ` +
+    `viewBox="0 0 ${dim} ${dim}" shape-rendering="crispEdges" role="img" aria-label="QR Code de consulta da NF-e">` +
+    `<rect width="${dim}" height="${dim}" fill="#fff"/><g fill="#000">${rects}</g></svg>`
+  );
+}
+
+// --------------------------------------------------------------------------------------------------
 // Montagem do HTML do DANFE (A4 retrato, CSS inline para impressão).
 // --------------------------------------------------------------------------------------------------
 
@@ -387,9 +425,19 @@ function renderHtml(d: DanfeData): string {
   .secao { font-weight: bold; background: #eee; border: 1px solid #000; padding: 1px 4px; margin-top: 4px; text-transform: uppercase; }
   .homolog { text-align: center; color: #b00; font-weight: bold; border: 2px solid #b00; padding: 4px; margin: 4px 0; letter-spacing: 1px; }
   .note { font-size: 7px; color: #555; margin-top: 6px; text-align: center; }
+  .barcode .qr { margin-top: 4px; }
+  .barcode .qr svg { width: 96px; height: 96px; }
+  .toolbar { text-align: center; padding: 10px; background: #f3f4f6; border-bottom: 1px solid #ccc; }
+  .toolbar button { font-size: 13px; font-weight: bold; padding: 7px 16px; cursor: pointer; border: 1px solid #555; border-radius: 4px; background: #fff; }
+  .toolbar .hint { display: block; font-size: 10px; color: #555; margin-top: 4px; }
+  @media print { .no-print { display: none !important; } @page { size: A4 portrait; margin: 8mm; } }
 </style>
 </head>
 <body>
+<div class="toolbar no-print">
+  <button onclick="window.print()">🖨️ Imprimir / Salvar como PDF</button>
+  <span class="hint">Na janela de impressão, escolha "Salvar como PDF" como destino.</span>
+</div>
 <div class="danfe">
   ${homolog}
 
@@ -416,7 +464,8 @@ function renderHtml(d: DanfeData): string {
       <div style="font-size:7px">CHAVE DE ACESSO</div>
       ${code128cBars(d.chave)}
       <div class="chave">${escHtml(chaveFormatada(d.chave))}</div>
-      <div style="font-size:7px;margin-top:4px">Consulta de autenticidade no portal nacional da NF-e<br/>www.nfe.fazenda.gov.br/portal ou no site da Sefaz autorizadora</div>
+      <div class="qr">${qrCodeSvg(consultaNfeNacionalUrl(d.chave, d.tpAmb))}</div>
+      <div style="font-size:7px;margin-top:2px">Consulte esta NF-e pela chave de acesso no<br/>portal nacional — www.nfe.fazenda.gov.br/portal</div>
     </div>
   </div>
 
@@ -486,8 +535,8 @@ function renderHtml(d: DanfeData): string {
   }
 
   <div class="note">
-    DANFE gerado pela plataforma a partir do XML autorizado (nfeProc). A conversão para PDF pode
-    usar uma lib de renderização adicionada posteriormente (ex.: puppeteer/playwright sobre este HTML).
+    DANFE gerado pela plataforma a partir do XML autorizado (nfeProc). Para PDF, use
+    "Imprimir &rarr; Salvar como PDF" no navegador.
   </div>
 </div>
 </body>
