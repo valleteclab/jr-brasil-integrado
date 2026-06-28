@@ -872,14 +872,19 @@ export async function cancelNotaFiscal(scope: TenantScope, notaId: string, justi
       justificativa: justificativa.trim()
     },
     {
-      ambiente: config.ambiente,
+      // O cancelamento ocorre no ambiente em que a NOTA foi emitida.
+      ambiente: nota.ambiente,
       provedor: nota.provedor,
       baseUrl: config.baseUrl,
       token: config.token,
       cscId: config.cscId,
       cscToken: config.cscToken,
-      // NACIONAL (NFS-e): cancelamento também exige assinatura + mTLS com o certificado A1.
-      ...(nota.modelo === "NFSE" && nota.provedor === "NACIONAL" ? { certificado: config.certificado } : {})
+      // Provedores DIRETOS exigem assinatura + mTLS com o A1: NACIONAL (NFS-e) e SEFAZ (NF-e). O
+      // SEFAZ ainda precisa da UF do emitente para resolver a autorizadora.
+      ...((nota.modelo === "NFSE" && nota.provedor === "NACIONAL") || nota.provedor === "SEFAZ"
+        ? { certificado: config.certificado }
+        : {}),
+      ...(nota.provedor === "SEFAZ" ? { ufEmitente: config.emitter.uf } : {})
     }
   );
 
@@ -971,12 +976,14 @@ export async function createCartaCorrecao(scope: TenantScope, notaId: string, co
   const result = await provider.correct(
     { chaveAcesso: nota.chaveAcesso, providerRef: nota.providerRef, sequencia, correcao: correcao.trim() },
     {
-      ambiente: config.ambiente,
+      ambiente: nota.ambiente,
       provedor: nota.provedor,
       baseUrl: config.baseUrl,
       token: config.token,
       cscId: config.cscId,
-      cscToken: config.cscToken
+      cscToken: config.cscToken,
+      // SEFAZ (NF-e direto): CC-e exige assinatura + mTLS com o A1 e a UF do emitente.
+      ...(nota.provedor === "SEFAZ" ? { certificado: config.certificado, ufEmitente: config.emitter.uf } : {})
     }
   );
 
