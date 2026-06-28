@@ -1875,8 +1875,12 @@ model ConfiguracaoFiscal {
   tokenCriptografado       String?
   cscId                    String?
   cscTokenCriptografado    String?
+  // CSC da NFC-e por AMBIENTE (códigos distintos). Os campos sem sufixo são de HOMOLOGAÇÃO; os
+  // *Producao, de PRODUÇÃO. getFiscalRuntimeConfig entrega o par do ambiente ativo da empresa.
   nfceIdCsc                String?
   nfceCscCriptografado     String?
+  nfceIdCscProducao        String?
+  nfceCscProducaoCriptografado String?
   serieNfe                 String           @default("1")
   serieNfce                String           @default("1")
   serieNfse                String           @default("1")

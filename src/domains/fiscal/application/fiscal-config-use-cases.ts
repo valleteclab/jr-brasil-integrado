@@ -20,9 +20,11 @@ export type FiscalConfigSummary = {
   hasToken: boolean;
   cscId: string;
   hasCscToken: boolean;
-  /** CSC da NFC-e (ACBr): idCSC (curto) + indicador de que o código já foi salvo. */
+  /** CSC da NFC-e por ambiente: idCSC (curto) + indicador de que o código já foi salvo. */
   nfceIdCsc: string;
   hasNfceCsc: boolean;
+  nfceIdCscProducao: string;
+  hasNfceCscProducao: boolean;
   serieNfe: string;
   serieNfce: string;
   serieNfse: string;
@@ -59,6 +61,8 @@ export type SaveFiscalConfigInput = {
   cscToken?: string;
   nfceIdCsc?: string;
   nfceCsc?: string;
+  nfceIdCscProducao?: string;
+  nfceCscProducao?: string;
   serieNfe?: string;
   serieNfce?: string;
   serieNfse?: string;
@@ -90,6 +94,8 @@ function toSummary(config: {
   cscTokenCriptografado: string | null;
   nfceIdCsc: string | null;
   nfceCscCriptografado: string | null;
+  nfceIdCscProducao: string | null;
+  nfceCscProducaoCriptografado: string | null;
   serieNfe: string;
   serieNfce: string;
   serieNfse: string;
@@ -121,6 +127,8 @@ function toSummary(config: {
     hasCscToken: Boolean(config?.cscTokenCriptografado),
     nfceIdCsc: config?.nfceIdCsc ?? "",
     hasNfceCsc: Boolean(config?.nfceCscCriptografado),
+    nfceIdCscProducao: config?.nfceIdCscProducao ?? "",
+    hasNfceCscProducao: Boolean(config?.nfceCscProducaoCriptografado),
     serieNfe: config?.serieNfe ?? "1",
     serieNfce: config?.serieNfce ?? "1",
     serieNfse: config?.serieNfse ?? "1",
@@ -205,6 +213,7 @@ export async function saveFiscalConfig(scope: TenantScope, input: SaveFiscalConf
   const tokenData = input.token?.trim() ? { tokenCriptografado: encryptSecret(input.token.trim()) } : {};
   const cscData = input.cscToken?.trim() ? { cscTokenCriptografado: encryptSecret(input.cscToken.trim()) } : {};
   const nfceCscData = input.nfceCsc?.trim() ? { nfceCscCriptografado: encryptSecret(input.nfceCsc.trim()) } : {};
+  const nfceCscProducaoData = input.nfceCscProducao?.trim() ? { nfceCscProducaoCriptografado: encryptSecret(input.nfceCscProducao.trim()) } : {};
 
   // Provedor de NFS-e: só altera quando o chamador envia (undefined = mantém o atual).
   const provedorServicosData =
@@ -237,7 +246,9 @@ export async function saveFiscalConfig(scope: TenantScope, input: SaveFiscalConf
       ultimoErro: null,
       ...tokenData,
       ...cscData,
-      ...nfceCscData
+      ...nfceCscData,
+      ...nfceCscProducaoData,
+      nfceIdCscProducao: input.nfceIdCscProducao?.trim() || null
     },
     create: {
       tenantId: scope.tenantId,
@@ -265,7 +276,9 @@ export async function saveFiscalConfig(scope: TenantScope, input: SaveFiscalConf
       observacoes: input.notes?.trim() || null,
       ...tokenData,
       ...cscData,
-      ...nfceCscData
+      ...nfceCscData,
+      ...nfceCscProducaoData,
+      nfceIdCscProducao: input.nfceIdCscProducao?.trim() || null
     }
   });
 
@@ -370,8 +383,12 @@ export async function getFiscalRuntimeConfig(scope: TenantScope) {
     token: tokenRuntime,
     cscId: cscIdRuntime,
     cscToken: config?.cscTokenCriptografado ? decryptSecret(config.cscTokenCriptografado) : null,
-    nfceIdCsc: config?.nfceIdCsc ?? null,
-    nfceCsc: config?.nfceCscCriptografado ? decryptSecret(config.nfceCscCriptografado) : null,
+    // CSC da NFC-e do AMBIENTE ativo (homologação x produção têm códigos distintos).
+    nfceIdCsc: (ambiente === "PRODUCAO" ? config?.nfceIdCscProducao : config?.nfceIdCsc) ?? null,
+    nfceCsc: (() => {
+      const cripto = ambiente === "PRODUCAO" ? config?.nfceCscProducaoCriptografado : config?.nfceCscCriptografado;
+      return cripto ? decryptSecret(cripto) : null;
+    })(),
     serieNfe: config?.serieNfe ?? "1",
     serieNfce: config?.serieNfce ?? "1",
     serieNfse: config?.serieNfse ?? "1",

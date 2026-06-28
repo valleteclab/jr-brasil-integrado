@@ -30,6 +30,7 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
   const [token, setToken] = useState("");
   const [cscToken, setCscToken] = useState("");
   const [nfceCsc, setNfceCsc] = useState("");
+  const [nfceCscProducao, setNfceCscProducao] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -235,6 +236,8 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
           cscToken: cscToken || undefined,
           nfceIdCsc: config.nfceIdCsc,
           nfceCsc: nfceCsc || undefined,
+          nfceIdCscProducao: config.nfceIdCscProducao,
+          nfceCscProducao: nfceCscProducao || undefined,
           serieNfe: config.serieNfe,
           serieNfce: config.serieNfce,
           serieNfse: config.serieNfse,
@@ -260,6 +263,7 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
       setToken("");
       setCscToken("");
       setNfceCsc("");
+      setNfceCscProducao("");
       setMessage("Configuração fiscal salva com sucesso.");
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Não foi possível salvar a configuração.");
@@ -382,30 +386,29 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
                 />
               </label>
             )}
-            {isAcbr && (
-              <>
-                <label>
-                  ID CSC (NFC-e)
-                  <input value={config.nfceIdCsc} onChange={(e) => update("nfceIdCsc", e.target.value)} placeholder="Ex.: 1" inputMode="numeric" />
-                </label>
-                <label>
-                  Código CSC (NFC-e){config.hasNfceCsc ? " (já salvo)" : ""}
-                  <input value={nfceCsc} onChange={(e) => setNfceCsc(e.target.value)} placeholder={config.hasNfceCsc ? "Manter CSC atual" : "Código de Segurança do Contribuinte"} />
-                </label>
-              </>
-            )}
-            {!isAcbr && (
-              <>
-                <label>
-                  CSC ID (NFC-e)
-                  <input value={config.cscId} onChange={(e) => update("cscId", e.target.value)} />
-                </label>
-                <label>
-                  CSC Token (NFC-e)
-                  <input value={cscToken} onChange={(e) => setCscToken(e.target.value)} placeholder={config.hasCscToken ? "Manter token atual" : "Informe o CSC"} />
-                </label>
-              </>
-            )}
+            {/* CSC da NFC-e (Código de Segurança do Contribuinte) — gerado no portal da SEFAZ da UF.
+                É POR AMBIENTE: homologação e produção têm códigos distintos. O sistema usa o par do
+                ambiente selecionado acima. Vale para os provedores que emitem NFC-e (SEFAZ e ACBr). */}
+            <label className="full" style={{ marginTop: 4 }}>
+              <strong style={{ fontSize: 12.5 }}>CSC da NFC-e (por ambiente)</strong>
+              <small className="block-muted">Gerado no portal da SEFAZ. Homologação e produção são códigos diferentes — o sistema usa o do ambiente selecionado.</small>
+            </label>
+            <label>
+              ID CSC — Homologação
+              <input value={config.nfceIdCsc} onChange={(e) => update("nfceIdCsc", e.target.value)} placeholder="Ex.: 1" inputMode="numeric" />
+            </label>
+            <label>
+              Código CSC — Homologação{config.hasNfceCsc ? " (já salvo)" : ""}
+              <input value={nfceCsc} onChange={(e) => setNfceCsc(e.target.value)} placeholder={config.hasNfceCsc ? "Manter CSC atual" : "CSC de homologação"} />
+            </label>
+            <label>
+              ID CSC — Produção
+              <input value={config.nfceIdCscProducao} onChange={(e) => update("nfceIdCscProducao", e.target.value)} placeholder="Ex.: 1" inputMode="numeric" />
+            </label>
+            <label>
+              Código CSC — Produção{config.hasNfceCscProducao ? " (já salvo)" : ""}
+              <input value={nfceCscProducao} onChange={(e) => setNfceCscProducao(e.target.value)} placeholder={config.hasNfceCscProducao ? "Manter CSC atual" : "CSC de produção"} />
+            </label>
           </div>
           <div className="erp-toolbar" style={{ borderBottom: "none", paddingBottom: 0, marginTop: 8, gap: 12, alignItems: "center" }}>
             <Button type="button" variant="light" onClick={testarConexao} disabled={testBusy}>
