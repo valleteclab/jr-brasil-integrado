@@ -82,7 +82,7 @@ export function buildEventoCancelamento(params: {
     `<tpEvento>${tpEvento}</tpEvento>` +
     `<nSeqEvento>${nSeq}</nSeqEvento>` +
     `<verEvento>1.00</verEvento>` +
-    `<detEvento versaoEvento="1.00">` +
+    `<detEvento versao="1.00">` +
     `<descEvento>Cancelamento</descEvento>` +
     `<nProt>${onlyDigits(params.nProt)}</nProt>` +
     `<xJust>${esc(sanitize(params.xJust))}</xJust>` +
@@ -116,7 +116,7 @@ export function buildEventoCCe(params: {
     `<tpEvento>${tpEvento}</tpEvento>` +
     `<nSeqEvento>${nSeq}</nSeqEvento>` +
     `<verEvento>1.00</verEvento>` +
-    `<detEvento versaoEvento="1.00">` +
+    `<detEvento versao="1.00">` +
     `<descEvento>Carta de Correcao</descEvento>` +
     `<xCorrecao>${esc(sanitize(params.xCorrecao))}</xCorrecao>` +
     `<xCondUso>${esc(COND_USO_CCE)}</xCondUso>` +
@@ -322,7 +322,7 @@ export async function enviarManifestacao(params: {
   }
 
   const detEvento =
-    `<detEvento versaoEvento="1.00">` +
+    `<detEvento versao="1.00">` +
     `<descEvento>${DESC_MANIFESTACAO[tpEvento]}</descEvento>` +
     (exigeJust ? `<xJust>${esc(xJust)}</xJust>` : "") +
     `</detEvento>`;
