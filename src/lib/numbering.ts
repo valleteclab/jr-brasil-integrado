@@ -1,4 +1,4 @@
-import type { Prisma } from "@prisma/client";
+import type { AmbienteFiscal, Prisma } from "@prisma/client";
 import type { TenantScope } from "@/lib/auth/dev-session";
 
 /** Delegate mínimo para descobrir o maior número legado ao semear a sequência (uma vez). */
@@ -75,22 +75,27 @@ export async function nextDocumentNumber(
 }
 
 /**
- * Reserva atomicamente o próximo número de documento fiscal de uma série/modelo,
+ * Reserva atomicamente o próximo número de documento fiscal de uma série/modelo/AMBIENTE,
  * incrementando a SequenciaFiscal. Deve rodar dentro de uma transação.
+ *
+ * A numeração é SEPARADA por ambiente: testes em HOMOLOGAÇÃO não consomem a numeração de
+ * PRODUÇÃO (senão criariam lacunas na faixa fiscal real, exigindo inutilização).
  */
 export async function nextFiscalNumber(
   tx: Prisma.TransactionClient,
   scope: TenantScope,
   modelo: "NFE" | "NFCE" | "NFSE",
-  serie: string
+  serie: string,
+  ambiente: AmbienteFiscal
 ) {
   const seq = await tx.sequenciaFiscal.upsert({
     where: {
-      tenantId_empresaId_modelo_serie: {
+      tenantId_empresaId_modelo_serie_ambiente: {
         tenantId: scope.tenantId,
         empresaId: scope.empresaId,
         modelo,
-        serie
+        serie,
+        ambiente
       }
     },
     update: { ultimoNumero: { increment: 1 } },
@@ -99,6 +104,7 @@ export async function nextFiscalNumber(
       empresaId: scope.empresaId,
       modelo,
       serie,
+      ambiente,
       ultimoNumero: 1
     }
   });

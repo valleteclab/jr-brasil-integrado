@@ -1905,18 +1905,20 @@ model ConfiguracaoFiscal {
 }
 
 model SequenciaFiscal {
-  id           String       @id @default(cuid())
+  id           String         @id @default(cuid())
   tenantId     String
   empresaId    String
-  empresa      Empresa      @relation(fields: [empresaId], references: [id])
+  empresa      Empresa        @relation(fields: [empresaId], references: [id])
   modelo       ModeloFiscal
   serie        String
-  ultimoNumero Int          @default(0)
-  ativo        Boolean      @default(true)
-  criadoEm     DateTime     @default(now())
-  atualizadoEm DateTime     @updatedAt
+  // Numeração SEPARADA por ambiente: testes em HOMOLOGAÇÃO não consomem a faixa de PRODUÇÃO.
+  ambiente     AmbienteFiscal @default(HOMOLOGACAO)
+  ultimoNumero Int            @default(0)
+  ativo        Boolean        @default(true)
+  criadoEm     DateTime       @default(now())
+  atualizadoEm DateTime       @updatedAt
 
-  @@unique([tenantId, empresaId, modelo, serie])
+  @@unique([tenantId, empresaId, modelo, serie, ambiente])
   @@index([tenantId, empresaId])
 }
 

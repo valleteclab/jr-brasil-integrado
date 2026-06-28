@@ -697,7 +697,7 @@ export async function emitFiscalDocument(
       return nota;
     }
 
-    const numero = await nextFiscalNumber(tx, scope, modelo, serie);
+    const numero = await nextFiscalNumber(tx, scope, modelo, serie, config.ambiente);
     const nota = await tx.notaFiscal.create({
       data: {
         tenantId: scope.tenantId,
@@ -745,29 +745,44 @@ export async function emitFiscalDocument(
       : {})
   };
 
+  // Monta o EmitInput para um dado número (reusado no retry de duplicidade).
+  const buildEmitInput = (numeroNota: number) => ({
+    document: {
+      ...document,
+      // O documento vem do builder com ambiente/provedor placeholder ("HOMOLOGACAO"/"MANUAL").
+      // O ambiente/provedor EFETIVOS são os da config da empresa — a NF-e/NFC-e usa document.ambiente,
+      // então sobrescrever aqui evita o conflito "ambiente solicitado x configurado para a empresa".
+      ambiente: config.ambiente,
+      provedor: config.provider,
+      serie,
+      itens: computedItems.map(({ item, cfop }) => ({ ...item, cfop: cfop ?? item.cfop }))
+    },
+    emitter: { ...config.emitter, regime: config.regime },
+    numero: numeroNota,
+    totals,
+    total,
+    integrationId: (links.pedidoVendaId ?? links.ordemServicoId ?? created.id).slice(0, 36),
+    computed: computedItems.map(({ numeroItem, cfop, taxes }) => ({ numeroItem, cfop, taxes }))
+  });
+
   let emitResult;
+  let numeroEmitido = Number(created.numero);
   try {
-    emitResult = await provider.emit(
-      {
-        document: {
-          ...document,
-          // O documento vem do builder com ambiente/provedor placeholder ("HOMOLOGACAO"/"MANUAL").
-          // O ambiente/provedor EFETIVOS são os da config da empresa — a NF-e/NFC-e usa document.ambiente,
-          // então sobrescrever aqui evita o conflito "ambiente solicitado x configurado para a empresa".
-          ambiente: config.ambiente,
-          provedor: config.provider,
-          serie,
-          itens: computedItems.map(({ item, cfop }) => ({ ...item, cfop: cfop ?? item.cfop }))
-        },
-        emitter: { ...config.emitter, regime: config.regime },
-        numero: Number(created.numero),
-        totals,
-        total,
-        integrationId: (links.pedidoVendaId ?? links.ordemServicoId ?? created.id).slice(0, 36),
-        computed: computedItems.map(({ numeroItem, cfop, taxes }) => ({ numeroItem, cfop, taxes }))
-      },
-      ctx
-    );
+    emitResult = await provider.emit(buildEmitInput(numeroEmitido), ctx);
+    // RETRY de DUPLICIDADE (cStat 539): o número já existe na SEFAZ (ex.: emitido por outro meio ou
+    // ambiente de teste dessincronizado). Avança a SequenciaFiscal e re-emite, pulando só os números
+    // realmente usados — sem queimar a faixa inteira. Limite de 30 tentativas.
+    let tentativasDup = 0;
+    while (
+      emitResult.status === "REJEITADA" &&
+      /\b539\b|duplicidade/i.test(emitResult.motivo ?? "") &&
+      tentativasDup < 30
+    ) {
+      tentativasDup++;
+      numeroEmitido = await runInTransaction((tx) => nextFiscalNumber(tx, scope, modelo, serie, config.ambiente), TX_OPTIONS);
+      await prisma.notaFiscal.update({ where: { id: created.id }, data: { numero: String(numeroEmitido) } });
+      emitResult = await provider.emit(buildEmitInput(numeroEmitido), ctx);
+    }
   } catch (error) {
     const motivo = error instanceof Error ? error.message : "Falha de comunicação com o provedor fiscal.";
     await runInTransaction(async (tx) => {
