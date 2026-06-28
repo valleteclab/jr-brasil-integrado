@@ -116,6 +116,49 @@ export function resolveSefazEndpoints(uf: string, ambiente: AmbienteFiscal): Sef
   );
 }
 
+// --------------------------------------------------------------------------------------------------
+// NFC-e (modelo 65) — autorizadoras por UF. ATENÇÃO: o autorizador da NFC-e NÃO é necessariamente o
+// mesmo da NF-e 55. A BAHIA, por exemplo, tem autorizador PRÓPRIO para a 55 mas DELEGA a NFC-e à
+// SVRS (host `nfce.svrs.rs.gov.br`, distinto do `nfe.svrs` da 55). Por isso uma tabela separada.
+// --------------------------------------------------------------------------------------------------
+
+const NFCE_SVRS_PROD: SefazEndpoints = {
+  autorizacao: "https://nfce.svrs.rs.gov.br/ws/NfeAutorizacao/NFeAutorizacao4.asmx",
+  retAutorizacao: "https://nfce.svrs.rs.gov.br/ws/NfeRetAutorizacao/NFeRetAutorizacao4.asmx",
+  consultaProtocolo: "https://nfce.svrs.rs.gov.br/ws/NfeConsulta/NfeConsulta4.asmx",
+  statusServico: "https://nfce.svrs.rs.gov.br/ws/NfeStatusServico/NfeStatusServico4.asmx",
+  inutilizacao: "https://nfce.svrs.rs.gov.br/ws/nfeinutilizacao/nfeinutilizacao4.asmx",
+  recepcaoEvento: "https://nfce.svrs.rs.gov.br/ws/recepcaoevento/recepcaoevento4.asmx"
+  // NFC-e não tem ConsultaCadastro.
+};
+
+const NFCE_SVRS_HOM: SefazEndpoints = {
+  autorizacao: "https://nfce-homologacao.svrs.rs.gov.br/ws/NfeAutorizacao/NFeAutorizacao4.asmx",
+  retAutorizacao: "https://nfce-homologacao.svrs.rs.gov.br/ws/NfeRetAutorizacao/NFeRetAutorizacao4.asmx",
+  consultaProtocolo: "https://nfce-homologacao.svrs.rs.gov.br/ws/NfeConsulta/NfeConsulta4.asmx",
+  statusServico: "https://nfce-homologacao.svrs.rs.gov.br/ws/NfeStatusServico/NfeStatusServico4.asmx",
+  inutilizacao: "https://nfce-homologacao.svrs.rs.gov.br/ws/nfeinutilizacao/nfeinutilizacao4.asmx",
+  recepcaoEvento: "https://nfce-homologacao.svrs.rs.gov.br/ws/recepcaoevento/recepcaoevento4.asmx"
+};
+
+/**
+ * UFs cuja NFC-e é autorizada pela SVRS. Inclui a BA (própria na 55, SVRS na 65) e as 16 UFs SVRS da
+ * 55 (também SVRS na 65). UFs com autorizador PRÓPRIO de NFC-e (ex.: SP, MG, PR, GO, MT, MS, PE, AM,
+ * RS) entram sob demanda quando uma empresa daquela UF for cadastrada — nunca assumir URL não verificada.
+ */
+const UF_NFCE_SVRS = new Set<string>([...UF_SVRS, "BA"]);
+
+/** Endpoints de NFC-e (modelo 65) para a UF + ambiente. Lança se a UF ainda não é suportada. */
+export function resolveNfceEndpoints(uf: string, ambiente: AmbienteFiscal): SefazEndpoints {
+  const sigla = (uf ?? "").trim().toUpperCase();
+  if (UF_NFCE_SVRS.has(sigla)) {
+    return ambiente === "PRODUCAO" ? NFCE_SVRS_PROD : NFCE_SVRS_HOM;
+  }
+  throw new Error(
+    `UF ${sigla || "(vazia)"} ainda não suportada para NFC-e (SVRS): ${[...UF_NFCE_SVRS].sort().join(", ")}.`
+  );
+}
+
 export function cUFFromUF(uf: string): string {
   const code = CODIGO_UF[(uf ?? "").trim().toUpperCase()];
   if (!code) throw new Error(`UF inválida para cUF: "${uf}".`);

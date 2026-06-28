@@ -284,6 +284,7 @@ function ibsCbsItemXml(taxes: ItemTaxResult | undefined) {
 export function buildNfeXml(input: EmitInput): BuildNfeResult {
   const e = input.emitter;
   const doc = input.document;
+  const isNfce = doc.modelo === "NFCE";
   const simples = isSimplesRegime(e.regime);
   const ufEmit = (e.uf ?? "").toUpperCase();
   const ufDest = (doc.destinatario.endereco?.uf ?? doc.destinatario.uf ?? ufEmit).toUpperCase();
@@ -292,7 +293,7 @@ export function buildNfeXml(input: EmitInput): BuildNfeResult {
   const tpAmb = doc.ambiente === "PRODUCAO" ? "1" : "2";
   const serie = String(Number(doc.serie) || 1);
   const nNF = input.numero;
-  const mod = "55";
+  const mod = isNfce ? "65" : "55";
   const tpEmis = "1";
 
   const dhEmi = dhEmiBrasilia();
@@ -302,9 +303,10 @@ export function buildNfeXml(input: EmitInput): BuildNfeResult {
   });
 
   // idDest: 1=interna, 2=interestadual, 3=exterior. indFinal: 1 quando destinatário não-contribuinte.
-  const idDest = ufEmit && ufDest && ufEmit !== ufDest ? "2" : "1";
-  const indFinal = doc.destinatario.inscricaoEstadual ? "0" : "1";
-  const tpNF = doc.finalidade === "DEVOLUCAO" ? "0" : "1";
+  // NFC-e é sempre intraestadual (idDest=1), consumidor final (indFinal=1) e saída (tpNF=1).
+  const idDest = isNfce ? "1" : ufEmit && ufDest && ufEmit !== ufDest ? "2" : "1";
+  const indFinal = isNfce || !doc.destinatario.inscricaoEstadual ? "1" : "0";
+  const tpNF = !isNfce && doc.finalidade === "DEVOLUCAO" ? "0" : "1";
   const refChave = onlyDigits(doc.chaveReferenciada);
 
   const ide =
@@ -313,9 +315,10 @@ export function buildNfeXml(input: EmitInput): BuildNfeResult {
     tag("natOp", esc(sanitize(doc.naturezaOperacao) || "VENDA")) +
     `<mod>${mod}</mod><serie>${serie}</serie><nNF>${nNF}</nNF>` +
     // dhSaiEnt: data/hora de saída (venda) ou entrada (devolução). Igual à emissão, como fazem os
-    // demais emissores — preenche os campos "DATA/HORA SAÍDA" da DANFE (vinham em branco sem ele).
-    `<dhEmi>${dhEmi}</dhEmi><dhSaiEnt>${dhEmi}</dhSaiEnt><tpNF>${tpNF}</tpNF><idDest>${idDest}</idDest>` +
-    `<cMunFG>${cMunFG}</cMunFG><tpImp>1</tpImp><tpEmis>${tpEmis}</tpEmis><cDV>${cDV}</cDV>` +
+    // demais emissores — preenche os campos "DATA/HORA SAÍDA" da DANFE. A NFC-e NÃO usa dhSaiEnt.
+    `<dhEmi>${dhEmi}</dhEmi>${isNfce ? "" : `<dhSaiEnt>${dhEmi}</dhSaiEnt>`}<tpNF>${tpNF}</tpNF><idDest>${idDest}</idDest>` +
+    // tpImp: 1 = DANFE (NF-e 55); 4 = DANFE NFC-e (cupom).
+    `<cMunFG>${cMunFG}</cMunFG><tpImp>${isNfce ? "4" : "1"}</tpImp><tpEmis>${tpEmis}</tpEmis><cDV>${cDV}</cDV>` +
     `<tpAmb>${tpAmb}</tpAmb><finNFe>${finNFe(doc.finalidade)}</finNFe>` +
     `<indFinal>${indFinal}</indFinal><indPres>1</indPres><procEmi>0</procEmi><verProc>ERP-1.0</verProc>` +
     (refChave.length === 44 ? `<NFref><refNFe>${refChave}</refNFe></NFref>` : "") +
@@ -332,7 +335,9 @@ export function buildNfeXml(input: EmitInput): BuildNfeResult {
     `<CRT>${crt(e.regime)}</CRT>` +
     `</emit>`;
 
-  const dest = destXml(input, tpAmb);
+  // NFC-e: destinatário é OPCIONAL (consumidor não identificado) — só inclui quando há CPF/CNPJ.
+  const temDocDest = onlyDigits(doc.destinatario.documento).length >= 11;
+  const dest = isNfce && !temDocDest ? "" : destXml(input, tpAmb);
 
   // autXML: grupo de autorização de download do XML, exigido por algumas UFs (BA rejeita sem ele).
   // Vai entre <dest> e <det> conforme a ordem do schema 4.00.
@@ -383,7 +388,11 @@ export function buildNfeXml(input: EmitInput): BuildNfeResult {
       `<prod>` +
       tag("cProd", esc(cProd)) +
       `<cEAN>SEM GTIN</cEAN>` +
-      tag("xProd", esc(sanitize(item.descricao) || cProd)) +
+      // NFC-e em homologação: a SEFAZ exige a descrição fixa no PRIMEIRO item (não há destinatário
+      // com xNome para carregar o aviso, como na NF-e 55). cStat 373 sem isso.
+      tag("xProd", isNfce && tpAmb === "2" && numeroItem === 1
+        ? "NOTA FISCAL EMITIDA EM AMBIENTE DE HOMOLOGACAO - SEM VALOR FISCAL"
+        : esc(sanitize(item.descricao) || cProd)) +
       tag("NCM", ncm) +
       (item.cest ? tag("CEST", onlyDigits(item.cest)) : "") +
       tag("CFOP", cfop) +

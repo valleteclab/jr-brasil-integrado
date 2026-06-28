@@ -40,6 +40,10 @@ export type ProviderContext = {
   token: string | null;
   cscId: string | null;
   cscToken: string | null;
+  /** NFC-e (SEFAZ direto): identificador do CSC (cIdToken) e o CSC já descriptografado, do cadastro
+   *  da empresa. Usados para o hash do QR Code (infNFeSupl). O CSC nunca é logado/persistido em claro. */
+  nfceIdCsc?: string | null;
+  nfceCsc?: string | null;
   /** Spedy: "COMPLETO" (padrao) ou "SIMPLIFICADO" (/orders). */
   emissionMode?: string | null;
   /** NFS-e: override do ambiente do município — true=nacional, false=padrão, null/undefined=auto. */

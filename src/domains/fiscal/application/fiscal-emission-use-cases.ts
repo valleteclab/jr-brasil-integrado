@@ -746,8 +746,9 @@ export async function emitFiscalDocument(
     // Certificado A1 só é necessário (e só é carregado) para o NACIONAL na NFS-e.
     ...(isNfse && provedorAlvo === "NACIONAL" ? { certificado: config.certificado } : {}),
     // NF-e direto na SEFAZ: precisa do A1 (assinar + TLS-mútuo) e da UF do emitente (autorizadora/cUF).
+    // NFC-e (mod 65) usa, além disso, o CSC + idCSC do cadastro para o QR Code (infNFeSupl).
     ...(!isNfse && provedorAlvo === "SEFAZ"
-      ? { certificado: config.certificado, ufEmitente: config.emitter.uf }
+      ? { certificado: config.certificado, ufEmitente: config.emitter.uf, nfceIdCsc: config.nfceIdCsc, nfceCsc: config.nfceCsc }
       : {})
   };
 

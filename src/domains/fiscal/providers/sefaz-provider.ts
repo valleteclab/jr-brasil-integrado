@@ -14,7 +14,8 @@ import type {
   CancelInput, CancelResult, CorrectionInput, CorrectionResult,
   EmitInput, EmitResult, FiscalProvider, ProviderContext, TestConnectionResult
 } from "./types";
-import { cUFFromUF, resolveSefazEndpoints } from "./sefaz/endpoints";
+import { cUFFromUF, resolveNfceEndpoints, resolveSefazEndpoints } from "./sefaz/endpoints";
+import { buildNfceQrCode } from "./sefaz/qrcode-nfce";
 import { NFE_NS, SOAP_ACTION, WSDL_NS, pickBlock, pickTag, postSoap, soapEnvelope } from "./sefaz/soap";
 import { buildNfeXml } from "./sefaz/nfe-xml";
 import { pfxToPem, signNfe } from "./sefaz/sign";
@@ -71,16 +72,17 @@ export class SefazFiscalProvider implements FiscalProvider {
     if (input.document.modelo === "NFSE") {
       return { status: "ERRO", motivo: "O provedor SEFAZ emite apenas NF-e/NFC-e (NFS-e segue pelo NACIONAL/ACBr)." };
     }
-    if (input.document.modelo === "NFCE") {
-      // NFC-e exige QR Code + CSC e DANFCE — fica para fase posterior.
-      return { status: "ERRO", motivo: "Emissão de NFC-e direto na SEFAZ ainda não implementada (NF-e modelo 55 primeiro)." };
-    }
+    const isNfce = input.document.modelo === "NFCE";
     if (!ctx.certificado?.pfx) {
-      return { status: "ERRO", motivo: "Certificado A1 não disponível para assinar/transmitir a NF-e." };
+      return { status: "ERRO", motivo: `Certificado A1 não disponível para assinar/transmitir a ${isNfce ? "NFC-e" : "NF-e"}.` };
     }
     const uf = (ctx.ufEmitente ?? input.emitter.uf ?? "").trim();
     if (!uf) {
-      return { status: "ERRO", motivo: "UF do emitente não definida — necessária para resolver a autorizadora da NF-e." };
+      return { status: "ERRO", motivo: "UF do emitente não definida — necessária para resolver a autorizadora." };
+    }
+    // NFC-e exige CSC + idCSC (do cadastro) para o QR Code do infNFeSupl.
+    if (isNfce && (!ctx.nfceCsc?.trim() || !ctx.nfceIdCsc?.trim())) {
+      return { status: "ERRO", motivo: "NFC-e exige CSC e idCSC cadastrados (Configurações → Fiscal → NFC-e)." };
     }
 
     let chave: string;
@@ -90,8 +92,16 @@ export class SefazFiscalProvider implements FiscalProvider {
       chave = built.chave;
       const { privateKeyPem, certPem } = pfxToPem(ctx.certificado.pfx, ctx.certificado.senha);
       signed = signNfe(built.xml, privateKeyPem, certPem);
+      if (isNfce) {
+        // infNFeSupl (QR Code + urlChave) vai entre </infNFe> e <Signature> (ordem do XSD). NÃO é
+        // assinado (a assinatura referencia o Id do infNFe), então inseri-lo após assinar é válido.
+        const tpAmb = input.document.ambiente === "PRODUCAO" ? "1" : "2";
+        const qr = buildNfceQrCode({ chave, tpAmb, idCsc: ctx.nfceIdCsc!, csc: ctx.nfceCsc!, uf, ambiente: ctx.ambiente });
+        const supl = `<infNFeSupl><qrCode><![CDATA[${qr.qrCode}]]></qrCode><urlChave>${qr.urlChave}</urlChave></infNFeSupl>`;
+        signed = signed.replace(/<Signature\b/, `${supl}<Signature`);
+      }
     } catch (e) {
-      return { status: "ERRO", motivo: `Falha ao montar/assinar a NF-e: ${e instanceof Error ? e.message : String(e)}` };
+      return { status: "ERRO", motivo: `Falha ao montar/assinar a ${isNfce ? "NFC-e" : "NF-e"}: ${e instanceof Error ? e.message : String(e)}` };
     }
 
     // Lote síncrono (indSinc=1): a SEFAZ devolve o protNFe direto no retorno.
@@ -100,7 +110,8 @@ export class SefazFiscalProvider implements FiscalProvider {
       `<enviNFe versao="4.00" xmlns="${NFE_NS}">` +
       `<idLote>${idLote}</idLote><indSinc>1</indSinc>${signed}` +
       `</enviNFe>`;
-    const endpoints = resolveSefazEndpoints(uf, ctx.ambiente);
+    // NFC-e tem autorizadora própria (a BA delega à SVRS); NF-e 55 usa a tabela da UF.
+    const endpoints = isNfce ? resolveNfceEndpoints(uf, ctx.ambiente) : resolveSefazEndpoints(uf, ctx.ambiente);
     const res = await postSoap(endpoints.autorizacao, soapEnvelope(WSDL_NS.autorizacao, enviNFe), ctx.certificado, SOAP_ACTION.autorizacao);
 
     const protNFe = pickBlock(res.body, "protNFe");
