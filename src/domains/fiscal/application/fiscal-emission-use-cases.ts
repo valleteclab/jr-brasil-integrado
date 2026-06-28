@@ -1059,7 +1059,7 @@ export async function downloadNotaFiscalDocumento(
     }
     // DANFE em PDF no padrão MOC (lib nfe-danfe-pdf + quadro IBS/CBS da Reforma) a partir do nfeProc.
     const cfg = await getFiscalRuntimeConfig(scope);
-    const pdf = await gerarDanfePdf(nota.xml, { cancelada: nota.status === "CANCELADA", logoDataUrl: cfg.logotipoInfo });
+    const pdf = await gerarDanfePdf(nota.xml, { cancelada: nota.status === "CANCELADA", logoDataUrl: cfg.logotipoConteudo });
     return { contentType: "application/pdf", body: pdf, filename: `${nota.modelo}-${nota.numero}.pdf` };
   }
 

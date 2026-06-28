@@ -1893,6 +1893,9 @@ model ConfiguracaoFiscal {
   certificadoInfo          String?
   certificadoValidade      DateTime?
   logotipoInfo             String?
+  // Conteudo da logo (data URL base64 PNG/JPEG) para o DANFE proprio (SEFAZ direto); o ACBr guarda
+  // a sua copia no backoffice deles. logotipoInfo mantem so o nome do arquivo (exibicao).
+  logotipoConteudo         String?
   nfseAmbienteNacional     Boolean?
   ativo                    Boolean          @default(false)
   testadoEm                DateTime?

@@ -603,13 +603,13 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
         </div>
       </div>
 
-      {isAcbr && (
+      {(
         <div className="erp-card">
           <div className="erp-card-head"><h3>Logo da empresa (DANFE/cupom)</h3></div>
           <div className="erp-card-body">
             <p style={{ fontSize: 12.5, color: "var(--erp-mute)", margin: "0 0 12px" }}>
-              Envie a logo da sua empresa em <b>PNG ou JPEG</b> (até <b>200 KB</b>). Ela é enviada ao
-              cadastro da empresa na ACBr e aparece no topo do <b>DANFE/DANFCE/DANFSE</b> impresso.
+              Envie a logo da sua empresa em <b>PNG ou JPEG</b> (até <b>200 KB</b>). Ela aparece no topo
+              do <b>DANFE/DANFCE/DANFSE</b>{isAcbr ? " (e é enviada ao cadastro da empresa na ACBr)" : ""}.
               {config.logotipoInfo ? ` Atual: ${config.logotipoInfo}.` : ""}
             </p>
             {logoErr && <div className="alert danger" style={{ marginBottom: 10 }}><span>{logoErr}</span></div>}

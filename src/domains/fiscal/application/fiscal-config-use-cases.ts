@@ -376,6 +376,7 @@ export async function getFiscalRuntimeConfig(scope: TenantScope) {
     serieNfce: config?.serieNfce ?? "1",
     serieNfse: config?.serieNfse ?? "1",
     logotipoInfo: config?.logotipoInfo ?? null,
+    logotipoConteudo: config?.logotipoConteudo ?? null,
     active: config?.ativo ?? true,
     emitter: {
       razaoSocial: empresa.razaoSocial,

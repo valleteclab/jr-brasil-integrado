@@ -31,25 +31,28 @@ export async function uploadFiscalLogotipo(
   }
 
   const config = await getFiscalRuntimeConfig(scope);
-  if (config.provider !== "ACBR") {
-    throw new LogotipoUploadError("O envio de logo pela plataforma está disponível para o provedor ACBr.");
+
+  // Guarda a logo como data URL LOCALMENTE (usada no DANFE próprio do provedor SEFAZ direto). Quando
+  // o provedor for ACBr, envia também a cópia para o backoffice deles (DANFE renderizado lá).
+  const dataUrl = `data:${input.mimeType};base64,${input.buffer.toString("base64")}`;
+  let result: { ok: boolean; message: string } = { ok: true, message: "Logo salva." };
+
+  if (config.provider === "ACBR") {
+    const ctx: ProviderContext = {
+      ambiente: config.ambiente,
+      provedor: config.provider,
+      baseUrl: config.baseUrl,
+      token: config.token,
+      cscId: config.cscId,
+      cscToken: config.cscToken
+    };
+    result = await uploadAcbrLogotipo(ctx, config.emitter.cnpj, input.buffer, input.mimeType, input.filename);
+    if (!result.ok) throw new LogotipoUploadError(result.message);
   }
-
-  const ctx: ProviderContext = {
-    ambiente: config.ambiente,
-    provedor: config.provider,
-    baseUrl: config.baseUrl,
-    token: config.token,
-    cscId: config.cscId,
-    cscToken: config.cscToken
-  };
-
-  const result = await uploadAcbrLogotipo(ctx, config.emitter.cnpj, input.buffer, input.mimeType, input.filename);
-  if (!result.ok) throw new LogotipoUploadError(result.message);
 
   await prisma.configuracaoFiscal.update({
     where: { empresaId: scope.empresaId },
-    data: { logotipoInfo: input.filename || "Logo" }
+    data: { logotipoInfo: input.filename || "Logo", logotipoConteudo: dataUrl }
   });
 
   await prisma.$transaction(async (tx) => {
@@ -68,25 +71,25 @@ export async function uploadFiscalLogotipo(
 /** Remove a logo da empresa no provedor (ACBr) e limpa o metadado local. */
 export async function removeFiscalLogotipo(scope: TenantScope): Promise<{ ok: boolean; message: string }> {
   const config = await getFiscalRuntimeConfig(scope);
-  if (config.provider !== "ACBR") {
-    throw new LogotipoUploadError("A remoção de logo pela plataforma está disponível para o provedor ACBr.");
+
+  // No ACBr, remove a cópia do backoffice deles; nos demais provedores basta limpar o local.
+  let result: { ok: boolean; message: string } = { ok: true, message: "Logo removida." };
+  if (config.provider === "ACBR") {
+    const ctx: ProviderContext = {
+      ambiente: config.ambiente,
+      provedor: config.provider,
+      baseUrl: config.baseUrl,
+      token: config.token,
+      cscId: config.cscId,
+      cscToken: config.cscToken
+    };
+    result = await deleteAcbrLogotipo(ctx, config.emitter.cnpj);
+    if (!result.ok) throw new LogotipoUploadError(result.message);
   }
-
-  const ctx: ProviderContext = {
-    ambiente: config.ambiente,
-    provedor: config.provider,
-    baseUrl: config.baseUrl,
-    token: config.token,
-    cscId: config.cscId,
-    cscToken: config.cscToken
-  };
-
-  const result = await deleteAcbrLogotipo(ctx, config.emitter.cnpj);
-  if (!result.ok) throw new LogotipoUploadError(result.message);
 
   await prisma.configuracaoFiscal.update({
     where: { empresaId: scope.empresaId },
-    data: { logotipoInfo: null }
+    data: { logotipoInfo: null, logotipoConteudo: null }
   });
 
   await prisma.$transaction(async (tx) => {
