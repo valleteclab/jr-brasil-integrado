@@ -28,13 +28,18 @@ export async function syncNotaFiscalStatus(scope: TenantScope, notaId: string) {
   const config = await getFiscalRuntimeConfig(scope);
   const provider = resolveFiscalProvider(nota.provedor);
   const ctx: ProviderContext = {
-    ambiente: config.ambiente,
+    ambiente: nota.ambiente,
     provedor: nota.provedor,
     baseUrl: config.baseUrl,
     emissionMode: config.emissionMode,
     token: config.token,
     cscId: config.cscId,
-    cscToken: config.cscToken
+    cscToken: config.cscToken,
+    // Provedores diretos (mTLS + assinatura) precisam do A1; o SEFAZ ainda da UF do emitente.
+    ...((nota.modelo === "NFSE" && nota.provedor === "NACIONAL") || nota.provedor === "SEFAZ"
+      ? { certificado: config.certificado }
+      : {}),
+    ...(nota.provedor === "SEFAZ" ? { ufEmitente: config.emitter.uf } : {})
   };
 
   const result = await provider.queryStatus(nota.providerRef, ctx);

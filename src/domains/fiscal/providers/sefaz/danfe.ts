@@ -106,12 +106,19 @@ export type DanfeItem = {
   cProd: string;
   xProd: string;
   ncm: string;
+  cstOrig: string;        // CST/CSOSN com origem (ex.: "0 00" / "0 102")
   cfop: string;
   uCom: string;
   qCom: string;
   vUnCom: string;
   vProd: string;
+  vBcIcms: string;
+  vIcms: string;
+  aliqIcms: string;
 };
+
+export type DanfeEndereco = { lgr: string; nro: string; cpl: string; bairro: string; mun: string; uf: string; cep: string; fone: string };
+export type DanfeParte = { nome: string; fantasia: string; doc: { label: string; value: string }; ie: string; end: DanfeEndereco; email: string };
 
 export type DanfeData = {
   chave: string;          // 44 dígitos (do atributo Id="NFe...")
@@ -119,32 +126,42 @@ export type DanfeData = {
   serie: string;
   natOp: string;
   dhEmi: string;
+  dhSaiEnt: string;
   tpNF: string;           // 0=entrada, 1=saída
   tpAmb: string;          // 1=produção, 2=homologação
   protocolo: string;      // nProt
   dhProt: string;         // dhRecbto do protNFe
-  emit: { nome: string; fantasia: string; doc: { label: string; value: string }; ie: string; ender: string };
-  dest: { nome: string; doc: { label: string; value: string }; ie: string; ender: string };
+  emit: DanfeParte;
+  dest: DanfeParte;
+  transp: { modFrete: string; nome: string; doc: string; ie: string; end: string; placa: string; ufVeic: string; qVol: string; esp: string; pesoL: string; pesoB: string };
   itens: DanfeItem[];
   totais: {
-    vProd: string; vNF: string; vICMS: string; vBC: string; vDesc: string;
-    vFrete: string; vSeg: string; vOutro: string; vST: string; vBCST: string; vPIS: string; vCOFINS: string;
+    vProd: string; vNF: string; vICMS: string; vBC: string; vDesc: string; vFrete: string; vSeg: string;
+    vOutro: string; vST: string; vBCST: string; vPIS: string; vCOFINS: string; vIPI: string; vTotTrib: string;
   };
   infCpl: string;
+  infFisco: string;
 };
 
-/** Monta um endereço de uma linha a partir de um bloco enderEmit/enderDest. */
-function enderecoLinha(end: string): string {
-  if (!end) return "";
-  const partes = [
-    pick(end, "xLgr"),
-    pick(end, "nro") ? `nº ${pick(end, "nro")}` : "",
-    pick(end, "xCpl"),
-    pick(end, "xBairro"),
-    [pick(end, "xMun"), pick(end, "UF")].filter(Boolean).join("/"),
-    pick(end, "CEP") ? `CEP ${pick(end, "CEP")}` : "",
-  ].filter(Boolean);
-  return partes.join(" - ");
+const cepFmt = (v: string) => { const d = onlyDigits(v); return d.length === 8 ? `${d.slice(0, 5)}-${d.slice(5)}` : v; };
+const foneFmt = (v: string) => {
+  const d = onlyDigits(v);
+  if (d.length === 11) return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
+  if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+  return v;
+};
+
+/** Extrai os campos de um bloco de endereço (enderEmit/enderDest). */
+function parseEndereco(end: string): DanfeEndereco {
+  return {
+    lgr: pick(end, "xLgr"), nro: pick(end, "nro"), cpl: pick(end, "xCpl"), bairro: pick(end, "xBairro"),
+    mun: pick(end, "xMun"), uf: pick(end, "UF"), cep: pick(end, "CEP"), fone: pick(end, "fone")
+  };
+}
+
+/** Endereço em uma linha (logradouro, nº, complemento, bairro). */
+function enderecoLinha(e: DanfeEndereco): string {
+  return [e.lgr, e.nro ? `nº ${e.nro}` : "", e.cpl, e.bairro].filter(Boolean).join(", ");
 }
 
 /**
@@ -167,21 +184,38 @@ export function parseNfeProc(nfeProcXml: string): DanfeData {
   const emitEnder = pickBlock(emitBlock, "enderEmit");
   const destEnder = pickBlock(destBlock, "enderDest");
 
-  // Itens: usamos o índice 1-based como nItem (a ordem do det no XML é a ordem dos itens). Não
-  // dependemos do atributo nItem do <det> porque pickAll captura só o conteúdo interno.
+  const transpBlock = pickBlock(xml, "transp");
+  const veic = pickBlock(transpBlock, "veicTransp");
+  const vol = pickBlock(transpBlock, "vol");
+  const transporta = pickBlock(transpBlock, "transporta");
+
+  // Itens: usamos o índice 1-based como nItem (a ordem do det no XML é a ordem dos itens). O ICMS
+  // de cada item está em um subgrupo (ICMS00/ICMS10/ICMSSN.../etc.) — pegamos os campos comuns.
   const itens: DanfeItem[] = pickAll(xml, "det").map((det, i) => {
     const prod = pickBlock(det, "prod");
+    const imp = pickBlock(det, "imposto");
+    const orig = pick(imp, "orig");
+    const cst = pick(imp, "CST") || pick(imp, "CSOSN");
     return {
       nItem: String(i + 1),
       cProd: pick(prod, "cProd"),
       xProd: pick(prod, "xProd"),
       ncm: pick(prod, "NCM"),
+      cstOrig: [orig, cst].filter(Boolean).join(" "),
       cfop: pick(prod, "CFOP"),
       uCom: pick(prod, "uCom"),
       qCom: pick(prod, "qCom"),
       vUnCom: pick(prod, "vUnCom"),
       vProd: pick(prod, "vProd"),
+      vBcIcms: pick(imp, "vBC"),
+      vIcms: pick(imp, "vICMS"),
+      aliqIcms: pick(imp, "pICMS"),
     };
+  });
+
+  const parte = (block: string, ender: string): DanfeParte => ({
+    nome: pick(block, "xNome"), fantasia: pick(block, "xFant"), doc: pickDoc(block),
+    ie: pick(block, "IE"), end: parseEndereco(ender), email: pick(block, "email")
   });
 
   return {
@@ -190,39 +224,30 @@ export function parseNfeProc(nfeProcXml: string): DanfeData {
     serie: pick(ide, "serie"),
     natOp: pick(ide, "natOp"),
     dhEmi: pick(ide, "dhEmi"),
+    dhSaiEnt: pick(ide, "dhSaiEnt"),
     tpNF: pick(ide, "tpNF"),
     tpAmb: pick(ide, "tpAmb"),
     protocolo: pick(protBlock, "nProt"),
     dhProt: pick(protBlock, "dhRecbto"),
-    emit: {
-      nome: pick(emitBlock, "xNome"),
-      fantasia: pick(emitBlock, "xFant"),
-      doc: pickDoc(emitBlock),
-      ie: pick(emitBlock, "IE"),
-      ender: enderecoLinha(emitEnder),
-    },
-    dest: {
-      nome: pick(destBlock, "xNome"),
-      doc: pickDoc(destBlock),
-      ie: pick(destBlock, "IE"),
-      ender: enderecoLinha(destEnder),
+    emit: parte(emitBlock, emitEnder),
+    dest: parte(destBlock, destEnder),
+    transp: {
+      modFrete: pick(transpBlock, "modFrete"),
+      nome: pick(transporta, "xNome"), doc: pick(transporta, "CNPJ") || pick(transporta, "CPF"),
+      ie: pick(transporta, "IE"), end: pick(transporta, "xEnder"),
+      placa: pick(veic, "placa"), ufVeic: pick(veic, "UF"),
+      qVol: pick(vol, "qVol"), esp: pick(vol, "esp"), pesoL: pick(vol, "pesoL"), pesoB: pick(vol, "pesoB")
     },
     itens,
     totais: {
-      vProd: pick(totalBlock, "vProd"),
-      vNF: pick(totalBlock, "vNF"),
-      vICMS: pick(totalBlock, "vICMS"),
-      vBC: pick(totalBlock, "vBC"),
-      vDesc: pick(totalBlock, "vDesc"),
-      vFrete: pick(totalBlock, "vFrete"),
-      vSeg: pick(totalBlock, "vSeg"),
-      vOutro: pick(totalBlock, "vOutro"),
-      vST: pick(totalBlock, "vST"),
-      vBCST: pick(totalBlock, "vBCST"),
-      vPIS: pick(totalBlock, "vPIS"),
-      vCOFINS: pick(totalBlock, "vCOFINS"),
+      vProd: pick(totalBlock, "vProd"), vNF: pick(totalBlock, "vNF"), vICMS: pick(totalBlock, "vICMS"),
+      vBC: pick(totalBlock, "vBC"), vDesc: pick(totalBlock, "vDesc"), vFrete: pick(totalBlock, "vFrete"),
+      vSeg: pick(totalBlock, "vSeg"), vOutro: pick(totalBlock, "vOutro"), vST: pick(totalBlock, "vST"),
+      vBCST: pick(totalBlock, "vBCST"), vPIS: pick(totalBlock, "vPIS"), vCOFINS: pick(totalBlock, "vCOFINS"),
+      vIPI: pick(totalBlock, "vIPI"), vTotTrib: pick(totalBlock, "vTotTrib")
     },
     infCpl: pick(pickBlock(xml, "infAdic"), "infCpl"),
+    infFisco: pick(pickBlock(xml, "infAdic"), "infAdFisco"),
   };
 }
 
@@ -339,35 +364,37 @@ export function consultaNfeNacionalUrl(chave: string, tpAmb: string): string {
 // Montagem do HTML do DANFE (A4 retrato, CSS inline para impressão).
 // --------------------------------------------------------------------------------------------------
 
-function boxLabel(label: string, value: string): string {
-  return `<div class="cell"><span class="lbl">${escHtml(label)}</span><span class="val">${escHtml(value) || "&nbsp;"}</span></div>`;
+function cel(label: string, value: string, flex = 1): string {
+  return `<div class="cel" style="flex:${flex}"><span class="lbl">${escHtml(label)}</span><span class="val">${escHtml(value) || "&nbsp;"}</span></div>`;
 }
 
-function renderHtml(d: DanfeData): string {
-  const tipo = d.tpNF === "0" ? "0 - ENTRADA" : "1 - SAÍDA";
-  const homolog =
-    d.tpAmb === "2"
-      ? `<div class="homolog">AMBIENTE DE HOMOLOGAÇÃO - SEM VALOR FISCAL</div>`
-      : "";
+const MOD_FRETE: Record<string, string> = {
+  "0": "0 - Por conta do emitente", "1": "1 - Por conta do destinatário", "2": "2 - Por conta de terceiros",
+  "3": "3 - Próprio (remetente)", "4": "4 - Próprio (destinatário)", "9": "9 - Sem frete"
+};
 
-  const itensRows = d.itens
-    .map(
-      (it) => `
-      <tr>
-        <td class="c">${escHtml(it.nItem)}</td>
-        <td>${escHtml(it.cProd)}</td>
-        <td>${escHtml(it.xProd)}</td>
-        <td class="c">${escHtml(it.ncm)}</td>
-        <td class="c">${escHtml(it.cfop)}</td>
-        <td class="c">${escHtml(it.uCom)}</td>
-        <td class="r">${escHtml(qtd(it.qCom))}</td>
-        <td class="r">${escHtml(brl(it.vUnCom))}</td>
-        <td class="r">${escHtml(brl(it.vProd))}</td>
-      </tr>`
-    )
-    .join("");
+export type DanfeOptions = { logoDataUrl?: string | null };
 
+function renderHtml(d: DanfeData, opts?: DanfeOptions): string {
+  const homolog = d.tpAmb === "2" ? `<div class="homolog">AMBIENTE DE HOMOLOGAÇÃO — SEM VALOR FISCAL</div>` : "";
+  const logo = opts?.logoDataUrl ? `<img class="logo" src="${escHtml(opts.logoDataUrl)}" alt="logo"/>` : "";
   const t = d.totais;
+
+  const itensRows = d.itens.map((it) => `
+    <tr>
+      <td class="c">${escHtml(it.cProd)}</td>
+      <td>${escHtml(it.xProd)}</td>
+      <td class="c">${escHtml(it.ncm)}</td>
+      <td class="c">${escHtml(it.cstOrig)}</td>
+      <td class="c">${escHtml(it.cfop)}</td>
+      <td class="c">${escHtml(it.uCom)}</td>
+      <td class="r">${escHtml(qtd(it.qCom))}</td>
+      <td class="r">${escHtml(brl(it.vUnCom))}</td>
+      <td class="r">${escHtml(brl(it.vProd))}</td>
+      <td class="r">${escHtml(brl(it.vBcIcms))}</td>
+      <td class="r">${escHtml(brl(it.vIcms))}</td>
+      <td class="r">${escHtml(it.aliqIcms || "0")}</td>
+    </tr>`).join("");
 
   return `<!DOCTYPE html>
 <html lang="pt-BR">
@@ -376,37 +403,48 @@ function renderHtml(d: DanfeData): string {
 <title>DANFE ${escHtml(d.nNF)} - ${escHtml(d.chave)}</title>
 <style>
   * { box-sizing: border-box; }
-  @page { size: A4 portrait; margin: 8mm; }
-  body { font-family: Arial, Helvetica, sans-serif; font-size: 9px; color: #000; margin: 0; }
-  .danfe { width: 194mm; margin: 0 auto; }
-  .box { border: 1px solid #000; }
+  @page { size: A4 portrait; margin: 5mm; }
+  body { font-family: Arial, Helvetica, sans-serif; font-size: 8px; color: #000; margin: 0; background: #f5f6f8; }
+  .danfe { width: 200mm; margin: 0 auto; background: #fff; padding: 2px; }
   .row { display: flex; }
-  .cell { border: 1px solid #000; padding: 2px 4px; flex: 1; overflow: hidden; }
-  .lbl { display: block; font-size: 7px; color: #333; text-transform: uppercase; }
-  .val { display: block; font-size: 10px; font-weight: bold; }
-  .title { text-align: center; font-weight: bold; }
-  .header { display: flex; align-items: stretch; }
-  .header .emit { flex: 2; padding: 4px; border: 1px solid #000; }
-  .header .danfe-id { flex: 1; padding: 4px; border: 1px solid #000; text-align: center; }
-  .header .barcode { flex: 2; padding: 4px; border: 1px solid #000; text-align: center; }
-  .emit .nome { font-size: 13px; font-weight: bold; }
-  .danfe-id .big { font-size: 18px; font-weight: bold; }
-  .danfe-id .tipo { display: inline-block; border: 1px solid #000; width: 22px; text-align: center; font-weight: bold; margin: 2px; }
-  .barcode .chave { font-family: "Courier New", monospace; font-size: 9px; word-spacing: 2px; margin-top: 3px; }
-  table.itens { width: 100%; border-collapse: collapse; margin-top: 4px; }
-  table.itens th, table.itens td { border: 1px solid #000; padding: 2px 3px; font-size: 8px; }
-  table.itens th { background: #eee; text-transform: uppercase; }
+  .cel { border: 1px solid #000; padding: 1px 4px; flex: 1; overflow: hidden; min-width: 0; }
+  .lbl { display: block; font-size: 6px; color: #333; text-transform: uppercase; }
+  .val { display: block; font-size: 9px; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .val.wrap { white-space: normal; }
+  /* Canhoto */
+  .canhoto { border: 1px solid #000; display: flex; }
+  .canhoto .receb { flex: 3; border-right: 1px solid #000; padding: 2px 4px; }
+  .canhoto .data { flex: 1; border-right: 1px solid #000; padding: 2px 4px; }
+  .canhoto .ass { flex: 2; border-right: 1px solid #000; padding: 2px 4px; }
+  .canhoto .nfe { flex: 1; padding: 2px 4px; text-align: center; font-weight: bold; }
+  .canhoto .nfe b { font-size: 12px; }
+  .tracejado { border-bottom: 1px dashed #000; margin: 3px 0; }
+  /* Cabeçalho */
+  .header { display: flex; border: 1px solid #000; margin-top: 1px; }
+  .header .emit { flex: 2.2; padding: 4px; border-right: 1px solid #000; display: flex; gap: 6px; align-items: flex-start; }
+  .header .emit .logo { max-height: 46px; max-width: 80px; }
+  .header .emit .nome { font-size: 12px; font-weight: bold; }
+  .header .danfe-id { flex: 1; padding: 4px; border-right: 1px solid #000; text-align: center; }
+  .header .danfe-id .big { font-size: 16px; font-weight: bold; }
+  .header .danfe-id .tipo { display: inline-flex; gap: 4px; align-items: center; justify-content: center; margin: 2px 0; }
+  .header .danfe-id .tipo b { border: 1px solid #000; padding: 0 5px; font-size: 12px; }
+  .header .barcode { flex: 2; padding: 4px; text-align: center; }
+  .barcode .chave { font-family: "Courier New", monospace; font-size: 8.5px; letter-spacing: .3px; margin-top: 2px; }
+  .barcode .qr svg { width: 78px; height: 78px; margin-top: 3px; }
+  table.itens { width: 100%; border-collapse: collapse; }
+  table.itens th, table.itens td { border: 1px solid #000; padding: 1px 3px; font-size: 7px; }
+  table.itens th { background: #e8e8e8; text-transform: uppercase; }
   td.c, th.c { text-align: center; }
   td.r, th.r { text-align: right; }
-  .secao { font-weight: bold; background: #eee; border: 1px solid #000; padding: 1px 4px; margin-top: 4px; text-transform: uppercase; }
-  .homolog { text-align: center; color: #b00; font-weight: bold; border: 2px solid #b00; padding: 4px; margin: 4px 0; letter-spacing: 1px; }
-  .note { font-size: 7px; color: #555; margin-top: 6px; text-align: center; }
-  .barcode .qr { margin-top: 4px; }
-  .barcode .qr svg { width: 96px; height: 96px; }
-  .toolbar { text-align: center; padding: 10px; background: #f3f4f6; border-bottom: 1px solid #ccc; }
-  .toolbar button { font-size: 13px; font-weight: bold; padding: 7px 16px; cursor: pointer; border: 1px solid #555; border-radius: 4px; background: #fff; }
-  .toolbar .hint { display: block; font-size: 10px; color: #555; margin-top: 4px; }
-  @media print { .no-print { display: none !important; } @page { size: A4 portrait; margin: 8mm; } }
+  .secao { font-weight: bold; background: #ddd; border: 1px solid #000; border-bottom: 0; padding: 0 4px; margin-top: 2px; text-transform: uppercase; font-size: 7px; }
+  .homolog { text-align: center; color: #b00; font-weight: bold; border: 2px solid #b00; padding: 3px; margin: 3px 0; letter-spacing: 1px; }
+  .danfe > .row > .cel { border-top: 0; }
+  .danfe > .row { border: 0; }
+  .note { font-size: 6.5px; color: #555; margin-top: 4px; text-align: center; }
+  .toolbar { text-align: center; padding: 10px; background: #fff; border-bottom: 1px solid #ddd; }
+  .toolbar button { font-size: 13px; font-weight: bold; padding: 8px 18px; cursor: pointer; border: 0; border-radius: 5px; background: #243b53; color: #fff; }
+  .toolbar .hint { display: block; font-size: 10px; color: #555; margin-top: 5px; }
+  @media print { body { background: #fff; } .no-print { display: none !important; } .danfe { width: auto; } @page { size: A4 portrait; margin: 5mm; } }
 </style>
 </head>
 <body>
@@ -417,103 +455,125 @@ function renderHtml(d: DanfeData): string {
 <div class="danfe">
   ${homolog}
 
+  <!-- Canhoto -->
+  <div class="canhoto">
+    <div class="receb"><span class="lbl">Recebemos de ${escHtml(d.emit.nome)} os produtos/serviços constantes da nota fiscal indicada ao lado</span></div>
+    <div class="data"><span class="lbl">Data de recebimento</span></div>
+    <div class="ass"><span class="lbl">Identificação e assinatura do recebedor</span></div>
+    <div class="nfe"><span class="lbl">NF-e</span><b>Nº ${escHtml(d.nNF.padStart(9, "0"))}</b><div>Série ${escHtml(d.serie)}</div></div>
+  </div>
+  <div class="tracejado"></div>
+
+  <!-- Cabeçalho -->
   <div class="header">
     <div class="emit">
-      <div class="title">RECEBEMOS DE ${escHtml(d.emit.nome)} OS PRODUTOS CONSTANTES DA NOTA FISCAL ELETRÔNICA INDICADA AO LADO</div>
-      <div class="nome" style="margin-top:6px">${escHtml(d.emit.nome)}</div>
-      <div>${escHtml(d.emit.fantasia)}</div>
-      <div>${escHtml(d.emit.ender)}</div>
-      <div>${escHtml(d.emit.doc.label)}: ${escHtml(docFmt(d.emit.doc.label, d.emit.doc.value))} &nbsp; IE: ${escHtml(d.emit.ie)}</div>
+      ${logo}
+      <div>
+        <div class="nome">${escHtml(d.emit.nome)}</div>
+        <div>${escHtml(enderecoLinha(d.emit.end))}</div>
+        <div>${escHtml([d.emit.end.mun, d.emit.end.uf].filter(Boolean).join("/"))} ${d.emit.end.cep ? `· CEP ${escHtml(cepFmt(d.emit.end.cep))}` : ""}</div>
+        <div>${d.emit.end.fone ? `Fone: ${escHtml(foneFmt(d.emit.end.fone))}` : ""}</div>
+      </div>
     </div>
     <div class="danfe-id">
       <div class="big">DANFE</div>
-      <div>Documento Auxiliar da NF-e</div>
-      <div style="margin-top:4px">
-        <span class="tipo">${escHtml(d.tpNF === "0" ? "0" : "1")}</span>
-        <span style="font-size:7px">${escHtml(tipo)}</span>
-      </div>
-      <div style="margin-top:4px"><strong>Nº</strong> ${escHtml(d.nNF.padStart(9, "0"))}</div>
-      <div><strong>SÉRIE</strong> ${escHtml(d.serie)}</div>
-      <div><strong>MODELO</strong> 55</div>
+      <div style="font-size:7px">Documento Auxiliar da<br/>Nota Fiscal Eletrônica</div>
+      <div class="tipo"><span style="font-size:6px">0-Entrada<br/>1-Saída</span><b>${escHtml(d.tpNF === "0" ? "0" : "1")}</b></div>
+      <div><b>Nº</b> ${escHtml(d.nNF.padStart(9, "0"))}</div>
+      <div><b>Série</b> ${escHtml(d.serie)} · <b>Mod</b> 55</div>
+      <div style="font-size:6px">Folha 1/1</div>
     </div>
     <div class="barcode">
-      <div style="font-size:7px">CHAVE DE ACESSO</div>
+      <div style="font-size:6px">CHAVE DE ACESSO</div>
       ${code128cBars(d.chave)}
       <div class="chave">${escHtml(chaveFormatada(d.chave))}</div>
       <div class="qr">${qrCodeSvg(consultaNfeNacionalUrl(d.chave, d.tpAmb))}</div>
-      <div style="font-size:7px;margin-top:2px">Consulte esta NF-e pela chave de acesso no<br/>portal nacional — www.nfe.fazenda.gov.br/portal</div>
+      <div style="font-size:6px;margin-top:1px">Consulte pela chave em www.nfe.fazenda.gov.br/portal</div>
     </div>
   </div>
 
   <div class="row">
-    ${boxLabel("NATUREZA DA OPERAÇÃO", d.natOp)}
-    ${boxLabel("PROTOCOLO DE AUTORIZAÇÃO DE USO", [d.protocolo, dhFmt(d.dhProt)].filter(Boolean).join(" - "))}
+    ${cel("Natureza da operação", d.natOp, 2)}
+    ${cel("Protocolo de autorização de uso", [d.protocolo, dhFmt(d.dhProt)].filter(Boolean).join(" - "), 2)}
   </div>
   <div class="row">
-    ${boxLabel("DATA DE EMISSÃO", dhFmt(d.dhEmi))}
-    ${boxLabel("INSCRIÇÃO ESTADUAL (EMITENTE)", d.emit.ie)}
+    ${cel("Inscrição estadual", d.emit.ie)}
+    ${cel("Inscr. estadual subst. trib.", "")}
+    ${cel("CNPJ", docFmt("CNPJ", d.emit.doc.value), 1.4)}
   </div>
 
   <div class="secao">Destinatário / Remetente</div>
   <div class="row">
-    ${boxLabel("NOME / RAZÃO SOCIAL", d.dest.nome)}
-    ${boxLabel(d.dest.doc.label, docFmt(d.dest.doc.label, d.dest.doc.value))}
-    ${boxLabel("INSCRIÇÃO ESTADUAL", d.dest.ie)}
+    ${cel("Nome / Razão social", d.dest.nome, 3)}
+    ${cel(d.dest.doc.label, docFmt(d.dest.doc.label, d.dest.doc.value), 1.4)}
+    ${cel("Data de emissão", dhFmt(d.dhEmi).slice(0, 10))}
   </div>
   <div class="row">
-    ${boxLabel("ENDEREÇO", d.dest.ender)}
+    ${cel("Endereço", enderecoLinha(d.dest.end), 3)}
+    ${cel("Bairro", d.dest.end.bairro)}
+    ${cel("CEP", cepFmt(d.dest.end.cep))}
+    ${cel("Data saída/entrada", dhFmt(d.dhSaiEnt).slice(0, 10))}
+  </div>
+  <div class="row">
+    ${cel("Município", d.dest.end.mun, 2)}
+    ${cel("UF", d.dest.end.uf)}
+    ${cel("Fone", foneFmt(d.dest.end.fone))}
+    ${cel("Inscrição estadual", d.dest.ie)}
+  </div>
+
+  <div class="secao">Cálculo do Imposto</div>
+  <div class="row">
+    ${cel("Base de cálculo do ICMS", brl(t.vBC))}
+    ${cel("Valor do ICMS", brl(t.vICMS))}
+    ${cel("Base cálc. ICMS ST", brl(t.vBCST))}
+    ${cel("Valor do ICMS ST", brl(t.vST))}
+    ${cel("Valor aprox. tributos", brl(t.vTotTrib))}
+    ${cel("Valor total produtos", brl(t.vProd))}
+  </div>
+  <div class="row">
+    ${cel("Valor do frete", brl(t.vFrete))}
+    ${cel("Valor do seguro", brl(t.vSeg))}
+    ${cel("Desconto", brl(t.vDesc))}
+    ${cel("Outras despesas", brl(t.vOutro))}
+    ${cel("Valor do IPI", brl(t.vIPI))}
+    ${cel("Valor total da nota", brl(t.vNF))}
+  </div>
+
+  <div class="secao">Transportador / Volumes Transportados</div>
+  <div class="row">
+    ${cel("Nome / Razão social", d.transp.nome || "—", 2)}
+    ${cel("Frete por conta", MOD_FRETE[d.transp.modFrete] ?? d.transp.modFrete, 1.5)}
+    ${cel("Placa do veículo", d.transp.placa)}
+    ${cel("UF", d.transp.ufVeic)}
+    ${cel("CNPJ/CPF", d.transp.doc ? docFmt("CNPJ", d.transp.doc) : "—", 1.4)}
+  </div>
+  <div class="row">
+    ${cel("Quantidade", d.transp.qVol)}
+    ${cel("Espécie", d.transp.esp)}
+    ${cel("Peso líquido", d.transp.pesoL)}
+    ${cel("Peso bruto", d.transp.pesoB)}
   </div>
 
   <div class="secao">Dados dos Produtos / Serviços</div>
   <table class="itens">
     <thead>
       <tr>
-        <th class="c">Item</th>
-        <th>Código</th>
-        <th>Descrição</th>
-        <th class="c">NCM</th>
-        <th class="c">CFOP</th>
-        <th class="c">Un</th>
-        <th class="r">Qtd</th>
-        <th class="r">Vl. Unit.</th>
-        <th class="r">Vl. Total</th>
+        <th>Código</th><th>Descrição</th><th class="c">NCM</th><th class="c">CST</th><th class="c">CFOP</th>
+        <th class="c">Un</th><th class="r">Qtd</th><th class="r">Vl. Unit.</th><th class="r">Vl. Total</th>
+        <th class="r">BC ICMS</th><th class="r">Vl. ICMS</th><th class="r">Alíq.</th>
       </tr>
     </thead>
     <tbody>
-      ${itensRows || `<tr><td colspan="9" class="c">Sem itens</td></tr>`}
+      ${itensRows || `<tr><td colspan="12" class="c">Sem itens</td></tr>`}
     </tbody>
   </table>
 
-  <div class="secao">Cálculo do Imposto</div>
+  <div class="secao">Dados Adicionais</div>
   <div class="row">
-    ${boxLabel("BASE DE CÁLCULO ICMS", brl(t.vBC))}
-    ${boxLabel("VALOR DO ICMS", brl(t.vICMS))}
-    ${boxLabel("BASE CÁLCULO ICMS ST", brl(t.vBCST))}
-    ${boxLabel("VALOR DO ICMS ST", brl(t.vST))}
-    ${boxLabel("VALOR TOTAL DOS PRODUTOS", brl(t.vProd))}
-  </div>
-  <div class="row">
-    ${boxLabel("VALOR DO FRETE", brl(t.vFrete))}
-    ${boxLabel("VALOR DO SEGURO", brl(t.vSeg))}
-    ${boxLabel("DESCONTO", brl(t.vDesc))}
-    ${boxLabel("OUTRAS DESPESAS", brl(t.vOutro))}
-    ${boxLabel("VALOR TOTAL DA NOTA", brl(t.vNF))}
-  </div>
-  <div class="row">
-    ${boxLabel("VALOR DO PIS", brl(t.vPIS))}
-    ${boxLabel("VALOR DA COFINS", brl(t.vCOFINS))}
+    ${cel("Informações complementares", [d.infCpl, d.infFisco].filter(Boolean).join(" | "), 1)}
   </div>
 
-  ${
-    d.infCpl
-      ? `<div class="secao">Dados Adicionais</div><div class="cell"><span class="val" style="font-weight:normal">${escHtml(d.infCpl)}</span></div>`
-      : ""
-  }
-
-  <div class="note">
-    DANFE gerado pela plataforma a partir do XML autorizado (nfeProc). Para PDF, use
-    "Imprimir &rarr; Salvar como PDF" no navegador.
-  </div>
+  <div class="note">DANFE gerado pela plataforma a partir do XML autorizado (nfeProc). Para PDF, use "Imprimir → Salvar como PDF" no navegador.</div>
 </div>
 </body>
 </html>`;
@@ -528,9 +588,9 @@ function renderHtml(d: DanfeData): string {
  *
  * @param nfeProcXml XML do `nfeProc` (NF-e modelo 55 + protNFe) autorizado.
  */
-export function buildDanfe(nfeProcXml: string): { contentType: string; body: Buffer; filename: string } {
+export function buildDanfe(nfeProcXml: string, opts?: DanfeOptions): { contentType: string; body: Buffer; filename: string } {
   const data = parseNfeProc(nfeProcXml);
-  const html = renderHtml(data);
+  const html = renderHtml(data, opts);
   const filename = `DANFE-${data.chave || "nfe"}.html`;
   return {
     contentType: "text/html; charset=utf-8",

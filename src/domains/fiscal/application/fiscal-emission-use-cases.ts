@@ -1051,7 +1051,8 @@ export async function downloadNotaFiscalDocumento(
     if (kind === "xml") {
       return { contentType: "application/xml", body: Buffer.from(nota.xml, "utf8"), filename: `${nota.modelo}-${nota.numero}.xml` };
     }
-    const danfe = buildDanfe(nota.xml);
+    const cfg = await getFiscalRuntimeConfig(scope);
+    const danfe = buildDanfe(nota.xml, { logoDataUrl: cfg.logotipoInfo });
     return { contentType: danfe.contentType, body: danfe.body, filename: danfe.filename };
   }
 
