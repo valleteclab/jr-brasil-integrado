@@ -139,6 +139,8 @@ export type DanfeData = {
     vProd: string; vNF: string; vICMS: string; vBC: string; vDesc: string; vFrete: string; vSeg: string;
     vOutro: string; vST: string; vBCST: string; vPIS: string; vCOFINS: string; vIPI: string; vTotTrib: string;
   };
+  /** Reforma Tributária (IBS/CBS/IS) — presente quando o XML traz IBSCBSTot. Null quando ausente. */
+  reforma: { vBC: string; vIBS: string; vIBSUF: string; vIBSMun: string; vCBS: string; vIS: string } | null;
   infCpl: string;
   infFisco: string;
 };
@@ -179,6 +181,8 @@ export function parseNfeProc(nfeProcXml: string): DanfeData {
   const emitBlock = pickBlock(xml, "emit");
   const destBlock = pickBlock(xml, "dest");
   const totalBlock = pickBlock(xml, "ICMSTot");
+  const ibsCbsTotBlock = pickBlock(xml, "IBSCBSTot");
+  const isTotBlock = pickBlock(xml, "ISTot");
   const protBlock = pickBlock(xml, "protNFe") || pickBlock(xml, "infProt");
 
   const emitEnder = pickBlock(emitBlock, "enderEmit");
@@ -246,6 +250,18 @@ export function parseNfeProc(nfeProcXml: string): DanfeData {
       vBCST: pick(totalBlock, "vBCST"), vPIS: pick(totalBlock, "vPIS"), vCOFINS: pick(totalBlock, "vCOFINS"),
       vIPI: pick(totalBlock, "vIPI"), vTotTrib: pick(totalBlock, "vTotTrib")
     },
+    // IBS/CBS: vIBS está no gIBS e vCBS no gCBS (cada um o 1º da sua tag dentro do bloco). IS vem
+    // do ISTot (grupo próprio), quando houver. Null se o XML não tiver o totalizador da Reforma.
+    reforma: ibsCbsTotBlock
+      ? {
+          vBC: pick(ibsCbsTotBlock, "vBCIBSCBS"),
+          vIBS: pick(pickBlock(ibsCbsTotBlock, "gIBS"), "vIBS"),
+          vIBSUF: pick(pickBlock(ibsCbsTotBlock, "gIBSUF"), "vIBSUF"),
+          vIBSMun: pick(pickBlock(ibsCbsTotBlock, "gIBSMun"), "vIBSMun"),
+          vCBS: pick(pickBlock(ibsCbsTotBlock, "gCBS"), "vCBS"),
+          vIS: pick(isTotBlock, "vIS")
+        }
+      : null,
     infCpl: pick(pickBlock(xml, "infAdic"), "infCpl"),
     infFisco: pick(pickBlock(xml, "infAdic"), "infAdFisco"),
   };
@@ -379,6 +395,20 @@ function renderHtml(d: DanfeData, opts?: DanfeOptions): string {
   const homolog = d.tpAmb === "2" ? `<div class="homolog">AMBIENTE DE HOMOLOGAÇÃO — SEM VALOR FISCAL</div>` : "";
   const logo = opts?.logoDataUrl ? `<img class="logo" src="${escHtml(opts.logoDataUrl)}" alt="logo"/>` : "";
   const t = d.totais;
+
+  // Quadro da Reforma (IBS/CBS/IS) — só quando o XML traz o totalizador (NT 2025.002).
+  const r = d.reforma;
+  const reformaBloco = r
+    ? `<div class="secao">Tributos da Reforma — IBS / CBS / IS (NT 2025.002)</div>
+  <div class="row">
+    ${cel("Base de cálculo IBS/CBS", brl(r.vBC), 1.5)}
+    ${cel("IBS Estadual (UF)", brl(r.vIBSUF))}
+    ${cel("IBS Municipal", brl(r.vIBSMun))}
+    ${cel("Valor total do IBS", brl(r.vIBS))}
+    ${cel("Valor da CBS", brl(r.vCBS))}
+    ${cel("Imposto Seletivo (IS)", brl(r.vIS))}
+  </div>`
+    : "";
 
   const itensRows = d.itens.map((it) => `
     <tr>
@@ -538,6 +568,7 @@ function renderHtml(d: DanfeData, opts?: DanfeOptions): string {
     ${cel("Valor do IPI", brl(t.vIPI))}
     ${cel("Valor total da nota", brl(t.vNF))}
   </div>
+  ${reformaBloco}
 
   <div class="secao">Transportador / Volumes Transportados</div>
   <div class="row">
