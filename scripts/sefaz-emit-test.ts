@@ -30,7 +30,7 @@ const input: EmitInput = {
     modalidadeBcSt: null, percentualMva: 0, baseIcmsSt: 0, aliquotaIcmsSt: 0, valorIcmsSt: 0,
     cstIpi: null, aliquotaIpi: 0, valorIpi: 0, cstPis: "49", aliquotaPis: 0, valorPis: 0,
     cstCofins: "49", aliquotaCofins: 0, valorCofins: 0, itemListaServico: null, aliquotaIss: 0, valorIss: 0,
-    baseIbsCbs: 0, aliquotaIbs: 0, valorIbs: 0, aliquotaCbs: 0, valorCbs: 0, aliquotaIs: 0, valorIs: 0, valorTributos: 0, cClassTrib: null } }]
+    baseIbsCbs: 250, aliquotaIbs: 0.1, valorIbs: 0.25, aliquotaCbs: 0.9, valorCbs: 2.25, aliquotaIs: 0, valorIs: 0, valorTributos: 0, cClassTrib: "000001", cstIbsCbs: "000" } }]
 } as unknown as EmitInput;
 
 const ctx = { ambiente: "HOMOLOGACAO", provedor: "SEFAZ", baseUrl: null, token: null, cscId: null, cscToken: null,

@@ -11,6 +11,7 @@ import {
   loadSalesTaxRules
 } from "../tax-engine";
 import { isSubstituicaoTributaria, resolveCfopDevolucao, resolveCfopVenda } from "../cfop";
+import { reformaBaseline } from "../national-tax-baseline";
 import type { ItemTaxResult, NormalizedFiscalDocument, NormalizedFiscalItem } from "../types";
 import { resolveFiscalProvider } from "../providers";
 import type { ProviderContext } from "../providers/types";
@@ -53,6 +54,9 @@ function mirrorTaxesFromOriginal(
   // Fração devolvida: total (1) quando devolve tudo; proporcional na parcial. Nunca > 1.
   const fracao = qtdOriginal > 0 ? Math.min(qtdDevolvida / qtdOriginal, 1) : 1;
   const rateia = (valor: number) => round2(valor * fracao);
+  // Base e alíquotas-base de IBS/CBS do item devolvido (Reforma).
+  const baseDevol = round2(Math.max(devItem.valorTotal - devItem.desconto, 0));
+  const reformaBl = reformaBaseline();
 
   return {
     origem: original.origem ?? devItem.origem ?? "0",
@@ -81,17 +85,19 @@ function mirrorTaxesFromOriginal(
     itemListaServico: original.itemListaServico,
     aliquotaIss: num(original.aliquotaIss),
     valorIss: rateia(num(original.valorIss)),
-    // Reforma Tributária (IBS/CBS/IS): a original não persiste estes campos; mantém zerado
-    // (informativo, não vai no XML em 2026). Devolução não destaca IBS/CBS adicionais.
-    baseIbsCbs: 0,
-    aliquotaIbs: 0,
-    valorIbs: 0,
-    aliquotaCbs: 0,
-    valorCbs: 0,
+    // Reforma Tributária (IBS/CBS): a original (venda pré-Reforma) não persiste os valores, então
+    // a devolução destaca o IBS/CBS sobre o valor devolvido com as alíquotas-base do período (igual
+    // à saída espelhada), para que o estorno carregue o tributo. IS = 0 (só produtos específicos).
+    baseIbsCbs: baseDevol,
+    aliquotaIbs: reformaBl.ibs,
+    valorIbs: round2(baseDevol * (reformaBl.ibs / 100)),
+    aliquotaCbs: reformaBl.cbs,
+    valorCbs: round2(baseDevol * (reformaBl.cbs / 100)),
     aliquotaIs: 0,
     valorIs: 0,
     valorTributos: rateia(num(original.valorTributos)),
-    cClassTrib: original.cClassTrib
+    cClassTrib: original.cClassTrib,
+    cstIbsCbs: "000"
   };
 }
 

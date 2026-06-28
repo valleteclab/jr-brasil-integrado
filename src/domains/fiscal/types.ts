@@ -37,7 +37,10 @@ export type ItemTaxResult = {
   valorIs: number;
   /** Valor aproximado dos tributos do item (Lei 12.741 / transparência). */
   valorTributos: number;
+  /** Reforma: código de classificação tributária IBS/CBS (cClassTrib, 6 dígitos). */
   cClassTrib: string | null;
+  /** Reforma: CST do IBS/CBS (3 dígitos) — "000" = tributação integral (NT 2025.002). */
+  cstIbsCbs: string | null;
 };
 
 /** Item normalizado de um documento fiscal, pronto para cálculo e emissão. */

@@ -91,6 +91,9 @@ function computeReforma(
   const aliquotaIs = isRule ? num(isRule.aliquota) : bl.is;
   const reducao = num((cbsRule ?? ibsRule)?.reducaoBase) / 100;
   const baseIbsCbs = round2(base * (1 - reducao));
+  // CST do IBS/CBS: vem da regra cadastrada (CBS prevalece sobre IBS); sem regra, "000"
+  // (tributação integral). Espalhado em todos os ramos de computeItemTaxes via `...reforma`.
+  const cstIbsCbs = (cbsRule ?? ibsRule)?.cst ?? "000";
   return {
     baseIbsCbs,
     aliquotaIbs,
@@ -98,7 +101,8 @@ function computeReforma(
     aliquotaCbs,
     valorCbs: round2(baseIbsCbs * (aliquotaCbs / 100)),
     aliquotaIs,
-    valorIs: round2(base * (aliquotaIs / 100))
+    valorIs: round2(base * (aliquotaIs / 100)),
+    cstIbsCbs
   };
 }
 

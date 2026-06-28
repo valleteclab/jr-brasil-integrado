@@ -78,7 +78,7 @@ const sampleInput: EmitInput = {
       cstIpi: null, aliquotaIpi: 0, valorIpi: 0, cstPis: "49", aliquotaPis: 0, valorPis: 0,
       cstCofins: "49", aliquotaCofins: 0, valorCofins: 0, itemListaServico: null, aliquotaIss: 0, valorIss: 0,
       baseIbsCbs: 0, aliquotaIbs: 0, valorIbs: 0, aliquotaCbs: 0, valorCbs: 0, aliquotaIs: 0, valorIs: 0,
-      valorTributos: 0, cClassTrib: null
+      valorTributos: 0, cClassTrib: null, cstIbsCbs: "000"
     }
   }]
 };

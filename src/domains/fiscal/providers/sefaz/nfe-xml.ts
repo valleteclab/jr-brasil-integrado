@@ -227,6 +227,58 @@ export type BuildNfeResult = { xml: string; chave: string; cNF: string; cDV: str
  * Monta o XML da NF-e (não assinado): `<NFe xmlns=...><infNFe Id="NFe<chave>" versao="4.00">...`.
  * A assinatura (XMLDSig) é aplicada depois por `signNfe`.
  */
+/**
+ * Reforma Tributária (NT 2025.002) — a partir destas datas o grupo IBS/CBS é incluído no XML.
+ * Homologação libera o destaque no período de teste (desde 01/01/2026); produção passa a EXIGIR
+ * (e só então aceita) o grupo em 03/08/2026 para Lucro Presumido/Real — antes disso a SEFAZ de
+ * produção rejeita o elemento por schema. O gate por ambiente evita quebrar a emissão em produção.
+ */
+const REFORMA_XML_INICIO: Record<string, string> = {
+  HOMOLOGACAO: "2026-01-01",
+  PRODUCAO: "2026-08-03"
+};
+
+function reformaNoXml(ambiente: string): boolean {
+  const inicio = REFORMA_XML_INICIO[ambiente] ?? REFORMA_XML_INICIO.PRODUCAO;
+  return dhEmiBrasilia().slice(0, 10) >= inicio;
+}
+
+/** Formata alíquota da Reforma com 4 casas (pIBSUF/pIBSMun/pCBS aceitam 2 a 4 casas no XSD). */
+function fmtAliq(value: number): string {
+  return (Math.round((value + Number.EPSILON) * 10000) / 10000).toFixed(4);
+}
+
+/**
+ * Grupo IBSCBS (NT 2025.002) de um item — det/imposto/IBSCBS. No período de teste 2026 todo o IBS
+ * é de competência da UF (IBS-Mun = 0); CBS e IBS sobre a base do item (já com redução, se houver
+ * regra). CST/cClassTrib vêm do motor (default 000 / 000001 = tributação integral). Devolve o XML
+ * e os valores para reconciliar o totalizador IBSCBSTot (a SEFAZ valida total == soma dos itens).
+ */
+function ibsCbsItemXml(taxes: ItemTaxResult | undefined) {
+  const vBC = round2(taxes?.baseIbsCbs ?? 0);
+  const pIBSUF = taxes?.aliquotaIbs ?? 0; // período de teste: IBS integral na UF
+  const vIBSUF = round2(taxes?.valorIbs ?? 0);
+  const pIBSMun = 0;
+  const vIBSMun = 0;
+  const vIBS = round2(vIBSUF + vIBSMun);
+  const pCBS = taxes?.aliquotaCbs ?? 0;
+  const vCBS = round2(taxes?.valorCbs ?? 0);
+  const cst = (taxes?.cstIbsCbs ?? "000").padStart(3, "0");
+  const cClassTrib = (taxes?.cClassTrib ?? "000001").padStart(6, "0");
+  const xml =
+    `<IBSCBS>` +
+    `<CST>${cst}</CST><cClassTrib>${cClassTrib}</cClassTrib>` +
+    `<gIBSCBS>` +
+    `<vBC>${fmt(vBC)}</vBC>` +
+    `<gIBSUF><pIBSUF>${fmtAliq(pIBSUF)}</pIBSUF><vIBSUF>${fmt(vIBSUF)}</vIBSUF></gIBSUF>` +
+    `<gIBSMun><pIBSMun>${fmtAliq(pIBSMun)}</pIBSMun><vIBSMun>${fmt(vIBSMun)}</vIBSMun></gIBSMun>` +
+    `<vIBS>${fmt(vIBS)}</vIBS>` +
+    `<gCBS><pCBS>${fmtAliq(pCBS)}</pCBS><vCBS>${fmt(vCBS)}</vCBS></gCBS>` +
+    `</gIBSCBS>` +
+    `</IBSCBS>`;
+  return { xml, vBC, vIBSUF, vIBSMun, vIBS, vCBS };
+}
+
 export function buildNfeXml(input: EmitInput): BuildNfeResult {
   const e = input.emitter;
   const doc = input.document;
@@ -285,6 +337,9 @@ export function buildNfeXml(input: EmitInput): BuildNfeResult {
 
   // Itens + acúmulo de totais a partir do que é REALMENTE emitido (a SEFAZ valida ICMSTot vs soma).
   const sum = { vBC: 0, vICMS: 0, vFCP: 0, vProd: 0, vDesc: 0, vPIS: 0, vCOFINS: 0, vBCST: 0, vST: 0 };
+  // Reforma Tributária (IBS/CBS): só destaca no XML quando o gate do ambiente está aberto.
+  const emitirReforma = reformaNoXml(doc.ambiente);
+  const sumR = { vBC: 0, vIBSUF: 0, vIBSMun: 0, vIBS: 0, vCBS: 0 };
   const det = doc.itens.map((item, index) => {
     const numeroItem = index + 1;
     const taxes = input.computed.find((c) => c.numeroItem === numeroItem)?.taxes;
@@ -339,13 +394,46 @@ export function buildNfeXml(input: EmitInput): BuildNfeResult {
       (item.desconto > 0 ? tag("vDesc", fmt(item.desconto)) : "") +
       `<indTot>1</indTot>` +
       `</prod>`;
+    // Reforma (IBS/CBS): grupo IBSCBS por item, após PIS/COFINS (é o último grupo de imposto do
+    // item no leiaute: ...ICMSUFDest/IS/IBSCBS). Acumula para o totalizador IBSCBSTot.
+    let ibsCbs = "";
+    if (emitirReforma) {
+      const r = ibsCbsItemXml(taxes);
+      ibsCbs = r.xml;
+      sumR.vBC = round2(sumR.vBC + r.vBC);
+      sumR.vIBSUF = round2(sumR.vIBSUF + r.vIBSUF);
+      sumR.vIBSMun = round2(sumR.vIBSMun + r.vIBSMun);
+      sumR.vIBS = round2(sumR.vIBS + r.vIBS);
+      sumR.vCBS = round2(sumR.vCBS + r.vCBS);
+    }
     // Devolução (finNFe=4): cada item leva o grupo impostoDevol — percentual de mercadoria
     // devolvida (100% = devolução total) + IPI devolvido (0 quando não há IPI destacado).
     const impostoDevol = doc.finalidade === "DEVOLUCAO"
       ? `<impostoDevol><pDevol>100.00</pDevol><IPI><vIPIDevol>${fmt(taxes?.valorIpi ?? 0)}</vIPIDevol></IPI></impostoDevol>`
       : "";
-    return `<det nItem="${numeroItem}">${prod}<imposto>${icms}${pis.xml}${cofins.xml}</imposto>${impostoDevol}</det>`;
+    return `<det nItem="${numeroItem}">${prod}<imposto>${icms}${pis.xml}${cofins.xml}${ibsCbs}</imposto>${impostoDevol}</det>`;
   }).join("");
+
+  // Totalizador IBS/CBS (NT 2025.002) — soma dos itens (a SEFAZ valida total == Σ itens). Vem
+  // após ICMSTot no grupo <total>. Campos de diferimento/devolução/crédito presumido = 0 no caso
+  // de tributação integral (período de teste). Só emitido com o gate da Reforma aberto.
+  // Ordem conforme XSD oficial (TIBSCBSMonoTot, PL_010b v1.30): em gIBS os subgrupos UF/Mun e vIBS
+  // vêm ANTES de vCredPres/vCredPresCondSus; em cada subgrupo a ordem é vDif → vDevTrib → valor.
+  const ibsCbsTot = emitirReforma
+    ? `<IBSCBSTot>` +
+      `<vBCIBSCBS>${fmt(sumR.vBC)}</vBCIBSCBS>` +
+      `<gIBS>` +
+      `<gIBSUF><vDif>0.00</vDif><vDevTrib>0.00</vDevTrib><vIBSUF>${fmt(sumR.vIBSUF)}</vIBSUF></gIBSUF>` +
+      `<gIBSMun><vDif>0.00</vDif><vDevTrib>0.00</vDevTrib><vIBSMun>${fmt(sumR.vIBSMun)}</vIBSMun></gIBSMun>` +
+      `<vIBS>${fmt(sumR.vIBS)}</vIBS>` +
+      `<vCredPres>0.00</vCredPres><vCredPresCondSus>0.00</vCredPresCondSus>` +
+      `</gIBS>` +
+      `<gCBS>` +
+      `<vDif>0.00</vDif><vDevTrib>0.00</vDevTrib><vCBS>${fmt(sumR.vCBS)}</vCBS>` +
+      `<vCredPres>0.00</vCredPres><vCredPresCondSus>0.00</vCredPresCondSus>` +
+      `</gCBS>` +
+      `</IBSCBSTot>`
+    : "";
 
   const total =
     `<total><ICMSTot>` +
@@ -358,7 +446,7 @@ export function buildNfeXml(input: EmitInput): BuildNfeResult {
     `<vII>0.00</vII><vIPI>${fmt(input.totals.valorIpi)}</vIPI><vIPIDevol>0.00</vIPIDevol>` +
     `<vPIS>${fmt(sum.vPIS)}</vPIS><vCOFINS>${fmt(sum.vCOFINS)}</vCOFINS>` +
     `<vOutro>${fmt(doc.outrasDespesas)}</vOutro><vNF>${fmt(input.total)}</vNF>` +
-    `</ICMSTot></total>`;
+    `</ICMSTot>${ibsCbsTot}</total>`;
 
   const modFrete = doc.modalidadeFrete ?? (doc.valorFrete > 0 ? 0 : 9);
   const transp = `<transp><modFrete>${modFrete}</modFrete></transp>`;

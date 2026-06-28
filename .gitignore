@@ -25,3 +25,4 @@ scripts/cls/
 *.p12
 *.pem
 *.key
+scripts/_nfe-reforma.xml
