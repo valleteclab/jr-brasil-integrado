@@ -15,7 +15,7 @@ import { reformaBaseline } from "../national-tax-baseline";
 import type { ItemTaxResult, NormalizedFiscalDocument, NormalizedFiscalItem } from "../types";
 import { resolveFiscalProvider } from "../providers";
 import type { ProviderContext } from "../providers/types";
-import { buildDanfe } from "../providers/sefaz/danfe";
+import { gerarDanfePdf } from "../providers/sefaz/danfe-pdf";
 import { getFiscalRuntimeConfig } from "./fiscal-config-use-cases";
 import { lookupCep } from "@/lib/lookup/cadastro-lookup";
 import { isValidCnpj } from "@/lib/fiscal/documento";
@@ -1057,9 +1057,10 @@ export async function downloadNotaFiscalDocumento(
     if (kind === "xml") {
       return { contentType: "application/xml", body: Buffer.from(nota.xml, "utf8"), filename: `${nota.modelo}-${nota.numero}.xml` };
     }
+    // DANFE em PDF no padrão MOC (lib nfe-danfe-pdf + quadro IBS/CBS da Reforma) a partir do nfeProc.
     const cfg = await getFiscalRuntimeConfig(scope);
-    const danfe = buildDanfe(nota.xml, { logoDataUrl: cfg.logotipoInfo });
-    return { contentType: danfe.contentType, body: danfe.body, filename: danfe.filename };
+    const pdf = await gerarDanfePdf(nota.xml, { cancelada: nota.status === "CANCELADA", logoDataUrl: cfg.logotipoInfo });
+    return { contentType: "application/pdf", body: pdf, filename: `${nota.modelo}-${nota.numero}.pdf` };
   }
 
   const config = await getFiscalRuntimeConfig(scope);

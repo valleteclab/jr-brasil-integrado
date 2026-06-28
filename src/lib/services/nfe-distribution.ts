@@ -13,7 +13,7 @@ import {
 import { enviarManifestacao } from "@/domains/fiscal/providers/sefaz/eventos";
 import { cUFFromUF } from "@/domains/fiscal/providers/sefaz/endpoints";
 import { pfxToPem } from "@/domains/fiscal/providers/sefaz/sign";
-import { buildDanfe } from "@/domains/fiscal/providers/sefaz/danfe";
+import { gerarDanfePdf } from "@/domains/fiscal/providers/sefaz/danfe-pdf";
 
 const ACBR_AUTH_URL = "https://auth.acbr.api.br/realms/ACBrAPI/protocol/openid-connect/token";
 const ACBR_BASE_URL: Record<AmbienteFiscal, string> = {
@@ -696,11 +696,11 @@ export async function downloadDistributedNfeDocument(scope: TenantScope, localDo
       const filename = `${doc.chaveAcesso || doc.acbrDocumentoId}.xml`;
       return { body: Buffer.from(xml, "utf8"), contentType: "application/xml", filename };
     }
-    const danfe = buildDanfe(xml);
+    const pdf = await gerarDanfePdf(xml);
     return {
-      body: danfe.body,
-      contentType: danfe.contentType,
-      filename: danfe.filename || `${doc.chaveAcesso || doc.acbrDocumentoId}.pdf`
+      body: pdf,
+      contentType: "application/pdf",
+      filename: `${doc.chaveAcesso || doc.acbrDocumentoId}.pdf`
     };
   }
 
