@@ -745,7 +745,8 @@ export class AcbrFiscalProvider implements FiscalProvider {
           cUF, natOp: input.document.naturezaOperacao, mod: isNfce ? 65 : 55,
           serie: Number(input.document.serie) || 1, nNF: input.numero,
           // Devolução é emitida como entrada (tpNF=0); demais finalidades, saída (tpNF=1).
-          dhEmi, tpNF: input.document.finalidade === "DEVOLUCAO" ? 0 : 1, idDest, cMunFG,
+          // dhSaiEnt (data/hora de saída/entrada) só na NF-e 55 — preenche a DANFE; a NFC-e não usa.
+          dhEmi, ...(isNfce ? {} : { dhSaiEnt: dhEmi }), tpNF: input.document.finalidade === "DEVOLUCAO" ? 0 : 1, idDest, cMunFG,
           tpImp: isNfce ? 4 : 1, tpEmis: 1, finNFe: finalidade(input.document.finalidade),
           indFinal, indPres: 1, procEmi: 0, verProc: "XERP",
           // Referência à NF-e original (obrigatória na devolução): grupo NFref/refNFe.

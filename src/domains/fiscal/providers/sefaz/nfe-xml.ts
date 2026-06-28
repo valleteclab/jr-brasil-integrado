@@ -310,7 +310,9 @@ export function buildNfeXml(input: EmitInput): BuildNfeResult {
     `<cUF>${cUF}</cUF><cNF>${cNF}</cNF>` +
     tag("natOp", esc(sanitize(doc.naturezaOperacao) || "VENDA")) +
     `<mod>${mod}</mod><serie>${serie}</serie><nNF>${nNF}</nNF>` +
-    `<dhEmi>${dhEmi}</dhEmi><tpNF>${tpNF}</tpNF><idDest>${idDest}</idDest>` +
+    // dhSaiEnt: data/hora de saída (venda) ou entrada (devolução). Igual à emissão, como fazem os
+    // demais emissores — preenche os campos "DATA/HORA SAÍDA" da DANFE (vinham em branco sem ele).
+    `<dhEmi>${dhEmi}</dhEmi><dhSaiEnt>${dhEmi}</dhSaiEnt><tpNF>${tpNF}</tpNF><idDest>${idDest}</idDest>` +
     `<cMunFG>${cMunFG}</cMunFG><tpImp>1</tpImp><tpEmis>${tpEmis}</tpEmis><cDV>${cDV}</cDV>` +
     `<tpAmb>${tpAmb}</tpAmb><finNFe>${finNFe(doc.finalidade)}</finNFe>` +
     `<indFinal>${indFinal}</indFinal><indPres>1</indPres><procEmi>0</procEmi><verProc>ERP-1.0</verProc>` +
