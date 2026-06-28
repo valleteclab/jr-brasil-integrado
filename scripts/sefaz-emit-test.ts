@@ -4,6 +4,7 @@ import { SefazFiscalProvider } from "../src/domains/fiscal/providers/sefaz-provi
 import type { EmitInput, ProviderContext } from "../src/domains/fiscal/providers/types";
 
 const req = (n: string) => { const v = process.env[n]; if (!v) throw new Error(`Defina ${n}`); return v; };
+const AMB = process.env.AMBIENTE === "PRODUCAO" ? "PRODUCAO" : "HOMOLOGACAO";
 
 const input: EmitInput = {
   numero: Number(process.env.NUM || "1"), total: 250.0, integrationId: "sefaz-emit-test",
@@ -17,7 +18,7 @@ const input: EmitInput = {
   totals: { valorProdutos: 250, valorServicos: 0, valorDesconto: 0, valorIcms: 0, valorIcmsSt: 0, valorFcp: 0, valorIpi: 0, valorPis: 0, valorCofins: 0, valorIss: 0, valorIbs: 0, valorCbs: 0, valorIs: 0, valorTotalTributos: 0 },
   document: {
     modelo: "NFE", finalidade: "NORMAL", naturezaOperacao: "VENDA DE MERCADORIA",
-    ambiente: "HOMOLOGACAO", provedor: "SEFAZ", serie: "1", chaveReferenciada: null,
+    ambiente: AMB, provedor: "SEFAZ", serie: "1", chaveReferenciada: null,
     destinatario: { nome: "Cliente Teste", documento: "11444777000161", inscricaoEstadual: null, email: null, uf: "BA",
       endereco: { logradouro: "Av Sete de Setembro", numero: "200", complemento: null, bairro: "Centro", cep: "40010000", cidade: "Salvador", uf: "BA", codigoMunicipioIbge: "2927408" } },
     formaPagamento: "Dinheiro", condicaoPagamento: null, pagamentos: null, informacoesComplementares: null,
@@ -33,7 +34,7 @@ const input: EmitInput = {
     baseIbsCbs: 250, aliquotaIbs: 0.1, valorIbs: 0.25, aliquotaCbs: 0.9, valorCbs: 2.25, aliquotaIs: 0, valorIs: 0, valorTributos: 0, cClassTrib: "000001", cstIbsCbs: "000" } }]
 } as unknown as EmitInput;
 
-const ctx = { ambiente: "HOMOLOGACAO", provedor: "SEFAZ", baseUrl: null, token: null, cscId: null, cscToken: null,
+const ctx = { ambiente: AMB, provedor: "SEFAZ", baseUrl: null, token: null, cscId: null, cscToken: null,
   ufEmitente: "BA", certificado: { pfx: readFileSync(req("PFX_PATH")), senha: req("PFX_PASS") } } as unknown as ProviderContext;
 
 new SefazFiscalProvider().emit(input, ctx).then((r) => console.log(JSON.stringify(r, (k, v) => k === "xml" ? "[xml omitido]" : v, 1)));

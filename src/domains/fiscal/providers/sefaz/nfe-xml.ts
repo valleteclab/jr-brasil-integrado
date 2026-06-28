@@ -235,7 +235,9 @@ export type BuildNfeResult = { xml: string; chave: string; cNF: string; cDV: str
  */
 const REFORMA_XML_INICIO: Record<string, string> = {
   HOMOLOGACAO: "2026-01-01",
-  PRODUCAO: "2026-08-03"
+  // Produção liberada após confirmarmos que a SEFAZ-BA aceita o grupo no período informativo
+  // (cStat 100 em produção). Obrigatoriedade legal segue 03/08/2026 p/ Lucro Presumido/Real.
+  PRODUCAO: "2026-01-01"
 };
 
 function reformaNoXml(ambiente: string): boolean {
