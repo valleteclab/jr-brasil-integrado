@@ -141,9 +141,12 @@ export async function enviarEvento(
   // <evento> assina o infEvento (Reference ao Id do infEvento, Signature logo após).
   const eventoBase = `<evento versao="1.00" xmlns="${NFE_NS}">${infEventoXml}</evento>`;
   const eventoAssinado = signXml(eventoBase, "infEvento", pem.privateKeyPem, pem.certPem);
+  // idLote: alguns serviços da SEFAZ rejeitam (object reference) o lote com id curto — usa os 15
+  // últimos dígitos da chave do evento (mesmo padrão do enviNFe na emissão).
+  const idLote = (/Id="ID\d{6}(\d{44})/.exec(infEventoXml)?.[1] ?? "1").slice(-15);
   const envEvento =
     `<envEvento versao="1.00" xmlns="${NFE_NS}">` +
-    `<idLote>1</idLote>` +
+    `<idLote>${idLote}</idLote>` +
     eventoAssinado +
     `</envEvento>`;
   const res = await postSoap(endpoints.recepcaoEvento, soapEnvelope(WSDL_NS.evento, envEvento), cert, SOAP_ACTION.evento);
