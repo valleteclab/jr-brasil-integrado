@@ -238,6 +238,9 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
           serieNfe: config.serieNfe,
           serieNfce: config.serieNfce,
           serieNfse: config.serieNfse,
+          proximoNumeroNfe: config.proximoNumeroNfe,
+          proximoNumeroNfce: config.proximoNumeroNfce,
+          proximoNumeroNfse: config.proximoNumeroNfse,
           emitNfe: config.emitNfe,
           emitNfce: config.emitNfce,
           emitNfse: config.emitNfse,
@@ -421,6 +424,10 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
 
       <div className="erp-card">
         <div className="erp-card-head"><h3>Documentos e numeração</h3></div>
+        <p className="muted" style={{ margin: "0 16px 8px", fontSize: 13 }}>
+          O <b>próximo número</b> é o que o sistema usará na próxima emissão em <b>produção</b> (ex.: se a última nota foi a 365, informe 366).
+          Em homologação a numeração é independente (teste) — se a SEFAZ acusar duplicidade, o sistema pula para o próximo livre automaticamente.
+        </p>
         <div className="erp-form">
           <label className="check-row">
             <input type="checkbox" checked={config.emitNfe} onChange={(e) => update("emitNfe", e.target.checked)} />
@@ -430,6 +437,10 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
             Série NF-e
             <input value={config.serieNfe} onChange={(e) => update("serieNfe", e.target.value)} />
           </label>
+          <label>
+            Próximo número NF-e (produção)
+            <input type="number" min={1} value={config.proximoNumeroNfe} onChange={(e) => update("proximoNumeroNfe", Math.max(1, Number(e.target.value) || 1))} />
+          </label>
           <label className="check-row">
             <input type="checkbox" checked={config.emitNfce} onChange={(e) => update("emitNfce", e.target.checked)} />
             Emitir NFC-e (modelo 65)
@@ -438,6 +449,10 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
             Série NFC-e
             <input value={config.serieNfce} onChange={(e) => update("serieNfce", e.target.value)} />
           </label>
+          <label>
+            Próximo número NFC-e (produção)
+            <input type="number" min={1} value={config.proximoNumeroNfce} onChange={(e) => update("proximoNumeroNfce", Math.max(1, Number(e.target.value) || 1))} />
+          </label>
           <label className="check-row">
             <input type="checkbox" checked={config.emitNfse} onChange={(e) => update("emitNfse", e.target.checked)} />
             Emitir NFS-e (serviços)
@@ -445,6 +460,10 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
           <label>
             Série NFS-e
             <input value={config.serieNfse} onChange={(e) => update("serieNfse", e.target.value)} />
+          </label>
+          <label>
+            Próximo número NFS-e (produção)
+            <input type="number" min={1} value={config.proximoNumeroNfse} onChange={(e) => update("proximoNumeroNfse", Math.max(1, Number(e.target.value) || 1))} />
           </label>
           <label>
             Código IBGE do município

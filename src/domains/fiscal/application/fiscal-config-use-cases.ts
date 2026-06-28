@@ -1,4 +1,4 @@
-import type { AmbienteFiscal, ProvedorFiscal, RegimeTributario } from "@prisma/client";
+import type { AmbienteFiscal, ModeloFiscal, ProvedorFiscal, RegimeTributario } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import { createAuditLog } from "@/lib/audit/audit-service";
@@ -26,6 +26,10 @@ export type FiscalConfigSummary = {
   serieNfe: string;
   serieNfce: string;
   serieNfse: string;
+  /** Próximo número a emitir em PRODUÇÃO por modelo (= último emitido + 1). Editável pela empresa. */
+  proximoNumeroNfe: number;
+  proximoNumeroNfce: number;
+  proximoNumeroNfse: number;
   emitNfe: boolean;
   emitNfce: boolean;
   emitNfse: boolean;
@@ -58,6 +62,10 @@ export type SaveFiscalConfigInput = {
   serieNfe?: string;
   serieNfce?: string;
   serieNfse?: string;
+  /** Próximo número a emitir em PRODUÇÃO por modelo (grava SequenciaFiscal PRODUCAO = próximo-1). */
+  proximoNumeroNfe?: number;
+  proximoNumeroNfce?: number;
+  proximoNumeroNfse?: number;
   emitNfe?: boolean;
   emitNfce?: boolean;
   emitNfse?: boolean;
@@ -116,6 +124,10 @@ function toSummary(config: {
     serieNfe: config?.serieNfe ?? "1",
     serieNfce: config?.serieNfce ?? "1",
     serieNfse: config?.serieNfse ?? "1",
+    // Preenchidos pelo getFiscalConfig a partir da SequenciaFiscal de produção (default 1).
+    proximoNumeroNfe: 1,
+    proximoNumeroNfce: 1,
+    proximoNumeroNfse: 1,
     emitNfe: config?.emitirNfe ?? true,
     emitNfce: config?.emitirNfce ?? false,
     emitNfse: config?.emitirNfse ?? false,
@@ -133,11 +145,36 @@ function toSummary(config: {
   };
 }
 
+/** Próximo número a emitir em PRODUÇÃO para um modelo/série (= último número da sequência + 1). */
+async function proximoNumeroProducao(scope: TenantScope, modelo: ModeloFiscal, serie: string): Promise<number> {
+  const seq = await prisma.sequenciaFiscal.findUnique({
+    where: { tenantId_empresaId_modelo_serie_ambiente: { tenantId: scope.tenantId, empresaId: scope.empresaId, modelo, serie, ambiente: "PRODUCAO" } }
+  });
+  return (seq?.ultimoNumero ?? 0) + 1;
+}
+
+/** Define o próximo número de PRODUÇÃO (grava ultimoNumero = próximo - 1). Ignora valores < 1. */
+async function setProximoNumeroProducao(scope: TenantScope, modelo: ModeloFiscal, serie: string, proximo: number | undefined): Promise<void> {
+  if (!proximo || proximo < 1) return;
+  const ultimoNumero = proximo - 1;
+  await prisma.sequenciaFiscal.upsert({
+    where: { tenantId_empresaId_modelo_serie_ambiente: { tenantId: scope.tenantId, empresaId: scope.empresaId, modelo, serie, ambiente: "PRODUCAO" } },
+    update: { ultimoNumero },
+    create: { tenantId: scope.tenantId, empresaId: scope.empresaId, modelo, serie, ambiente: "PRODUCAO", ultimoNumero }
+  });
+}
+
 export async function getFiscalConfig(scope: TenantScope): Promise<FiscalConfigSummary> {
   const config = await prisma.configuracaoFiscal.findUnique({
     where: { empresaId: scope.empresaId }
   });
-  return toSummary(config);
+  const summary = toSummary(config);
+  return {
+    ...summary,
+    proximoNumeroNfe: await proximoNumeroProducao(scope, "NFE", summary.serieNfe),
+    proximoNumeroNfce: await proximoNumeroProducao(scope, "NFCE", summary.serieNfce),
+    proximoNumeroNfse: await proximoNumeroProducao(scope, "NFSE", summary.serieNfse)
+  };
 }
 
 export async function saveFiscalConfig(scope: TenantScope, input: SaveFiscalConfigInput): Promise<FiscalConfigSummary> {
@@ -270,7 +307,12 @@ export async function saveFiscalConfig(scope: TenantScope, input: SaveFiscalConf
     });
   });
 
-  const summary = toSummary(config);
+  // Numeração de PRODUÇÃO informada pela empresa (próximo número por modelo, na série salva).
+  await setProximoNumeroProducao(scope, "NFE", config.serieNfe, input.proximoNumeroNfe);
+  await setProximoNumeroProducao(scope, "NFCE", config.serieNfce, input.proximoNumeroNfce);
+  await setProximoNumeroProducao(scope, "NFSE", config.serieNfse, input.proximoNumeroNfse);
+
+  const summary = await getFiscalConfig(scope);
   return cscWarning ? { ...summary, lastError: cscWarning } : summary;
 }
 
