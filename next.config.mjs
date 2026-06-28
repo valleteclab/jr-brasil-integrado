@@ -3,12 +3,16 @@ const nextConfig = {
   // Build "standalone": gera um server mínimo (.next/standalone) para a imagem Docker de produção.
   output: "standalone",
   experimental: {
-    // O DANFE em PDF (lib nfe-danfe-pdf + PDFKit) lê assets via fs em runtime que o trace do
-    // standalone não detecta sozinho: as métricas .afm das fontes built-in do PDFKit e os helpers
-    // da lib carregados por deep-import. Forçamos a inclusão nas rotas de API (download de PDF).
+    // PDFKit lê dados (.afm das fontes built-in) via fs relativo ao seu __dirname. Se o webpack o
+    // bundla, esse caminho quebra em runtime. Mantemos pdfkit e a lib do DANFE como pacotes
+    // EXTERNOS (resolvidos de node_modules, não bundlados) — o tracer (@vercel/nft) então segue os
+    // requires a partir do entry e inclui o código + deps transitivas no standalone.
+    serverComponentsExternalPackages: ["pdfkit", "nfe-danfe-pdf"],
+    // Os .afm são lidos por fs (não require), então o tracer não os vê: forçamos a inclusão deles
+    // (e dos helpers da lib usados por deep-import) nas rotas de API que geram o PDF.
     outputFileTracingIncludes: {
       "/api/**/*": [
-        "./node_modules/pdfkit/js/data/**",
+        "./node_modules/pdfkit/**",
         "./node_modules/nfe-danfe-pdf/lib/**"
       ]
     }
