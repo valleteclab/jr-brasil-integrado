@@ -16,6 +16,7 @@ import type { ItemTaxResult, NormalizedFiscalDocument, NormalizedFiscalItem } fr
 import { resolveFiscalProvider } from "../providers";
 import type { ProviderContext } from "../providers/types";
 import { gerarDanfePdf } from "../providers/sefaz/danfe-pdf";
+import { gerarDanfcePdf } from "../providers/sefaz/danfce-pdf";
 import { getFiscalRuntimeConfig } from "./fiscal-config-use-cases";
 import { lookupCep } from "@/lib/lookup/cadastro-lookup";
 import { isValidCnpj } from "@/lib/fiscal/documento";
@@ -1058,7 +1059,12 @@ export async function downloadNotaFiscalDocumento(
     if (kind === "xml") {
       return { contentType: "application/xml", body: Buffer.from(nota.xml, "utf8"), filename: `${nota.modelo}-${nota.numero}.xml` };
     }
-    // DANFE em PDF no padrão MOC (lib nfe-danfe-pdf + quadro IBS/CBS da Reforma) a partir do nfeProc.
+    // Documento auxiliar em PDF a partir do nfeProc: DANFCE (cupom 80mm) para NFC-e 65; DANFE A4
+    // (padrão MOC + quadro IBS/CBS) para NF-e 55. Ambos sobre a lib nfe-danfe-pdf.
+    if (nota.modelo === "NFCE") {
+      const pdf = await gerarDanfcePdf(nota.xml);
+      return { contentType: "application/pdf", body: pdf, filename: `${nota.modelo}-${nota.numero}.pdf` };
+    }
     const cfg = await getFiscalRuntimeConfig(scope);
     const pdf = await gerarDanfePdf(nota.xml, { cancelada: nota.status === "CANCELADA", logoDataUrl: cfg.logotipoConteudo });
     return { contentType: "application/pdf", body: pdf, filename: `${nota.modelo}-${nota.numero}.pdf` };

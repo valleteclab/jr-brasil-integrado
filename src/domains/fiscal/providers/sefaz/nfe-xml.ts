@@ -488,7 +488,11 @@ export function buildNfeXml(input: EmitInput): BuildNfeResult {
   const pag = `<pag>${pagInner}</pag>`;
 
   const infoCompl = sanitize(doc.informacoesComplementares);
-  const infAdic = infoCompl ? `<infAdic><infCpl>${esc(infoCompl)}</infCpl></infAdic>` : "";
+  // NFC-e: sempre leva infCpl (mensagem de tributos aproximados — Lei 12.741) quando não há texto
+  // próprio, atendendo a recomendação do cupom. NF-e 55 só inclui o grupo quando há informações.
+  const cplNfce = isNfce ? `Trib aprox R$ ${fmt(input.totals.valorTotalTributos || 0)} Fonte: IBPT` : "";
+  const cpl = infoCompl || cplNfce;
+  const infAdic = cpl ? `<infAdic><infCpl>${esc(cpl)}</infCpl></infAdic>` : "";
 
   const infNFe = `<infNFe Id="NFe${chave}" versao="4.00">${ide}${emit}${dest}${autXML}${det}${total}${transp}${pag}${infAdic}</infNFe>`;
   const xml = `<NFe xmlns="http://www.portalfiscal.inf.br/nfe">${infNFe}</NFe>`;
