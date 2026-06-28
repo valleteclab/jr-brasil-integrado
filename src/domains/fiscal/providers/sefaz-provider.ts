@@ -15,7 +15,7 @@ import type {
   EmitInput, EmitResult, FiscalProvider, ProviderContext, TestConnectionResult
 } from "./types";
 import { cUFFromUF, resolveSefazEndpoints } from "./sefaz/endpoints";
-import { NFE_NS, WSDL_NS, pickBlock, pickTag, postSoap, soapEnvelope } from "./sefaz/soap";
+import { NFE_NS, SOAP_ACTION, WSDL_NS, pickBlock, pickTag, postSoap, soapEnvelope } from "./sefaz/soap";
 import { buildNfeXml } from "./sefaz/nfe-xml";
 import { pfxToPem, signNfe } from "./sefaz/sign";
 import {
@@ -54,7 +54,7 @@ export async function consultarStatusServico(
     `<tpAmb>${tpAmb}</tpAmb><cUF>${cUF}</cUF><xServ>STATUS</xServ>` +
     `</consStatServ>`;
   const envelope = soapEnvelope(WSDL_NS.status, consStatServ);
-  const res = await postSoap(endpoints.statusServico, envelope, cert);
+  const res = await postSoap(endpoints.statusServico, envelope, cert, SOAP_ACTION.status);
   return {
     cStat: pickTag(res.body, "cStat") ?? "",
     xMotivo: pickTag(res.body, "xMotivo") ?? "",
@@ -101,7 +101,7 @@ export class SefazFiscalProvider implements FiscalProvider {
       `<idLote>${idLote}</idLote><indSinc>1</indSinc>${signed}` +
       `</enviNFe>`;
     const endpoints = resolveSefazEndpoints(uf, ctx.ambiente);
-    const res = await postSoap(endpoints.autorizacao, soapEnvelope(WSDL_NS.autorizacao, enviNFe), ctx.certificado);
+    const res = await postSoap(endpoints.autorizacao, soapEnvelope(WSDL_NS.autorizacao, enviNFe), ctx.certificado, SOAP_ACTION.autorizacao);
 
     const protNFe = pickBlock(res.body, "protNFe");
     const loteCStat = pickTag(res.body, "cStat");

@@ -26,6 +26,16 @@ export const WSDL_NS = {
 /** Namespace do conteúdo das mensagens NF-e (consStatServ, enviNFe, etc). */
 export const NFE_NS = "http://www.portalfiscal.inf.br/nfe";
 
+/** SOAPAction (parâmetro `action` do Content-Type SOAP 1.2) = WSDL + "/" + nome da operação. */
+export const SOAP_ACTION = {
+  status: `${WSDL_NS.status}/nfeStatusServicoNF`,
+  autorizacao: `${WSDL_NS.autorizacao}/nfeAutorizacaoLote`,
+  retAutorizacao: `${WSDL_NS.retAutorizacao}/nfeRetAutorizacao`,
+  consulta: `${WSDL_NS.consulta}/nfeConsultaNF`,
+  evento: `${WSDL_NS.evento}/nfeRecepcaoEvento`,
+  inutilizacao: `${WSDL_NS.inutilizacao}/nfeInutilizacaoNF`
+} as const;
+
 export type SoapResponse = { statusCode: number; body: string };
 
 /** Envolve a mensagem NF-e (já em XML) em um envelope SOAP 1.2 com o `nfeDadosMsg` do serviço. */
@@ -40,15 +50,21 @@ export function soapEnvelope(wsdlNamespace: string, innerXml: string): string {
   );
 }
 
-/** POST SOAP 1.2 ao endpoint com TLS-mútuo (cert A1 da empresa). */
+/**
+ * POST SOAP 1.2 ao endpoint com TLS-mútuo (cert A1 da empresa). Em SOAP 1.2 a operação vai como
+ * parâmetro `action` do Content-Type — alguns serviços .NET da SEFAZ (ex.: RecepcaoEvento da BA)
+ * rejeitam com "Object reference not set" quando ela falta.
+ */
 export function postSoap(
   endpoint: string,
   envelope: string,
   cert: { pfx: Buffer; senha: string },
+  action?: string,
   timeoutMs = 20000
 ): Promise<SoapResponse> {
   const url = new URL(endpoint);
   const payload = Buffer.from(envelope, "utf8");
+  const contentType = `application/soap+xml; charset=utf-8${action ? `; action="${action}"` : ""}`;
   return new Promise((resolve, reject) => {
     const req = https.request(
       {
@@ -61,7 +77,7 @@ export function postSoap(
         ca: SEFAZ_CA,
         minVersion: "TLSv1.2",
         headers: {
-          "Content-Type": "application/soap+xml; charset=utf-8",
+          "Content-Type": contentType,
           "Content-Length": payload.byteLength
         }
       },

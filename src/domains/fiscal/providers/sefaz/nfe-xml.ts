@@ -339,7 +339,12 @@ export function buildNfeXml(input: EmitInput): BuildNfeResult {
       (item.desconto > 0 ? tag("vDesc", fmt(item.desconto)) : "") +
       `<indTot>1</indTot>` +
       `</prod>`;
-    return `<det nItem="${numeroItem}">${prod}<imposto>${icms}${pis.xml}${cofins.xml}</imposto></det>`;
+    // Devolução (finNFe=4): cada item leva o grupo impostoDevol — percentual de mercadoria
+    // devolvida (100% = devolução total) + IPI devolvido (0 quando não há IPI destacado).
+    const impostoDevol = doc.finalidade === "DEVOLUCAO"
+      ? `<impostoDevol><pDevol>100.00</pDevol><IPI><vIPIDevol>${fmt(taxes?.valorIpi ?? 0)}</vIPIDevol></IPI></impostoDevol>`
+      : "";
+    return `<det nItem="${numeroItem}">${prod}<imposto>${icms}${pis.xml}${cofins.xml}</imposto>${impostoDevol}</det>`;
   }).join("");
 
   const total =

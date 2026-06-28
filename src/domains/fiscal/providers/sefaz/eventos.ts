@@ -6,7 +6,7 @@
  */
 import type { AmbienteFiscal } from "@prisma/client";
 import { AN_RECEPCAO_EVENTO, cUFFromUF, resolveSefazEndpoints } from "./endpoints";
-import { NFE_NS, WSDL_NS, pickBlock, pickTag, postSoap, soapEnvelope } from "./soap";
+import { NFE_NS, SOAP_ACTION, WSDL_NS, pickBlock, pickTag, postSoap, soapEnvelope } from "./soap";
 import { signXml } from "./sign";
 
 const onlyDigits = (s: string | number | null | undefined) => String(s ?? "").replace(/\D/g, "");
@@ -146,7 +146,7 @@ export async function enviarEvento(
     `<idLote>1</idLote>` +
     eventoAssinado +
     `</envEvento>`;
-  const res = await postSoap(endpoints.recepcaoEvento, soapEnvelope(WSDL_NS.evento, envEvento), cert);
+  const res = await postSoap(endpoints.recepcaoEvento, soapEnvelope(WSDL_NS.evento, envEvento), cert, SOAP_ACTION.evento);
 
   // O retorno traz um cStat de lote e, dentro de retEvento, o cStat do evento em si.
   const retEvento = pickBlock(res.body, "retEvento");
@@ -218,7 +218,7 @@ export async function inutilizarNumeracao(
   const assinado = signXml(inutNFe, "infInut", pem.privateKeyPem, pem.certPem);
 
   const endpoints = resolveSefazEndpoints(params.uf, params.ambiente);
-  const res = await postSoap(endpoints.inutilizacao, soapEnvelope(WSDL_NS.inutilizacao, assinado), cert);
+  const res = await postSoap(endpoints.inutilizacao, soapEnvelope(WSDL_NS.inutilizacao, assinado), cert, SOAP_ACTION.inutilizacao);
 
   const ret = pickBlock(res.body, "infInut") ?? res.body;
   const cStat = pickTag(ret, "cStat") ?? "";
@@ -260,7 +260,7 @@ export async function consultarProtocolo(
     `<xServ>CONSULTAR</xServ>` +
     `<chNFe>${onlyDigits(chNFe)}</chNFe>` +
     `</consSitNFe>`;
-  const res = await postSoap(endpoints.consultaProtocolo, soapEnvelope(WSDL_NS.consulta, consSitNFe), cert);
+  const res = await postSoap(endpoints.consultaProtocolo, soapEnvelope(WSDL_NS.consulta, consSitNFe), cert, SOAP_ACTION.consulta);
   const protNFe = pickBlock(res.body, "protNFe");
   return {
     cStat: pickTag(res.body, "cStat") ?? "",
@@ -348,7 +348,8 @@ export async function enviarManifestacao(params: {
   const res = await postSoap(
     AN_RECEPCAO_EVENTO[params.ambiente],
     soapEnvelope(WSDL_NS.evento, envEvento),
-    params.cert
+    params.cert,
+    SOAP_ACTION.evento
   );
 
   const retEvento = pickBlock(res.body, "retEvento");
