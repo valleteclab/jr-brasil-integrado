@@ -919,3 +919,75 @@ async function importDistributedNfeSefaz(
     throw error;
   }
 }
+
+/**
+ * Sincronização AUTOMÁTICA da distribuição (substitui serviços externos tipo Qive). Para CADA empresa
+ * ativa com provedor SEFAZ + A1: roda o sync (baixa resumos por NSU) e, para os resumos pendentes,
+ * envia a Ciência (210210) e baixa o XML completo (procNFe) por chave — SEM criar entrada fiscal (o
+ * usuário decide o que importar). Idempotente e multi-tenant. Para rodar a cada ~1h (cron): respeita
+ * o throttling do AN (656 só afeta o sync; a ciência por chave segue). mesesHistorico limita o quão
+ * para trás dá ciência (default 6); maxCienciaPorEmpresa evita rajada por execução.
+ */
+export async function runDistribuicaoCron(opts?: {
+  mesesHistorico?: number;
+  maxCienciaPorEmpresa?: number;
+}): Promise<{ empresas: number; resultados: Array<{ empresaId: string; sync: string; ciencias: number; erro?: string }> }> {
+  const meses = opts?.mesesHistorico ?? 6;
+  const maxCiencia = opts?.maxCienciaPorEmpresa ?? 25;
+  const desde = new Date(Date.now() - meses * 30 * 24 * 60 * 60 * 1000);
+  const configs = await prisma.configuracaoFiscal.findMany({ where: { ativo: true }, select: { tenantId: true, empresaId: true } });
+  const resultados: Array<{ empresaId: string; sync: string; ciencias: number; erro?: string }> = [];
+
+  for (const cfg of configs) {
+    const scope = { tenantId: cfg.tenantId, empresaId: cfg.empresaId } as TenantScope;
+    const item: { empresaId: string; sync: string; ciencias: number; erro?: string } = { empresaId: cfg.empresaId, sync: "", ciencias: 0 };
+    try {
+      const runtime = await getProviderRuntime(scope);
+      if (runtime.provider !== "SEFAZ") {
+        item.sync = "ignorada (provedor nao-SEFAZ)";
+        resultados.push(item);
+        continue;
+      }
+      const sync = await syncSefazDistribution(scope, runtime).catch((e) => ({ cStat: "ERRO", xMotivo: e instanceof Error ? e.message : String(e), returned: 0 }));
+      item.sync = `${(sync as { cStat?: string }).cStat ?? ""} ${(sync as { xMotivo?: string }).xMotivo ?? ""}`.trim();
+
+      const pendentes = await prisma.distribuicaoNfeDocumento.findMany({
+        where: {
+          tenantId: scope.tenantId,
+          empresaId: scope.empresaId,
+          status: "LISTADO",
+          chaveAcesso: { not: null },
+          OR: [{ dataEmissao: { gte: desde } }, { dataEmissao: null }]
+        },
+        orderBy: { dataEmissao: "desc" },
+        take: maxCiencia
+      });
+      if (pendentes.length) {
+        const cnpj = onlyDigits(runtime.emitter.cnpj);
+        const cUFAutor = cUFFromUF(runtime.emitter.uf ?? "");
+        const cert = sefazCert(runtime);
+        const pem = pfxToPem(cert.pfx, cert.senha);
+        for (const doc of pendentes) {
+          const chave = onlyDigits(doc.chaveAcesso as string);
+          try {
+            await enviarManifestacao({ ambiente: runtime.ambiente, cnpj, chNFe: chave, tipoEvento: "210210", cert, pem });
+            const byChave = await consultarDistribuicaoPorChave({ cnpj, cUFAutor, chNFe: chave, ambiente: runtime.ambiente, cert });
+            for (const d of byChave.docs) await upsertSefazDocument(scope, runtime, d);
+            await prisma.distribuicaoNfeDocumento.update({
+              where: { id: doc.id },
+              data: { manifestacaoEvento: "210210", manifestadoEm: new Date() }
+            }).catch(() => undefined);
+            item.ciencias++;
+          } catch {
+            // segue para a proxima nota
+          }
+        }
+      }
+    } catch (e) {
+      item.erro = e instanceof Error ? e.message : String(e);
+    }
+    resultados.push(item);
+  }
+
+  return { empresas: configs.length, resultados };
+}

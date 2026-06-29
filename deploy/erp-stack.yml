@@ -23,6 +23,8 @@ services:
       DATALOAD_BASE_URL: "${DATALOAD_BASE_URL}"
       DATALOAD_DADOS_URL: "${DATALOAD_DADOS_URL}"
       JRB_AGENT_API_KEY: "${JRB_AGENT_API_KEY}"
+      # Segredo do cron de distribuicao NF-e (POST /api/cron/distribuicao), chamado pelo crontab da VPS.
+      CRON_SECRET: "${CRON_SECRET}"
     deploy:
       replicas: 1
       restart_policy:
