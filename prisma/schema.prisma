@@ -1452,6 +1452,36 @@ model DistribuicaoNfeDocumento {
   @@index([tenantId, empresaId, status])
 }
 
+/// Distribuição de NFS-e do Sistema Nacional (ADN, GET /contribuintes/DFe/{NSU}). Guarda as NFS-e
+/// do CNPJ — emitidas por ele (papel PRESTADOR) e recebidas como tomador (papel TOMADOR) — com o XML.
+/// As emitidas que ainda não estão no sistema viram NotaFiscal (notaFiscalId).
+model DistribuicaoNfseDocumento {
+  id                String         @id @default(cuid())
+  tenantId          String
+  empresaId         String
+  ambiente          AmbienteFiscal
+  nsu               String
+  chaveAcesso       String?
+  nNFSe             String?
+  tipoDocumento     String?
+  papel             String?
+  emitenteDocumento String?
+  emitenteNome      String?
+  tomadorDocumento  String?
+  tomadorNome       String?
+  valor             Decimal?       @db.Decimal(14, 2)
+  dataEmissao       DateTime?
+  notaFiscalId      String?
+  status            String         @default("RECEBIDO")
+  payload           Json?
+  criadoEm          DateTime       @default(now())
+  atualizadoEm      DateTime       @updatedAt
+
+  @@unique([tenantId, empresaId, nsu])
+  @@index([tenantId, empresaId, chaveAcesso])
+  @@index([tenantId, empresaId, papel])
+}
+
 model EntradaFiscalParcela {
   id              String        @id @default(cuid())
   tenantId        String
@@ -1905,6 +1935,9 @@ model ConfiguracaoFiscal {
   // Quando true, o próximo ciclo do cron re-baixa o histórico do NSU 0 (re-sync) e zera o flag. Corrige
   // resumos antigos sem data de emissão (ex.: vindos do ACBr). Auto-retry enquanto houver throttling.
   distribuicaoReprocessar  Boolean?
+  // Distribuição de NFS-e (ADN): último NSU já sincronizado + quando.
+  nfseDistNsu              String?
+  nfseDistSyncEm           DateTime?
   nfseAmbienteNacional     Boolean?
   ativo                    Boolean          @default(false)
   testadoEm                DateTime?

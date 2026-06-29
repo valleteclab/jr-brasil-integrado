@@ -4,6 +4,7 @@ import type { TenantScope } from "@/lib/auth/dev-session";
 import { createAuditLog } from "@/lib/audit/audit-service";
 import { getFiscalRuntimeConfig } from "@/domains/fiscal/application/fiscal-config-use-cases";
 import { importNfeXml } from "@/domains/products/application/fiscal-entry-use-cases";
+import { syncNfseDistribution } from "@/lib/services/nfse-distribution";
 import {
   consultarDistribuicaoDFe,
   type DistDoc,
@@ -1016,9 +1017,9 @@ export async function runDistribuicaoCron(opts?: {
   mesesHistorico?: number;
   maxCienciaPorEmpresa?: number;
   fromStart?: boolean;
-}): Promise<{ empresas: number; resultados: Array<{ empresaId: string; sync: string; ciencias: number; erro?: string }> }> {
+}): Promise<{ empresas: number; resultados: Array<{ empresaId: string; sync: string; ciencias: number; erro?: string; nfse?: string }> }> {
   const configs = await prisma.configuracaoFiscal.findMany({ where: { ativo: true }, select: { tenantId: true, empresaId: true } });
-  const resultados: Array<{ empresaId: string; sync: string; ciencias: number; erro?: string }> = [];
+  const resultados: Array<{ empresaId: string; sync: string; ciencias: number; erro?: string; nfse?: string }> = [];
 
   for (const cfg of configs) {
     const scope = { tenantId: cfg.tenantId, empresaId: cfg.empresaId } as TenantScope;
@@ -1028,7 +1029,15 @@ export async function runDistribuicaoCron(opts?: {
         maxCiencia: opts?.maxCienciaPorEmpresa,
         fromStart: opts?.fromStart
       });
-      resultados.push({ empresaId: cfg.empresaId, sync: r.sync, ciencias: r.ciencias });
+      // Distribuição de NFS-e (ADN nacional) — só roda se a empresa tiver A1; ignora silenciosamente
+      // quando não houver certificado. Erros não derrubam o ciclo de NF-e.
+      const nfse = await syncNfseDistribution(scope, { fromStart: opts?.fromStart }).catch(() => null);
+      resultados.push({
+        empresaId: cfg.empresaId,
+        sync: r.sync,
+        ciencias: r.ciencias,
+        nfse: nfse ? `${nfse.status} +${nfse.novos} (P${nfse.prestador}/T${nfse.tomador})` : undefined
+      });
     } catch (e) {
       resultados.push({ empresaId: cfg.empresaId, sync: "", ciencias: 0, erro: e instanceof Error ? e.message : String(e) });
     }

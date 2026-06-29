@@ -81,6 +81,7 @@ const groups: ErpNavGroup[] = [
       { label: "Gastos (cupom)", href: "/erp/gastos", icon: "💸" },
       { label: "Fluxo de caixa", href: "/erp/fluxo-caixa", icon: "📈" },
       { label: "NF-e emitidas", href: "/erp/fiscal", icon: "🧾" },
+      { label: "NFS-e (Nacional)", href: "/erp/nfse-recebidas", icon: "📑" },
       { label: "SPED Fiscal", href: "/erp/sped-fiscal", icon: "🗂" },
       { label: "Regras tributárias", href: "/erp/regras-tributarias", icon: "⚖" },
       { label: "Regras de finalidade", href: "/erp/regras-finalidade", icon: "🏷" }
