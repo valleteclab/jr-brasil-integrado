@@ -957,12 +957,14 @@ export async function runDistribuicaoCron(opts?: {
       const sync = await syncSefazDistribution(scope, runtime).catch((e) => ({ cStat: "ERRO", xMotivo: e instanceof Error ? e.message : String(e), returned: 0 }));
       item.sync = `${(sync as { cStat?: string }).cStat ?? ""} ${(sync as { xMotivo?: string }).xMotivo ?? ""}`.trim();
 
+      // Resumos sem o XML completo ainda (status LISTADO). NÃO filtra por manifestadoEm: a ciência é
+      // dada uma vez, mas a consulta por chave é RE-TENTADA até a SEFAZ disponibilizar o XML (a
+      // nfeCompleta não vem na mesma hora da ciência).
       const pendentes = await prisma.distribuicaoNfeDocumento.findMany({
         where: {
           tenantId: scope.tenantId,
           empresaId: scope.empresaId,
           status: "LISTADO",
-          manifestadoEm: null, // ainda não recebeu ciência — evita re-manifestar o mesmo resumo
           chaveAcesso: { not: null },
           OR: [{ dataEmissao: { gte: desde } }, { dataEmissao: null }]
         },
@@ -977,22 +979,25 @@ export async function runDistribuicaoCron(opts?: {
         for (const doc of pendentes) {
           const chave = onlyDigits(doc.chaveAcesso as string);
           try {
-            await enviarManifestacao({ ambiente: runtime.ambiente, cnpj, chNFe: chave, tipoEvento: "210210", cert, pem });
+            // Ciência (210210) só na primeira vez (quando ainda não foi enviada).
+            if (!doc.manifestacaoEvento) {
+              await enviarManifestacao({ ambiente: runtime.ambiente, cnpj, chNFe: chave, tipoEvento: "210210", cert, pem });
+              await prisma.distribuicaoNfeDocumento.update({
+                where: { id: doc.id },
+                data: { manifestacaoEvento: "210210", manifestadoEm: new Date() }
+              }).catch(() => undefined);
+            }
+            // Tenta baixar o XML completo; quando vier, atualiza o PRÓPRIO resumo (sem duplicar).
             const byChave = await consultarDistribuicaoPorChave({ cnpj, cUFAutor, chNFe: chave, ambiente: runtime.ambiente, cert });
             const full = byChave.docs.find((d) => d.tipo === "nfeCompleta" && (d.xml.includes("<NFe") || d.xml.includes("<nfeProc")));
-            const payloadAtual = (doc.payload as Record<string, unknown> | null) ?? {};
-            // Atualiza o PRÓPRIO resumo com o XML completo (status RECEBIDO) — sem criar doc duplicado.
-            await prisma.distribuicaoNfeDocumento.update({
-              where: { id: doc.id },
-              data: {
-                manifestacaoEvento: "210210",
-                manifestadoEm: new Date(),
-                ...(full
-                  ? { status: "RECEBIDO", resumo: false, payload: { ...payloadAtual, xml: full.xml, tipo: "nfeCompleta" } as Prisma.InputJsonValue }
-                  : {})
-              }
-            }).catch(() => undefined);
-            item.ciencias++;
+            if (full) {
+              const payloadAtual = (doc.payload as Record<string, unknown> | null) ?? {};
+              await prisma.distribuicaoNfeDocumento.update({
+                where: { id: doc.id },
+                data: { status: "RECEBIDO", resumo: false, payload: { ...payloadAtual, xml: full.xml, tipo: "nfeCompleta" } as Prisma.InputJsonValue }
+              }).catch(() => undefined);
+              item.ciencias++;
+            }
           } catch {
             // segue para a proxima nota
           }
