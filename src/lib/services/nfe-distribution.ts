@@ -394,6 +394,12 @@ async function syncSefazDistribution(scope: TenantScope, runtime: Runtime, optio
   const cUFAutor = cUFFromUF(runtime.emitter.uf ?? "");
   const cert = sefazCert(runtime);
 
+  // Marca a última sincronização (mesmo se a SEFAZ devolver 656 / nada novo): a UI mostra "atualizado em".
+  await prisma.configuracaoFiscal.update({
+    where: { empresaId: scope.empresaId },
+    data: { distribuicaoSyncEm: new Date() }
+  }).catch(() => undefined);
+
   const docs = await prisma.distribuicaoNfeDocumento.findMany({
     where: { tenantId: scope.tenantId, empresaId: scope.empresaId, nsu: { not: null } },
     select: { nsu: true }

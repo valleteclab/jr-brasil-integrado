@@ -9,6 +9,7 @@ import type { NfeDistributionSummary } from "@/lib/services/nfe-distribution";
 type FiscalEntriesListProps = {
   entries: FiscalEntrySummary[];
   receivedDocuments: NfeDistributionSummary[];
+  ultimaSync?: string | null;
 };
 
 type Tab = "compra" | "recebidas";
@@ -23,8 +24,9 @@ const IMPORT_STEPS = [
   "Abrindo a tela de lançamento…"
 ];
 
-export function FiscalEntriesList({ entries, receivedDocuments }: FiscalEntriesListProps) {
+export function FiscalEntriesList({ entries, receivedDocuments, ultimaSync }: FiscalEntriesListProps) {
   const [rows, setRows] = useState(entries);
+  const [syncEm, setSyncEm] = useState<string | null>(ultimaSync ?? null);
   const [receivedRows, setReceivedRows] = useState(receivedDocuments);
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<Tab>("compra");
@@ -206,14 +208,16 @@ export function FiscalEntriesList({ entries, receivedDocuments }: FiscalEntriesL
         motivoStatus?: string | null;
         ultimoNsu?: string | null;
         maxNsu?: string | null;
+        ultimaSync?: string | null;
         error?: string;
       };
 
       if (!response.ok) {
-        throw new Error(data.error || "Não foi possível buscar NF-e recebidas na ACBr.");
+        throw new Error(data.error || "Não foi possível buscar as NF-e recebidas na SEFAZ.");
       }
 
       setReceivedRows(data.documents ?? []);
+      if (data.ultimaSync) setSyncEm(data.ultimaSync);
       const nsuInfo = data.ultimoNsu ? ` Último NSU: ${data.ultimoNsu}${data.maxNsu ? ` / Máx: ${data.maxNsu}` : ""}.` : "";
       setMessage(
         data.motivoStatus
@@ -328,11 +332,13 @@ export function FiscalEntriesList({ entries, receivedDocuments }: FiscalEntriesL
         <div className="toolbar-grow" />
         {tab === "recebidas" ? (
           <>
-            <Button variant="light" type="button" onClick={() => syncDistribution("history")} disabled={syncing}>
-              Buscar historico
-            </Button>
+            <span className="fiscal-list-filter" title="A sincronização roda automaticamente a cada hora; use o botão para atualizar agora.">
+              {syncEm
+                ? `Atualizado em ${new Date(syncEm).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}`
+                : "Sincronização automática ativa"}
+            </span>
             <Button type="button" onClick={() => syncDistribution("refresh")} disabled={syncing}>
-              {syncing ? "Sincronizando..." : "Sincronizar ACBr"}
+              {syncing ? "Atualizando..." : "Atualizar agora"}
             </Button>
           </>
         ) : (
@@ -421,7 +427,7 @@ export function FiscalEntriesList({ entries, receivedDocuments }: FiscalEntriesL
               {!filteredReceived.length && (
                 <tr>
                   <td colSpan={7}>
-                    <div className="empty-st">Nenhuma NF-e recebida sincronizada. Use Sincronizar ACBr.</div>
+                    <div className="empty-st">Nenhuma NF-e recebida ainda. A sincronização roda automaticamente a cada hora — ou clique em &ldquo;Atualizar agora&rdquo;.</div>
                   </td>
                 </tr>
               )}

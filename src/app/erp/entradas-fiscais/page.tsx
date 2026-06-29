@@ -5,20 +5,26 @@ import type { FiscalEntrySummary } from "@/lib/services/fiscal-entries";
 import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
 import { listNfeDistributionDocuments } from "@/lib/services/nfe-distribution";
 import type { NfeDistributionSummary } from "@/lib/services/nfe-distribution";
+import { prisma } from "@/lib/db/prisma";
 
 export const dynamic = "force-dynamic";
 
 export default async function FiscalEntriesPage() {
   let entries: FiscalEntrySummary[] = [];
   let receivedDocuments: NfeDistributionSummary[] = [];
+  let ultimaSync: string | null = null;
   let loadError = "";
 
   try {
     const scope = await getDevelopmentTenantScope();
-    [entries, receivedDocuments] = await Promise.all([
+    const [e, r, cfg] = await Promise.all([
       listFiscalEntrySummaries(),
-      listNfeDistributionDocuments(scope)
+      listNfeDistributionDocuments(scope),
+      prisma.configuracaoFiscal.findUnique({ where: { empresaId: scope.empresaId }, select: { distribuicaoSyncEm: true } })
     ]);
+    entries = e;
+    receivedDocuments = r;
+    ultimaSync = cfg?.distribuicaoSyncEm?.toISOString() ?? null;
   } catch (error) {
     loadError = error instanceof Error ? error.message : "Não foi possível carregar notas fiscais de entrada.";
   }
@@ -34,7 +40,7 @@ export default async function FiscalEntriesPage() {
           <span>{loadError}</span>
         </div>
       )}
-      <FiscalEntriesList entries={entries} receivedDocuments={receivedDocuments} />
+      <FiscalEntriesList entries={entries} receivedDocuments={receivedDocuments} ultimaSync={ultimaSync} />
     </>
   );
 }

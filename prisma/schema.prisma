@@ -1900,6 +1900,8 @@ model ConfiguracaoFiscal {
   // Conteudo da logo (data URL base64 PNG/JPEG) para o DANFE proprio (SEFAZ direto); o ACBr guarda
   // a sua copia no backoffice deles. logotipoInfo mantem so o nome do arquivo (exibicao).
   logotipoConteudo         String?
+  // Última vez que a distribuição de NF-e recebidas (NFeDistribuicaoDFe) foi sincronizada — cron ou manual.
+  distribuicaoSyncEm       DateTime?
   nfseAmbienteNacional     Boolean?
   ativo                    Boolean          @default(false)
   testadoEm                DateTime?
