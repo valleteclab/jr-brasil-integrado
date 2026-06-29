@@ -141,8 +141,31 @@ export function FiscalEntriesList({ entries, receivedDocuments, ultimaSync, nfse
         doc.nsu,
         doc.statusLabel
       ].some((field) => field.toLowerCase().includes(normalizedQuery));
+    }).sort((a, b) => {
+      // Mais recentes primeiro (por data de emissão); sem data vai para o fim.
+      const ta = a.dataEmissao ? new Date(a.dataEmissao).getTime() : 0;
+      const tb = b.dataEmissao ? new Date(b.dataEmissao).getTime() : 0;
+      return tb - ta;
     });
   }, [query, receivedRows, periodo, dataDe, dataAte]);
+
+  const filteredNfse = useMemo(() => {
+    const { de, ate } = intervaloPeriodo(periodo, dataDe, dataAte);
+    return nfseRecebidas
+      .filter((d) => {
+        if (de === null && ate === null) return true;
+        const t = d.dataEmissao ? new Date(d.dataEmissao).getTime() : null;
+        if (t === null) return false;
+        if (de !== null && t < de) return false;
+        if (ate !== null && t > ate) return false;
+        return true;
+      })
+      .sort((a, b) => {
+        const ta = a.dataEmissao ? new Date(a.dataEmissao).getTime() : 0;
+        const tb = b.dataEmissao ? new Date(b.dataEmissao).getTime() : 0;
+        return tb - ta;
+      });
+  }, [nfseRecebidas, periodo, dataDe, dataAte]);
 
   const registeredCount = rows.filter((entry) => entry.status === "Registrada").length;
   const filteredIds = filteredEntries.map((entry) => entry.id);
@@ -542,7 +565,48 @@ export function FiscalEntriesList({ entries, receivedDocuments, ultimaSync, nfse
           </div>
         </>
       ) : tab === "nfse" ? (
-        <div className="erp-table-wrap fiscal-list-table">
+        <>
+          <div className="fiscal-periodo-filtros">
+            {PERIODOS.map((p) => (
+              <button
+                key={p.valor}
+                type="button"
+                className={`fiscal-chip${periodo === p.valor ? " ativo" : ""}`}
+                onClick={() => { setPeriodo(p.valor); setDataDe(""); setDataAte(""); }}
+              >
+                {p.label}
+              </button>
+            ))}
+            <span className="fiscal-periodo-sep" aria-hidden="true">|</span>
+            <label className="fiscal-periodo-data">
+              De
+              <input
+                type="date"
+                value={dataDe}
+                max={dataAte || undefined}
+                onChange={(event) => { setDataDe(event.target.value); setPeriodo("custom"); }}
+              />
+            </label>
+            <label className="fiscal-periodo-data">
+              Até
+              <input
+                type="date"
+                value={dataAte}
+                min={dataDe || undefined}
+                onChange={(event) => { setDataAte(event.target.value); setPeriodo("custom"); }}
+              />
+            </label>
+            {periodo !== "todos" && (
+              <button
+                type="button"
+                className="fiscal-chip-limpar"
+                onClick={() => { setPeriodo("todos"); setDataDe(""); setDataAte(""); }}
+              >
+                Limpar filtro
+              </button>
+            )}
+          </div>
+          <div className="erp-table-wrap fiscal-list-table">
           <table className="erp-table">
             <thead>
               <tr>
@@ -554,7 +618,7 @@ export function FiscalEntriesList({ entries, receivedDocuments, ultimaSync, nfse
               </tr>
             </thead>
             <tbody>
-              {nfseRecebidas.map((d) => (
+              {filteredNfse.map((d) => (
                 <tr key={d.id}>
                   <td>
                     <span className="mono bold">{d.nNFSe || "-"}</span>
@@ -572,7 +636,7 @@ export function FiscalEntriesList({ entries, receivedDocuments, ultimaSync, nfse
                   </td>
                 </tr>
               ))}
-              {!nfseRecebidas.length && (
+              {!filteredNfse.length && (
                 <tr>
                   <td colSpan={5}>
                     <div className="empty-st">Nenhuma NFS-e recebida (tomador) sincronizada ainda. A busca roda automaticamente a cada hora pelo Ambiente Nacional.</div>
@@ -582,10 +646,11 @@ export function FiscalEntriesList({ entries, receivedDocuments, ultimaSync, nfse
             </tbody>
           </table>
           <div className="erp-table-foot">
-            <span>{nfseRecebidas.length} NFS-e exibidas</span>
-            <strong>Total: {new Intl.NumberFormat("pt-BR", { currency: "BRL", style: "currency" }).format(nfseRecebidas.reduce((total, d) => total + d.valor, 0))}</strong>
+            <span>{filteredNfse.length} NFS-e exibidas</span>
+            <strong>Total: {new Intl.NumberFormat("pt-BR", { currency: "BRL", style: "currency" }).format(filteredNfse.reduce((total, d) => total + d.valor, 0))}</strong>
           </div>
-        </div>
+          </div>
+        </>
       ) : (
       <div className="erp-table-wrap fiscal-list-table">
         <table className="erp-table">
