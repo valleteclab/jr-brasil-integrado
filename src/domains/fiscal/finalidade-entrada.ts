@@ -24,7 +24,10 @@ export const FINALIDADE_OPCOES: Array<{ value: FinalidadeEntrada; label: string 
   { value: "DEVOLUCAO_VENDA", label: "Devolução de venda (cliente devolveu)" },
   { value: "TRANSFERENCIA", label: "Transferência (entre filiais)" },
   { value: "RETORNO_INDUSTRIALIZACAO", label: "Retorno de industrialização/remessa" },
-  { value: "BONIFICACAO", label: "Bonificação / brinde / doação recebida" }
+  { value: "BONIFICACAO", label: "Bonificação / brinde / doação recebida" },
+  // Material aplicado na prestação de serviço
+  { value: "MATERIAL_SERVICO_ICMS", label: "Material p/ serviço com ICMS (1.126/2.126)" },
+  { value: "MATERIAL_SERVICO_ISS", label: "Material p/ serviço com ISS (1.128/2.128)" }
 ];
 
 const FINALIDADES_VALIDAS: ReadonlySet<string> = new Set(FINALIDADE_OPCOES.map((o) => o.value));
@@ -51,7 +54,11 @@ const CFOP_ENTRADA: Record<FinalidadeEntrada, { semSt: [string, string]; comSt: 
   // Retorno de remessa p/ industrialização: 1.902/2.902 (não há par de ST específico — mantém o mesmo).
   RETORNO_INDUSTRIALIZACAO: { semSt: ["1902", "2902"], comSt: ["1902", "2902"] },
   // Bonificação/brinde/doação recebida: 1.910/2.910.
-  BONIFICACAO: { semSt: ["1910", "2910"], comSt: ["1910", "2910"] }
+  BONIFICACAO: { semSt: ["1910", "2910"], comSt: ["1910", "2910"] },
+  // Material para uso na prestação de serviço sujeito a ICMS: 1.126/2.126.
+  MATERIAL_SERVICO_ICMS: { semSt: ["1126", "2126"], comSt: ["1126", "2126"] },
+  // Material para uso na prestação de serviço sujeito a ISSQN: 1.128/2.128.
+  MATERIAL_SERVICO_ISS: { semSt: ["1128", "2128"], comSt: ["1128", "2128"] }
 };
 
 export type CfopEntradaContext = {
@@ -81,7 +88,9 @@ export function finalidadeMovimentaEstoque(finalidade: FinalidadeEntrada): boole
     finalidade === "DEVOLUCAO_VENDA" ||
     finalidade === "TRANSFERENCIA" ||
     finalidade === "RETORNO_INDUSTRIALIZACAO" ||
-    finalidade === "BONIFICACAO"
+    finalidade === "BONIFICACAO" ||
+    finalidade === "MATERIAL_SERVICO_ICMS" ||
+    finalidade === "MATERIAL_SERVICO_ISS"
   );
 }
 
@@ -203,6 +212,16 @@ export function creditoPorFinalidade(
       // AGREGADO da industrialização (CFOP 1.124, insumos+mão de obra do industrializador) é lançado
       // à parte. Conservador: não credita automaticamente na entrada do retorno.
       return { recuperavel: false, observacao: "Retorno de industrialização — material volta com suspensão; o crédito do serviço/insumo do industrializador deve ser lançado à parte. Validar com o contador." };
+    case "MATERIAL_SERVICO_ICMS":
+      // Material aplicado em serviço sujeito a ICMS (transporte/comunicação): a saída é tributada por
+      // ICMS, então o material credita (art. 20, LC 87/96). PIS/COFINS como insumo, só no Lucro Real.
+      if (tributo === "ICMS") return { recuperavel: true };
+      return pisCofinsCreditavel(regime);
+    case "MATERIAL_SERVICO_ISS":
+      // Material aplicado em serviço sujeito a ISSQN: NÃO há saída tributada por ICMS → sem crédito de
+      // ICMS. PIS/COFINS do insumo do serviço creditam no Lucro Real.
+      if (tributo === "ICMS") return { recuperavel: false, observacao: "Serviço sujeito a ISSQN — sem saída de ICMS, logo sem crédito de ICMS sobre o material." };
+      return pisCofinsCreditavel(regime);
     default:
       return SEM_CREDITO;
   }

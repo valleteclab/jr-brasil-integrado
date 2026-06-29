@@ -8,7 +8,7 @@ import { parseNfeXml } from "@/domains/products/xml/nfe-server-parser";
 import type { ParsedNfeItem } from "@/domains/products/xml/nfe-server-parser";
 import { callOpenRouter } from "@/domains/ai/openrouter-service";
 import { cfopIndicaSt, isSubstituicaoTributaria } from "@/domains/fiscal/cfop";
-import { cfopVendaPadrao, creditoPorFinalidade, isFinalidadeEntrada, resolveCfopEntrada } from "@/domains/fiscal/finalidade-entrada";
+import { cfopVendaPadrao, creditoPorFinalidade, finalidadeMovimentaEstoque, isFinalidadeEntrada, resolveCfopEntrada } from "@/domains/fiscal/finalidade-entrada";
 import { loadFinalidadeRules, resolveFinalidadeForItem } from "@/domains/fiscal/application/finalidade-regra-use-cases";
 import { sugerirCategoriasEntrada } from "./ai-enrichment-use-cases";
 
@@ -556,7 +556,7 @@ export async function importNfeXml(scope: TenantScope, xmlText: string) {
       const st = isSubstituicaoTributaria({ cstIcms: icms?.cst ?? null, csosn: icms?.csosn ?? null }) || cfopIndicaSt(item.cfop);
       const interestadual = Boolean(empresaUf && parsed.supplierUf && empresaUf !== parsed.supplierUf);
       const cfopEntrada = resolveCfopEntrada(finalidadeRes.finalidade, { interestadual, st });
-      const movimentaEstoque = finalidadeRes.finalidade === "REVENDA" || finalidadeRes.finalidade === "INDUSTRIALIZACAO";
+      const movimentaEstoque = finalidadeMovimentaEstoque(finalidadeRes.finalidade);
 
       const createdItem = await tx.entradaFiscalItem.create({
         data: {
@@ -894,9 +894,14 @@ export async function processFiscalEntry(
           continue;
         }
 
-        // Insumo (Industrialização) NÃO é revendido — é consumido na produção; quem tem preço de
-        // venda é o produto acabado. Só exigimos preço para itens vendáveis (revenda e congêneres).
-        const ehInsumo = item.finalidade === "INDUSTRIALIZACAO" || item.finalidade === "RETORNO_INDUSTRIALIZACAO";
+        // Insumo (Industrialização) e material aplicado em serviço NÃO são revendidos — são consumidos
+        // na produção/prestação; quem tem preço de venda é o produto acabado. Só exigimos preço para
+        // itens vendáveis (revenda e congêneres).
+        const ehInsumo =
+          item.finalidade === "INDUSTRIALIZACAO" ||
+          item.finalidade === "RETORNO_INDUSTRIALIZACAO" ||
+          item.finalidade === "MATERIAL_SERVICO_ICMS" ||
+          item.finalidade === "MATERIAL_SERVICO_ISS";
         if (!ehInsumo && (!item.precoVendaDefinido || Number(item.precoVendaDefinido) <= 0)) {
           throw new Error(`Informe o preço de venda do novo SKU ${item.codigoFornecedor} antes de lançar a entrada fiscal.`);
         }
@@ -926,7 +931,7 @@ export async function processFiscalEntry(
             sku: item.codigoFornecedor.toUpperCase(),
             nome: item.descricaoFornecedor,
             descricao: `Criado pela entrada fiscal ${entrada.numero || entrada.id}.`,
-            tipo: item.finalidade === "INDUSTRIALIZACAO" ? "INSUMO" : "PRODUTO",
+            tipo: ehInsumo ? "INSUMO" : "PRODUTO",
             codigoOriginal: item.codigoFornecedor,
             gtin: item.gtin,
             categoriaId: await categoriaIdPara(categoriasIa[item.id] ?? ""),
@@ -1601,7 +1606,7 @@ async function applyFinalidadeManual(
   const st = isSubstituicaoTributaria({ cstIcms: icms?.cst ?? null, csosn: icms?.csosn ?? null });
   const cfopManual = (cfopOverride ?? "").replace(/\D/g, "");
   const cfopEntrada = cfopManual.length === 4 ? cfopManual : resolveCfopEntrada(finalidade, { interestadual, st });
-  const movimentaEstoque = finalidade === "REVENDA" || finalidade === "INDUSTRIALIZACAO";
+  const movimentaEstoque = finalidadeMovimentaEstoque(finalidade);
 
   await tx.entradaFiscalItem.update({
     where: { id: item.id },
@@ -2086,7 +2091,7 @@ export async function createManualFiscalEntry(scope: TenantScope, input: ManualF
     if (item.valorUnitario < 0) {
       throw new Error(`Valor unitário inválido no item ${item.codigoFornecedor}.`);
     }
-    const movimenta = (item.finalidade ?? "REVENDA") === "REVENDA" || (item.finalidade ?? "REVENDA") === "INDUSTRIALIZACAO";
+    const movimenta = finalidadeMovimentaEstoque(item.finalidade ?? "REVENDA");
     if (movimenta && !item.produtoId && (!item.precoVenda || item.precoVenda <= 0)) {
       throw new Error(`Informe o produto vinculado ou o preço de venda (novo SKU) do item ${item.codigoFornecedor}.`);
     }
@@ -2161,7 +2166,7 @@ export async function createManualFiscalEntry(scope: TenantScope, input: ManualF
 
     for (const item of itensCalc) {
       const finalidade = item.finalidade ?? "REVENDA";
-      const movimentaEstoque = finalidade === "REVENDA" || finalidade === "INDUSTRIALIZACAO";
+      const movimentaEstoque = finalidadeMovimentaEstoque(finalidade);
       const icms = item.impostos?.find((imp) => imp.tributo === "ICMS");
       const st = isSubstituicaoTributaria({ cstIcms: icms?.cst ?? null, csosn: icms?.csosn ?? null }) || cfopIndicaSt(item.cfop ?? null);
       const cfopEntrada = resolveCfopEntrada(finalidade, { interestadual, st });

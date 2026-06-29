@@ -254,6 +254,8 @@ enum FinalidadeEntrada {
   TRANSFERENCIA // Entrada por transferência entre estabelecimentos do mesmo titular (CFOP 1.152/1.151; crédito da origem — LC 204/2023)
   RETORNO_INDUSTRIALIZACAO // Retorno de remessa para industrialização/beneficiamento por terceiro (CFOP 1.902/1.124)
   BONIFICACAO // Mercadoria recebida em bonificação/brinde/doação, sem pagamento (CFOP 1.910)
+  MATERIAL_SERVICO_ICMS // Material para uso na prestação de serviço sujeito a ICMS (CFOP 1.126/2.126) — credita ICMS
+  MATERIAL_SERVICO_ISS // Material para uso na prestação de serviço sujeito a ISSQN (CFOP 1.128/2.128) — NÃO credita ICMS
 }
 
 enum ProvedorIa {
