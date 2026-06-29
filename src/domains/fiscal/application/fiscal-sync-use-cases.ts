@@ -42,15 +42,22 @@ export async function syncNotaFiscalStatus(scope: TenantScope, notaId: string) {
     ...(nota.provedor === "SEFAZ" ? { ufEmitente: config.emitter.uf } : {})
   };
 
-  const result = await provider.queryStatus(nota.providerRef, ctx);
+  // A NFS-e nacional é consultada pela CHAVE de acesso (50 díg.), não pelo providerRef interno
+  // (ex.: "nfs_..."). Demais provedores seguem usando o providerRef.
+  const refConsulta = nota.provedor === "NACIONAL" && nota.chaveAcesso ? nota.chaveAcesso : nota.providerRef;
+  const result = await provider.queryStatus(refConsulta, ctx);
+
+  // Consulta indeterminada (PROCESSANDO = falha de rede/HTTP) não pode rebaixar uma nota já
+  // AUTORIZADA/CANCELADA — mantém o status atual nesse caso.
+  const novoStatus = result.status === "PROCESSANDO" ? nota.status : result.status;
 
   const updated = await prisma.$transaction(async (tx) => {
-    const authorized = result.status === "AUTORIZADA";
-    const canceled = result.status === "CANCELADA";
+    const authorized = novoStatus === "AUTORIZADA";
+    const canceled = novoStatus === "CANCELADA";
     const updatedNota = await tx.notaFiscal.update({
       where: { id: nota.id },
       data: {
-        status: result.status,
+        status: novoStatus,
         ...(result.numero ? { numero: result.numero } : {}),
         ...(result.chaveAcesso ? { chaveAcesso: result.chaveAcesso } : {}),
         ...(result.protocolo ? { protocolo: result.protocolo } : {}),

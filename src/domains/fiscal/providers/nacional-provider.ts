@@ -492,6 +492,11 @@ export class NacionalFiscalProvider implements FiscalProvider {
       }
       const motivo = (data.erro ?? []).map((x) => `${x.codigo ?? ""} ${x.descricao ?? ""}${x.complemento ? ` (${x.complemento})` : ""}`.trim()).join("; ")
         || `Falha no cancelamento na SEFIN (HTTP ${res.statusCode}).`;
+      // Idempotente: a SEFIN recusa um novo cancelamento quando a NFS-e JÁ está cancelada (ex.: cancelada
+      // pelo portal nacional). Como a nota está de fato cancelada, tratamos como sucesso e sincronizamos.
+      if (/cancelamento.*j[áa].*vinculad|j[áa].*(est[áa]\s*vinculad|cancelad)/i.test(motivo)) {
+        return { status: "AUTORIZADO", motivo: "NFS-e já estava cancelada na SEFIN — status sincronizado." };
+      }
       return { status: res.statusCode === 400 || res.statusCode === 422 ? "REJEITADO" : "ERRO", motivo };
     } catch (e) {
       return { status: "ERRO", motivo: `Falha ao cancelar a NFS-e: ${e instanceof Error ? e.message : String(e)}` };
@@ -500,8 +505,43 @@ export class NacionalFiscalProvider implements FiscalProvider {
   async correct(_input: CorrectionInput, _ctx: ProviderContext): Promise<CorrectionResult> {
     return { status: "ERRO", motivo: "NFS-e nacional não tem carta de correção — use substituição." };
   }
-  async queryStatus(_chaveAcesso: string, _ctx: ProviderContext): Promise<EmitResult> {
-    return { status: "PROCESSANDO", motivo: "Consulta NFS-e nacional ainda não implementada (F4)." };
+  /**
+   * Consulta o estado real da NFS-e na SEFIN e detecta CANCELAMENTO — inclusive feito por fora do
+   * sistema (ex.: pelo portal nacional). GET /nfse/{chave} confirma a existência; se houver um evento
+   * de cancelamento (101101) vinculado, a nota está cancelada. Em caso de falha de consulta retorna
+   * PROCESSANDO (o use-case não rebaixa o status atual).
+   */
+  async queryStatus(chaveAcesso: string, ctx: ProviderContext): Promise<EmitResult> {
+    if (!ctx.certificado?.pfx) {
+      return { status: "PROCESSANDO", motivo: "Certificado A1 não disponível para consultar a NFS-e nacional." };
+    }
+    const chave = onlyDigits(chaveAcesso);
+    if (chave.length !== 50) {
+      return { status: "PROCESSANDO", motivo: "Chave da NFS-e ausente/inválida para consulta." };
+    }
+    const cert = { pfx: ctx.certificado.pfx, senha: ctx.certificado.senha };
+
+    const nfse = await getSefin(SEFIN[ctx.ambiente], `/nfse/${chave}`, cert);
+    if (nfse.statusCode === 404) {
+      return { status: "REJEITADA", chaveAcesso: chave, motivo: "NFS-e não localizada na SEFIN." };
+    }
+    if (nfse.statusCode < 200 || nfse.statusCode >= 300) {
+      return { status: "PROCESSANDO", chaveAcesso: chave, motivo: `Consulta à SEFIN falhou (HTTP ${nfse.statusCode}).` };
+    }
+
+    // Evento de CANCELAMENTO (101101) vinculado? Então a nota está cancelada (mesmo cancelamento externo).
+    const evt = await getSefin(SEFIN[ctx.ambiente], `/nfse/${chave}/eventos/101101/1`, cert);
+    if (evt.statusCode >= 200 && evt.statusCode < 300) {
+      let protocolo: string | undefined;
+      try {
+        const d = JSON.parse(evt.body) as { eventoXmlGZipB64?: string };
+        const evtXml = d.eventoXmlGZipB64 ? gunzipSync(Buffer.from(d.eventoXmlGZipB64, "base64")).toString("utf8") : "";
+        protocolo = /<nProt>(\d+)<\/nProt>/.exec(evtXml)?.[1];
+      } catch { /* corpo não-JSON */ }
+      return { status: "CANCELADA", chaveAcesso: chave, protocolo };
+    }
+
+    return { status: "AUTORIZADA", chaveAcesso: chave };
   }
   async testConnection(_ctx: ProviderContext): Promise<TestConnectionResult> {
     return { ok: false, message: "Teste de conexão NFS-e nacional ainda não implementado (F4)." };
