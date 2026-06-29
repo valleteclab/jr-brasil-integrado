@@ -15,14 +15,22 @@ import type { FinalidadeEntrada, RegimeTributario, TipoTributo } from "@prisma/c
 export type { FinalidadeEntrada };
 
 export const FINALIDADE_OPCOES: Array<{ value: FinalidadeEntrada; label: string }> = [
+  // Destinação da compra
   { value: "REVENDA", label: "Revenda / Comercialização" },
   { value: "USO_CONSUMO", label: "Uso e Consumo" },
   { value: "IMOBILIZADO", label: "Ativo Imobilizado" },
-  { value: "INDUSTRIALIZACAO", label: "Industrialização / Insumo" }
+  { value: "INDUSTRIALIZACAO", label: "Industrialização / Insumo" },
+  // Operações de entrada (não-compra)
+  { value: "DEVOLUCAO_VENDA", label: "Devolução de venda (cliente devolveu)" },
+  { value: "TRANSFERENCIA", label: "Transferência (entre filiais)" },
+  { value: "RETORNO_INDUSTRIALIZACAO", label: "Retorno de industrialização/remessa" },
+  { value: "BONIFICACAO", label: "Bonificação / brinde / doação recebida" }
 ];
 
+const FINALIDADES_VALIDAS: ReadonlySet<string> = new Set(FINALIDADE_OPCOES.map((o) => o.value));
+
 export function isFinalidadeEntrada(value: unknown): value is FinalidadeEntrada {
-  return value === "REVENDA" || value === "USO_CONSUMO" || value === "IMOBILIZADO" || value === "INDUSTRIALIZACAO";
+  return typeof value === "string" && FINALIDADES_VALIDAS.has(value);
 }
 
 // ─── CFOP de entrada ────────────────────────────────────────────────────────────
@@ -35,7 +43,15 @@ const CFOP_ENTRADA: Record<FinalidadeEntrada, { semSt: [string, string]; comSt: 
   REVENDA: { semSt: ["1102", "2102"], comSt: ["1403", "2403"] },
   INDUSTRIALIZACAO: { semSt: ["1101", "2101"], comSt: ["1401", "2401"] },
   USO_CONSUMO: { semSt: ["1556", "2556"], comSt: ["1407", "2407"] },
-  IMOBILIZADO: { semSt: ["1551", "2551"], comSt: ["1406", "2406"] }
+  IMOBILIZADO: { semSt: ["1551", "2551"], comSt: ["1406", "2406"] },
+  // Devolução de venda: 1.202/2.202 (merc. de terceiros); com ST 1.411/2.411.
+  DEVOLUCAO_VENDA: { semSt: ["1202", "2202"], comSt: ["1411", "2411"] },
+  // Transferência de mercadoria recebida: 1.152/2.152; com ST 1.408/2.408 (p/ comercialização).
+  TRANSFERENCIA: { semSt: ["1152", "2152"], comSt: ["1408", "2408"] },
+  // Retorno de remessa p/ industrialização: 1.902/2.902 (não há par de ST específico — mantém o mesmo).
+  RETORNO_INDUSTRIALIZACAO: { semSt: ["1902", "2902"], comSt: ["1902", "2902"] },
+  // Bonificação/brinde/doação recebida: 1.910/2.910.
+  BONIFICACAO: { semSt: ["1910", "2910"], comSt: ["1910", "2910"] }
 };
 
 export type CfopEntradaContext = {
@@ -53,9 +69,20 @@ export function resolveCfopEntrada(finalidade: FinalidadeEntrada, ctx: CfopEntra
 
 // ─── Movimentação de estoque ────────────────────────────────────────────────────
 
-/** Revenda e industrialização viram estoque; uso/consumo e imobilizado não. */
+/**
+ * Movimenta estoque quando entra mercadoria física: revenda, insumo e as operações que recolocam
+ * mercadoria no estoque — devolução de venda (volta), transferência, retorno de industrialização e
+ * bonificação recebida. Uso/consumo e imobilizado não movimentam estoque (viram despesa/ativo).
+ */
 export function finalidadeMovimentaEstoque(finalidade: FinalidadeEntrada): boolean {
-  return finalidade === "REVENDA" || finalidade === "INDUSTRIALIZACAO";
+  return (
+    finalidade === "REVENDA" ||
+    finalidade === "INDUSTRIALIZACAO" ||
+    finalidade === "DEVOLUCAO_VENDA" ||
+    finalidade === "TRANSFERENCIA" ||
+    finalidade === "RETORNO_INDUSTRIALIZACAO" ||
+    finalidade === "BONIFICACAO"
+  );
 }
 
 // ─── CFOP de venda padrão do produto ────────────────────────────────────────────
@@ -77,6 +104,9 @@ export function cfopVendaPadrao(
   if (ctx.st) return null; // ST: a emissão deriva 5405/6404 pelo CST de substituído.
   if (finalidade === "REVENDA") return "5102"; // venda de mercadoria adquirida de terceiros
   if (finalidade === "INDUSTRIALIZACAO") return "5101"; // venda de produção do estabelecimento
+  // Transferência e bonificação recebidas viram estoque de revenda → vendem como mercadoria (5102).
+  if (finalidade === "TRANSFERENCIA" || finalidade === "BONIFICACAO") return "5102";
+  // Devolução de venda e retorno de industrialização não definem CFOP de venda do produto.
   return null;
 }
 
@@ -152,6 +182,27 @@ export function creditoPorFinalidade(
         };
       }
       return { recuperavel: false, observacao: "PIS/COFINS de ativo creditam por depreciação/parcelas — não na entrada." };
+    case "DEVOLUCAO_VENDA":
+      // Devolução de venda: NÃO é crédito de compra — recupera-se o imposto debitado na SAÍDA
+      // original, com a mesma carga/CST. Escritura como crédito na entrada (reduz a apuração).
+      if (tributo === "ICMS") return { recuperavel: true, observacao: "Devolução de venda — recupera o ICMS debitado na saída original (mesmo CST/carga da venda)." };
+      return pisCofinsCreditavel(regime);
+    case "TRANSFERENCIA":
+      // Transferência entre estabelecimentos do mesmo titular: o crédito de ICMS é transferido da
+      // ORIGEM (LC 204/2023, Conv. ICMS 109/2024 — pós ADC 49/STF). PIS/COFINS não geram novo crédito
+      // (não há aquisição de terceiro; já creditaram na compra original).
+      if (tributo === "ICMS") return { recuperavel: true, observacao: "Transferência — crédito de ICMS transferido da origem (LC 204/2023, Conv. 109/2024)." };
+      return { recuperavel: false, observacao: "Transferência entre filiais não gera novo crédito de PIS/COFINS." };
+    case "BONIFICACAO":
+      // Bonificação/brinde recebido: o ICMS destacado pelo fornecedor credita (houve operação
+      // tributada). Atenção ao CUSTO MÉDIO (entrada sem pagamento). PIS/COFINS como mercadoria.
+      if (tributo === "ICMS") return { recuperavel: true, observacao: "Bonificação — credita o ICMS destacado; revise o custo médio (entrada sem pagamento)." };
+      return pisCofinsCreditavel(regime);
+    case "RETORNO_INDUSTRIALIZACAO":
+      // Material volta com suspensão/diferimento (saiu suspenso na remessa); o crédito do VALOR
+      // AGREGADO da industrialização (CFOP 1.124, insumos+mão de obra do industrializador) é lançado
+      // à parte. Conservador: não credita automaticamente na entrada do retorno.
+      return { recuperavel: false, observacao: "Retorno de industrialização — material volta com suspensão; o crédito do serviço/insumo do industrializador deve ser lançado à parte. Validar com o contador." };
     default:
       return SEM_CREDITO;
   }
@@ -191,8 +242,20 @@ export function sugerirFinalidadeEntrada(item: FinalidadeSugestaoItem): Finalida
   const descricao = item.descricao ?? "";
   const cfop = (item.cfop ?? "").replace(/\D/g, "");
 
-  // CFOP de SAÍDA do fornecedor com sufixo 551/556 sinaliza venda de ativo/uso-consumo.
+  // O CFOP de SAÍDA do fornecedor (que chega no XML) é o sinal mais forte da OPERAÇÃO — tem
+  // prioridade sobre a destinação, e evita classificar devolução/transferência/retorno/bonificação
+  // como REVENDA por engano.
   const sufixoCfop = cfop.length === 4 ? cfop.slice(1) : "";
+  // Operações de entrada (não-compra):
+  if (sufixoCfop === "201" || sufixoCfop === "202" || sufixoCfop === "411" || sufixoCfop === "410")
+    return { finalidade: "DEVOLUCAO_VENDA", origem: "HEURISTICA", confianca: 0.8, motivo: "CFOP de origem de devolução de venda." };
+  if (sufixoCfop === "151" || sufixoCfop === "152")
+    return { finalidade: "TRANSFERENCIA", origem: "HEURISTICA", confianca: 0.8, motivo: "CFOP de origem de transferência entre estabelecimentos." };
+  if (sufixoCfop === "902" || sufixoCfop === "903" || sufixoCfop === "124" || sufixoCfop === "125")
+    return { finalidade: "RETORNO_INDUSTRIALIZACAO", origem: "HEURISTICA", confianca: 0.75, motivo: "CFOP de origem de retorno/industrialização por terceiro." };
+  if (sufixoCfop === "910" || sufixoCfop === "911")
+    return { finalidade: "BONIFICACAO", origem: "HEURISTICA", confianca: 0.8, motivo: "CFOP de origem de bonificação/brinde/doação." };
+  // Destinação da compra:
   if (sufixoCfop === "551") return { finalidade: "IMOBILIZADO", origem: "HEURISTICA", confianca: 0.6, motivo: "CFOP de origem de venda de ativo imobilizado." };
   if (sufixoCfop === "556") return { finalidade: "USO_CONSUMO", origem: "HEURISTICA", confianca: 0.6, motivo: "CFOP de origem de venda de material de uso/consumo." };
   if (sufixoCfop === "101") return { finalidade: "INDUSTRIALIZACAO", origem: "HEURISTICA", confianca: 0.45, motivo: "CFOP de origem de produção do estabelecimento." };

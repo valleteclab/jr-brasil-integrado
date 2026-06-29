@@ -47,13 +47,19 @@ type FiscalDraftItem = {
   }>;
 };
 
-type FinalidadeEntrada = "REVENDA" | "USO_CONSUMO" | "IMOBILIZADO" | "INDUSTRIALIZACAO";
+type FinalidadeEntrada =
+  | "REVENDA" | "USO_CONSUMO" | "IMOBILIZADO" | "INDUSTRIALIZACAO"
+  | "DEVOLUCAO_VENDA" | "TRANSFERENCIA" | "RETORNO_INDUSTRIALIZACAO" | "BONIFICACAO";
 
 const FINALIDADE_OPCOES: Array<{ value: FinalidadeEntrada; label: string }> = [
   { value: "REVENDA", label: "Revenda" },
   { value: "USO_CONSUMO", label: "Uso e consumo" },
   { value: "IMOBILIZADO", label: "Imobilizado" },
-  { value: "INDUSTRIALIZACAO", label: "Industrialização" }
+  { value: "INDUSTRIALIZACAO", label: "Industrialização" },
+  { value: "DEVOLUCAO_VENDA", label: "Devolução de venda" },
+  { value: "TRANSFERENCIA", label: "Transferência (filiais)" },
+  { value: "RETORNO_INDUSTRIALIZACAO", label: "Retorno de industrialização" },
+  { value: "BONIFICACAO", label: "Bonificação / brinde" }
 ];
 
 const FINALIDADE_ORIGEM_LABEL: Record<string, string> = {
@@ -71,12 +77,16 @@ const CFOP_ENTRADA_CLIENT: Record<FinalidadeEntrada, { semSt: [string, string]; 
   REVENDA: { semSt: ["1102", "2102"], comSt: ["1403", "2403"] },
   INDUSTRIALIZACAO: { semSt: ["1101", "2101"], comSt: ["1401", "2401"] },
   USO_CONSUMO: { semSt: ["1556", "2556"], comSt: ["1407", "2407"] },
-  IMOBILIZADO: { semSt: ["1551", "2551"], comSt: ["1406", "2406"] }
+  IMOBILIZADO: { semSt: ["1551", "2551"], comSt: ["1406", "2406"] },
+  DEVOLUCAO_VENDA: { semSt: ["1202", "2202"], comSt: ["1411", "2411"] },
+  TRANSFERENCIA: { semSt: ["1152", "2152"], comSt: ["1408", "2408"] },
+  RETORNO_INDUSTRIALIZACAO: { semSt: ["1902", "2902"], comSt: ["1902", "2902"] },
+  BONIFICACAO: { semSt: ["1910", "2910"], comSt: ["1910", "2910"] }
 };
 
 function recalcCfopEntrada(finalidade: FinalidadeEntrada, cfopAtual: string | undefined): string {
   const interestadual = (cfopAtual ?? "").startsWith("2");
-  const comSt = ["1403", "2403", "1401", "2401", "1407", "2407", "1406", "2406"].includes(cfopAtual ?? "");
+  const comSt = ["1403", "2403", "1401", "2401", "1407", "2407", "1406", "2406", "1411", "2411", "1408", "2408"].includes(cfopAtual ?? "");
   const par = comSt ? CFOP_ENTRADA_CLIENT[finalidade].comSt : CFOP_ENTRADA_CLIENT[finalidade].semSt;
   return par[interestadual ? 1 : 0];
 }

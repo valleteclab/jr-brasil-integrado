@@ -250,6 +250,10 @@ enum FinalidadeEntrada {
   USO_CONSUMO // Material de uso/consumo (despesa; ICMS sem crédito até 2033)
   IMOBILIZADO // Bem do ativo imobilizado (crédito de ICMS via CIAP 48 parcelas)
   INDUSTRIALIZACAO // Insumo/matéria-prima para produção (entra como INSUMO, credita)
+  DEVOLUCAO_VENDA // Cliente devolveu mercadoria vendida — recupera o ICMS/IPI debitado na venda (CFOP 1.202/1.201/1.411)
+  TRANSFERENCIA // Entrada por transferência entre estabelecimentos do mesmo titular (CFOP 1.152/1.151; crédito da origem — LC 204/2023)
+  RETORNO_INDUSTRIALIZACAO // Retorno de remessa para industrialização/beneficiamento por terceiro (CFOP 1.902/1.124)
+  BONIFICACAO // Mercadoria recebida em bonificação/brinde/doação, sem pagamento (CFOP 1.910)
 }
 
 enum ProvedorIa {
