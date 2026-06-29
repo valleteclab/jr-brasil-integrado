@@ -146,6 +146,7 @@ type FormaPagamentoOption = { id: string; nome: string };
 type FiscalEntryWizardProps = {
   products: ProductPickerOption[];
   formasPagamento?: FormaPagamentoOption[];
+  cfopsEntrada?: { codigo: string; descricao: string }[];
   initialDraft?: FiscalDraft | null;
 };
 
@@ -232,7 +233,7 @@ function installmentsFromDraft(draft: FiscalDraft): Installment[] {
   }];
 }
 
-export function FiscalEntryWizard({ initialDraft = null, products, formasPagamento = [] }: FiscalEntryWizardProps) {
+export function FiscalEntryWizard({ initialDraft = null, products, formasPagamento = [], cfopsEntrada = [] }: FiscalEntryWizardProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [step, setStep] = useState<WizardStep>(1);
   const [draft, setDraft] = useState<FiscalDraft | null>(initialDraft);
@@ -873,13 +874,17 @@ export function FiscalEntryWizard({ initialDraft = null, products, formasPagamen
             </div>
           </div>
           <datalist id="cfop-entrada-especiais">
-            {CFOP_ENTRADA_ESPECIAIS.map((cfop) => (
+            {(cfopsEntrada.length
+              ? cfopsEntrada.map((c) => ({ code: c.codigo, label: c.descricao }))
+              : CFOP_ENTRADA_ESPECIAIS
+            ).map((cfop) => (
               <option key={cfop.code} value={cfop.code}>{cfop.code} · {cfop.label}</option>
             ))}
           </datalist>
           <p className="block-muted" style={{ marginTop: "0.5rem" }}>
-            O CFOP de entrada é sugerido pela finalidade. Para casos especiais (devolução, remessa, importação),
-            digite o CFOP correto no campo ou escolha um da lista.
+            O CFOP de entrada é sugerido pela finalidade. Para casos especiais (devolução, remessa, importação,
+            prestação de serviço etc.), digite o CFOP no campo ou escolha um da lista — todos os CFOPs de
+            entrada (1xxx/2xxx/3xxx) estão disponíveis.
           </p>
 
           {(() => {
