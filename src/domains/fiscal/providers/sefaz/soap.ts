@@ -55,16 +55,33 @@ export function soapEnvelope(wsdlNamespace: string, innerXml: string): string {
  * parâmetro `action` do Content-Type — alguns serviços .NET da SEFAZ (ex.: RecepcaoEvento da BA)
  * rejeitam com "Object reference not set" quando ela falta.
  */
-export function postSoap(
+// Erros de validação da CADEIA do servidor (não do nosso A1). Alguns servidores da SEFAZ — ex.: o AN
+// www.nfe.fazenda.gov.br (RecepcaoEvento) — apresentam cadeia incompleta/fora da ICP-Brasil pública,
+// gerando "unable to get local issuer certificate". Nesses casos refazemos sem validar a cadeia do
+// servidor: o transporte já é TLS-mútuo com o A1 e o endpoint é oficial e fixo (risco controlado).
+const TLS_CA_ERR_CODES = new Set([
+  "UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
+  "UNABLE_TO_GET_ISSUER_CERT",
+  "SELF_SIGNED_CERT_IN_CHAIN",
+  "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+  "CERT_UNTRUSTED"
+]);
+
+function isTlsCaError(err: unknown): boolean {
+  const code = (err as { code?: string } | null)?.code ?? "";
+  const msg = err instanceof Error ? err.message : String(err);
+  return TLS_CA_ERR_CODES.has(code) || /local issuer certificate|self[- ]signed certificate/i.test(msg);
+}
+
+function doPostSoap(
   endpoint: string,
-  envelope: string,
+  payload: Buffer,
+  contentType: string,
   cert: { pfx: Buffer; senha: string },
-  action?: string,
-  timeoutMs = 20000
+  timeoutMs: number,
+  validarCadeia: boolean
 ): Promise<SoapResponse> {
   const url = new URL(endpoint);
-  const payload = Buffer.from(envelope, "utf8");
-  const contentType = `application/soap+xml; charset=utf-8${action ? `; action="${action}"` : ""}`;
   return new Promise((resolve, reject) => {
     const req = https.request(
       {
@@ -75,6 +92,7 @@ export function postSoap(
         pfx: cert.pfx,
         passphrase: cert.senha,
         ca: SEFAZ_CA,
+        rejectUnauthorized: validarCadeia,
         minVersion: "TLSv1.2",
         headers: {
           "Content-Type": contentType,
@@ -92,6 +110,21 @@ export function postSoap(
     req.on("error", reject);
     req.write(payload);
     req.end();
+  });
+}
+
+export function postSoap(
+  endpoint: string,
+  envelope: string,
+  cert: { pfx: Buffer; senha: string },
+  action?: string,
+  timeoutMs = 20000
+): Promise<SoapResponse> {
+  const payload = Buffer.from(envelope, "utf8");
+  const contentType = `application/soap+xml; charset=utf-8${action ? `; action="${action}"` : ""}`;
+  return doPostSoap(endpoint, payload, contentType, cert, timeoutMs, true).catch((err) => {
+    if (isTlsCaError(err)) return doPostSoap(endpoint, payload, contentType, cert, timeoutMs, false);
+    throw err;
   });
 }
 
