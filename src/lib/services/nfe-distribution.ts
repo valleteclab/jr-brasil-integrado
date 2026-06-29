@@ -540,6 +540,7 @@ export async function listNfeDistributionDocuments(scope: TenantScope): Promise<
       (item.entradaFiscalId ? 100 : 0) +
       (item.resumo === false ? 20 : 0) +
       (item.status !== "ERRO" ? 5 : 0) +
+      (item.dataEmissao ? 3 : 0) + // prefere a versão que tem data (SEFAZ) sobre o resumo ACBr antigo
       (item.emitenteNome ? 2 : 0) +
       (item.valorNfe ? 1 : 0);
     if (score(doc) > score(current)) byKey.set(key, doc);
@@ -955,10 +956,26 @@ export async function processarDistribuicaoEmpresa(
   const runtime = await getProviderRuntime(scope);
   if (runtime.provider !== "SEFAZ") return { sync: "ignorada (provedor nao-SEFAZ)", ciencias: 0, returned: 0 };
 
-  const sync = await syncSefazDistribution(scope, runtime, { fromStart: opts?.fromStart })
-    .catch((e) => ({ codigoStatus: "ERRO", motivoStatus: e instanceof Error ? e.message : String(e), returned: 0 }));
-  const s = sync as { codigoStatus?: string | null; motivoStatus?: string | null; returned?: number };
+  // Flag de reprocessamento: re-baixa o histórico do NSU 0 UMA vez (corrige resumos antigos sem data).
+  // Enquanto a SEFAZ estiver em throttling (656), o flag permanece e o próximo ciclo tenta de novo.
+  const cfg = await prisma.configuracaoFiscal.findUnique({
+    where: { empresaId: scope.empresaId },
+    select: { distribuicaoReprocessar: true }
+  });
+  const fromStart = Boolean(opts?.fromStart || cfg?.distribuicaoReprocessar);
+
+  const sync = await syncSefazDistribution(scope, runtime, { fromStart })
+    .catch((e) => ({ codigoStatus: "ERRO", motivoStatus: e instanceof Error ? e.message : String(e), returned: 0, consumoIndevido: false }));
+  const s = sync as { codigoStatus?: string | null; motivoStatus?: string | null; returned?: number; consumoIndevido?: boolean };
   const syncMsg = `${s.codigoStatus ?? ""} ${s.motivoStatus ?? ""} (+${s.returned ?? 0})`.trim();
+
+  // Reprocessamento efetivado (não bloqueado por throttling/erro) → zera o flag para não repetir.
+  if (cfg?.distribuicaoReprocessar && !s.consumoIndevido && s.codigoStatus !== "ERRO") {
+    await prisma.configuracaoFiscal.update({
+      where: { empresaId: scope.empresaId },
+      data: { distribuicaoReprocessar: false }
+    }).catch(() => undefined);
+  }
 
   let ciencias = 0;
   const pendentes = await prisma.distribuicaoNfeDocumento.findMany({

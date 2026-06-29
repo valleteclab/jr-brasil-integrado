@@ -1902,6 +1902,9 @@ model ConfiguracaoFiscal {
   logotipoConteudo         String?
   // Última vez que a distribuição de NF-e recebidas (NFeDistribuicaoDFe) foi sincronizada — cron ou manual.
   distribuicaoSyncEm       DateTime?
+  // Quando true, o próximo ciclo do cron re-baixa o histórico do NSU 0 (re-sync) e zera o flag. Corrige
+  // resumos antigos sem data de emissão (ex.: vindos do ACBr). Auto-retry enquanto houver throttling.
+  distribuicaoReprocessar  Boolean?
   nfseAmbienteNacional     Boolean?
   ativo                    Boolean          @default(false)
   testadoEm                DateTime?
