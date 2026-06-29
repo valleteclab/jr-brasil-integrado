@@ -6,7 +6,6 @@ import { getFiscalRuntimeConfig } from "@/domains/fiscal/application/fiscal-conf
 import { importNfeXml } from "@/domains/products/application/fiscal-entry-use-cases";
 import {
   consultarDistribuicaoDFe,
-  consultarDistribuicaoPorChave,
   type DistDoc,
   type DistResult
 } from "@/domains/fiscal/providers/sefaz/distribuicao";
@@ -828,7 +827,6 @@ async function importDistributedNfeSefaz(
 ) {
   const chave = doc.chaveAcesso as string;
   const cnpj = onlyDigits(runtime.emitter.cnpj);
-  const cUFAutor = cUFFromUF(runtime.emitter.uf ?? "");
   const cert = sefazCert(runtime);
 
   try {
@@ -870,24 +868,18 @@ async function importDistributedNfeSefaz(
         throw new NfeDistributionError(result.motivo || "Falha ao enviar a ciência (210210) à SEFAZ.");
       }
 
-      const byChave = await consultarDistribuicaoPorChave({
-        cnpj,
-        cUFAutor,
-        chNFe: chave,
-        ambiente: runtime.ambiente,
-        cert
+      // O XML completo (procNFe) é disponibilizado num NSU novo após a ciência. Puxa pelo sync por
+      // NSU (distNSU) — a consulta por chave (consChNFe) foi descontinuada no distDFeInt (cStat 215).
+      await syncSefazDistribution(scope, runtime).catch(() => undefined);
+      const completo = await prisma.distribuicaoNfeDocumento.findFirst({
+        where: { tenantId: scope.tenantId, empresaId: scope.empresaId, chaveAcesso: chave, resumo: false },
+        orderBy: { criadoEm: "desc" }
       });
-      // Persiste todos os docs retornados (atualiza o próprio NSU com o XML completo, quando vier).
-      for (const d of byChave.docs) {
-        await upsertSefazDocument(scope, runtime, d);
-      }
-      const full = byChave.docs.find(
-        (d) => d.tipo === "nfeCompleta" && (!d.chaveAcesso || onlyDigits(d.chaveAcesso) === onlyDigits(chave))
-      );
-      xml = full?.xml && (full.xml.includes("<NFe") || full.xml.includes("<nfeProc")) ? full.xml : "";
+      const completoXml = (completo?.payload as { xml?: unknown } | null)?.xml;
+      xml = typeof completoXml === "string" && (completoXml.includes("<NFe") || completoXml.includes("<nfeProc")) ? completoXml : "";
       if (!xml) {
         throw new NfeDistributionError(
-          `Ciência enviada, mas a NF-e completa ainda não foi disponibilizada pela SEFAZ (${byChave.cStat} ${byChave.xMotivo}). Tente novamente em instantes.`
+          "Ciência enviada à SEFAZ. A NF-e completa é liberada em alguns minutos e baixada pela sincronização automática (ou no botão Atualizar). Tente importar novamente em instantes."
         );
       }
     }
@@ -937,16 +929,16 @@ async function importDistributedNfeSefaz(
 export async function runDistribuicaoCron(opts?: {
   mesesHistorico?: number;
   maxCienciaPorEmpresa?: number;
-}): Promise<{ empresas: number; resultados: Array<{ empresaId: string; sync: string; ciencias: number; erro?: string; diag?: string[] }> }> {
+}): Promise<{ empresas: number; resultados: Array<{ empresaId: string; sync: string; ciencias: number; erro?: string }> }> {
   const meses = opts?.mesesHistorico ?? 6;
   const maxCiencia = opts?.maxCienciaPorEmpresa ?? 25;
   const desde = new Date(Date.now() - meses * 30 * 24 * 60 * 60 * 1000);
   const configs = await prisma.configuracaoFiscal.findMany({ where: { ativo: true }, select: { tenantId: true, empresaId: true } });
-  const resultados: Array<{ empresaId: string; sync: string; ciencias: number; erro?: string; diag?: string[] }> = [];
+  const resultados: Array<{ empresaId: string; sync: string; ciencias: number; erro?: string }> = [];
 
   for (const cfg of configs) {
     const scope = { tenantId: cfg.tenantId, empresaId: cfg.empresaId } as TenantScope;
-    const item: { empresaId: string; sync: string; ciencias: number; erro?: string; diag?: string[] } = { empresaId: cfg.empresaId, sync: "", ciencias: 0 };
+    const item: { empresaId: string; sync: string; ciencias: number; erro?: string } = { empresaId: cfg.empresaId, sync: "", ciencias: 0 };
     try {
       const runtime = await getProviderRuntime(scope);
       if (runtime.provider !== "SEFAZ") {
@@ -954,17 +946,21 @@ export async function runDistribuicaoCron(opts?: {
         resultados.push(item);
         continue;
       }
-      const sync = await syncSefazDistribution(scope, runtime).catch((e) => ({ cStat: "ERRO", xMotivo: e instanceof Error ? e.message : String(e), returned: 0 }));
-      item.sync = `${(sync as { cStat?: string }).cStat ?? ""} ${(sync as { xMotivo?: string }).xMotivo ?? ""}`.trim();
+      const sync = await syncSefazDistribution(scope, runtime).catch((e) => ({ codigoStatus: "ERRO", motivoStatus: e instanceof Error ? e.message : String(e), returned: 0 }));
+      const s = sync as { codigoStatus?: string | null; motivoStatus?: string | null; returned?: number };
+      item.sync = `${s.codigoStatus ?? ""} ${s.motivoStatus ?? ""} (+${s.returned ?? 0})`.trim();
 
-      // Resumos sem o XML completo ainda (status LISTADO). NÃO filtra por manifestadoEm: a ciência é
-      // dada uma vez, mas a consulta por chave é RE-TENTADA até a SEFAZ disponibilizar o XML (a
-      // nfeCompleta não vem na mesma hora da ciência).
+      // Resumos (resNFe) ainda sem ciência: damos a Ciência da Operação (210210). O XML completo
+      // (procNFe) NÃO vem na mesma hora — é disponibilizado pela SEFAZ num NSU novo e chega pelo
+      // sync por NSU (distNSU) dos próximos ciclos. A consulta por chave (consChNFe) foi
+      // descontinuada no distDFeInt (retorna cStat 215 "Falha no esquema xml").
       const pendentes = await prisma.distribuicaoNfeDocumento.findMany({
         where: {
           tenantId: scope.tenantId,
           empresaId: scope.empresaId,
           status: "LISTADO",
+          resumo: true,
+          manifestacaoEvento: null,
           chaveAcesso: { not: null },
           OR: [{ dataEmissao: { gte: desde } }, { dataEmissao: null }]
         },
@@ -973,35 +969,19 @@ export async function runDistribuicaoCron(opts?: {
       });
       if (pendentes.length) {
         const cnpj = onlyDigits(runtime.emitter.cnpj);
-        const cUFAutor = cUFFromUF(runtime.emitter.uf ?? "");
         const cert = sefazCert(runtime);
         const pem = pfxToPem(cert.pfx, cert.senha);
         for (const doc of pendentes) {
           const chave = onlyDigits(doc.chaveAcesso as string);
           try {
-            // Ciência (210210) só na primeira vez (quando ainda não foi enviada).
-            if (!doc.manifestacaoEvento) {
-              const man = await enviarManifestacao({ ambiente: runtime.ambiente, cnpj, chNFe: chave, tipoEvento: "210210", cert, pem });
-              await prisma.distribuicaoNfeDocumento.update({
-                where: { id: doc.id },
-                data: { manifestacaoEvento: "210210", manifestacaoStatus: man.status, manifestadoEm: new Date() }
-              }).catch(() => undefined);
-              (item.diag ??= []).push(`cien ${chave.slice(-6)}: ${man.status} ${man.cStat ?? ""} ${man.motivo ?? ""}`.trim());
-            }
-            // Tenta baixar o XML completo; quando vier, atualiza o PRÓPRIO resumo (sem duplicar).
-            const byChave = await consultarDistribuicaoPorChave({ cnpj, cUFAutor, chNFe: chave, ambiente: runtime.ambiente, cert });
-            const full = byChave.docs.find((d) => d.tipo === "nfeCompleta" && (d.xml.includes("<NFe") || d.xml.includes("<nfeProc")));
-            (item.diag ??= []).push(`chave ${chave.slice(-6)}: ${byChave.cStat} ${byChave.xMotivo} docs=[${byChave.docs.map((d) => d.tipo).join(",")}] full=${full ? "S" : "N"}`);
-            if (full) {
-              const payloadAtual = (doc.payload as Record<string, unknown> | null) ?? {};
-              await prisma.distribuicaoNfeDocumento.update({
-                where: { id: doc.id },
-                data: { status: "RECEBIDO", resumo: false, payload: { ...payloadAtual, xml: full.xml, tipo: "nfeCompleta" } as Prisma.InputJsonValue }
-              }).catch(() => undefined);
-              item.ciencias++;
-            }
-          } catch (e) {
-            (item.diag ??= []).push(`erro ${chave.slice(-6)}: ${e instanceof Error ? e.message : String(e)}`);
+            const man = await enviarManifestacao({ ambiente: runtime.ambiente, cnpj, chNFe: chave, tipoEvento: "210210", cert, pem });
+            await prisma.distribuicaoNfeDocumento.update({
+              where: { id: doc.id },
+              data: { manifestacaoEvento: "210210", manifestacaoStatus: man.status, manifestadoEm: new Date() }
+            }).catch(() => undefined);
+            item.ciencias++;
+          } catch {
+            // segue para a proxima nota
           }
         }
       }
