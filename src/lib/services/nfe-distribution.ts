@@ -962,6 +962,7 @@ export async function runDistribuicaoCron(opts?: {
           tenantId: scope.tenantId,
           empresaId: scope.empresaId,
           status: "LISTADO",
+          manifestadoEm: null, // ainda não recebeu ciência — evita re-manifestar o mesmo resumo
           chaveAcesso: { not: null },
           OR: [{ dataEmissao: { gte: desde } }, { dataEmissao: null }]
         },
@@ -978,10 +979,18 @@ export async function runDistribuicaoCron(opts?: {
           try {
             await enviarManifestacao({ ambiente: runtime.ambiente, cnpj, chNFe: chave, tipoEvento: "210210", cert, pem });
             const byChave = await consultarDistribuicaoPorChave({ cnpj, cUFAutor, chNFe: chave, ambiente: runtime.ambiente, cert });
-            for (const d of byChave.docs) await upsertSefazDocument(scope, runtime, d);
+            const full = byChave.docs.find((d) => d.tipo === "nfeCompleta" && (d.xml.includes("<NFe") || d.xml.includes("<nfeProc")));
+            const payloadAtual = (doc.payload as Record<string, unknown> | null) ?? {};
+            // Atualiza o PRÓPRIO resumo com o XML completo (status RECEBIDO) — sem criar doc duplicado.
             await prisma.distribuicaoNfeDocumento.update({
               where: { id: doc.id },
-              data: { manifestacaoEvento: "210210", manifestadoEm: new Date() }
+              data: {
+                manifestacaoEvento: "210210",
+                manifestadoEm: new Date(),
+                ...(full
+                  ? { status: "RECEBIDO", resumo: false, payload: { ...payloadAtual, xml: full.xml, tipo: "nfeCompleta" } as Prisma.InputJsonValue }
+                  : {})
+              }
             }).catch(() => undefined);
             item.ciencias++;
           } catch {
