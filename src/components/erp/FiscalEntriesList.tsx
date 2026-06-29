@@ -6,13 +6,25 @@ import { StatusBadge } from "@/components/shared/StatusBadge";
 import type { FiscalEntrySummary } from "@/lib/services/fiscal-entries";
 import type { NfeDistributionSummary } from "@/lib/services/nfe-distribution";
 
+type NfseRecebidaDoc = {
+  id: string;
+  nNFSe: string | null;
+  chaveAcesso: string | null;
+  emitenteNome: string | null;
+  emitenteDocumento: string | null;
+  valor: number;
+  dataEmissao: string | null;
+};
+
 type FiscalEntriesListProps = {
   entries: FiscalEntrySummary[];
   receivedDocuments: NfeDistributionSummary[];
   ultimaSync?: string | null;
+  nfseRecebidas?: NfseRecebidaDoc[];
+  nfseSync?: string | null;
 };
 
-type Tab = "compra" | "recebidas";
+type Tab = "compra" | "recebidas" | "nfse";
 type PeriodoFiltro = "todos" | "mes" | "mes-passado" | "90" | "custom";
 
 const PERIODOS: { valor: PeriodoFiltro; label: string }[] = [
@@ -57,7 +69,7 @@ const IMPORT_STEPS = [
   "Abrindo a tela de lançamento…"
 ];
 
-export function FiscalEntriesList({ entries, receivedDocuments, ultimaSync }: FiscalEntriesListProps) {
+export function FiscalEntriesList({ entries, receivedDocuments, ultimaSync, nfseRecebidas = [], nfseSync }: FiscalEntriesListProps) {
   const [rows, setRows] = useState(entries);
   const [syncEm, setSyncEm] = useState<string | null>(ultimaSync ?? null);
   const [receivedRows, setReceivedRows] = useState(receivedDocuments);
@@ -381,6 +393,12 @@ export function FiscalEntriesList({ entries, receivedDocuments, ultimaSync }: Fi
               {syncing ? "Atualizando..." : "Atualizar agora"}
             </Button>
           </>
+        ) : tab === "nfse" ? (
+          <span className="fiscal-list-filter" title="As NFS-e recebidas (tomador) são sincronizadas automaticamente do Ambiente Nacional a cada hora.">
+            {nfseSync
+              ? `Atualizado em ${new Date(nfseSync).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}`
+              : "Sincronização automática ativa"}
+          </span>
         ) : (
           <>
             <Button variant="light" type="button">Exportar</Button>
@@ -405,7 +423,10 @@ export function FiscalEntriesList({ entries, receivedDocuments, ultimaSync }: Fi
           Notas de compra
         </button>
         <button className={tab === "recebidas" ? "active" : ""} type="button" onClick={() => setTab("recebidas")}>
-          Notas recebidas
+          Notas recebidas NF
+        </button>
+        <button className={tab === "nfse" ? "active" : ""} type="button" onClick={() => setTab("nfse")}>
+          Notas NFSE
         </button>
       </div>
 
@@ -520,6 +541,46 @@ export function FiscalEntriesList({ entries, receivedDocuments, ultimaSync }: Fi
           </div>
           </div>
         </>
+      ) : tab === "nfse" ? (
+        <div className="erp-table-wrap fiscal-list-table">
+          <table className="erp-table">
+            <thead>
+              <tr>
+                <th>NFS-e</th>
+                <th>Prestador</th>
+                <th>Emissão</th>
+                <th className="num">Valor</th>
+              </tr>
+            </thead>
+            <tbody>
+              {nfseRecebidas.map((d) => (
+                <tr key={d.id}>
+                  <td>
+                    <span className="mono bold">{d.nNFSe || "-"}</span>
+                    {d.chaveAcesso && <small className="block-muted">{d.chaveAcesso}</small>}
+                  </td>
+                  <td>
+                    <strong>{d.emitenteNome || "-"}</strong>
+                    {d.emitenteDocumento && <small className="block-muted">{d.emitenteDocumento}</small>}
+                  </td>
+                  <td>{d.dataEmissao ? new Date(d.dataEmissao).toLocaleDateString("pt-BR") : "-"}</td>
+                  <td className="num">{new Intl.NumberFormat("pt-BR", { currency: "BRL", style: "currency" }).format(d.valor)}</td>
+                </tr>
+              ))}
+              {!nfseRecebidas.length && (
+                <tr>
+                  <td colSpan={4}>
+                    <div className="empty-st">Nenhuma NFS-e recebida (tomador) sincronizada ainda. A busca roda automaticamente a cada hora pelo Ambiente Nacional.</div>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+          <div className="erp-table-foot">
+            <span>{nfseRecebidas.length} NFS-e exibidas</span>
+            <strong>Total: {new Intl.NumberFormat("pt-BR", { currency: "BRL", style: "currency" }).format(nfseRecebidas.reduce((total, d) => total + d.valor, 0))}</strong>
+          </div>
+        </div>
       ) : (
       <div className="erp-table-wrap fiscal-list-table">
         <table className="erp-table">

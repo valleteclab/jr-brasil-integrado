@@ -32,7 +32,7 @@ const brl = (v: number) => new Intl.NumberFormat("pt-BR", { currency: "BRL", sty
 export function NfseDistribuicaoList({ documents, ultimaSync }: Props) {
   const [rows, setRows] = useState(documents);
   const [syncEm, setSyncEm] = useState<string | null>(ultimaSync ?? null);
-  const [papel, setPapel] = useState<(typeof PAPEIS)[number]["valor"]>("TODAS");
+  const [papel, setPapel] = useState<(typeof PAPEIS)[number]["valor"]>("PRESTADOR");
   const [syncing, setSyncing] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
