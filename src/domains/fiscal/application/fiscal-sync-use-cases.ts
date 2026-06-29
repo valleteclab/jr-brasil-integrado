@@ -4,6 +4,7 @@ import { createAuditLog } from "@/lib/audit/audit-service";
 import { resolveFiscalProvider } from "../providers";
 import type { ProviderContext } from "../providers/types";
 import { getFiscalRuntimeConfig } from "./fiscal-config-use-cases";
+import { carregarCertificado } from "./certificado-use-cases";
 
 const TX_OPTIONS = { maxWait: 10000, timeout: 30000 };
 
@@ -26,25 +27,36 @@ export async function syncNotaFiscalStatus(scope: TenantScope, notaId: string) {
   }
 
   const config = await getFiscalRuntimeConfig(scope);
-  const provider = resolveFiscalProvider(nota.provedor);
+  // Uma NFS-e do padrão NACIONAL (chave de 50 díg.) vive no Sistema Nacional (SEFIN): o status e os
+  // eventos — inclusive cancelamento feito por fora, no portal nacional — ficam lá, INDEPENDENTE de
+  // a nota ter sido transmitida via ACBr ou direto. Então a consulta de status vai ao provedor
+  // NACIONAL pela chave quando houver A1; senão cai no provedor de emissão.
+  const chaveNfse = (nota.chaveAcesso ?? "").replace(/\D/g, "");
+  // Carrega o A1 da empresa para a consulta nacional — pode não vir em config.certificado quando o
+  // provedor de emissão não é o NACIONAL (ex.: a nota saiu pela ACBr, mas vive no Sistema Nacional).
+  const certificadoNfse =
+    nota.modelo === "NFSE" && chaveNfse.length === 50
+      ? config.certificado ?? (await carregarCertificado(scope).catch(() => null))
+      : config.certificado;
+  const consultarNacional = nota.modelo === "NFSE" && chaveNfse.length === 50 && Boolean(certificadoNfse?.pfx);
+  const provedorConsulta = consultarNacional ? "NACIONAL" : nota.provedor;
+
+  const provider = resolveFiscalProvider(provedorConsulta);
   const ctx: ProviderContext = {
     ambiente: nota.ambiente,
-    provedor: nota.provedor,
+    provedor: provedorConsulta,
     baseUrl: config.baseUrl,
     emissionMode: config.emissionMode,
     token: config.token,
     cscId: config.cscId,
     cscToken: config.cscToken,
     // Provedores diretos (mTLS + assinatura) precisam do A1; o SEFAZ ainda da UF do emitente.
-    ...((nota.modelo === "NFSE" && nota.provedor === "NACIONAL") || nota.provedor === "SEFAZ"
-      ? { certificado: config.certificado }
-      : {}),
+    ...(consultarNacional ? { certificado: certificadoNfse } : nota.provedor === "SEFAZ" ? { certificado: config.certificado } : {}),
     ...(nota.provedor === "SEFAZ" ? { ufEmitente: config.emitter.uf } : {})
   };
 
-  // A NFS-e nacional é consultada pela CHAVE de acesso (50 díg.), não pelo providerRef interno
-  // (ex.: "nfs_..."). Demais provedores seguem usando o providerRef.
-  const refConsulta = nota.provedor === "NACIONAL" && nota.chaveAcesso ? nota.chaveAcesso : nota.providerRef;
+  // NFS-e nacional consulta pela CHAVE (50 díg.); os demais usam o providerRef interno.
+  const refConsulta = consultarNacional ? chaveNfse : nota.providerRef;
   const result = await provider.queryStatus(refConsulta, ctx);
 
   // Consulta indeterminada (PROCESSANDO = falha de rede/HTTP) não pode rebaixar uma nota já
