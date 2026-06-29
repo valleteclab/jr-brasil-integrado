@@ -855,31 +855,40 @@ async function importDistributedNfeSefaz(
     let xml = payloadXml.includes("<NFe") || payloadXml.includes("<nfeProc") ? payloadXml : "";
     let manifestacao: { status: string; protocolo?: string; motivo?: string; cStat?: string } | null = null;
 
-    // 2) Só resumo: dá Ciência (210210) e baixa o procNFe completo por chave.
+    // 2) Só resumo: dá Ciência (210210) — se ainda não foi dada — e baixa o procNFe completo.
     if (!xml) {
-      const pem = pfxToPem(cert.pfx, cert.senha);
-      const result = await enviarManifestacao({
-        ambiente: runtime.ambiente,
-        cnpj,
-        chNFe: chave,
-        tipoEvento: "210210",
-        cert,
-        pem
-      });
-      manifestacao = result;
+      // A ciência pode já ter sido enviada pelo cron ou por uma tentativa anterior. Repetir gera
+      // rejeição por duplicidade (cStat 573). Só manifesta quando ainda não há ciência registrada.
+      if (!doc.manifestacaoEvento) {
+        const pem = pfxToPem(cert.pfx, cert.senha);
+        const result = await enviarManifestacao({
+          ambiente: runtime.ambiente,
+          cnpj,
+          chNFe: chave,
+          tipoEvento: "210210",
+          cert,
+          pem
+        });
+        manifestacao = result;
 
-      await prisma.distribuicaoNfeDocumento.update({
-        where: { id: doc.id },
-        data: {
-          manifestacaoId: result.protocolo ?? null,
-          manifestacaoStatus: result.status,
-          manifestacaoEvento: "210210",
-          manifestadoEm: new Date()
+        await prisma.distribuicaoNfeDocumento.update({
+          where: { id: doc.id },
+          data: {
+            manifestacaoId: result.protocolo ?? null,
+            manifestacaoStatus: result.status,
+            manifestacaoEvento: "210210",
+            manifestadoEm: new Date()
+          }
+        });
+
+        if (result.status === "ERRO") {
+          throw new NfeDistributionError(result.motivo || "Falha ao enviar a ciência (210210) à SEFAZ.");
         }
-      });
-
-      if (result.status === "ERRO") {
-        throw new NfeDistributionError(result.motivo || "Falha ao enviar a ciência (210210) à SEFAZ.");
+        // 573 = evento já registrado (ciência duplicada) — não é problema: a nota está manifestada e o
+        // XML virá pelo sync. Outras rejeições são erro real → mostra o motivo (cStat) ao usuário.
+        if (result.status === "REJEITADO" && result.cStat !== "573") {
+          throw new NfeDistributionError(`A SEFAZ rejeitou a Ciência da Operação (${result.cStat ?? "?"}): ${result.motivo || "motivo não informado"}.`);
+        }
       }
 
       // O XML completo (procNFe) é disponibilizado num NSU novo após a ciência. Puxa pelo sync por
