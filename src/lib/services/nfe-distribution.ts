@@ -937,16 +937,16 @@ async function importDistributedNfeSefaz(
 export async function runDistribuicaoCron(opts?: {
   mesesHistorico?: number;
   maxCienciaPorEmpresa?: number;
-}): Promise<{ empresas: number; resultados: Array<{ empresaId: string; sync: string; ciencias: number; erro?: string }> }> {
+}): Promise<{ empresas: number; resultados: Array<{ empresaId: string; sync: string; ciencias: number; erro?: string; diag?: string[] }> }> {
   const meses = opts?.mesesHistorico ?? 6;
   const maxCiencia = opts?.maxCienciaPorEmpresa ?? 25;
   const desde = new Date(Date.now() - meses * 30 * 24 * 60 * 60 * 1000);
   const configs = await prisma.configuracaoFiscal.findMany({ where: { ativo: true }, select: { tenantId: true, empresaId: true } });
-  const resultados: Array<{ empresaId: string; sync: string; ciencias: number; erro?: string }> = [];
+  const resultados: Array<{ empresaId: string; sync: string; ciencias: number; erro?: string; diag?: string[] }> = [];
 
   for (const cfg of configs) {
     const scope = { tenantId: cfg.tenantId, empresaId: cfg.empresaId } as TenantScope;
-    const item: { empresaId: string; sync: string; ciencias: number; erro?: string } = { empresaId: cfg.empresaId, sync: "", ciencias: 0 };
+    const item: { empresaId: string; sync: string; ciencias: number; erro?: string; diag?: string[] } = { empresaId: cfg.empresaId, sync: "", ciencias: 0 };
     try {
       const runtime = await getProviderRuntime(scope);
       if (runtime.provider !== "SEFAZ") {
@@ -981,15 +981,17 @@ export async function runDistribuicaoCron(opts?: {
           try {
             // Ciência (210210) só na primeira vez (quando ainda não foi enviada).
             if (!doc.manifestacaoEvento) {
-              await enviarManifestacao({ ambiente: runtime.ambiente, cnpj, chNFe: chave, tipoEvento: "210210", cert, pem });
+              const man = await enviarManifestacao({ ambiente: runtime.ambiente, cnpj, chNFe: chave, tipoEvento: "210210", cert, pem });
               await prisma.distribuicaoNfeDocumento.update({
                 where: { id: doc.id },
-                data: { manifestacaoEvento: "210210", manifestadoEm: new Date() }
+                data: { manifestacaoEvento: "210210", manifestacaoStatus: man.status, manifestadoEm: new Date() }
               }).catch(() => undefined);
+              (item.diag ??= []).push(`cien ${chave.slice(-6)}: ${man.status} ${man.cStat ?? ""} ${man.motivo ?? ""}`.trim());
             }
             // Tenta baixar o XML completo; quando vier, atualiza o PRÓPRIO resumo (sem duplicar).
             const byChave = await consultarDistribuicaoPorChave({ cnpj, cUFAutor, chNFe: chave, ambiente: runtime.ambiente, cert });
             const full = byChave.docs.find((d) => d.tipo === "nfeCompleta" && (d.xml.includes("<NFe") || d.xml.includes("<nfeProc")));
+            (item.diag ??= []).push(`chave ${chave.slice(-6)}: ${byChave.cStat} ${byChave.xMotivo} docs=[${byChave.docs.map((d) => d.tipo).join(",")}] full=${full ? "S" : "N"}`);
             if (full) {
               const payloadAtual = (doc.payload as Record<string, unknown> | null) ?? {};
               await prisma.distribuicaoNfeDocumento.update({
@@ -998,8 +1000,8 @@ export async function runDistribuicaoCron(opts?: {
               }).catch(() => undefined);
               item.ciencias++;
             }
-          } catch {
-            // segue para a proxima nota
+          } catch (e) {
+            (item.diag ??= []).push(`erro ${chave.slice(-6)}: ${e instanceof Error ? e.message : String(e)}`);
           }
         }
       }
