@@ -998,6 +998,7 @@ export async function processarDistribuicaoEmpresa(
 export async function runDistribuicaoCron(opts?: {
   mesesHistorico?: number;
   maxCienciaPorEmpresa?: number;
+  fromStart?: boolean;
 }): Promise<{ empresas: number; resultados: Array<{ empresaId: string; sync: string; ciencias: number; erro?: string }> }> {
   const configs = await prisma.configuracaoFiscal.findMany({ where: { ativo: true }, select: { tenantId: true, empresaId: true } });
   const resultados: Array<{ empresaId: string; sync: string; ciencias: number; erro?: string }> = [];
@@ -1007,7 +1008,8 @@ export async function runDistribuicaoCron(opts?: {
     try {
       const r = await processarDistribuicaoEmpresa(scope, {
         mesesHistorico: opts?.mesesHistorico,
-        maxCiencia: opts?.maxCienciaPorEmpresa
+        maxCiencia: opts?.maxCienciaPorEmpresa,
+        fromStart: opts?.fromStart
       });
       resultados.push({ empresaId: cfg.empresaId, sync: r.sync, ciencias: r.ciencias });
     } catch (e) {

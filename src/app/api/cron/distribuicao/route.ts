@@ -21,7 +21,9 @@ async function handle(request: Request) {
   try {
     const url = new URL(request.url);
     const meses = Number(url.searchParams.get("meses")) || undefined;
-    const result = await runDistribuicaoCron({ mesesHistorico: meses });
+    // ?reset=1 força um re-sync do NSU 0 (re-baixa o histórico com a data de emissão correta).
+    const fromStart = url.searchParams.get("reset") === "1";
+    const result = await runDistribuicaoCron({ mesesHistorico: meses, fromStart });
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Falha na sincronização da distribuição.";
