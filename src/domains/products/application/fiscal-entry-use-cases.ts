@@ -943,8 +943,8 @@ export async function processFiscalEntry(
             ultimoCusto: custoUnitConv,
             custoMedio: custoUnitConv,
             // Insumo sem preço de venda informado entra com 0 (não é vendido diretamente).
-            precoVenda: item.precoVendaDefinido ?? new Prisma.Decimal(0),
-            precoMinimo: item.precoMinimoDefinido ?? item.precoVendaDefinido ?? new Prisma.Decimal(0),
+            precoVenda: item.precoVendaDefinido ?? 0,
+            precoMinimo: item.precoMinimoDefinido ?? item.precoVendaDefinido ?? 0,
             visivelEcommerce: false
           }
         });
