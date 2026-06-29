@@ -6,7 +6,8 @@ import type { FiscalStatusResult } from "@/lib/services/fiscal-status";
 export const dynamic = "force-dynamic";
 
 function horaBR(iso: string): string {
-  return new Date(iso).toLocaleString("pt-BR");
+  // O servidor roda em UTC; força o fuso de Brasília para o horário exibido.
+  return new Date(iso).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
 }
 
 export default async function AdminStatusFiscalPage() {
