@@ -367,9 +367,12 @@ export function FiscalEntryWizard({ initialDraft = null, products, formasPagamen
       return;
     }
 
-    // Uso/consumo e imobilizado não viram SKU; só itens que movimentam estoque exigem preço.
+    // Uso/consumo e imobilizado não viram SKU; insumo (industrialização) vira SKU mas NÃO é vendido
+    // (é consumido na produção) — só itens VENDÁVEIS exigem preço de venda.
+    const ehInsumo = (item: { finalidade?: FinalidadeEntrada | null }) =>
+      item.finalidade === "INDUSTRIALIZACAO" || item.finalidade === "RETORNO_INDUSTRIALIZACAO";
     const missingPrice = draft.items.find(
-      (item) => item.action === "create" && item.movimentaEstoque !== false && decimalInputToNumber(item.salePrice) <= 0
+      (item) => item.action === "create" && item.movimentaEstoque !== false && !ehInsumo(item) && decimalInputToNumber(item.salePrice) <= 0
     );
 
     if (missingPrice) {

@@ -894,7 +894,10 @@ export async function processFiscalEntry(
           continue;
         }
 
-        if (!item.precoVendaDefinido || Number(item.precoVendaDefinido) <= 0) {
+        // Insumo (Industrialização) NÃO é revendido — é consumido na produção; quem tem preço de
+        // venda é o produto acabado. Só exigimos preço para itens vendáveis (revenda e congêneres).
+        const ehInsumo = item.finalidade === "INDUSTRIALIZACAO" || item.finalidade === "RETORNO_INDUSTRIALIZACAO";
+        if (!ehInsumo && (!item.precoVendaDefinido || Number(item.precoVendaDefinido) <= 0)) {
           throw new Error(`Informe o preço de venda do novo SKU ${item.codigoFornecedor} antes de lançar a entrada fiscal.`);
         }
 
@@ -939,8 +942,9 @@ export async function processFiscalEntry(
             precoCusto: custoUnitConv,
             ultimoCusto: custoUnitConv,
             custoMedio: custoUnitConv,
-            precoVenda: item.precoVendaDefinido,
-            precoMinimo: item.precoMinimoDefinido ?? item.precoVendaDefinido,
+            // Insumo sem preço de venda informado entra com 0 (não é vendido diretamente).
+            precoVenda: item.precoVendaDefinido ?? new Prisma.Decimal(0),
+            precoMinimo: item.precoMinimoDefinido ?? item.precoVendaDefinido ?? new Prisma.Decimal(0),
             visivelEcommerce: false
           }
         });
