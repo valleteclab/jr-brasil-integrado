@@ -5,7 +5,7 @@
  * transporte SOAP 1.2 com TLS-mútuo (soapEnvelope/postSoap), espelhando os padrões do nfe-xml.ts.
  */
 import type { AmbienteFiscal } from "@prisma/client";
-import { AN_RECEPCAO_EVENTO, cUFFromUF, resolveSefazEndpoints } from "./endpoints";
+import { AN_RECEPCAO_EVENTO, cUFFromUF, resolveNfceEndpoints, resolveSefazEndpoints } from "./endpoints";
 import { NFE_NS, SOAP_ACTION, WSDL_NS, pickBlock, pickTag, postSoap, soapEnvelope } from "./soap";
 import { signXml } from "./sign";
 
@@ -50,6 +50,13 @@ export type EventoResult = {
   motivo?: string;
   cStat?: string;
 };
+
+/** Endpoints por MODELO (posições 21-22 da chave): NFC-e (65) → SVRS; NF-e (55) → autorizadora da
+ *  UF. Eventos e consulta de protocolo da NFC-e vão para a SVRS, não para a SEFAZ própria da UF. */
+function endpointsForChave(chNFe: string, uf: string, ambiente: AmbienteFiscal) {
+  const modelo = onlyDigits(chNFe).slice(20, 22);
+  return modelo === "65" ? resolveNfceEndpoints(uf, ambiente) : resolveSefazEndpoints(uf, ambiente);
+}
 
 /** Id do evento: "ID" + tpEvento(6) + chNFe(44) + nSeqEvento(2 dígitos, zero-padded). */
 function idEvento(tpEvento: string, chNFe: string, nSeqEvento: number): string {
@@ -137,7 +144,8 @@ export async function enviarEvento(
   cert: { pfx: Buffer; senha: string },
   pem: { privateKeyPem: string; certPem: string }
 ): Promise<EventoResult> {
-  const endpoints = resolveSefazEndpoints(uf, ambiente);
+  const chNFeEvt = /Id="ID\d{6}(\d{44})/.exec(infEventoXml)?.[1] ?? "";
+  const endpoints = endpointsForChave(chNFeEvt, uf, ambiente);
   // <evento> assina o infEvento (Reference ao Id do infEvento, Signature logo após).
   const eventoBase = `<evento versao="1.00" xmlns="${NFE_NS}">${infEventoXml}</evento>`;
   const eventoAssinado = signXml(eventoBase, "infEvento", pem.privateKeyPem, pem.certPem);
@@ -256,7 +264,7 @@ export async function consultarProtocolo(
   ambiente: AmbienteFiscal,
   cert: { pfx: Buffer; senha: string }
 ): Promise<ConsultaProtocoloResult> {
-  const endpoints = resolveSefazEndpoints(uf, ambiente);
+  const endpoints = endpointsForChave(chNFe, uf, ambiente);
   const consSitNFe =
     `<consSitNFe versao="4.00" xmlns="${NFE_NS}">` +
     `<tpAmb>${tpAmbDe(ambiente)}</tpAmb>` +
