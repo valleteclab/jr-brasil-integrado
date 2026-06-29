@@ -84,6 +84,12 @@ function recalcCfopEntrada(finalidade: FinalidadeEntrada, cfopAtual: string | un
 // CFOPs de entrada especiais (fora da matriz das 4 finalidades), oferecidos como atalho no campo
 // editável. 1xxx = mesmo estado, 2xxx = outro estado, 3xxx = exterior (importação).
 const CFOP_ENTRADA_ESPECIAIS: Array<{ code: string; label: string }> = [
+  { code: "1126", label: "Compra p/ uso na prestação de serviço sujeita ao ICMS (mesmo estado)" },
+  { code: "2126", label: "Compra p/ uso na prestação de serviço sujeita ao ICMS (outro estado)" },
+  { code: "1128", label: "Compra p/ uso na prestação de serviço sujeita ao ISSQN (mesmo estado)" },
+  { code: "2128", label: "Compra p/ uso na prestação de serviço sujeita ao ISSQN (outro estado)" },
+  { code: "1124", label: "Industrialização efetuada por outra empresa (mesmo estado)" },
+  { code: "2124", label: "Industrialização efetuada por outra empresa (outro estado)" },
   { code: "1202", label: "Devolução de venda (mesmo estado)" },
   { code: "2202", label: "Devolução de venda (outro estado)" },
   { code: "1411", label: "Devolução de venda com ST (mesmo estado)" },
@@ -874,10 +880,14 @@ export function FiscalEntryWizard({ initialDraft = null, products, formasPagamen
             </div>
           </div>
           <datalist id="cfop-entrada-especiais">
-            {(cfopsEntrada.length
-              ? cfopsEntrada.map((c) => ({ code: c.codigo, label: c.descricao }))
-              : CFOP_ENTRADA_ESPECIAIS
-            ).map((cfop) => (
+            {/* Tabela completa (CodigoFiscal) + curados — os curados cobrem códigos ausentes do
+                dataset público (ex.: 2128). Dedup por código, ordenado. */}
+            {(() => {
+              const map = new Map<string, string>();
+              for (const c of cfopsEntrada) map.set(c.codigo, c.descricao);
+              for (const c of CFOP_ENTRADA_ESPECIAIS) if (!map.has(c.code)) map.set(c.code, c.label);
+              return Array.from(map, ([code, label]) => ({ code, label })).sort((a, b) => a.code.localeCompare(b.code));
+            })().map((cfop) => (
               <option key={cfop.code} value={cfop.code}>{cfop.code} · {cfop.label}</option>
             ))}
           </datalist>

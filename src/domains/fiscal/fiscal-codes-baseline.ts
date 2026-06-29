@@ -128,6 +128,16 @@ export const CFOP_FALLBACK: Par[] = [
   { codigo: "6108", descricao: "Venda de mercadoria adquirida de terceiros, a não contribuinte (interestadual)" }
 ];
 
+/** CFOPs oficiais ausentes/incompletos no dataset público — garantidos sempre na tabela. */
+const CFOP_COMPLEMENTO: Par[] = [
+  { codigo: "1124", descricao: "Industrialização efetuada por outra empresa" },
+  { codigo: "2124", descricao: "Industrialização efetuada por outra empresa" },
+  { codigo: "1126", descricao: "Compra para utilização na prestação de serviço sujeita ao ICMS" },
+  { codigo: "2126", descricao: "Compra para utilização na prestação de serviço sujeita ao ICMS" },
+  { codigo: "1128", descricao: "Compra para utilização na prestação de serviço sujeita ao ISSQN" },
+  { codigo: "2128", descricao: "Compra para utilização na prestação de serviço sujeita ao ISSQN" }
+];
+
 const CFOP_FONTE = "https://raw.githubusercontent.com/jansenfelipe/cfop/1.0/cfop.csv";
 
 /** Baixa a tabela CFOP completa do dataset público; retorna o fallback curado se falhar. */
@@ -169,7 +179,7 @@ export async function applyFiscalCodes(): Promise<Record<string, number>> {
   await gravar("CST_PIS", CST_PISCOFINS);
   await gravar("CST_COFINS", CST_PISCOFINS);
   await gravar("CST_IPI", CST_IPI);
-  await gravar("CFOP", cfop);
+  await gravar("CFOP", [...cfop, ...CFOP_COMPLEMENTO]);
 
   // NBS e LC116 (serviços) — migrados dos arquivos para a tabela global, por consistência.
   await gravar("NBS" as TipoCodigoFiscal, NBS_LIST.map((i) => ({ codigo: i.code, descricao: i.description })));
