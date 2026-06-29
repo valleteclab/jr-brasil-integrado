@@ -13,6 +13,39 @@ type FiscalEntriesListProps = {
 };
 
 type Tab = "compra" | "recebidas";
+type PeriodoFiltro = "todos" | "mes" | "mes-passado" | "90" | "custom";
+
+const PERIODOS: { valor: PeriodoFiltro; label: string }[] = [
+  { valor: "todos", label: "Tudo" },
+  { valor: "mes", label: "Este mês" },
+  { valor: "mes-passado", label: "Mês passado" },
+  { valor: "90", label: "Últimos 90 dias" }
+];
+
+/** Intervalo [de, ate] (ms) do período selecionado; null = sem limite naquela ponta. */
+function intervaloPeriodo(periodo: PeriodoFiltro, dataDe: string, dataAte: string): { de: number | null; ate: number | null } {
+  const agora = new Date();
+  const ano = agora.getFullYear();
+  const mes = agora.getMonth();
+  switch (periodo) {
+    case "mes":
+      return { de: new Date(ano, mes, 1).getTime(), ate: null };
+    case "mes-passado":
+      return { de: new Date(ano, mes - 1, 1).getTime(), ate: new Date(ano, mes, 1).getTime() - 1 };
+    case "90": {
+      const d = new Date(agora);
+      d.setDate(d.getDate() - 90);
+      return { de: d.getTime(), ate: null };
+    }
+    case "custom":
+      return {
+        de: dataDe ? new Date(`${dataDe}T00:00:00`).getTime() : null,
+        ate: dataAte ? new Date(`${dataAte}T23:59:59`).getTime() : null
+      };
+    default:
+      return { de: null, ate: null };
+  }
+}
 
 // Etapas da importação (Ciência → XML → lançamento). O backend é uma única
 // chamada síncrona à SEFAZ via ACBr; aqui só damos feedback de progresso para o
@@ -28,6 +61,9 @@ export function FiscalEntriesList({ entries, receivedDocuments, ultimaSync }: Fi
   const [rows, setRows] = useState(entries);
   const [syncEm, setSyncEm] = useState<string | null>(ultimaSync ?? null);
   const [receivedRows, setReceivedRows] = useState(receivedDocuments);
+  const [periodo, setPeriodo] = useState<PeriodoFiltro>("todos");
+  const [dataDe, setDataDe] = useState("");
+  const [dataAte, setDataAte] = useState("");
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<Tab>("compra");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -69,8 +105,17 @@ export function FiscalEntriesList({ entries, receivedDocuments, ultimaSync }: Fi
 
   const filteredReceived = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
+    const { de, ate } = intervaloPeriodo(periodo, dataDe, dataAte);
 
     return receivedRows.filter((doc) => {
+      // Filtro por período (data de emissão). Notas sem data ficam fora de um período específico.
+      if (de !== null || ate !== null) {
+        const t = doc.dataEmissao ? new Date(doc.dataEmissao).getTime() : null;
+        if (t === null) return false;
+        if (de !== null && t < de) return false;
+        if (ate !== null && t > ate) return false;
+      }
+
       if (!normalizedQuery) {
         return true;
       }
@@ -85,7 +130,7 @@ export function FiscalEntriesList({ entries, receivedDocuments, ultimaSync }: Fi
         doc.statusLabel
       ].some((field) => field.toLowerCase().includes(normalizedQuery));
     });
-  }, [query, receivedRows]);
+  }, [query, receivedRows, periodo, dataDe, dataAte]);
 
   const registeredCount = rows.filter((entry) => entry.status === "Registrada").length;
   const filteredIds = filteredEntries.map((entry) => entry.id);
@@ -365,7 +410,48 @@ export function FiscalEntriesList({ entries, receivedDocuments, ultimaSync }: Fi
       </div>
 
       {tab === "recebidas" ? (
-        <div className="erp-table-wrap fiscal-list-table">
+        <>
+          <div className="fiscal-periodo-filtros">
+            {PERIODOS.map((p) => (
+              <button
+                key={p.valor}
+                type="button"
+                className={`fiscal-chip${periodo === p.valor ? " ativo" : ""}`}
+                onClick={() => { setPeriodo(p.valor); setDataDe(""); setDataAte(""); }}
+              >
+                {p.label}
+              </button>
+            ))}
+            <span className="fiscal-periodo-sep" aria-hidden="true">|</span>
+            <label className="fiscal-periodo-data">
+              De
+              <input
+                type="date"
+                value={dataDe}
+                max={dataAte || undefined}
+                onChange={(event) => { setDataDe(event.target.value); setPeriodo("custom"); }}
+              />
+            </label>
+            <label className="fiscal-periodo-data">
+              Até
+              <input
+                type="date"
+                value={dataAte}
+                min={dataDe || undefined}
+                onChange={(event) => { setDataAte(event.target.value); setPeriodo("custom"); }}
+              />
+            </label>
+            {periodo !== "todos" && (
+              <button
+                type="button"
+                className="fiscal-chip-limpar"
+                onClick={() => { setPeriodo("todos"); setDataDe(""); setDataAte(""); }}
+              >
+                Limpar filtro
+              </button>
+            )}
+          </div>
+          <div className="erp-table-wrap fiscal-list-table">
           <table className="erp-table">
             <thead>
               <tr>
@@ -432,7 +518,8 @@ export function FiscalEntriesList({ entries, receivedDocuments, ultimaSync }: Fi
             <span>{filteredReceived.length} documentos exibidos</span>
             <strong>Total: {new Intl.NumberFormat("pt-BR", { currency: "BRL", style: "currency" }).format(filteredReceived.reduce((total, doc) => total + doc.valor, 0))}</strong>
           </div>
-        </div>
+          </div>
+        </>
       ) : (
       <div className="erp-table-wrap fiscal-list-table">
         <table className="erp-table">

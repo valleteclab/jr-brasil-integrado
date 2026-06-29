@@ -1818,6 +1818,64 @@ p {
   padding: 8px 11px;
 }
 
+/* Filtros de período (aba Notas recebidas) */
+.fiscal-periodo-filtros {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+.fiscal-chip {
+  background: #fff;
+  border: 1px solid var(--erp-line);
+  border-radius: 999px;
+  color: var(--erp-ink, #1f2937);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 7px 14px;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.fiscal-chip:hover {
+  border-color: var(--erp-info);
+  color: var(--erp-info);
+}
+.fiscal-chip.ativo {
+  background: var(--erp-info);
+  border-color: var(--erp-info);
+  color: #fff;
+}
+.fiscal-periodo-sep {
+  color: var(--erp-line);
+  font-weight: 700;
+}
+.fiscal-periodo-data {
+  align-items: center;
+  color: var(--erp-muted, #64748b);
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 700;
+  gap: 6px;
+}
+.fiscal-periodo-data input {
+  border: 1px solid var(--erp-line);
+  border-radius: 6px;
+  color: var(--erp-ink, #1f2937);
+  font-size: 12px;
+  padding: 6px 9px;
+}
+.fiscal-chip-limpar {
+  background: none;
+  border: none;
+  color: var(--erp-danger, #c0392b);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 7px 6px;
+  text-decoration: underline;
+}
+
 .fiscal-list-actions .button {
   border-radius: 6px;
   font-size: 12px;
