@@ -545,7 +545,19 @@ export async function listNfeDistributionDocuments(scope: TenantScope): Promise<
     if (score(doc) > score(current)) byKey.set(key, doc);
   }
 
-  return Array.from(byKey.values()).map((doc) => ({
+  // Fallback de data de emissão para notas já importadas cujo resumo não trouxe dhEmi (ex.: vindas
+  // do ACBr antigo): usa a data da entrada fiscal vinculada.
+  const selecionados = Array.from(byKey.values());
+  const entradaIds = selecionados.map((d) => d.entradaFiscalId).filter((id): id is string => Boolean(id));
+  const entradas = entradaIds.length
+    ? await prisma.entradaFiscal.findMany({
+        where: { tenantId: scope.tenantId, empresaId: scope.empresaId, id: { in: entradaIds } },
+        select: { id: true, emitidaEm: true }
+      })
+    : [];
+  const emitidaPorEntrada = new Map(entradas.map((e) => [e.id, e.emitidaEm]));
+
+  return selecionados.map((doc) => ({
     id: doc.id,
     acbrDocumentoId: doc.acbrDocumentoId,
     chaveAcesso: doc.chaveAcesso ?? "",
@@ -555,7 +567,7 @@ export async function listNfeDistributionDocuments(scope: TenantScope): Promise<
     emitenteNome: doc.emitenteNome ?? "Emitente não informado",
     emitenteDocumento: doc.emitenteDocumento ?? "",
     valor: Number(doc.valorNfe ?? 0),
-    dataEmissao: doc.dataEmissao?.toISOString() ?? null,
+    dataEmissao: (doc.dataEmissao ?? (doc.entradaFiscalId ? emitidaPorEntrada.get(doc.entradaFiscalId) : null))?.toISOString() ?? null,
     status: doc.status,
     statusLabel: statusLabel(doc.status, doc.entradaFiscalId, doc.manifestacaoStatus),
     statusTone: statusTone(doc.status, doc.entradaFiscalId),
@@ -926,69 +938,81 @@ async function importDistributedNfeSefaz(
  * o throttling do AN (656 só afeta o sync; a ciência por chave segue). mesesHistorico limita o quão
  * para trás dá ciência (default 6); maxCienciaPorEmpresa evita rajada por execução.
  */
+/**
+ * Ciclo de distribuição de UMA empresa (SEFAZ direto): sync por NSU (distNSU) + Ciência (210210) dos
+ * resumos pendentes. O XML completo (procNFe) NÃO vem na hora da ciência — é disponibilizado num NSU
+ * novo e chega no sync seguinte. A consulta por chave (consChNFe) foi descontinuada (cStat 215).
+ * Reusada pelo cron (todas as empresas) e pelo botão "Atualizar agora" (empresa atual).
+ */
+export async function processarDistribuicaoEmpresa(
+  scope: TenantScope,
+  opts?: { mesesHistorico?: number; maxCiencia?: number; fromStart?: boolean }
+): Promise<{ sync: string; ciencias: number; returned: number }> {
+  const meses = opts?.mesesHistorico ?? 6;
+  const maxCiencia = opts?.maxCiencia ?? 25;
+  const desde = new Date(Date.now() - meses * 30 * 24 * 60 * 60 * 1000);
+
+  const runtime = await getProviderRuntime(scope);
+  if (runtime.provider !== "SEFAZ") return { sync: "ignorada (provedor nao-SEFAZ)", ciencias: 0, returned: 0 };
+
+  const sync = await syncSefazDistribution(scope, runtime, { fromStart: opts?.fromStart })
+    .catch((e) => ({ codigoStatus: "ERRO", motivoStatus: e instanceof Error ? e.message : String(e), returned: 0 }));
+  const s = sync as { codigoStatus?: string | null; motivoStatus?: string | null; returned?: number };
+  const syncMsg = `${s.codigoStatus ?? ""} ${s.motivoStatus ?? ""} (+${s.returned ?? 0})`.trim();
+
+  let ciencias = 0;
+  const pendentes = await prisma.distribuicaoNfeDocumento.findMany({
+    where: {
+      tenantId: scope.tenantId,
+      empresaId: scope.empresaId,
+      status: "LISTADO",
+      resumo: true,
+      manifestacaoEvento: null,
+      chaveAcesso: { not: null },
+      OR: [{ dataEmissao: { gte: desde } }, { dataEmissao: null }]
+    },
+    orderBy: { dataEmissao: "desc" },
+    take: maxCiencia
+  });
+  if (pendentes.length) {
+    const cnpj = onlyDigits(runtime.emitter.cnpj);
+    const cert = sefazCert(runtime);
+    const pem = pfxToPem(cert.pfx, cert.senha);
+    for (const doc of pendentes) {
+      const chave = onlyDigits(doc.chaveAcesso as string);
+      try {
+        const man = await enviarManifestacao({ ambiente: runtime.ambiente, cnpj, chNFe: chave, tipoEvento: "210210", cert, pem });
+        await prisma.distribuicaoNfeDocumento.update({
+          where: { id: doc.id },
+          data: { manifestacaoEvento: "210210", manifestacaoStatus: man.status, manifestadoEm: new Date() }
+        }).catch(() => undefined);
+        ciencias++;
+      } catch {
+        // segue para a proxima nota
+      }
+    }
+  }
+  return { sync: syncMsg, ciencias, returned: s.returned ?? 0 };
+}
+
 export async function runDistribuicaoCron(opts?: {
   mesesHistorico?: number;
   maxCienciaPorEmpresa?: number;
 }): Promise<{ empresas: number; resultados: Array<{ empresaId: string; sync: string; ciencias: number; erro?: string }> }> {
-  const meses = opts?.mesesHistorico ?? 6;
-  const maxCiencia = opts?.maxCienciaPorEmpresa ?? 25;
-  const desde = new Date(Date.now() - meses * 30 * 24 * 60 * 60 * 1000);
   const configs = await prisma.configuracaoFiscal.findMany({ where: { ativo: true }, select: { tenantId: true, empresaId: true } });
   const resultados: Array<{ empresaId: string; sync: string; ciencias: number; erro?: string }> = [];
 
   for (const cfg of configs) {
     const scope = { tenantId: cfg.tenantId, empresaId: cfg.empresaId } as TenantScope;
-    const item: { empresaId: string; sync: string; ciencias: number; erro?: string } = { empresaId: cfg.empresaId, sync: "", ciencias: 0 };
     try {
-      const runtime = await getProviderRuntime(scope);
-      if (runtime.provider !== "SEFAZ") {
-        item.sync = "ignorada (provedor nao-SEFAZ)";
-        resultados.push(item);
-        continue;
-      }
-      const sync = await syncSefazDistribution(scope, runtime).catch((e) => ({ codigoStatus: "ERRO", motivoStatus: e instanceof Error ? e.message : String(e), returned: 0 }));
-      const s = sync as { codigoStatus?: string | null; motivoStatus?: string | null; returned?: number };
-      item.sync = `${s.codigoStatus ?? ""} ${s.motivoStatus ?? ""} (+${s.returned ?? 0})`.trim();
-
-      // Resumos (resNFe) ainda sem ciência: damos a Ciência da Operação (210210). O XML completo
-      // (procNFe) NÃO vem na mesma hora — é disponibilizado pela SEFAZ num NSU novo e chega pelo
-      // sync por NSU (distNSU) dos próximos ciclos. A consulta por chave (consChNFe) foi
-      // descontinuada no distDFeInt (retorna cStat 215 "Falha no esquema xml").
-      const pendentes = await prisma.distribuicaoNfeDocumento.findMany({
-        where: {
-          tenantId: scope.tenantId,
-          empresaId: scope.empresaId,
-          status: "LISTADO",
-          resumo: true,
-          manifestacaoEvento: null,
-          chaveAcesso: { not: null },
-          OR: [{ dataEmissao: { gte: desde } }, { dataEmissao: null }]
-        },
-        orderBy: { dataEmissao: "desc" },
-        take: maxCiencia
+      const r = await processarDistribuicaoEmpresa(scope, {
+        mesesHistorico: opts?.mesesHistorico,
+        maxCiencia: opts?.maxCienciaPorEmpresa
       });
-      if (pendentes.length) {
-        const cnpj = onlyDigits(runtime.emitter.cnpj);
-        const cert = sefazCert(runtime);
-        const pem = pfxToPem(cert.pfx, cert.senha);
-        for (const doc of pendentes) {
-          const chave = onlyDigits(doc.chaveAcesso as string);
-          try {
-            const man = await enviarManifestacao({ ambiente: runtime.ambiente, cnpj, chNFe: chave, tipoEvento: "210210", cert, pem });
-            await prisma.distribuicaoNfeDocumento.update({
-              where: { id: doc.id },
-              data: { manifestacaoEvento: "210210", manifestacaoStatus: man.status, manifestadoEm: new Date() }
-            }).catch(() => undefined);
-            item.ciencias++;
-          } catch {
-            // segue para a proxima nota
-          }
-        }
-      }
+      resultados.push({ empresaId: cfg.empresaId, sync: r.sync, ciencias: r.ciencias });
     } catch (e) {
-      item.erro = e instanceof Error ? e.message : String(e);
+      resultados.push({ empresaId: cfg.empresaId, sync: "", ciencias: 0, erro: e instanceof Error ? e.message : String(e) });
     }
-    resultados.push(item);
   }
 
   return { empresas: configs.length, resultados };

@@ -131,11 +131,17 @@ function classificarDoc(nsu: string, schema: string, xml: string): DistDoc {
     // chave = Id do infNFe ("NFe" + 44 dígitos)
     const id = /<infNFe[^>]*\bId="([^"]+)"/.exec(xml)?.[1];
     const chave = id ? onlyDigits(id) : pickTag(xml, "chNFe");
+    // No XML completo o <emit> vem antes do <dest>, então a 1ª ocorrência de xNome/CNPJ é a do
+    // emitente; dhEmi está só no <ide> e vNF só no <total><ICMSTot>.
     return {
       ...base,
       tipo: "nfeCompleta",
       chaveAcesso: chave || undefined,
-      numeroProtocolo: pickTag(xml, "nProt")
+      numeroProtocolo: pickTag(xml, "nProt"),
+      dataEmissao: pickTag(xml, "dhEmi") ?? pickTag(xml, "dEmi"),
+      emitenteNome: pickTag(xml, "xNome"),
+      emitenteDocumento: pickTag(xml, "CNPJ") ?? pickTag(xml, "CPF"),
+      valorNfe: parseNumero(pickTag(xml, "vNF"))
     };
   }
 

@@ -190,7 +190,7 @@ export function FiscalEntriesList({ entries, receivedDocuments, ultimaSync }: Fi
     }
   }
 
-  async function syncDistribution(mode: "refresh" | "history" = "refresh") {
+  async function syncDistribution(mode: "sync-now" | "refresh" | "history" = "sync-now") {
     setSyncing(true);
     setError("");
     setMessage("");
@@ -203,11 +203,10 @@ export function FiscalEntriesList({ entries, receivedDocuments, ultimaSync }: Fi
       });
       const data = await response.json() as {
         documents?: NfeDistributionSummary[];
+        sync?: string;
+        ciencias?: number;
         returned?: number;
         listed?: number;
-        motivoStatus?: string | null;
-        ultimoNsu?: string | null;
-        maxNsu?: string | null;
         ultimaSync?: string | null;
         error?: string;
       };
@@ -218,16 +217,12 @@ export function FiscalEntriesList({ entries, receivedDocuments, ultimaSync }: Fi
 
       setReceivedRows(data.documents ?? []);
       if (data.ultimaSync) setSyncEm(data.ultimaSync);
-      const nsuInfo = data.ultimoNsu ? ` Último NSU: ${data.ultimoNsu}${data.maxNsu ? ` / Máx: ${data.maxNsu}` : ""}.` : "";
-      setMessage(
-        data.motivoStatus
-          ? `ACBr: ${data.motivoStatus}.${nsuInfo}`
-          : mode === "history"
-            ? `Busca historica solicitada. ${data.returned ?? 0} documento(s) retornados e ${data.listed ?? 0} documento(s) listados.${nsuInfo}`
-            : `Base da ACBr sincronizada. ${data.listed ?? 0} documento(s) listados.${nsuInfo}`
-      );
+      const partes: string[] = [];
+      if (typeof data.ciencias === "number" && data.ciencias > 0) partes.push(`${data.ciencias} ciência(s) enviada(s) à SEFAZ`);
+      if (data.sync) partes.push(`SEFAZ: ${data.sync}`);
+      setMessage(partes.length ? `${partes.join(". ")}.` : "Sincronização concluída.");
     } catch (syncError) {
-      setError(syncError instanceof Error ? syncError.message : "Não foi possível buscar NF-e recebidas na ACBr.");
+      setError(syncError instanceof Error ? syncError.message : "Não foi possível buscar as NF-e recebidas na SEFAZ.");
     } finally {
       setSyncing(false);
     }
@@ -337,7 +332,7 @@ export function FiscalEntriesList({ entries, receivedDocuments, ultimaSync }: Fi
                 ? `Atualizado em ${new Date(syncEm).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}`
                 : "Sincronização automática ativa"}
             </span>
-            <Button type="button" onClick={() => syncDistribution("refresh")} disabled={syncing}>
+            <Button type="button" onClick={() => syncDistribution()} disabled={syncing}>
               {syncing ? "Atualizando..." : "Atualizar agora"}
             </Button>
           </>
