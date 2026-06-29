@@ -5,6 +5,7 @@ import type { TenantScope } from "@/lib/auth/dev-session";
 import type { AmbienteFiscal, Prisma } from "@prisma/client";
 import { carregarCertificado } from "@/domains/fiscal/application/certificado-use-cases";
 import { getFiscalRuntimeConfig } from "@/domains/fiscal/application/fiscal-config-use-cases";
+import { buildDanfse } from "@/domains/fiscal/providers/nacional/danfse";
 
 /**
  * Distribuição de NFS-e do Sistema Nacional (ADN — Ambiente de Dados Nacional).
@@ -42,6 +43,20 @@ function getAdn(host: string, path: string, cert: { pfx: Buffer; senha: string }
     );
     req.on("error", (e) => resolve({ statusCode: 0, body: String(e) }));
     req.on("timeout", () => { req.destroy(); resolve({ statusCode: -1, body: "timeout" }); });
+    req.end();
+  });
+}
+
+/** GET binário no ADN (para o DANFSE PDF). */
+function getAdnBinary(host: string, path: string, cert: { pfx: Buffer; senha: string }): Promise<{ statusCode: number; contentType: string; body: Buffer }> {
+  return new Promise((resolve) => {
+    const req = https.request(
+      { hostname: host, path, method: "GET", pfx: cert.pfx, passphrase: cert.senha, timeout: 25000,
+        headers: { "User-Agent": "Mozilla/5.0", Accept: "application/pdf" } },
+      (res) => { const ch: Buffer[] = []; res.on("data", (c) => ch.push(c)); res.on("end", () => resolve({ statusCode: res.statusCode ?? 0, contentType: String(res.headers["content-type"] ?? ""), body: Buffer.concat(ch) })); }
+    );
+    req.on("error", () => resolve({ statusCode: 0, contentType: "", body: Buffer.alloc(0) }));
+    req.on("timeout", () => { req.destroy(); resolve({ statusCode: -1, contentType: "", body: Buffer.alloc(0) }); });
     req.end();
   });
 }
@@ -179,4 +194,52 @@ export async function listNfseDistributionDocuments(scope: TenantScope, papel?: 
     valor: Number(d.valor ?? 0),
     dataEmissao: d.dataEmissao?.toISOString() ?? null
   }));
+}
+
+/**
+ * Baixa o XML ou o DANFSE (PDF) de uma NFS-e da distribuição. O XML já está salvo no payload; o PDF
+ * usa o DANFSE oficial do ADN (pela chave, mTLS) com fallback para o gerado a partir do XML local.
+ */
+export async function downloadNfseDistribuido(
+  scope: TenantScope,
+  docId: string,
+  kind: "pdf" | "xml"
+): Promise<{ contentType: string; body: Buffer; filename: string }> {
+  const doc = await prisma.distribuicaoNfseDocumento.findFirst({
+    where: { id: docId, tenantId: scope.tenantId, empresaId: scope.empresaId },
+    select: { chaveAcesso: true, nNFSe: true, ambiente: true, payload: true }
+  });
+  if (!doc) throw new Error("NFS-e não encontrada na distribuição.");
+  const payloadXml = (doc.payload as { xml?: unknown } | null)?.xml;
+  const xml = typeof payloadXml === "string" ? payloadXml : "";
+  const nome = doc.nNFSe || onlyDigits(doc.chaveAcesso) || "nfse";
+
+  if (kind === "xml") {
+    if (!xml) throw new Error("XML da NFS-e não disponível.");
+    return { contentType: "application/xml", body: Buffer.from(xml, "utf8"), filename: `NFSE-${nome}.xml` };
+  }
+
+  if (!doc.chaveAcesso) throw new Error("NFS-e sem chave de acesso para gerar o DANFSE.");
+  const config = await getFiscalRuntimeConfig(scope).catch(() => null);
+  const cert = config?.certificado ?? (await carregarCertificado(scope).catch(() => null));
+  const chave = onlyDigits(doc.chaveAcesso);
+
+  // 1) DANFSE PDF oficial do ADN (pela chave, mTLS) — 3x para 502/503/504 transitório.
+  if (cert?.pfx) {
+    for (let i = 0; i < 3; i++) {
+      const pdf = await getAdnBinary(ADN[doc.ambiente], `/danfse/${chave}`, cert);
+      if (pdf.statusCode >= 200 && pdf.statusCode < 300 && pdf.body.subarray(0, 4).toString("latin1") === "%PDF") {
+        return { contentType: "application/pdf", body: pdf.body, filename: `NFSE-${nome}.pdf` };
+      }
+      if (![502, 503, 504].includes(pdf.statusCode)) break;
+      if (i < 2) await new Promise((r) => setTimeout(r, 1200));
+    }
+  }
+
+  // 2) Fallback: DANFSE gerado a partir do XML que já temos (HTML printable) — sempre disponível.
+  if (xml) {
+    const d = buildDanfse(xml, { logoDataUrl: config?.logotipoInfo ?? undefined });
+    return { contentType: d.contentType, body: d.body, filename: d.filename || `NFSE-${nome}.html` };
+  }
+  throw new Error("Não foi possível gerar o DANFSE (sem PDF do ADN nem XML local).");
 }

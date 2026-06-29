@@ -99,6 +99,7 @@ export function NfseDistribuicaoList({ documents, ultimaSync }: Props) {
               <th>Tomador</th>
               <th>Emissão</th>
               <th className="num">Valor</th>
+              <th className="actions">Ações</th>
             </tr>
           </thead>
           <tbody>
@@ -123,11 +124,15 @@ export function NfseDistribuicaoList({ documents, ultimaSync }: Props) {
                 </td>
                 <td>{d.dataEmissao ? new Date(d.dataEmissao).toLocaleDateString("pt-BR") : "-"}</td>
                 <td className="num">{brl(d.valor)}</td>
+                <td className="actions">
+                  <a className="btn-erp ghost xs" href={`/api/erp/nfse-recebidas/${d.id}/pdf`} target="_blank" rel="noopener noreferrer">DANFSE</a>
+                  <a className="btn-erp ghost xs" href={`/api/erp/nfse-recebidas/${d.id}/xml`}>XML</a>
+                </td>
               </tr>
             ))}
             {!filtered.length && (
               <tr>
-                <td colSpan={6}>
+                <td colSpan={7}>
                   <div className="empty-st">Nenhuma NFS-e sincronizada ainda. A busca roda automaticamente a cada hora — ou clique em &ldquo;Sincronizar agora&rdquo;.</div>
                 </td>
               </tr>
