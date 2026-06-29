@@ -411,23 +411,33 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
               o QR Code da NFC-e). É <b>por ambiente</b>: homologação e produção têm códigos diferentes —
               o sistema usa o do <b>ambiente selecionado</b> acima. Fica criptografado no banco.
             </p>
-            <div className="erp-form">
-              <label>
-                ID CSC — Homologação
-                <input value={config.nfceIdCsc} onChange={(e) => update("nfceIdCsc", e.target.value)} placeholder="Ex.: 1" inputMode="numeric" />
-              </label>
-              <label>
-                Código CSC — Homologação{config.hasNfceCsc ? " (já salvo)" : ""}
-                <input value={nfceCsc} onChange={(e) => setNfceCsc(e.target.value)} placeholder={config.hasNfceCsc ? "Manter CSC atual" : "CSC de homologação"} />
-              </label>
-              <label>
-                ID CSC — Produção
-                <input value={config.nfceIdCscProducao} onChange={(e) => update("nfceIdCscProducao", e.target.value)} placeholder="Ex.: 1" inputMode="numeric" />
-              </label>
-              <label>
-                Código CSC — Produção{config.hasNfceCscProducao ? " (já salvo)" : ""}
-                <input value={nfceCscProducao} onChange={(e) => setNfceCscProducao(e.target.value)} placeholder={config.hasNfceCscProducao ? "Manter CSC atual" : "CSC de produção"} />
-              </label>
+            <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+              <div style={{ flex: 1, minWidth: 240 }}>
+                <h4 style={{ margin: "0 0 6px", fontSize: 13 }}>🧪 Homologação (testes)</h4>
+                <div className="erp-form" style={{ gridTemplateColumns: "1fr" }}>
+                  <label>
+                    ID CSC
+                    <input value={config.nfceIdCsc} onChange={(e) => update("nfceIdCsc", e.target.value)} placeholder="Ex.: 1" inputMode="numeric" />
+                  </label>
+                  <label>
+                    Código CSC{config.hasNfceCsc ? " (já salvo)" : ""}
+                    <input value={nfceCsc} onChange={(e) => setNfceCsc(e.target.value)} placeholder={config.hasNfceCsc ? "Manter CSC atual" : "CSC de homologação"} />
+                  </label>
+                </div>
+              </div>
+              <div style={{ flex: 1, minWidth: 240 }}>
+                <h4 style={{ margin: "0 0 6px", fontSize: 13 }}>🏭 Produção</h4>
+                <div className="erp-form" style={{ gridTemplateColumns: "1fr" }}>
+                  <label>
+                    ID CSC
+                    <input value={config.nfceIdCscProducao} onChange={(e) => update("nfceIdCscProducao", e.target.value)} placeholder="Ex.: 1" inputMode="numeric" />
+                  </label>
+                  <label>
+                    Código CSC{config.hasNfceCscProducao ? " (já salvo)" : ""}
+                    <input value={nfceCscProducao} onChange={(e) => setNfceCscProducao(e.target.value)} placeholder={config.hasNfceCscProducao ? "Manter CSC atual" : "CSC de produção"} />
+                  </label>
+                </div>
+              </div>
             </div>
           </div>
         </div>
