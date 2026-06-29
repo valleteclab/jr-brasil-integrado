@@ -316,9 +316,12 @@ export function NfseWizard({ data, initial = null }: { data: EmissaoFormData; in
       if (valorServico <= 0) return "Informe o Valor do Serviço.";
       // Ambiente Nacional ou Simples/MEI: a alíquota é definida pelo sistema/regime — não exigir.
       if (!dispensaAliquota && tributavel && !exigibilidadeSuspensa && aliquotaIss <= 0) return "Informe a Alíquota do ISSQN.";
-      // Serviço de obra: o DPS exige a obra (endereço, CNO ou inscrição imobiliária).
-      if (precisaObra && !obraLogradouro.trim() && !obraCno.trim() && !obraInscImob.trim()) {
-        return "Este é um serviço de obra: informe a obra (endereço, CNO ou inscrição imobiliária).";
+      // Serviço de obra: o DPS exige identificar a obra por CNO, inscrição imobiliária OU endereço.
+      // Quando for por endereço, o schema (TCEnderecoSimples) exige CEP + logradouro + número + bairro.
+      if (precisaObra && !obraCno.trim() && !obraInscImob.trim()) {
+        if (obraCep.replace(/\D/g, "").length !== 8 || !obraLogradouro.trim() || !obraNumero.trim() || !obraBairro.trim()) {
+          return "Serviço de obra: informe o CNO, a inscrição imobiliária ou o endereço completo da obra (CEP, logradouro, número e bairro).";
+        }
       }
     }
     return "";

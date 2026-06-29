@@ -12,7 +12,7 @@ import https from "node:https";
 import forge from "node-forge";
 import { SignedXml } from "xml-crypto";
 import type { AmbienteFiscal, ProvedorFiscal } from "@prisma/client";
-import { cTribNacFromCodigo } from "@/domains/fiscal/codigo-tributacao-nacional";
+import { cTribNacFromCodigo, exigeGrupoObra } from "@/domains/fiscal/codigo-tributacao-nacional";
 import { buildDanfse, consultaPublicaNfseUrl } from "./nacional/danfse";
 import type {
   CancelInput, CancelResult, CorrectionInput, CorrectionResult,
@@ -83,6 +83,34 @@ function buildDpsXml(input: EmitInput, ctx: ProviderContext): { xml: string; id:
   const xDescServ = sanitizeTextoNfse(doc.itens.map((i) => i.descricao).join("; ") || doc.naturezaOperacao) || "Servico";
   const vServ = fmt(input.totals.valorServicos || input.total);
 
+  // Grupo OBRA (construção civil): obrigatório no DPS quando o cTribNac exige (E0370 — subitens
+  // 07.02.x, 07.04/05/06/07/08, 07.17, 07.19, 14.14.03/04). TCInfoObra é xs:choice: informa-se
+  // EXATAMENTE UM identificador — CNO (cObra) OU inscrição imobiliária OU o endereço da obra
+  // (TCEnderecoSimples: CEP + logradouro/nº/bairro). Prioriza CNO > inscrição > endereço. Vai
+  // dentro de <serv>, após <cServ>.
+  const obraInfo = doc.obra;
+  let obra = "";
+  if (obraInfo && exigeGrupoObra(servItem?.itemListaServico)) {
+    const cObra = onlyDigits(obraInfo.cObra);
+    const inscImob = (obraInfo.inscricaoImobiliaria ?? "").trim();
+    const eo = obraInfo.endereco;
+    const cepO = onlyDigits(eo?.cep);
+    let conteudoObra = "";
+    if (cObra) {
+      conteudoObra = `<cObra>${cObra}</cObra>`;
+    } else if (inscImob) {
+      conteudoObra = `<inscImobFisc>${esc(inscImob)}</inscImobFisc>`;
+    } else if (eo && cepO.length === 8 && eo.logradouro?.trim() && eo.numero?.trim() && eo.bairro?.trim()) {
+      conteudoObra =
+        `<end><CEP>${cepO}</CEP>` +
+        `<xLgr>${esc(sanitizeTextoNfse(eo.logradouro))}</xLgr>` +
+        `<nro>${esc(sanitizeTextoNfse(eo.numero))}</nro>` +
+        `${eo.complemento?.trim() ? `<xCpl>${esc(sanitizeTextoNfse(eo.complemento))}</xCpl>` : ""}` +
+        `<xBairro>${esc(sanitizeTextoNfse(eo.bairro))}</xBairro></end>`;
+    }
+    if (conteudoObra) obra = `<obra>${conteudoObra}</obra>`;
+  }
+
   // Tributação municipal/federal.
   const ret = doc.retencoes ?? null;
   const issRetido = Boolean(ret?.issRetido);
@@ -146,7 +174,7 @@ function buildDpsXml(input: EmitInput, ctx: ProviderContext): { xml: string; id:
         `<regTrib><opSimpNac>${opSimpNac}</opSimpNac><regEspTrib>0</regEspTrib></regTrib></prest>` +
       toma +
       `<serv><locPrest><cLocPrestacao>${cMun}</cLocPrestacao></locPrest>` +
-        `<cServ><cTribNac>${cTribNac}</cTribNac><xDescServ>${esc(xDescServ)}</xDescServ>${cNBS.length === 9 ? `<cNBS>${cNBS}</cNBS>` : ""}</cServ></serv>` +
+        `<cServ><cTribNac>${cTribNac}</cTribNac><xDescServ>${esc(xDescServ)}</xDescServ>${cNBS.length === 9 ? `<cNBS>${cNBS}</cNBS>` : ""}</cServ>${obra}</serv>` +
       `<valores><vServPrest><vServ>${vServ}</vServ></vServPrest>` +
         `<trib><tribMun><tribISSQN>1</tribISSQN><tpRetISSQN>${issRetido ? "2" : "1"}</tpRetISSQN></tribMun>` +
         tribFed +
