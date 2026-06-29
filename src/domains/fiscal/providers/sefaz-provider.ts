@@ -45,9 +45,11 @@ function statusFromCStat(cStat: string): StatusNotaFiscal {
 export async function consultarStatusServico(
   uf: string,
   ambiente: AmbienteFiscal,
-  cert: { pfx: Buffer; senha: string }
+  cert: { pfx: Buffer; senha: string },
+  modelo: "55" | "65" = "55"
 ): Promise<{ cStat: string; xMotivo: string; tMed?: string; raw: string; statusCode: number }> {
-  const endpoints = resolveSefazEndpoints(uf, ambiente);
+  // NFC-e (65) consulta o status na SVRS; NF-e (55) na autorizadora da UF.
+  const endpoints = modelo === "65" ? resolveNfceEndpoints(uf, ambiente) : resolveSefazEndpoints(uf, ambiente);
   const cUF = cUFFromUF(uf);
   const tpAmb = ambiente === "PRODUCAO" ? "1" : "2";
   const consStatServ =

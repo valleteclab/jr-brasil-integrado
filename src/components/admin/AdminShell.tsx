@@ -12,6 +12,7 @@ const navItems: AdminNavItem[] = [
   { label: "Novo cliente", href: "/admin/clientes/novo", icon: "＋", accent: true },
   { label: "Usuários", href: "/admin/usuarios", icon: "👤" },
   { label: "Emissões fiscais", href: "/admin/emissoes", icon: "🧾" },
+  { label: "Status dos serviços", href: "/admin/status-fiscal", icon: "📡" },
   { label: "Provedor fiscal", href: "/admin/provedor-fiscal", icon: "⚙️" }
 ];
 
