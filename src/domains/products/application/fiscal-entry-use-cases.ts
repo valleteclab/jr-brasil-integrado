@@ -511,28 +511,61 @@ export async function importNfeXml(scope: TenantScope, xmlText: string) {
       }
     }
 
-    // Devolução de COMPRA: se a nota é uma devolução (CFOP/natureza) e referencia uma COMPRA NOSSA
-    // (uma EntradaFiscal pela chave em NFref), ela NÃO pode entrar como nova nota de entrada — isso
-    // duplicaria estoque e crédito de ICMS. O correto é tratá-la como saída/estorno da compra. Bloqueia
-    // como o Bling, apontando a compra original. (Devolução de VENDA referencia uma VENDA nossa — não
-    // cai aqui e segue como entrada que credita, comportamento correto.)
-    const refsDevolucao = parsed.referencedKeys.filter((chave) => chave.length === 44);
-    if (refsDevolucao.length && notaEhDevolucao(parsed.mainCfop, parsed.naturezaOperacao)) {
-      const compraReferenciada = await tx.entradaFiscal.findFirst({
-        where: {
-          tenantId: scope.tenantId,
-          empresaId: scope.empresaId,
-          chaveAcesso: { in: refsDevolucao }
-        },
-        select: { numero: true }
-      });
-      if (compraReferenciada) {
-        const numCompra = compraReferenciada.numero ?? "—";
+    // Devolução de COMPRA: uma devolução emitida pelo FORNECEDOR não pode entrar como nova nota de
+    // entrada — isso duplicaria estoque e crédito de ICMS. O correto é estornar a compra (a empresa só
+    // escritura a devolução se ela própria a emitir, como saída). Dois sinais, do mais preciso ao
+    // heurístico (espelha o aviso do Bling, que olha o emitente):
+    //   1) a nota referencia (NFref/refNFe) uma COMPRA nossa; ou
+    //   2) o emitente já é um FORNECEDOR de quem compramos e NÃO é nosso cliente (sem venda para ele).
+    // Devolução de VENDA (cliente devolveu nossa venda) referencia/parte de um CLIENTE — não cai aqui.
+    if (notaEhDevolucao(parsed.mainCfop, parsed.naturezaOperacao)) {
+      const refsDevolucao = parsed.referencedKeys.filter((chave) => chave.length === 44);
+
+      // Sinal 1 — a devolução referencia uma compra nossa pela chave de acesso.
+      const compraReferenciada = refsDevolucao.length
+        ? await tx.entradaFiscal.findFirst({
+            where: { tenantId: scope.tenantId, empresaId: scope.empresaId, chaveAcesso: { in: refsDevolucao } },
+            select: { numero: true }
+          })
+        : null;
+
+      // Sinal 2 — o emitente é fornecedor de quem já compramos e não há venda nossa para ele (logo é
+      // devolução de compra, não de venda). Cobre o XML que não traz a referência NFref.
+      let compraDoEmitente: { numero: string | null } | null = null;
+      if (!compraReferenciada && fornecedor?.id) {
+        const compra = await tx.entradaFiscal.findFirst({
+          where: {
+            tenantId: scope.tenantId,
+            empresaId: scope.empresaId,
+            fornecedorId: fornecedor.id,
+            status: { in: ["CONFERIDA", "ESTOQUE_PROCESSADO"] }
+          },
+          select: { numero: true }
+        });
+        const docDigitos = (parsed.supplierDocument ?? "").replace(/\D/g, "");
+        if (compra && docDigitos) {
+          // Comparação por dígitos (destinatarioDocumento pode estar com máscara).
+          const vendaParaEmitente = await tx.$queryRaw<Array<{ um: number }>>`
+            SELECT 1 AS um FROM "NotaFiscal"
+             WHERE "tenantId" = ${scope.tenantId} AND "empresaId" = ${scope.empresaId}
+               AND regexp_replace(coalesce("destinatarioDocumento", ''), '[^0-9]', '', 'g') = ${docDigitos}
+             LIMIT 1`;
+          if (vendaParaEmitente.length === 0) compraDoEmitente = compra;
+        }
+      }
+
+      const compra = compraReferenciada ?? compraDoEmitente;
+      if (compra) {
+        const numCompra = compra.numero ?? "—";
+        const emit = parsed.supplierName ?? "o fornecedor";
+        const origem = compraReferenciada
+          ? `referente à sua compra nº ${numCompra}`
+          : `e você tem a compra nº ${numCompra} desse fornecedor`;
         throw new Error(
-          `Esta nota é uma DEVOLUÇÃO da sua compra nº ${numCompra} e não pode ser lançada como nota de entrada ` +
-          `(isso duplicaria o estoque e o crédito de ICMS). Devolução de compra é uma SAÍDA: ` +
-          `para anular a compra total, estorne a entrada nº ${numCompra} em Notas de Entrada; ` +
-          `para devolução parcial, lance a saída de devolução (CFOP 5.202/6.202) referenciando a compra.`
+          `Atenção: esta nota parece ser uma DEVOLUÇÃO de compra (emitente "${emit}", ${origem}) e não pode ` +
+          `ser lançada como nota de entrada — isso duplicaria o estoque e o crédito de ICMS. Quando o fornecedor ` +
+          `emite a devolução, o correto é ESTORNAR a compra nº ${numCompra} em Notas de Entrada (não escriturar a ` +
+          `devolução). Só lance como entrada se a devolução tiver sido emitida pela SUA empresa.`
         );
       }
     }
