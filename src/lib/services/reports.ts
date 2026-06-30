@@ -719,6 +719,10 @@ export async function accountingPackageReport(
       select: {
         modelo: true,
         numero: true,
+        // Número OFICIAL da NFS-e (nNFSe atribuído pela SEFIN). No provedor NACIONAL, `numero` é o
+        // nDPS (nosso número local) e o oficial fica aqui; no ACBr o `numero` já é o oficial e este
+        // costuma vir nulo. Exibir numeroNfse quando houver dá o número que o tomador/portal conhece.
+        numeroNfse: true,
         serie: true,
         status: true,
         destinatarioNome: true,
@@ -800,14 +804,18 @@ export async function accountingPackageReport(
     { item: "Contas a pagar vencidas", count: pagar.filter((p) => p.status === "VENCIDO").length }
   ];
   const valorEstoqueNum = round2(saldos.reduce((acc, s) => acc + Number(s.quantidade) * Number(s.produto.custoMedio), 0));
+  // Saídas EFETIVAS = só AUTORIZADA. Canceladas/rejeitadas/erro/substituídas não somam no total (elas
+  // continuam listadas em fiscalSaidas, com o status, para auditoria) — assim o total bate com o que
+  // foi de fato autorizado ("prova dos 9" contra o portal/SEFAZ).
+  const notasAutorizadas = notas.filter((n) => n.status === "AUTORIZADA");
 
   return {
     competencia,
     inicio: fmtDate(inicio),
     fim: fmtDate(fim),
     resumo: {
-      notasSaida: notas.length,
-      valorSaidas: formatBrl(sumMoney(notas, (n) => n.total)),
+      notasSaida: notasAutorizadas.length,
+      valorSaidas: formatBrl(sumMoney(notasAutorizadas, (n) => n.total)),
       entradasFiscais: entradas.length,
       valorEntradas: formatBrl(sumMoney(entradas, (e) => e.totalNota)),
       contasReceber: formatBrl(sumMoney(receber, (r) => r.valor)),
@@ -817,7 +825,8 @@ export async function accountingPackageReport(
     },
     fiscalSaidas: notas.map((n) => ({
       modelo: n.modelo,
-      numero: n.numero ?? "",
+      // Número oficial da NFS-e (nNFSe) quando houver; senão o número local (nDPS/NF-e/NFC-e).
+      numero: n.numeroNfse ?? n.numero ?? "",
       serie: n.serie ?? "",
       status: n.status,
       destinatario: n.destinatarioNome ?? "",
