@@ -22,6 +22,7 @@ type FiscalEntriesListProps = {
   ultimaSync?: string | null;
   nfseRecebidas?: NfseRecebidaDoc[];
   nfseSync?: string | null;
+  lancada?: string | null;
 };
 
 type Tab = "compra" | "recebidas" | "nfse";
@@ -69,8 +70,9 @@ const IMPORT_STEPS = [
   "Abrindo a tela de lançamento…"
 ];
 
-export function FiscalEntriesList({ entries, receivedDocuments, ultimaSync, nfseRecebidas = [], nfseSync }: FiscalEntriesListProps) {
+export function FiscalEntriesList({ entries, receivedDocuments, ultimaSync, nfseRecebidas = [], nfseSync, lancada }: FiscalEntriesListProps) {
   const [rows, setRows] = useState(entries);
+  const [avisoLancada, setAvisoLancada] = useState<string | null>(lancada ?? null);
   const [syncEm, setSyncEm] = useState<string | null>(ultimaSync ?? null);
   const [receivedRows, setReceivedRows] = useState(receivedDocuments);
   const [periodo, setPeriodo] = useState<PeriodoFiltro>("todos");
@@ -438,6 +440,13 @@ export function FiscalEntriesList({ entries, receivedDocuments, ultimaSync, nfse
         )}
       </div>
 
+      {avisoLancada && (
+        <div className="alert success fiscal-list-alert">
+          <strong>✓ Nota lançada</strong>
+          <span>NF-e {avisoLancada} lançada com sucesso — está aqui na aba “Notas de compra”.</span>
+          <button type="button" className="link" style={{ marginLeft: "auto" }} onClick={() => setAvisoLancada(null)}>fechar</button>
+        </div>
+      )}
       {message && <div className="alert info fiscal-list-alert"><strong>OK</strong><span>{message}</span></div>}
       {error && <div className="alert danger fiscal-list-alert"><strong>Atenção</strong><span>{error}</span></div>}
 

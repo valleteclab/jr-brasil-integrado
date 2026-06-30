@@ -10,7 +10,8 @@ import { prisma } from "@/lib/db/prisma";
 
 export const dynamic = "force-dynamic";
 
-export default async function FiscalEntriesPage() {
+export default async function FiscalEntriesPage({ searchParams }: { searchParams?: { lancada?: string } }) {
+  const lancada = searchParams?.lancada ?? null;
   let entries: FiscalEntrySummary[] = [];
   let receivedDocuments: NfeDistributionSummary[] = [];
   let nfseRecebidas: Awaited<ReturnType<typeof listNfseDistributionDocuments>> = [];
@@ -52,6 +53,7 @@ export default async function FiscalEntriesPage() {
         ultimaSync={ultimaSync}
         nfseRecebidas={nfseRecebidas}
         nfseSync={nfseSync}
+        lancada={lancada}
       />
     </>
   );

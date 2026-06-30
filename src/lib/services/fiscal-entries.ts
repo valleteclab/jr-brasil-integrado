@@ -1,4 +1,4 @@
-import { getDevelopmentTenantScope, scopedByTenantCompanyAmbiente } from "@/lib/auth/dev-session";
+import { getDevelopmentTenantScope, scopedByTenantCompany } from "@/lib/auth/dev-session";
 import { prisma } from "@/lib/db/prisma";
 import { formatBrl } from "@/lib/formatters/currency";
 
@@ -79,8 +79,10 @@ export async function listFiscalEntrySummaries(): Promise<FiscalEntrySummary[]> 
   try {
     const scope = await getDevelopmentTenantScope();
     const entries = await prisma.entradaFiscal.findMany({
-      // Isola por ambiente: entradas de homologação não aparecem em produção.
-      where: scopedByTenantCompanyAmbiente(scope),
+      // NÃO isola por ambiente: nota de entrada (compra de fornecedor) é documento REAL — deve
+      // aparecer independentemente de a empresa estar emitindo em homologação ou produção. (O isolamento
+      // por ambiente vale para as EMISSÕES da empresa, não para os documentos que ela recebe.)
+      where: scopedByTenantCompany(scope),
       include: {
         fornecedor: true,
         itens: {

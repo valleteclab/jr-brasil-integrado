@@ -620,7 +620,8 @@ export function FiscalEntryWizard({ initialDraft = null, products, formasPagamen
 
       setMessage("Entrada fiscal lançada com sucesso.");
       setStep(4);
-      window.location.href = "/erp/entradas-fiscais";
+      // Leva a confirmação para a lista (o redirect é imediato, então a mensagem aqui não seria vista).
+      window.location.href = `/erp/entradas-fiscais?lancada=${encodeURIComponent(draft.invoice || "1")}`;
     } catch (entryError) {
       setError(entryError instanceof Error ? entryError.message : "Não foi possível confirmar o lançamento.");
     } finally {

@@ -499,6 +499,18 @@ export async function importNfeXml(scope: TenantScope, xmlText: string) {
       });
     }
 
+    // Duplicidade: a mesma NF-e (chave de acesso) não pode ser lançada duas vezes. Aviso claro ANTES
+    // do erro de constraint do banco, para o usuário entender (e não relançar achando que não lançou).
+    if (parsed.accessKey) {
+      const jaLancada = await tx.entradaFiscal.findFirst({
+        where: { tenantId: scope.tenantId, empresaId: scope.empresaId, chaveAcesso: parsed.accessKey },
+        select: { id: true, numero: true }
+      });
+      if (jaLancada) {
+        throw new Error(`Esta NF-e já foi lançada nesta empresa (nº ${jaLancada.numero ?? "—"}). Não é necessário lançar de novo — ela está em Notas de Entrada.`);
+      }
+    }
+
     const entrada = await tx.entradaFiscal.create({
       data: {
         tenantId: scope.tenantId,
