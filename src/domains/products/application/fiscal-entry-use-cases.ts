@@ -914,54 +914,70 @@ export async function processFiscalEntry(
           throw new Error(`Informe o preço de venda do novo SKU ${item.codigoFornecedor} antes de lançar a entrada fiscal.`);
         }
 
-        const marca = item.marcaDefinida?.trim()
-          ? await tx.produtoMarca.upsert({
-              where: {
-                tenantId_empresaId_nome: {
+        const skuUpper = item.codigoFornecedor.toUpperCase();
+        const produtoExistente = await tx.produto.findFirst({
+          where: { tenantId: scope.tenantId, empresaId: scope.empresaId, sku: skuUpper },
+          select: { id: true, ativo: true }
+        });
+
+        if (produtoExistente) {
+          // SKU já cadastrado (produto antes excluído/inativado, ou recriado por outra nota deste
+          // lote): REUSA em vez de falhar no unique. Reativa se estava inativo; o custo/estoque é
+          // atualizado adiante pelo fluxo de movimentação.
+          if (!produtoExistente.ativo) {
+            await tx.produto.update({ where: { id: produtoExistente.id }, data: { ativo: true } });
+          }
+          produtoId = produtoExistente.id;
+        } else {
+          const marca = item.marcaDefinida?.trim()
+            ? await tx.produtoMarca.upsert({
+                where: {
+                  tenantId_empresaId_nome: {
+                    tenantId: scope.tenantId,
+                    empresaId: scope.empresaId,
+                    nome: item.marcaDefinida.trim()
+                  }
+                },
+                update: {},
+                create: {
                   tenantId: scope.tenantId,
                   empresaId: scope.empresaId,
                   nome: item.marcaDefinida.trim()
                 }
-              },
-              update: {},
-              create: {
-                tenantId: scope.tenantId,
-                empresaId: scope.empresaId,
-                nome: item.marcaDefinida.trim()
-              }
-            })
-          : null;
+              })
+            : null;
 
-        const product = await tx.produto.create({
-          data: {
-            tenantId: scope.tenantId,
-            empresaId: scope.empresaId,
-            sku: item.codigoFornecedor.toUpperCase(),
-            nome: item.descricaoFornecedor,
-            descricao: `Criado pela entrada fiscal ${entrada.numero || entrada.id}.`,
-            tipo: ehInsumo ? "INSUMO" : "PRODUTO",
-            codigoOriginal: item.codigoFornecedor,
-            gtin: item.gtin,
-            categoriaId: await categoriaIdPara(categoriasIa[item.id] ?? ""),
-            marcaId: marca?.id,
-            unidade: unidadeVendaItem,
-            unidadeCompra: item.unidade,
-            fatorConversaoCompra: fatorConv,
-            ncm: item.ncm,
-            cest: item.cest,
-            // CFOP de VENDA do produto conforme a finalidade (não o CFOP do fornecedor).
-            // ST fica null aqui para a emissão derivar 5405/6404.
-            cfop: cfopVendaPadrao(item.finalidade, { st: itemSt }),
-            precoCusto: custoUnitConv,
-            ultimoCusto: custoUnitConv,
-            custoMedio: custoUnitConv,
-            // Insumo sem preço de venda informado entra com 0 (não é vendido diretamente).
-            precoVenda: item.precoVendaDefinido ?? 0,
-            precoMinimo: item.precoMinimoDefinido ?? item.precoVendaDefinido ?? 0,
-            visivelEcommerce: false
-          }
-        });
-        produtoId = product.id;
+          const product = await tx.produto.create({
+            data: {
+              tenantId: scope.tenantId,
+              empresaId: scope.empresaId,
+              sku: skuUpper,
+              nome: item.descricaoFornecedor,
+              descricao: `Criado pela entrada fiscal ${entrada.numero || entrada.id}.`,
+              tipo: ehInsumo ? "INSUMO" : "PRODUTO",
+              codigoOriginal: item.codigoFornecedor,
+              gtin: item.gtin,
+              categoriaId: await categoriaIdPara(categoriasIa[item.id] ?? ""),
+              marcaId: marca?.id,
+              unidade: unidadeVendaItem,
+              unidadeCompra: item.unidade,
+              fatorConversaoCompra: fatorConv,
+              ncm: item.ncm,
+              cest: item.cest,
+              // CFOP de VENDA do produto conforme a finalidade (não o CFOP do fornecedor).
+              // ST fica null aqui para a emissão derivar 5405/6404.
+              cfop: cfopVendaPadrao(item.finalidade, { st: itemSt }),
+              precoCusto: custoUnitConv,
+              ultimoCusto: custoUnitConv,
+              custoMedio: custoUnitConv,
+              // Insumo sem preço de venda informado entra com 0 (não é vendido diretamente).
+              precoVenda: item.precoVendaDefinido ?? 0,
+              precoMinimo: item.precoMinimoDefinido ?? item.precoVendaDefinido ?? 0,
+              visivelEcommerce: false
+            }
+          });
+          produtoId = product.id;
+        }
         created += 1;
 
         await tx.entradaFiscalItem.update({
