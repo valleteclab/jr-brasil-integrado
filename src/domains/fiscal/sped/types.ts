@@ -267,6 +267,7 @@ export type SpedResumo = {
     saidasNfce: number;
     saidasCanceladas: number;
     entradas: number;
+    entradasCanceladas: number;
     valorSaidas: number;
     valorEntradas: number;
   };

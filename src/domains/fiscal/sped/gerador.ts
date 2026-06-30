@@ -99,6 +99,7 @@ export function gerarSpedFiscal(input: SpedInput): SpedArquivoGerado {
   const saidas = input.documentos.filter((d) => d.tipo === "SAIDA");
   const entradas = input.documentos.filter((d) => d.tipo === "ENTRADA");
   const saidasValidas = saidas.filter((d) => !d.cancelado);
+  const entradasValidas = entradas.filter((d) => !d.cancelado);
 
   // -------------------------------------------------------------------------
   // Bloco 0 — abertura, identificação e referências
@@ -802,9 +803,10 @@ export function gerarSpedFiscal(input: SpedInput): SpedArquivoGerado {
       saidasNfe: saidasValidas.filter((d) => d.modelo === "55").length,
       saidasNfce: saidasValidas.filter((d) => d.modelo === "65").length,
       saidasCanceladas: saidas.filter((d) => d.cancelado).length,
-      entradas: entradas.length,
+      entradas: entradasValidas.length,
+      entradasCanceladas: entradas.filter((d) => d.cancelado).length,
       valorSaidas: round2(saidasValidas.reduce((s, d) => s + d.valorDocumento, 0)),
-      valorEntradas: round2(entradas.reduce((s, d) => s + d.valorDocumento, 0))
+      valorEntradas: round2(entradasValidas.reduce((s, d) => s + d.valorDocumento, 0))
     },
     apuracaoIcms,
     apuracaoIcmsSt: {

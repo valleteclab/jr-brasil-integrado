@@ -150,6 +150,9 @@ export default async function SpedDetalhePage({ params }: { params: { id: string
                 <tr><td>NFC-e de saída</td><td style={{ textAlign: "right" }}>{r.documentos.saidasNfce}</td></tr>
                 <tr><td>Canceladas</td><td style={{ textAlign: "right" }}>{r.documentos.saidasCanceladas}</td></tr>
                 <tr><td>Notas de entrada</td><td style={{ textAlign: "right" }}>{r.documentos.entradas}</td></tr>
+                {(r.documentos.entradasCanceladas ?? 0) > 0 && (
+                  <tr><td>Entradas canceladas</td><td style={{ textAlign: "right" }}>{r.documentos.entradasCanceladas}</td></tr>
+                )}
                 <tr><td>Valor das saídas</td><td style={{ textAlign: "right" }}>{formatBrl(r.documentos.valorSaidas)}</td></tr>
                 <tr><td>Valor das entradas</td><td style={{ textAlign: "right" }}>{formatBrl(r.documentos.valorEntradas)}</td></tr>
               </tbody>
