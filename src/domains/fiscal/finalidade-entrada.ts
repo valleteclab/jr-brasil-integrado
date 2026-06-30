@@ -27,7 +27,9 @@ export const FINALIDADE_OPCOES: Array<{ value: FinalidadeEntrada; label: string 
   { value: "BONIFICACAO", label: "Bonificação / brinde / doação recebida" },
   // Material aplicado na prestação de serviço
   { value: "MATERIAL_SERVICO_ICMS", label: "Material p/ serviço com ICMS (1.126/2.126)" },
-  { value: "MATERIAL_SERVICO_ISS", label: "Material p/ serviço com ISS (1.128/2.128)" }
+  { value: "MATERIAL_SERVICO_ISS", label: "Material p/ serviço com ISS (1.128/2.128)" },
+  // Combustível / lubrificante
+  { value: "COMBUSTIVEL_LUBRIFICANTE", label: "Combustível / lubrificante (1.653/2.653)" }
 ];
 
 const FINALIDADES_VALIDAS: ReadonlySet<string> = new Set(FINALIDADE_OPCOES.map((o) => o.value));
@@ -58,7 +60,10 @@ const CFOP_ENTRADA: Record<FinalidadeEntrada, { semSt: [string, string]; comSt: 
   // Material para uso na prestação de serviço sujeito a ICMS: 1.126/2.126.
   MATERIAL_SERVICO_ICMS: { semSt: ["1126", "2126"], comSt: ["1126", "2126"] },
   // Material para uso na prestação de serviço sujeito a ISSQN: 1.128/2.128.
-  MATERIAL_SERVICO_ISS: { semSt: ["1128", "2128"], comSt: ["1128", "2128"] }
+  MATERIAL_SERVICO_ISS: { semSt: ["1128", "2128"], comSt: ["1128", "2128"] },
+  // Combustível/lubrificante por consumidor final: 1.653/2.653 (mesmo com/sem ST — o CFOP de
+  // combustível p/ consumidor final não tem par específico de ST na entrada).
+  COMBUSTIVEL_LUBRIFICANTE: { semSt: ["1653", "2653"], comSt: ["1653", "2653"] }
 };
 
 export type CfopEntradaContext = {
@@ -236,6 +241,13 @@ export function creditoPorFinalidade(
       // ICMS. PIS/COFINS do insumo do serviço creditam no Lucro Real.
       if (tributo === "ICMS") return { recuperavel: false, observacao: "Serviço sujeito a ISSQN — sem saída de ICMS, logo sem crédito de ICMS sobre o material." };
       return pisCofinsCreditavel(regime);
+    case "COMBUSTIVEL_LUBRIFICANTE":
+      // Combustível por consumidor final: o ICMS quase sempre vem por ST (CST 60) — sem crédito; e o
+      // PIS/COFINS é monofásico (recolhido na refinaria/distribuidora) — sem crédito na aquisição.
+      // Exceção (creditar): combustível consumido COMO INSUMO no processo industrial, sem ST — nesse
+      // caso o usuário ajusta o crédito manualmente.
+      if (tributo === "ICMS") return { recuperavel: false, observacao: "Combustível costuma ter ICMS-ST (CST 60, sem crédito); se for insumo do processo industrial sem ST, valide o crédito com o contador." };
+      return { recuperavel: false, observacao: "PIS/COFINS de combustível é monofásico (recolhido na origem) — sem crédito na aquisição." };
     default:
       return SEM_CREDITO;
   }
@@ -279,6 +291,19 @@ export function sugerirFinalidadeEntrada(item: FinalidadeSugestaoItem): Finalida
   // prioridade sobre a destinação, e evita classificar devolução/transferência/retorno/bonificação
   // como REVENDA por engano.
   const sufixoCfop = cfop.length === 4 ? cfop.slice(1) : "";
+  const ncm = (item.ncm ?? "").replace(/\D/g, "");
+
+  // Combustível / lubrificante: o NCM do capítulo 27 (óleos de petróleo — 2710 gasolina/diesel/
+  // lubrificante, 2711 GLP/GNV) é um sinal INEQUÍVOCO (ao contrário de 84/87, esse capítulo não é
+  // ambíguo). Também reconhece o CFOP de origem de venda de combustível e a descrição.
+  if (
+    ncm.startsWith("2710") || ncm.startsWith("2711") ||
+    ["652", "653", "656", "658", "667"].includes(sufixoCfop) ||
+    /\b(gasolina|[óo]leo\s*diesel|diesel|etanol|combust[íi]vel|lubrific|g[áa]s\s*natural|gnv|arla)\b/i.test(descricao)
+  ) {
+    return { finalidade: "COMBUSTIVEL_LUBRIFICANTE", origem: "HEURISTICA", confianca: 0.8, motivo: "Combustível/lubrificante (NCM do cap. 27, CFOP de origem ou descrição)." };
+  }
+
   // Operações de entrada (não-compra):
   if (sufixoCfop === "201" || sufixoCfop === "202" || sufixoCfop === "411" || sufixoCfop === "410")
     return { finalidade: "DEVOLUCAO_VENDA", origem: "HEURISTICA", confianca: 0.8, motivo: "CFOP de origem de devolução de venda." };

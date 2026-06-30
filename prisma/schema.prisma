@@ -256,6 +256,7 @@ enum FinalidadeEntrada {
   BONIFICACAO // Mercadoria recebida em bonificação/brinde/doação, sem pagamento (CFOP 1.910)
   MATERIAL_SERVICO_ICMS // Material para uso na prestação de serviço sujeito a ICMS (CFOP 1.126/2.126) — credita ICMS
   MATERIAL_SERVICO_ISS // Material para uso na prestação de serviço sujeito a ISSQN (CFOP 1.128/2.128) — NÃO credita ICMS
+  COMBUSTIVEL_LUBRIFICANTE // Compra de combustível/lubrificante por consumidor final (CFOP 1.653/2.653) — ICMS-ST/monofásico, sem crédito
 }
 
 enum ProvedorIa {

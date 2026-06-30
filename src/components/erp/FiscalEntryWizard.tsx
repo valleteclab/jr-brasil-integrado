@@ -50,7 +50,7 @@ type FiscalDraftItem = {
 type FinalidadeEntrada =
   | "REVENDA" | "USO_CONSUMO" | "IMOBILIZADO" | "INDUSTRIALIZACAO"
   | "DEVOLUCAO_VENDA" | "TRANSFERENCIA" | "RETORNO_INDUSTRIALIZACAO" | "BONIFICACAO"
-  | "MATERIAL_SERVICO_ICMS" | "MATERIAL_SERVICO_ISS";
+  | "MATERIAL_SERVICO_ICMS" | "MATERIAL_SERVICO_ISS" | "COMBUSTIVEL_LUBRIFICANTE";
 
 const FINALIDADE_OPCOES: Array<{ value: FinalidadeEntrada; label: string }> = [
   { value: "REVENDA", label: "Revenda" },
@@ -62,7 +62,8 @@ const FINALIDADE_OPCOES: Array<{ value: FinalidadeEntrada; label: string }> = [
   { value: "RETORNO_INDUSTRIALIZACAO", label: "Retorno de industrialização" },
   { value: "BONIFICACAO", label: "Bonificação / brinde" },
   { value: "MATERIAL_SERVICO_ICMS", label: "Material p/ serviço c/ ICMS (2.126)" },
-  { value: "MATERIAL_SERVICO_ISS", label: "Material p/ serviço c/ ISS (2.128)" }
+  { value: "MATERIAL_SERVICO_ISS", label: "Material p/ serviço c/ ISS (2.128)" },
+  { value: "COMBUSTIVEL_LUBRIFICANTE", label: "Combustível / lubrificante (1.653)" }
 ];
 
 const FINALIDADE_ORIGEM_LABEL: Record<string, string> = {
@@ -86,7 +87,8 @@ const CFOP_ENTRADA_CLIENT: Record<FinalidadeEntrada, { semSt: [string, string]; 
   RETORNO_INDUSTRIALIZACAO: { semSt: ["1902", "2902"], comSt: ["1902", "2902"] },
   BONIFICACAO: { semSt: ["1910", "2910"], comSt: ["1910", "2910"] },
   MATERIAL_SERVICO_ICMS: { semSt: ["1126", "2126"], comSt: ["1126", "2126"] },
-  MATERIAL_SERVICO_ISS: { semSt: ["1128", "2128"], comSt: ["1128", "2128"] }
+  MATERIAL_SERVICO_ISS: { semSt: ["1128", "2128"], comSt: ["1128", "2128"] },
+  COMBUSTIVEL_LUBRIFICANTE: { semSt: ["1653", "2653"], comSt: ["1653", "2653"] }
 };
 
 function recalcCfopEntrada(finalidade: FinalidadeEntrada, cfopAtual: string | undefined): string {
