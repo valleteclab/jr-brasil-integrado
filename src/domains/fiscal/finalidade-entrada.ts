@@ -94,6 +94,20 @@ export function finalidadeMovimentaEstoque(finalidade: FinalidadeEntrada): boole
   );
 }
 
+/**
+ * Item que entra como INSUMO — consumido na produção (industrialização) ou na prestação de serviço
+ * (material de serviço). Vira SKU/estoque mas NÃO é revendido, então NÃO exige preço de venda
+ * (quem tem preço é o produto acabado / o serviço prestado).
+ */
+export function finalidadeEhInsumo(finalidade: FinalidadeEntrada | null | undefined): boolean {
+  return (
+    finalidade === "INDUSTRIALIZACAO" ||
+    finalidade === "RETORNO_INDUSTRIALIZACAO" ||
+    finalidade === "MATERIAL_SERVICO_ICMS" ||
+    finalidade === "MATERIAL_SERVICO_ISS"
+  );
+}
+
 // ─── CFOP de venda padrão do produto ────────────────────────────────────────────
 
 /**

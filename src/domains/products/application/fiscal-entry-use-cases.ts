@@ -8,7 +8,7 @@ import { parseNfeXml } from "@/domains/products/xml/nfe-server-parser";
 import type { ParsedNfeItem } from "@/domains/products/xml/nfe-server-parser";
 import { callOpenRouter } from "@/domains/ai/openrouter-service";
 import { cfopIndicaSt, isSubstituicaoTributaria } from "@/domains/fiscal/cfop";
-import { cfopVendaPadrao, creditoPorFinalidade, finalidadeMovimentaEstoque, isFinalidadeEntrada, resolveCfopEntrada } from "@/domains/fiscal/finalidade-entrada";
+import { cfopVendaPadrao, creditoPorFinalidade, finalidadeEhInsumo, finalidadeMovimentaEstoque, isFinalidadeEntrada, resolveCfopEntrada } from "@/domains/fiscal/finalidade-entrada";
 import { loadFinalidadeRules, resolveFinalidadeForItem } from "@/domains/fiscal/application/finalidade-regra-use-cases";
 import { sugerirCategoriasEntrada } from "./ai-enrichment-use-cases";
 
@@ -897,11 +897,7 @@ export async function processFiscalEntry(
         // Insumo (Industrialização) e material aplicado em serviço NÃO são revendidos — são consumidos
         // na produção/prestação; quem tem preço de venda é o produto acabado. Só exigimos preço para
         // itens vendáveis (revenda e congêneres).
-        const ehInsumo =
-          item.finalidade === "INDUSTRIALIZACAO" ||
-          item.finalidade === "RETORNO_INDUSTRIALIZACAO" ||
-          item.finalidade === "MATERIAL_SERVICO_ICMS" ||
-          item.finalidade === "MATERIAL_SERVICO_ISS";
+        const ehInsumo = finalidadeEhInsumo(item.finalidade);
         if (!ehInsumo && (!item.precoVendaDefinido || Number(item.precoVendaDefinido) <= 0)) {
           throw new Error(`Informe o preço de venda do novo SKU ${item.codigoFornecedor} antes de lançar a entrada fiscal.`);
         }
@@ -1698,7 +1694,9 @@ async function updateFiscalEntryItemLinkInTransaction(
     const unidadeVendaNorm = fatorNorm > 1 ? (input.unidadeVenda?.trim() || "UN") : (input.unidadeVenda?.trim() || null);
 
     if (input.criarNovoSku) {
-      if (!input.precoVenda || input.precoVenda <= 0) {
+      // Insumo (industrialização/material de serviço) vira SKU mas não é vendido — não exige preço.
+      const ehInsumoSku = finalidadeEhInsumo(input.finalidade ?? item.finalidade);
+      if (!ehInsumoSku && (!input.precoVenda || input.precoVenda <= 0)) {
         throw new Error("Informe o preço de venda para criar um novo SKU.");
       }
 
