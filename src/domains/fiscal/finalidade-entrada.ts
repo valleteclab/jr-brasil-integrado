@@ -253,6 +253,21 @@ export function creditoPorFinalidade(
   }
 }
 
+// ─── Detecção de devolução ──────────────────────────────────────────────────────
+
+/**
+ * Indica se a NOTA é uma devolução, pelo CFOP de origem do emitente (sufixo 201/202/410/411 —
+ * devolução de venda/compra, com ou sem ST) ou pela natureza da operação. Não distingue devolução
+ * DE VENDA de devolução DE COMPRA — quem distingue é a nota referenciada (refNFe): se aponta para
+ * uma VENDA nossa é devolução de venda; se aponta para uma COMPRA nossa é devolução de compra.
+ */
+export function notaEhDevolucao(cfopOrigem?: string | null, naturezaOperacao?: string | null): boolean {
+  const cfop = (cfopOrigem ?? "").replace(/\D/g, "");
+  const sufixo = cfop.length === 4 ? cfop.slice(1) : "";
+  if (["201", "202", "410", "411"].includes(sufixo)) return true;
+  return /devolu[çc][ãa]o|devolvid/i.test(naturezaOperacao ?? "");
+}
+
 // ─── Sugestão heurística (sem I/O) ──────────────────────────────────────────────
 
 export type FinalidadeSugestaoItem = {

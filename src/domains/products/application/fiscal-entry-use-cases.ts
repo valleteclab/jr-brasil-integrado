@@ -8,7 +8,7 @@ import { parseNfeXml } from "@/domains/products/xml/nfe-server-parser";
 import type { ParsedNfeItem } from "@/domains/products/xml/nfe-server-parser";
 import { callOpenRouter } from "@/domains/ai/openrouter-service";
 import { cfopIndicaSt, isSubstituicaoTributaria } from "@/domains/fiscal/cfop";
-import { cfopVendaPadrao, creditoPorFinalidade, finalidadeEhInsumo, finalidadeMovimentaEstoque, isFinalidadeEntrada, resolveCfopEntrada } from "@/domains/fiscal/finalidade-entrada";
+import { cfopVendaPadrao, creditoPorFinalidade, finalidadeEhInsumo, finalidadeMovimentaEstoque, isFinalidadeEntrada, notaEhDevolucao, resolveCfopEntrada } from "@/domains/fiscal/finalidade-entrada";
 import { loadFinalidadeRules, resolveFinalidadeForItem } from "@/domains/fiscal/application/finalidade-regra-use-cases";
 import { sugerirCategoriasEntrada } from "./ai-enrichment-use-cases";
 
@@ -508,6 +508,32 @@ export async function importNfeXml(scope: TenantScope, xmlText: string) {
       });
       if (jaLancada) {
         throw new Error(`Esta NF-e já foi lançada nesta empresa (nº ${jaLancada.numero ?? "—"}). Não é necessário lançar de novo — ela está em Notas de Entrada.`);
+      }
+    }
+
+    // Devolução de COMPRA: se a nota é uma devolução (CFOP/natureza) e referencia uma COMPRA NOSSA
+    // (uma EntradaFiscal pela chave em NFref), ela NÃO pode entrar como nova nota de entrada — isso
+    // duplicaria estoque e crédito de ICMS. O correto é tratá-la como saída/estorno da compra. Bloqueia
+    // como o Bling, apontando a compra original. (Devolução de VENDA referencia uma VENDA nossa — não
+    // cai aqui e segue como entrada que credita, comportamento correto.)
+    const refsDevolucao = parsed.referencedKeys.filter((chave) => chave.length === 44);
+    if (refsDevolucao.length && notaEhDevolucao(parsed.mainCfop, parsed.naturezaOperacao)) {
+      const compraReferenciada = await tx.entradaFiscal.findFirst({
+        where: {
+          tenantId: scope.tenantId,
+          empresaId: scope.empresaId,
+          chaveAcesso: { in: refsDevolucao }
+        },
+        select: { numero: true }
+      });
+      if (compraReferenciada) {
+        const numCompra = compraReferenciada.numero ?? "—";
+        throw new Error(
+          `Esta nota é uma DEVOLUÇÃO da sua compra nº ${numCompra} e não pode ser lançada como nota de entrada ` +
+          `(isso duplicaria o estoque e o crédito de ICMS). Devolução de compra é uma SAÍDA: ` +
+          `para anular a compra total, estorne a entrada nº ${numCompra} em Notas de Entrada; ` +
+          `para devolução parcial, lance a saída de devolução (CFOP 5.202/6.202) referenciando a compra.`
+        );
       }
     }
 

@@ -51,6 +51,10 @@ export type ParsedNfe = {
   number?: string;
   series?: string;
   model?: string;
+  /** Natureza da operação (ide/natOp) — usada para detectar devolução. */
+  naturezaOperacao?: string;
+  /** Chaves de NF-e referenciadas (ide/NFref/refNFe, 44 dígitos). Vazio quando não há. */
+  referencedKeys: string[];
   issuedAt?: Date;
   supplierDocument?: string;
   supplierName?: string;
@@ -191,6 +195,12 @@ export function parseNfeXml(xmlText: string): ParsedNfe {
 
   const infCpl = text((infNfe.infAdic ?? {}).infCpl) || undefined;
 
+  // Notas referenciadas (ide/NFref): só nos interessa a chave de NF-e (refNFe, 44 dígitos);
+  // os demais tipos (refNF, refCTe, refECF, refNFP) são ignorados aqui.
+  const referencedKeys = arrayOf(ide.NFref as Record<string, unknown> | Record<string, unknown>[] | undefined)
+    .map((ref) => text(ref?.refNFe))
+    .filter((chave) => chave.length === 44);
+
   return {
     infCpl,
     creditoSimplesInfCpl: extrairCreditoSimplesDoTexto(infCpl),
@@ -198,6 +208,8 @@ export function parseNfeXml(xmlText: string): ParsedNfe {
     number: text(ide.nNF) || undefined,
     series: text(ide.serie) || undefined,
     model: text(ide.mod) || undefined,
+    naturezaOperacao: text(ide.natOp) || undefined,
+    referencedKeys,
     issuedAt: text(ide.dhEmi) ? new Date(text(ide.dhEmi)) : undefined,
     supplierDocument: text(emit.CNPJ) || text(emit.CPF) || undefined,
     supplierName: text(emit.xNome) || undefined,
