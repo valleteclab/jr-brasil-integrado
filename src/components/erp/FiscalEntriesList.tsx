@@ -35,6 +35,29 @@ const PERIODOS: { valor: PeriodoFiltro; label: string }[] = [
   { valor: "90", label: "Últimos 90 dias" }
 ];
 
+type SituacaoFiltro = "todas" | "conferencia" | "registradas" | "canceladas";
+
+const SITUACOES: { valor: SituacaoFiltro; label: string }[] = [
+  { valor: "todas", label: "Todas" },
+  { valor: "conferencia", label: "Em conferência" },
+  { valor: "registradas", label: "Registradas" },
+  { valor: "canceladas", label: "Canceladas/estornadas" }
+];
+
+/** Casa o status real da entrada com o grupo de situação selecionado. */
+function matchSituacao(situacao: SituacaoFiltro, rawStatus: string): boolean {
+  switch (situacao) {
+    case "conferencia":
+      return rawStatus === "AGUARDANDO_CONFERENCIA" || rawStatus === "CONFERIDA" || rawStatus === "RASCUNHO";
+    case "registradas":
+      return rawStatus === "ESTOQUE_PROCESSADO";
+    case "canceladas":
+      return rawStatus === "CANCELADA" || rawStatus === "ESTORNADA";
+    default:
+      return true;
+  }
+}
+
 /** Intervalo [de, ate] (ms) do período selecionado; null = sem limite naquela ponta. */
 function intervaloPeriodo(periodo: PeriodoFiltro, dataDe: string, dataAte: string): { de: number | null; ate: number | null } {
   const agora = new Date();
@@ -78,6 +101,7 @@ export function FiscalEntriesList({ entries, receivedDocuments, ultimaSync, nfse
   const [periodo, setPeriodo] = useState<PeriodoFiltro>("todos");
   const [dataDe, setDataDe] = useState("");
   const [dataAte, setDataAte] = useState("");
+  const [situacao, setSituacao] = useState<SituacaoFiltro>("todas");
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<Tab>("compra");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -105,6 +129,9 @@ export function FiscalEntriesList({ entries, receivedDocuments, ultimaSync, nfse
     const { de, ate } = intervaloPeriodo(periodo, dataDe, dataAte);
 
     return rows.filter((entry) => {
+      // Filtro por situação (grupo de status).
+      if (!matchSituacao(situacao, entry.rawStatus)) return false;
+
       // Filtro por período pela DATA DE EMISSÃO. Sem data de emissão fica fora de um período específico.
       if (de !== null || ate !== null) {
         const t = entry.issuedAtIso ? new Date(entry.issuedAtIso).getTime() : null;
@@ -131,7 +158,7 @@ export function FiscalEntriesList({ entries, receivedDocuments, ultimaSync, nfse
       const tb = b.issuedAtIso ? new Date(b.issuedAtIso).getTime() : 0;
       return tb - ta;
     });
-  }, [query, rows, periodo, dataDe, dataAte]);
+  }, [query, rows, periodo, dataDe, dataAte, situacao]);
 
   const filteredReceived = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -780,6 +807,19 @@ export function FiscalEntriesList({ entries, receivedDocuments, ultimaSync, nfse
                 Limpar filtro
               </button>
             )}
+          </div>
+          <div className="fiscal-periodo-filtros">
+            <span className="fiscal-periodo-data" style={{ border: "none" }}>Situação:</span>
+            {SITUACOES.map((s) => (
+              <button
+                key={s.valor}
+                type="button"
+                className={`fiscal-chip${situacao === s.valor ? " ativo" : ""}`}
+                onClick={() => setSituacao(s.valor)}
+              >
+                {s.label}
+              </button>
+            ))}
           </div>
           <div className="erp-table-wrap fiscal-list-table">
         <table className="erp-table">
