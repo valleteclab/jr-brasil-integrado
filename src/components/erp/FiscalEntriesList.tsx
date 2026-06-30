@@ -90,6 +90,8 @@ export function FiscalEntriesList({ entries, receivedDocuments, ultimaSync, nfse
   const [importLabel, setImportLabel] = useState("");
   const [importStep, setImportStep] = useState(0);
   const [navigating, setNavigating] = useState(false);
+  const [selectedReceived, setSelectedReceived] = useState<string[]>([]);
+  const [importLote, setImportLote] = useState<{ total: number; feito: number } | null>(null);
   const stepTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -379,7 +381,56 @@ export function FiscalEntriesList({ entries, receivedDocuments, ultimaSync, nfse
     }
   }
 
-  const busy = Boolean(importingId) || syncing || navigating;
+  function toggleReceived(id: string) {
+    setSelectedReceived((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
+  }
+
+  /**
+   * Importa em LOTE as NF-e recebidas selecionadas: para cada uma envia a Ciência e baixa o XML,
+   * criando a entrada em "aguardando conferência" — SEM abrir a tela de cada nota. O usuário concilia
+   * os itens depois, quando quiser. As notas já manifestadas não re-manifestam (o backend cuida).
+   */
+  async function importManySelected() {
+    const importaveis = receivedRows.filter((d) => !d.entradaFiscalId);
+    const ids = selectedReceived.filter((id) => importaveis.some((d) => d.id === id));
+    if (!ids.length) return;
+    if (!window.confirm(`Dar ciência e importar ${ids.length} NF-e recebida(s)? Elas vão para conferência (não movimentam estoque agora).`)) return;
+
+    setError("");
+    setMessage("");
+    setImportLote({ total: ids.length, feito: 0 });
+    let ok = 0;
+    let comErro = 0;
+    for (const id of ids) {
+      try {
+        const r = await fetch(`/api/erp/entradas-fiscais/distribuicao/${id}/importar`, { method: "POST" });
+        const d = await r.json() as { entradaFiscalId?: string; error?: string };
+        if (!r.ok || !d.entradaFiscalId) throw new Error(d.error || "falha");
+        ok++;
+      } catch {
+        comErro++;
+      }
+      setImportLote((p) => (p ? { ...p, feito: p.feito + 1 } : p));
+    }
+    setImportLote(null);
+    setSelectedReceived([]);
+    const refresh = await fetch("/api/erp/entradas-fiscais/distribuicao").then((r) => r.json()).catch(() => null) as { documents?: NfeDistributionSummary[] } | null;
+    if (refresh?.documents) setReceivedRows(refresh.documents);
+    setMessage(`${ok} NF-e enviada(s) para conferência${comErro ? ` · ${comErro} com erro (talvez o XML completo ainda não esteja disponível — tente novamente em instantes)` : ""}. Confira na aba "Notas de compra".`);
+  }
+
+  const busy = Boolean(importingId) || syncing || navigating || Boolean(importLote);
+
+  // Seleção em lote das NF-e recebidas ainda não importadas (sem entrada fiscal vinculada).
+  const recebidasImportaveis = filteredReceived.filter((d) => !d.entradaFiscalId);
+  const allReceivedSelected = recebidasImportaveis.length > 0 && recebidasImportaveis.every((d) => selectedReceived.includes(d.id));
+  function toggleAllReceived() {
+    if (allReceivedSelected) {
+      setSelectedReceived((cur) => cur.filter((id) => !recebidasImportaveis.some((d) => d.id === id)));
+    } else {
+      setSelectedReceived((cur) => Array.from(new Set([...cur, ...recebidasImportaveis.map((d) => d.id)])));
+    }
+  }
 
   return (
     <section className="fiscal-list-page" aria-busy={busy}>
@@ -398,6 +449,11 @@ export function FiscalEntriesList({ entries, receivedDocuments, ultimaSync, nfse
                   ))}
                 </ol>
                 <small>Pode levar alguns segundos — depende da resposta da SEFAZ. Não feche esta janela.</small>
+              </>
+            ) : importLote ? (
+              <>
+                <strong>Importando NF-e em lote… {importLote.feito} de {importLote.total}</strong>
+                <small>Dando ciência e baixando o XML de cada nota. As notas vão para conferência. Não feche esta janela.</small>
               </>
             ) : (
               <>
@@ -428,7 +484,12 @@ export function FiscalEntriesList({ entries, receivedDocuments, ultimaSync, nfse
                 ? `Atualizado em ${new Date(syncEm).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}`
                 : "Sincronização automática ativa"}
             </span>
-            <Button type="button" onClick={() => syncDistribution()} disabled={syncing}>
+            {selectedReceived.length > 0 && (
+              <Button type="button" onClick={importManySelected} disabled={busy}>
+                Importar selecionadas ({selectedReceived.length})
+              </Button>
+            )}
+            <Button variant="light" type="button" onClick={() => syncDistribution()} disabled={syncing}>
               {syncing ? "Atualizando..." : "Atualizar agora"}
             </Button>
           </>
@@ -522,6 +583,14 @@ export function FiscalEntriesList({ entries, receivedDocuments, ultimaSync, nfse
           <table className="erp-table">
             <thead>
               <tr>
+                <th className="check">
+                  <input
+                    aria-label="Selecionar todas as importáveis"
+                    type="checkbox"
+                    checked={allReceivedSelected}
+                    onChange={toggleAllReceived}
+                  />
+                </th>
                 <th>NF-e</th>
                 <th>NSU</th>
                 <th>Emissão</th>
@@ -534,6 +603,16 @@ export function FiscalEntriesList({ entries, receivedDocuments, ultimaSync, nfse
             <tbody>
               {filteredReceived.map((doc) => (
                 <tr key={doc.id}>
+                  <td className="check">
+                    {!doc.entradaFiscalId && (
+                      <input
+                        aria-label={`Selecionar NF-e ${doc.numero || doc.chaveAcesso}`}
+                        type="checkbox"
+                        checked={selectedReceived.includes(doc.id)}
+                        onChange={() => toggleReceived(doc.id)}
+                      />
+                    )}
+                  </td>
                   <td>
                     <span className="mono bold">{doc.numero || "-"}</span>
                     {doc.serie && <small className="block-muted">Série {doc.serie}</small>}
@@ -574,7 +653,7 @@ export function FiscalEntriesList({ entries, receivedDocuments, ultimaSync, nfse
               ))}
               {!filteredReceived.length && (
                 <tr>
-                  <td colSpan={7}>
+                  <td colSpan={8}>
                     <div className="empty-st">Nenhuma NF-e recebida ainda. A sincronização roda automaticamente a cada hora — ou clique em &ldquo;Atualizar agora&rdquo;.</div>
                   </td>
                 </tr>
