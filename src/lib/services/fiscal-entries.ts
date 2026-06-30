@@ -10,6 +10,8 @@ export type FiscalEntrySummary = {
   supplierDocument: string;
   receivedAt: string;
   issuedAt: string;
+  /** Data de emissão em ISO (para filtros de período no cliente); null quando ausente. */
+  issuedAtIso: string | null;
   status: string;
   rawStatus: string;
   statusTone: "success" | "warn" | "info" | "danger" | "mute";
@@ -113,6 +115,7 @@ export async function listFiscalEntrySummaries(): Promise<FiscalEntrySummary[]> 
         supplierDocument: entry.fornecedor?.documento || "",
         receivedAt: formatDate(entry.recebidaEm ?? entry.criadoEm),
         issuedAt: formatDate(entry.emitidaEm),
+        issuedAtIso: entry.emitidaEm?.toISOString() ?? null,
         total: formatBrl(totalNumber),
         totalNumber,
         rawStatus: entry.status,

@@ -100,8 +100,17 @@ export function FiscalEntriesList({ entries, receivedDocuments, ultimaSync, nfse
 
   const filteredEntries = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
+    const { de, ate } = intervaloPeriodo(periodo, dataDe, dataAte);
 
     return rows.filter((entry) => {
+      // Filtro por período pela DATA DE EMISSÃO. Sem data de emissão fica fora de um período específico.
+      if (de !== null || ate !== null) {
+        const t = entry.issuedAtIso ? new Date(entry.issuedAtIso).getTime() : null;
+        if (t === null) return false;
+        if (de !== null && t < de) return false;
+        if (ate !== null && t > ate) return false;
+      }
+
       if (!normalizedQuery) {
         return true;
       }
@@ -114,8 +123,13 @@ export function FiscalEntriesList({ entries, receivedDocuments, ultimaSync, nfse
         entry.status,
         entry.vinculation
       ].some((field) => field.toLowerCase().includes(normalizedQuery));
+    }).sort((a, b) => {
+      // Mais recentes primeiro, pela data de emissão.
+      const ta = a.issuedAtIso ? new Date(a.issuedAtIso).getTime() : 0;
+      const tb = b.issuedAtIso ? new Date(b.issuedAtIso).getTime() : 0;
+      return tb - ta;
     });
-  }, [query, rows]);
+  }, [query, rows, periodo, dataDe, dataAte]);
 
   const filteredReceived = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -661,7 +675,34 @@ export function FiscalEntriesList({ entries, receivedDocuments, ultimaSync, nfse
           </div>
         </>
       ) : (
-      <div className="erp-table-wrap fiscal-list-table">
+        <>
+          <div className="fiscal-periodo-filtros">
+            {PERIODOS.map((p) => (
+              <button
+                key={p.valor}
+                type="button"
+                className={`fiscal-chip${periodo === p.valor ? " ativo" : ""}`}
+                onClick={() => { setPeriodo(p.valor); setDataDe(""); setDataAte(""); }}
+              >
+                {p.label}
+              </button>
+            ))}
+            <span className="fiscal-periodo-sep" aria-hidden="true">|</span>
+            <label className="fiscal-periodo-data">
+              De
+              <input type="date" value={dataDe} max={dataAte || undefined} onChange={(event) => { setDataDe(event.target.value); setPeriodo("custom"); }} />
+            </label>
+            <label className="fiscal-periodo-data">
+              Até
+              <input type="date" value={dataAte} min={dataDe || undefined} onChange={(event) => { setDataAte(event.target.value); setPeriodo("custom"); }} />
+            </label>
+            {periodo !== "todos" && (
+              <button type="button" className="fiscal-chip-limpar" onClick={() => { setPeriodo("todos"); setDataDe(""); setDataAte(""); }}>
+                Limpar filtro
+              </button>
+            )}
+          </div>
+          <div className="erp-table-wrap fiscal-list-table">
         <table className="erp-table">
           <thead>
             <tr>
@@ -674,6 +715,7 @@ export function FiscalEntriesList({ entries, receivedDocuments, ultimaSync, nfse
                 />
               </th>
               <th>Número</th>
+              <th>Emissão</th>
               <th>Data entrada</th>
               <th>Fornecedor</th>
               <th>Situação</th>
@@ -697,6 +739,7 @@ export function FiscalEntriesList({ entries, receivedDocuments, ultimaSync, nfse
                   <span className="mono bold">{entry.number}</span>
                   {entry.series && <small className="block-muted">Série {entry.series}</small>}
                 </td>
+                <td>{entry.issuedAt || "-"}</td>
                 <td>{entry.receivedAt || "-"}</td>
                 <td>
                   <strong>{entry.supplier}</strong>
@@ -725,7 +768,7 @@ export function FiscalEntriesList({ entries, receivedDocuments, ultimaSync, nfse
             ))}
             {!filteredEntries.length && (
               <tr>
-                <td colSpan={8}>
+                <td colSpan={9}>
                   <div className="empty-st">Nenhuma nota fiscal de entrada encontrada.</div>
                 </td>
               </tr>
@@ -736,7 +779,8 @@ export function FiscalEntriesList({ entries, receivedDocuments, ultimaSync, nfse
           <span>{filteredEntries.length} notas exibidas</span>
           <strong>Total: {new Intl.NumberFormat("pt-BR", { currency: "BRL", style: "currency" }).format(filteredEntries.reduce((total, entry) => total + entry.totalNumber, 0))}</strong>
         </div>
-      </div>
+          </div>
+        </>
       )}
     </section>
   );
