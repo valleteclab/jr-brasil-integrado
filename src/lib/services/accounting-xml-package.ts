@@ -47,7 +47,7 @@ export async function buildOutboundXmlPackage(
     },
     orderBy: { emitidaEm: "asc" },
     select: {
-      id: true, modelo: true, numero: true, serie: true, status: true,
+      id: true, modelo: true, numero: true, numeroNfse: true, serie: true, status: true,
       chaveAcesso: true, providerRef: true, xml: true, emitidaEm: true,
       destinatarioNome: true, total: true
     }
@@ -59,7 +59,7 @@ export async function buildOutboundXmlPackage(
   let faltando = 0;
 
   for (const n of notas) {
-    const baseNome = `${MODELO_LABEL[n.modelo]}-${n.serie ?? "1"}-${n.numero ?? n.id}`;
+    const baseNome = `${MODELO_LABEL[n.modelo]}-${n.serie ?? "1"}-${n.numeroNfse ?? n.numero ?? n.id}`;
     let xml: string | null = n.xml?.trim() ? n.xml : null;
 
     // Sem XML salvo: tenta baixar do provedor (requer providerRef).
@@ -82,7 +82,7 @@ export async function buildOutboundXmlPackage(
     }
 
     indice.push([
-      MODELO_LABEL[n.modelo], n.numero ?? "", n.serie ?? "", n.status,
+      MODELO_LABEL[n.modelo], n.numeroNfse ?? n.numero ?? "", n.serie ?? "", n.status,
       n.chaveAcesso ?? "", n.emitidaEm ? n.emitidaEm.toISOString().slice(0, 10) : "",
       (n.destinatarioNome ?? "").replace(/;/g, ","), Number(n.total).toFixed(2),
       temXml ? "incluido" : "indisponivel"

@@ -944,6 +944,7 @@ export async function apuracaoImpostosReport(
       select: {
         modelo: true,
         numero: true,
+        numeroNfse: true,
         destinatarioNome: true,
         emitidaEm: true,
         valorIcms: true,
@@ -1073,7 +1074,7 @@ export async function apuracaoImpostosReport(
     })
     .filter((x) => x.total > 0)
     .map(({ n, issRet, total }) => ({
-      nota: `${n.modelo} ${n.numero ?? "—"}`,
+      nota: `${n.modelo} ${n.numeroNfse ?? n.numero ?? "—"}`,
       destinatario: n.destinatarioNome ?? "—",
       emissao: n.emitidaEm ? fmtDate(n.emitidaEm) : "—",
       irrf: formatBrl(Number(n.valorIrRetido ?? 0)),
@@ -1105,7 +1106,7 @@ export async function apuracaoImpostosReport(
     entradasDetalhe,
     saidasDetalhe: saidas.map((n) => ({
       modelo: n.modelo,
-      numero: n.numero ?? "—",
+      numero: n.numeroNfse ?? n.numero ?? "—",
       destinatario: n.destinatarioNome ?? "—",
       emissao: n.emitidaEm ? fmtDate(n.emitidaEm) : "—",
       icms: formatBrl(Number(n.valorIcms ?? 0)),
