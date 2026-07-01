@@ -6,6 +6,8 @@ import { StatusBadge } from "@/components/shared/StatusBadge";
 import type { AccountingPackageReport, ApuracaoImpostosReport, SalesReport, StockReport, FinanceReport, FiscalReport, DreSimplificado } from "@/lib/services/reports";
 import type { LivroEntradasReport } from "@/lib/services/livro-entradas";
 import type { FechamentoMensalReport, FechamentoGrupo } from "@/lib/services/fechamento-mensal";
+import type { CashFlowData } from "@/lib/services/finance";
+import type { FinanceRankingReport, PrevistoRealizadoReport } from "@/lib/services/finance-relatorios";
 
 type Tab = "vendas" | "estoque" | "financeiro" | "fechamento" | "fiscal" | "dre" | "contabil" | "apuracao" | "entradas";
 
@@ -31,6 +33,9 @@ type Props = {
   apuracao: ApuracaoImpostosReport;
   livroEntradas: LivroEntradasReport;
   fechamento: FechamentoMensalReport;
+  cashFlow: CashFlowData;
+  financeRanking: FinanceRankingReport;
+  previstoRealizado: PrevistoRealizadoReport;
   accountingParams: { mes?: number; ano?: number };
 };
 
@@ -233,10 +238,136 @@ function statusFinanceiroTone(s: string): "success" | "warn" | "danger" | "info"
   return map[s] ?? "mute";
 }
 
-function AbaFinanceiro({ data }: { data: FinanceReport }) {
+function financeiroCsvHref(params: { mes?: number; ano?: number }): string {
+  const qs = new URLSearchParams();
+  if (params.mes) qs.set("mes", String(params.mes));
+  if (params.ano) qs.set("ano", String(params.ano));
+  const query = qs.toString();
+  return `/api/erp/relatorios/financeiro/csv${query ? `?${query}` : ""}`;
+}
+
+function AbaFinanceiro({ data, cashFlow, ranking, previstoRealizado, params }: {
+  data: FinanceReport;
+  cashFlow: CashFlowData;
+  ranking: FinanceRankingReport;
+  previstoRealizado: PrevistoRealizadoReport;
+  params: { mes?: number; ano?: number };
+}) {
+  const brl = (v: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
   return (
     <div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.5rem" }}>
+      <form action="/erp/relatorios" style={{ display: "flex", gap: "0.75rem", alignItems: "end", marginBottom: "1rem" }}>
+        <label>Mês (previsto × realizado)<br /><input name="mes" type="number" min="1" max="12" defaultValue={params.mes ?? new Date().getMonth() + 1} /></label>
+        <label>Ano<br /><input name="ano" type="number" min="2000" max="2100" defaultValue={params.ano ?? new Date().getFullYear()} /></label>
+        <button className="btn" type="submit">Filtrar</button>
+        <a className="btn light" href={financeiroCsvHref(params)}>Exportar CSV</a>
+        <a className="btn light" href="/erp/fluxo-caixa">Fluxo de caixa completo</a>
+      </form>
+
+      {/* Fluxo de caixa projetado (contas em aberto por vencimento, a partir do saldo atual) */}
+      <div className="kpi-row">
+        <KpiCard label="Saldo atual em contas" value={brl(cashFlow.saldoAtualContas)} tone={cashFlow.saldoAtualContas >= 0 ? "info" : "danger"} />
+        {[cashFlow.projetado30, cashFlow.projetado60, cashFlow.projetado90].map((p) => {
+          const saldoProjetado = cashFlow.saldoAtualContas + p.saldo;
+          return (
+            <KpiCard
+              key={p.label}
+              label={`Saldo projetado ${p.label} (a receber − a pagar)`}
+              value={brl(saldoProjetado)}
+              tone={saldoProjetado >= 0 ? "success" : "danger"}
+            />
+          );
+        })}
+      </div>
+
+      {/* Previsto × realizado do mês */}
+      <section className="erp-card" style={{ marginTop: "1.5rem" }}>
+        <div className="erp-card-head"><h3>Previsto × realizado — {previstoRealizado.competencia}</h3></div>
+        <div className="erp-table-wrap">
+          <table className="erp-table">
+            <thead>
+              <tr>
+                <th />
+                <th className="num">Previsto (vencimentos do mês)</th>
+                <th className="num">Realizado (baixas do mês)</th>
+                <th className="num">Diferença</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>A receber</strong> ({previstoRealizado.receber.contasPrevistas} conta(s))</td>
+                <td className="num">{previstoRealizado.receber.previsto}</td>
+                <td className="num">{previstoRealizado.receber.realizado}</td>
+                <td className="num">
+                  <span style={{ color: previstoRealizado.receber.diferencaNum < 0 ? "var(--erp-danger, #b42318)" : "var(--erp-success, #067647)" }}>
+                    {previstoRealizado.receber.diferenca}
+                  </span>
+                </td>
+              </tr>
+              <tr>
+                <td><strong>A pagar</strong> ({previstoRealizado.pagar.contasPrevistas} conta(s))</td>
+                <td className="num">{previstoRealizado.pagar.previsto}</td>
+                <td className="num">{previstoRealizado.pagar.realizado}</td>
+                <td className="num">
+                  <span style={{ color: previstoRealizado.pagar.diferencaNum > 0 ? "var(--erp-danger, #b42318)" : "var(--erp-success, #067647)" }}>
+                    {previstoRealizado.pagar.diferenca}
+                  </span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {/* Ranking por cliente / fornecedor */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.5rem", marginTop: "1.5rem" }}>
+        <section className="erp-card">
+          <div className="erp-card-head"><h3>A receber por cliente (top {ranking.clientes.length})</h3></div>
+          {ranking.clientes.length === 0 ? (
+            <div className="empty-st"><span>Sem contas a receber em aberto.</span></div>
+          ) : (
+            <div className="erp-table-wrap">
+              <table className="erp-table">
+                <thead><tr><th>Cliente</th><th className="num">Contas</th><th className="num">Em aberto</th><th className="num">Vencido</th></tr></thead>
+                <tbody>
+                  {ranking.clientes.map((r) => (
+                    <tr key={r.nome}>
+                      <td>{r.nome}</td>
+                      <td className="num">{r.contas}</td>
+                      <td className="num"><strong>{r.total}</strong></td>
+                      <td className="num">{r.vencidoNum > 0 ? <span style={{ color: "var(--erp-danger, #b42318)" }}>{r.vencido}</span> : "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+        <section className="erp-card">
+          <div className="erp-card-head"><h3>A pagar por fornecedor (top {ranking.fornecedores.length})</h3></div>
+          {ranking.fornecedores.length === 0 ? (
+            <div className="empty-st"><span>Sem contas a pagar em aberto.</span></div>
+          ) : (
+            <div className="erp-table-wrap">
+              <table className="erp-table">
+                <thead><tr><th>Fornecedor</th><th className="num">Contas</th><th className="num">Em aberto</th><th className="num">Vencido</th></tr></thead>
+                <tbody>
+                  {ranking.fornecedores.map((r) => (
+                    <tr key={r.nome}>
+                      <td>{r.nome}</td>
+                      <td className="num">{r.contas}</td>
+                      <td className="num"><strong>{r.total}</strong></td>
+                      <td className="num">{r.vencidoNum > 0 ? <span style={{ color: "var(--erp-danger, #b42318)" }}>{r.vencido}</span> : "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.5rem", marginTop: "1.5rem" }}>
         {/* A Receber */}
         <div>
           <h3 style={{ marginBottom: "0.75rem" }}>A Receber</h3>
@@ -1036,7 +1167,7 @@ function AbaLivroEntradas({ data, params }: { data: LivroEntradasReport; params:
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-export function ReportsView({ sales, stock, finance, fiscal, dre, accounting, apuracao, livroEntradas, fechamento, accountingParams }: Props) {
+export function ReportsView({ sales, stock, finance, fiscal, dre, accounting, apuracao, livroEntradas, fechamento, cashFlow, financeRanking, previstoRealizado, accountingParams }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>("vendas");
 
   return (
@@ -1058,7 +1189,15 @@ export function ReportsView({ sales, stock, finance, fiscal, dre, accounting, ap
       {/* Conteúdo */}
       {activeTab === "vendas" && <AbaVendas data={sales} />}
       {activeTab === "estoque" && <AbaEstoque data={stock} />}
-      {activeTab === "financeiro" && <AbaFinanceiro data={finance} />}
+      {activeTab === "financeiro" && (
+        <AbaFinanceiro
+          data={finance}
+          cashFlow={cashFlow}
+          ranking={financeRanking}
+          previstoRealizado={previstoRealizado}
+          params={accountingParams}
+        />
+      )}
       {activeTab === "fechamento" && <AbaFechamento data={fechamento} params={accountingParams} />}
       {activeTab === "fiscal" && <AbaFiscal data={fiscal} />}
       {activeTab === "dre" && <AbaDre data={dre} />}

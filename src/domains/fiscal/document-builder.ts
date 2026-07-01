@@ -100,6 +100,8 @@ export type PedidoFiscalInput = {
   finalidade?: FinalidadeNfe;
   /** NF-e de devolução: chave de acesso da nota original referenciada. */
   chaveReferenciada?: string | null;
+  /** Nº do pedido de venda de origem — vai nas Informações Complementares ("Pedido nº X"). */
+  numeroPedido?: string | null;
   valorSeguro?: number;
   outrasDespesas?: number;
   itens: Array<{
@@ -164,7 +166,11 @@ export function buildDocumentFromPedido(input: PedidoFiscalInput): NormalizedFis
     formaPagamento: input.formaPagamento ?? null,
     pagamentos: input.pagamentos ?? null,
     condicaoPagamento: input.condicaoPagamento ?? null,
-    informacoesComplementares: input.observacoes ?? null,
+    // Nº do pedido nas Informações Complementares (o cliente/contador rastreia a NF pelo pedido).
+    informacoesComplementares: [
+      input.numeroPedido?.trim() ? `Pedido nº ${input.numeroPedido.trim()}.` : null,
+      input.observacoes?.trim() || null
+    ].filter(Boolean).join(" ") || null,
     valorFrete: input.frete ?? 0,
     modalidadeFrete: input.modalidadeFrete ?? null,
     valorSeguro: input.valorSeguro ?? 0,

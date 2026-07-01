@@ -650,6 +650,7 @@ function buildDocumentoVenda(pedido: PedidoParaNota, modelo: "NFE" | "NFCE") {
     pagamentos: pedido.pagamentos.map((p) => ({ forma: p.forma, valor: Number(p.valor), bandeira: p.bandeira })),
     condicaoPagamento: pedido.condicaoPagamento,
     observacoes: pedido.observacoes,
+    numeroPedido: pedido.numero,
     frete: Number(pedido.frete),
     desconto: Number(pedido.desconto),
     modelo,

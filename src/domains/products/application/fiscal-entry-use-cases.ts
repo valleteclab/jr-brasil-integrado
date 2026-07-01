@@ -1854,6 +1854,39 @@ async function updateFiscalEntryItemLinkInTransaction(
       }
     });
 
+    // MEMÓRIA do vínculo (fornecedor + código do fornecedor → produto) gravada JÁ na confirmação
+    // manual — a próxima nota deste fornecedor vincula sozinha (matchProduct consulta ProdutoFornecedor),
+    // mesmo antes desta entrada ser processada (o processamento também faz upsert, com custo).
+    if (item.entradaFiscal.fornecedorId && item.codigoFornecedor?.trim()) {
+      await tx.produtoFornecedor.upsert({
+        where: {
+          tenantId_empresaId_fornecedorId_codigoFornecedor: {
+            tenantId: scope.tenantId,
+            empresaId: scope.empresaId,
+            fornecedorId: item.entradaFiscal.fornecedorId,
+            codigoFornecedor: item.codigoFornecedor
+          }
+        },
+        update: {
+          produtoId: product.id,
+          descricaoFornecedor: item.descricaoFornecedor,
+          gtinFornecedor: item.gtin,
+          ativo: true
+        },
+        create: {
+          tenantId: scope.tenantId,
+          empresaId: scope.empresaId,
+          produtoId: product.id,
+          fornecedorId: item.entradaFiscal.fornecedorId,
+          codigoFornecedor: item.codigoFornecedor,
+          descricaoFornecedor: item.descricaoFornecedor,
+          gtinFornecedor: item.gtin,
+          unidadeCompra: item.unidade,
+          principal: true
+        }
+      });
+    }
+
     await createAuditLog(tx, {
       scope,
       entidade: "EntradaFiscalItem",
@@ -1955,25 +1988,39 @@ export async function suggestFiscalEntryLinksWithAi(scope: TenantScope, entradaF
     throw new Error("Entrada fiscal não encontrada.");
   }
 
-  const products = await prisma.produto.findMany({
+  // Prioriza o HISTÓRICO do fornecedor: produtos que ele já vendeu (ProdutoFornecedor) entram
+  // primeiro na lista enviada à IA — são os candidatos mais prováveis e não podem ficar de fora
+  // do corte de 200 produtos.
+  const produtoSelect = {
+    id: true,
+    sku: true,
+    nome: true,
+    codigoOriginal: true,
+    codigoFabricante: true,
+    gtin: true,
+    ncm: true,
+    marca: { select: { nome: true } }
+  } as const;
+  const doFornecedor = entrada.fornecedorId
+    ? await prisma.produtoFornecedor.findMany({
+        where: { tenantId: scope.tenantId, empresaId: scope.empresaId, fornecedorId: entrada.fornecedorId, ativo: true },
+        select: { produto: { select: produtoSelect } },
+        take: 200
+      })
+    : [];
+  const idsFornecedor = new Set(doFornecedor.map((v) => v.produto.id));
+  const gerais = await prisma.produto.findMany({
     where: {
       tenantId: scope.tenantId,
       empresaId: scope.empresaId,
-      ativo: true
+      ativo: true,
+      ...(idsFornecedor.size ? { id: { notIn: [...idsFornecedor] } } : {})
     },
     orderBy: { sku: "asc" },
-    select: {
-      id: true,
-      sku: true,
-      nome: true,
-      codigoOriginal: true,
-      codigoFabricante: true,
-      gtin: true,
-      ncm: true,
-      marca: { select: { nome: true } }
-    },
-    take: 200
+    select: produtoSelect,
+    take: Math.max(0, 200 - idsFornecedor.size)
   });
+  const products = [...doFornecedor.map((v) => v.produto), ...gerais];
 
   const content = await callOpenRouter(scope, [
     {

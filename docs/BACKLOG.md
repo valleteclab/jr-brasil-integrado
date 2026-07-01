@@ -13,11 +13,12 @@ do cadastro); fluxo de deploy = desenvolve local → `git push` → `./deploy/vp
 1. ~~Classificação financeira + fechamento mensal~~ ✅ (base dos relatórios financeiros)
 2. ~~Automação da classificação (backfill + recebíveis na origem)~~ ✅
 3. ~~Bug do frete na NF-e~~ ✅
-4. **Nº do pedido no infCpl** (pequeno, mesma área da emissão) → item 2.1
-5. **4 visões de relatórios financeiros** (usa a classificação já feita) → item 3.1
-6. **Entradas de notas / vínculo de produtos** (reduzir trabalho na conferência) → seção 4
+4. ~~Nº do pedido no infCpl~~ ✅ 2026-07-02
+5. ~~4 visões de relatórios financeiros~~ ✅ 2026-07-02 (aba Financeiro dos relatórios)
+6. ~~Entradas de notas / vínculo de produtos (1ª leva)~~ ✅ 2026-07-02 (memória no vínculo manual,
+   IA prioriza histórico do fornecedor, ação em massa "novo SKU") — restam 4.3/4.4 da seção 4
 7. **Antecipação de recebíveis** (v1 SEM banco: fluxo manual estruturado; usa a classificação
-   "Juros de antecipação" que já existe no plano) → item 1.4
+   "Juros de antecipação" que já existe no plano) → item 1.4 — **PRÓXIMO**
 8. **Emissão de boleto + integração bancária + bureau** — DEPENDEM de decidir **qual banco/provedor**
    (Sicoob/BB/Itaú/Inter ou agregador Asaas/Cobre Fácil). Decisão com o cliente ANTES de codar → itens 1.1–1.3
 
@@ -44,9 +45,8 @@ do cadastro); fluxo de deploy = desenvolve local → `git push` → `./deploy/vp
   (rejeição 610). Agora o `buildDocumentFromPedido` rateia o frete pelos itens (resíduo no último) e o
   `modFrete` é forçado a 0 (CIF) quando há frete com modalidade 9/vazia. Cobre pedido, caixa e avulsa
   (todos passam pelo mesmo builder), nos dois provedores (SEFAZ e ACBr).
-- [ ] 2.1 **Nº do pedido em Informações Complementares.** Quando a NF-e vem de um pedido de venda, concatenar
-  "Pedido nº X" no `infCpl` (infAdic) do XML. Hoje o `infCpl` traz só o texto do IBPT (Lei 12.741) + o
-  digitado pelo usuário.
+- [x] 2.1 **Nº do pedido em Informações Complementares** — FEITO 2026-07-02: `buildDocumentFromPedido`
+  aceita `numeroPedido` e prefixa "Pedido nº X." no infCpl; venda e caixa passam `pedido.numero`.
 - [ ] 2.2 (refinamento fiscal) **Frete na base do ICMS** — para emitente de regime NORMAL, o frete rateado
   deve compor a base do ICMS do item (base = vProd − vDesc + vFrete). Hoje o tax-engine não soma o frete à
   base. Sem efeito para o piloto (Simples Nacional / CSOSN); tratar quando houver cliente em regime normal.
@@ -61,24 +61,25 @@ do cadastro); fluxo de deploy = desenvolve local → `git push` → `./deploy/vp
   classificadas (finalidade predominante + memória do fornecedor); recebíveis de venda/PDV/adquirente/OS
   nascem como "Receita de vendas"/"Receita de serviços"; backfill classifica o legado (roda no seed do
   plano e no botão "Classificar contas existentes").
-- [ ] 3.1 **4 visões de relatórios de contas a pagar/receber** (escopo fechado com o usuário). Hoje
-  `financeReport` (`src/lib/services/reports.ts`) traz só totais em aberto/vencido + aging por status:
-  1. **Fluxo de caixa projetado** — a receber × a pagar por data futura, com saldo projetado dia/semana/mês.
-  2. **Por cliente/fornecedor** — total a receber por cliente e a pagar por fornecedor (ranking).
-  3. **Previsto × realizado** — previsto receber/pagar no período × o que de fato entrou/saiu.
-  4. **Aging + exportação** — aging por faixa de dias de atraso + exportar PDF/Excel.
+- [x] 3.1 **4 visões de relatórios de contas a pagar/receber** — FEITO 2026-07-02 na aba Financeiro de
+  /erp/relatorios: fluxo projetado (saldo atual + 30/60/90, reusa getCashFlow), ranking a receber por
+  cliente / a pagar por fornecedor (top 20, com vencido), previsto × realizado do mês (vencimentos ×
+  baixas via MovimentoFinanceiro, filtro ?mes=&ano=), aging (já existia) + export CSV
+  (/api/erp/relatorios/financeiro/csv). Serviço: src/lib/services/finance-relatorios.ts.
 
 ## 4. Entradas de notas / vínculo de produtos (reduzir trabalho na conferência)
 
 Objetivo: o mínimo de cliques entre "XML chegou" e "estoque/financeiro lançados". A detalhar com o usuário
 na próxima sessão de trabalho nesta área; pontos já conhecidos:
 
-- [ ] 4.1 **Memória de vínculo por fornecedor** — garantir que o par (fornecedor, código do produto no
-  fornecedor) → produto vinculado seja gravado na primeira conferência e reutilizado nas próximas notas
-  automaticamente (com `revisarVinculo=false` quando a memória bate). Verificar o que `matchProduct` já
-  cobre e o que ainda cai em revisão manual repetida.
-- [ ] 4.2 **Conferência em lote** — aprovar de uma vez os itens com vínculo de alta confiança, revisando só
-  as exceções (hoje item a item).
+- [x] 4.1 **Memória de vínculo por fornecedor** — FEITO 2026-07-02. Já existia: `matchProduct` vincula por
+  SKU (100%) → GTIN (92%) → ProdutoFornecedor (95%), e `processFiscalEntry` grava ProdutoFornecedor.
+  Adicionado: o VÍNCULO MANUAL na conferência também grava a memória na hora (upsert em
+  `updateFiscalEntryItemLinkInTransaction`) e a sugestão de IA prioriza o histórico do fornecedor
+  (produtos do ProdutoFornecedor entram primeiro no corte de 200).
+- [x] 4.2 **Conferência em lote (1ª leva)** — FEITO 2026-07-02: botão "Não vinculados → novo SKU" no
+  wizard marca todos os itens sem produto de uma vez (fornecedor novo). Obs.: vínculos automáticos
+  confiáveis já entram com revisarVinculo=false (não precisam de aprovação).
 - [ ] 4.3 **Regras De/Para de finalidade por fornecedor/NCM** — já existem (`finalidade-regra-use-cases`);
   avaliar tela de gestão e cobertura.
 - [ ] 4.4 **Criação automática de produto** na entrada (novo SKU direto do item do XML com preço de venda

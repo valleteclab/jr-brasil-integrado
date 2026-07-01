@@ -369,6 +369,33 @@ export function FiscalEntryWizard({ initialDraft = null, products, formasPagamen
     setMessage(`Finalidade "${label}" aplicada a todos os itens. Revise antes de prosseguir.`);
   }
 
+  // Ação em massa: todos os itens ainda SEM produto vinculado passam a "criar novo SKU" de uma vez
+  // (nota de fornecedor novo costuma ser 100% de itens novos — evita marcar item a item). Os já
+  // vinculados não são tocados; os preços de venda continuam sendo preenchidos por item.
+  function marcarNaoVinculadosComoNovoSku() {
+    let marcados = 0;
+    setItemsDirty(true);
+    setDraft((current) => {
+      if (!current) {
+        return current;
+      }
+      return {
+        ...current,
+        items: current.items.map((item) => {
+          if (item.matchedProductId || item.movimentaEstoque === false || item.action === "create") {
+            return item;
+          }
+          marcados++;
+          return { ...item, action: "create" as const, matchedProductId: undefined };
+        })
+      };
+    });
+    setError("");
+    setMessage(marcados > 0
+      ? `${marcados} item(ns) sem vínculo marcados para criar novo SKU. Preencha os preços de venda.`
+      : "Todos os itens já estão vinculados ou marcados.");
+  }
+
   async function persistLinks() {
     if (!draft) {
       return;
@@ -726,6 +753,14 @@ export function FiscalEntryWizard({ initialDraft = null, products, formasPagamen
               </Button>
               <Button type="button" variant="light" onClick={suggestLinks} disabled={suggesting}>
                 {suggesting ? "Consultando IA..." : "Sugerir vínculos com IA"}
+              </Button>
+              <Button
+                type="button"
+                variant="light"
+                title="Marca 'novo SKU' em todos os itens que ainda não têm produto vinculado (fornecedor novo: tudo de uma vez)"
+                onClick={marcarNaoVinculadosComoNovoSku}
+              >
+                Não vinculados → novo SKU
               </Button>
               <Button type="button" variant="light" onClick={suggestFiscal} disabled={suggestingFiscal}>
                 {suggestingFiscal ? "Consultando IA..." : "Sugerir NCM com IA"}

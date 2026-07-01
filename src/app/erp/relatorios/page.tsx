@@ -6,6 +6,10 @@ import { livroEntradasReport } from "@/lib/services/livro-entradas";
 import type { LivroEntradasReport } from "@/lib/services/livro-entradas";
 import { fechamentoMensalReport } from "@/lib/services/fechamento-mensal";
 import type { FechamentoMensalReport } from "@/lib/services/fechamento-mensal";
+import { getCashFlow } from "@/lib/services/finance";
+import type { CashFlowData } from "@/lib/services/finance";
+import { financeRankingReport, previstoRealizadoReport } from "@/lib/services/finance-relatorios";
+import type { FinanceRankingReport, PrevistoRealizadoReport } from "@/lib/services/finance-relatorios";
 
 export const dynamic = "force-dynamic";
 
@@ -138,6 +142,23 @@ const EMPTY_FECHAMENTO: FechamentoMensalReport = {
   titulosPorClassificacao: []
 };
 
+const EMPTY_CASHFLOW: CashFlowData = {
+  projetado30: { label: "30 dias", dias: 30, totalEntradas: 0, totalSaidas: 0, saldo: 0 },
+  projetado60: { label: "60 dias", dias: 60, totalEntradas: 0, totalSaidas: 0, saldo: 0 },
+  projetado90: { label: "90 dias", dias: 90, totalEntradas: 0, totalSaidas: 0, saldo: 0 },
+  realizado30: { totalCreditos: 0, totalDebitos: 0, saldo: 0 },
+  dias: [],
+  saldoAtualContas: 0
+};
+
+const EMPTY_RANKING: FinanceRankingReport = { clientes: [], fornecedores: [] };
+
+const EMPTY_PREVISTO_REALIZADO: PrevistoRealizadoReport = {
+  competencia: "",
+  receber: { previsto: "R$ 0,00", previstoNum: 0, realizado: "R$ 0,00", realizadoNum: 0, diferenca: "R$ 0,00", diferencaNum: 0, contasPrevistas: 0 },
+  pagar: { previsto: "R$ 0,00", previstoNum: 0, realizado: "R$ 0,00", realizadoNum: 0, diferenca: "R$ 0,00", diferencaNum: 0, contasPrevistas: 0 }
+};
+
 const EMPTY_APURACAO: ApuracaoImpostosReport = {
   competencia: "",
   inicio: "",
@@ -164,6 +185,9 @@ export default async function RelatoriosPage({ searchParams }: { searchParams?: 
   let apuracao: ApuracaoImpostosReport = EMPTY_APURACAO;
   let livroEntradas: LivroEntradasReport = EMPTY_LIVRO_ENTRADAS;
   let fechamento: FechamentoMensalReport = EMPTY_FECHAMENTO;
+  let cashFlow: CashFlowData = EMPTY_CASHFLOW;
+  let financeRanking: FinanceRankingReport = EMPTY_RANKING;
+  let previstoRealizado: PrevistoRealizadoReport = EMPTY_PREVISTO_REALIZADO;
   const errors: string[] = [];
   const mes = Number(searchParams?.mes);
   const ano = Number(searchParams?.ano);
@@ -173,7 +197,7 @@ export default async function RelatoriosPage({ searchParams }: { searchParams?: 
   };
 
   // Cada relatório isolado para não derrubar os demais
-  const [salesResult, stockResult, financeResult, fiscalResult, dreResult, accountingResult, apuracaoResult, livroEntradasResult, fechamentoResult] = await Promise.allSettled([
+  const [salesResult, stockResult, financeResult, fiscalResult, dreResult, accountingResult, apuracaoResult, livroEntradasResult, fechamentoResult, cashFlowResult, rankingResult, previstoRealizadoResult] = await Promise.allSettled([
     salesReport(30),
     stockReport(),
     financeReport(),
@@ -182,7 +206,10 @@ export default async function RelatoriosPage({ searchParams }: { searchParams?: 
     accountingPackageReport(accountingParams),
     apuracaoImpostosReport(accountingParams),
     livroEntradasReport(accountingParams),
-    fechamentoMensalReport(accountingParams)
+    fechamentoMensalReport(accountingParams),
+    getCashFlow(),
+    financeRankingReport(),
+    previstoRealizadoReport(accountingParams)
   ]);
 
   if (salesResult.status === "fulfilled") {
@@ -239,6 +266,24 @@ export default async function RelatoriosPage({ searchParams }: { searchParams?: 
     errors.push(`Fechamento mensal: ${fechamentoResult.reason instanceof Error ? fechamentoResult.reason.message : "erro desconhecido"}`);
   }
 
+  if (cashFlowResult.status === "fulfilled") {
+    cashFlow = cashFlowResult.value;
+  } else {
+    errors.push(`Fluxo de caixa: ${cashFlowResult.reason instanceof Error ? cashFlowResult.reason.message : "erro desconhecido"}`);
+  }
+
+  if (rankingResult.status === "fulfilled") {
+    financeRanking = rankingResult.value;
+  } else {
+    errors.push(`Ranking financeiro: ${rankingResult.reason instanceof Error ? rankingResult.reason.message : "erro desconhecido"}`);
+  }
+
+  if (previstoRealizadoResult.status === "fulfilled") {
+    previstoRealizado = previstoRealizadoResult.value;
+  } else {
+    errors.push(`Previsto × realizado: ${previstoRealizadoResult.reason instanceof Error ? previstoRealizadoResult.reason.message : "erro desconhecido"}`);
+  }
+
   return (
     <>
       <PageHeader
@@ -267,6 +312,9 @@ export default async function RelatoriosPage({ searchParams }: { searchParams?: 
         apuracao={apuracao}
         livroEntradas={livroEntradas}
         fechamento={fechamento}
+        cashFlow={cashFlow}
+        financeRanking={financeRanking}
+        previstoRealizado={previstoRealizado}
         accountingParams={accountingParams}
       />
     </>

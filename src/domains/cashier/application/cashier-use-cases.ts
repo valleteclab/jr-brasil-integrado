@@ -615,6 +615,7 @@ export async function receberPagamentoEEmitir(
     formaPagamento: pagamentos[0]?.forma ?? null,
     condicaoPagamento: pedido.condicaoPagamento,
     observacoes: pedido.observacoes,
+    numeroPedido: pedido.numero,
     frete: Number(pedido.frete),
     desconto: Number(pedido.desconto),
     itens: pedido.itens.map((item) => ({
