@@ -17,8 +17,7 @@ do cadastro); fluxo de deploy = desenvolve local → `git push` → `./deploy/vp
 5. ~~4 visões de relatórios financeiros~~ ✅ 2026-07-02 (aba Financeiro dos relatórios)
 6. ~~Entradas de notas / vínculo de produtos (1ª leva)~~ ✅ 2026-07-02 (memória no vínculo manual,
    IA prioriza histórico do fornecedor, ação em massa "novo SKU") — restam 4.3/4.4 da seção 4
-7. **Antecipação de recebíveis** (v1 SEM banco: fluxo manual estruturado; usa a classificação
-   "Juros de antecipação" que já existe no plano) → item 1.4 — **PRÓXIMO**
+7. ~~Antecipação de recebíveis (v1 sem banco)~~ ✅ 2026-07-02
 8. **Emissão de boleto + integração bancária + bureau** — DEPENDEM de decidir **qual banco/provedor**
    (Sicoob/BB/Itaú/Inter ou agregador Asaas/Cobre Fácil). Decisão com o cliente ANTES de codar → itens 1.1–1.3
 
@@ -31,12 +30,12 @@ do cadastro); fluxo de deploy = desenvolve local → `git push` → `./deploy/vp
   (CNAB ou API/Open Finance). É a base para o boleto e para a antecipação. **Bloqueado por: escolha do banco.**
 - [ ] 1.3 **API de consulta de clientes (bureau de crédito)** — integrar Serasa/SPC/similar na análise de
   crédito/venda. Provedor a definir; entra no cadastro/fluxo de venda.
-- [ ] 1.4 **Antecipação de boletos/recebíveis** (ALTO IMPACTO — distorce relatório hoje). O cliente vende em
-  boletos e às vezes antecipa os recebíveis. Hoje lança as taxas manualmente e os relatórios não batem.
-  **v1 sem integração bancária:** selecionar os recebíveis a antecipar, informar bruto × taxa/deságio ×
-  líquido creditado; o sistema baixa os recebíveis como ANTECIPADOS, lança a taxa como despesa financeira
-  (classificação "Juros de antecipação", já existe no plano padrão) e credita o líquido na conta bancária —
-  DRE/fechamento passam a bater. A integração bancária (1.2) depois só automatiza a entrada dos dados.
+- [x] 1.4 **Antecipação de recebíveis (v1 sem banco)** — FEITO 2026-07-02: tela
+  /erp/financeiro/antecipacao (seleção de títulos + taxa em R$ ou % + conta creditada + histórico).
+  Efeitos em uma transação: títulos baixados pelo BRUTO (forma ANTECIPACAO, rastreados por
+  AntecipacaoRecebivel), crédito na conta, taxa como ContaPagar PAGA classificada "Juros de antecipação"
+  → líquido no saldo, fechamento/DRE batem. Testado ponta a ponta. Refinamentos futuros: estorno da
+  operação inteira; regresso (cliente não paga o boleto antecipado, banco debita de volta).
 
 ## 2. Emissão de NF-e (saída)
 

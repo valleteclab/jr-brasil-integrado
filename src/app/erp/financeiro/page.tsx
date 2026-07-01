@@ -59,7 +59,12 @@ export default async function FinanceiroPage() {
       <PageHeader
         eyebrow="Financeiro"
         title="Contas a Pagar e Receber"
-        action={<Button href="/erp/financeiro/classificacoes" variant="light">Plano de classificações</Button>}
+        action={
+          <span style={{ display: "inline-flex", gap: 8 }}>
+            <Button href="/erp/financeiro/antecipacao" variant="light">Antecipação de recebíveis</Button>
+            <Button href="/erp/financeiro/classificacoes" variant="light">Plano de classificações</Button>
+          </span>
+        }
       >
         <p>Gerencie pagamentos, recebimentos e saldos bancários</p>
       </PageHeader>

@@ -355,6 +355,7 @@ model Empresa {
   contasPagar               ContaPagar[]
   contasReceber             ContaReceber[]
   classificacoesFinanceiras ClassificacaoFinanceira[]
+  antecipacoesRecebiveis    AntecipacaoRecebivel[]
   notasFiscais              NotaFiscal[]
   xmlImportacoes            XmlImportacao[]
   entradasFiscais           EntradaFiscal[]
@@ -1673,6 +1674,34 @@ model ClassificacaoFinanceira {
   @@index([tenantId, empresaId, grupo])
 }
 
+/// Operação de ANTECIPAÇÃO de recebíveis (banco/factoring): os títulos selecionados são baixados
+/// pelo valor BRUTO (crédito na conta bancária) e a taxa/deságio vira despesa financeira PAGA
+/// (ContaPagar quitada, classificação "Juros de antecipação") — o líquido fica no saldo e o
+/// DRE/fechamento mensal batem sem lançamento manual de taxas.
+model AntecipacaoRecebivel {
+  id              String         @id @default(cuid())
+  tenantId        String
+  empresaId       String
+  empresa         Empresa        @relation(fields: [empresaId], references: [id])
+  ambiente        AmbienteFiscal @default(HOMOLOGACAO)
+  contaBancariaId String
+  contaBancaria   ContaBancaria  @relation(fields: [contaBancariaId], references: [id])
+  /// Banco/factoring onde os títulos foram antecipados (texto livre).
+  instituicao     String?
+  dataOperacao    DateTime
+  valorBruto      Decimal        @db.Decimal(14, 2)
+  valorTaxa       Decimal        @db.Decimal(14, 2)
+  valorLiquido    Decimal        @db.Decimal(14, 2)
+  observacoes     String?
+  contaPagarTaxaId String?       @unique
+  contaPagarTaxa  ContaPagar?    @relation(fields: [contaPagarTaxaId], references: [id])
+  recebiveis      ContaReceber[]
+  criadoEm        DateTime       @default(now())
+  atualizadoEm    DateTime       @updatedAt
+
+  @@index([tenantId, empresaId, dataOperacao])
+}
+
 model ContaPagar {
   id                     String                @id @default(cuid())
   tenantId               String
@@ -1704,6 +1733,7 @@ model ContaPagar {
   classificacaoId        String?
   classificacao          ClassificacaoFinanceira? @relation(fields: [classificacaoId], references: [id])
   movimentos             MovimentoFinanceiro[]
+  antecipacaoTaxa        AntecipacaoRecebivel?
   status                 StatusFinanceiro      @default(ABERTO)
   pagoEm                 DateTime?
   criadoEm               DateTime              @default(now())
@@ -1746,6 +1776,9 @@ model ContaReceber {
   classificacaoId String?
   classificacao   ClassificacaoFinanceira? @relation(fields: [classificacaoId], references: [id])
   movimentos      MovimentoFinanceiro[]
+  /// Operação de antecipação que baixou este título (null = baixa normal/aberto).
+  antecipacaoId   String?
+  antecipacao     AntecipacaoRecebivel? @relation(fields: [antecipacaoId], references: [id])
   status          StatusFinanceiro      @default(ABERTO)
   pagoEm          DateTime?
   criadoEm        DateTime              @default(now())
@@ -1754,6 +1787,7 @@ model ContaReceber {
   @@index([tenantId, empresaId, status])
   @@index([tenantId, empresaId, clienteId, vencimento])
   @@index([tenantId, empresaId, classificacaoId])
+  @@index([tenantId, empresaId, antecipacaoId])
 }
 
 model NotaFiscal {
@@ -2211,6 +2245,7 @@ model ContaBancaria {
   contasPagar     ContaPagar[]
   contasReceber   ContaReceber[]
   formasPagamento FormaPagamento[]
+  antecipacoes    AntecipacaoRecebivel[]
   criadoEm        DateTime              @default(now())
   atualizadoEm    DateTime              @updatedAt
 
