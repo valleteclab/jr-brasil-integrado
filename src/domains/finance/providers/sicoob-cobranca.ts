@@ -143,10 +143,13 @@ export type BoletoRegistrado = {
 
 /** Registra um boleto (espécie DM — duplicata mercantil, aceite N, PDF incluso). */
 export async function incluirBoleto(auth: SicoobAuth, input: IncluirBoletoInput): Promise<BoletoRegistrado> {
+  // Campos obrigatórios confirmados contra o schema do sandbox (400 sem eles): numeroContaCorrente
+  // (sempre, 0 quando não configurada), tipoDesconto/tipoMulta (0 = sem), tipoJurosMora (3 = isento)
+  // e numeroParcela (1 = título único).
   const payload = {
     numeroCliente: input.numeroCliente,
     codigoModalidade: input.codigoModalidade,
-    ...(input.numeroContaCorrente ? { numeroContaCorrente: input.numeroContaCorrente } : {}),
+    numeroContaCorrente: input.numeroContaCorrente ?? 0,
     codigoEspecieDocumento: "DM",
     dataEmissao: input.dataEmissao,
     seuNumero: input.seuNumero,
@@ -154,6 +157,10 @@ export async function incluirBoleto(auth: SicoobAuth, input: IncluirBoletoInput)
     identificacaoDistribuicaoBoleto: 1,
     valor: input.valor,
     dataVencimento: input.dataVencimento,
+    tipoDesconto: 0,
+    tipoMulta: 0,
+    tipoJurosMora: 3,
+    numeroParcela: 1,
     aceite: false,
     gerarPdf: true,
     pagador: input.pagador,
