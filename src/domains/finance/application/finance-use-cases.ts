@@ -39,6 +39,7 @@ export type CreatePayableInput = {
   formaPagamento?: string;
   numeroDocumento?: string;
   observacoes?: string;
+  classificacaoId?: string;
 };
 
 export type CreateReceivableInput = {
@@ -49,6 +50,7 @@ export type CreateReceivableInput = {
   formaPagamento?: string;
   numeroDocumento?: string;
   observacoes?: string;
+  classificacaoId?: string;
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -353,6 +355,7 @@ export async function createPayable(scope: TenantScope, input: CreatePayableInpu
         formaPagamento: input.formaPagamento ?? null,
         numeroDocumento: input.numeroDocumento ?? null,
         observacoes: input.observacoes ?? null,
+        classificacaoId: input.classificacaoId ?? null,
         origem: "MANUAL",
         status: "ABERTO"
       }
@@ -408,6 +411,7 @@ export async function createReceivable(scope: TenantScope, input: CreateReceivab
         formaPagamento: input.formaPagamento ?? null,
         numeroDocumento: input.numeroDocumento ?? null,
         observacoes: input.observacoes ?? null,
+        classificacaoId: input.classificacaoId ?? null,
         origem: "MANUAL",
         status: "ABERTO"
       }

@@ -20,6 +20,8 @@ export type PayableSummary = {
   statusLabel: string;
   statusTone: StatusTone;
   formaPagamento: string;
+  classificacaoId: string | null;
+  classificacaoNome: string | null;
   /** Resumo de "como foi pago" (forma + parcelas + cartão/bandeira + conta), quando quitada. */
   comoPago?: string | null;
   canSettle: boolean;
@@ -43,6 +45,8 @@ export type ReceivableSummary = {
   statusLabel: string;
   statusTone: StatusTone;
   formaPagamento: string;
+  classificacaoId: string | null;
+  classificacaoNome: string | null;
   canSettle: boolean;
   /** Tem baixa estornável: valorPago > 0 e status PAGO/PARCIAL. Opcional para não quebrar objetos otimistas. */
   canEstornar?: boolean;
@@ -144,7 +148,10 @@ export async function listPayables(filtroStatus?: string): Promise<PayableSummar
 
   const contas = await prisma.contaPagar.findMany({
     where: { ...scopedByTenantCompanyAmbiente(scope), ...whereStatus },
-    include: { fornecedor: { select: { razaoSocial: true, nomeFantasia: true } } },
+    include: {
+      fornecedor: { select: { razaoSocial: true, nomeFantasia: true } },
+      classificacao: { select: { id: true, nome: true } }
+    },
     orderBy: [{ vencimento: "asc" }, { criadoEm: "desc" }]
   });
 
@@ -206,6 +213,8 @@ export async function listPayables(filtroStatus?: string): Promise<PayableSummar
       statusLabel,
       statusTone,
       formaPagamento: c.formaPagamento ?? "—",
+      classificacaoId: c.classificacao?.id ?? null,
+      classificacaoNome: c.classificacao?.nome ?? null,
       comoPago: (() => {
         const m = movPorConta.get(c.id);
         if (!m) return null;
@@ -245,7 +254,10 @@ export async function listReceivables(filtroStatus?: string): Promise<Receivable
 
   const contas = await prisma.contaReceber.findMany({
     where: { ...scopedByTenantCompanyAmbiente(scope), ...whereStatus },
-    include: { cliente: { select: { razaoSocial: true, nomeFantasia: true } } },
+    include: {
+      cliente: { select: { razaoSocial: true, nomeFantasia: true } },
+      classificacao: { select: { id: true, nome: true } }
+    },
     orderBy: [{ vencimento: "asc" }, { criadoEm: "desc" }]
   });
 
@@ -276,6 +288,8 @@ export async function listReceivables(filtroStatus?: string): Promise<Receivable
       statusLabel,
       statusTone,
       formaPagamento: c.formaPagamento ?? "—",
+      classificacaoId: c.classificacao?.id ?? null,
+      classificacaoNome: c.classificacao?.nome ?? null,
       canSettle,
       // Estornar baixa: há recebimento registrado e a conta está quitada/parcial.
       canEstornar: valorPago > 0 && (c.status === "PAGO" || c.status === "PARCIAL")

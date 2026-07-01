@@ -5,6 +5,8 @@ import type { PayableSummary, ReceivableSummary, BankAccountSummary, ClienteOpti
 
 type FormaPagamentoOption = { id: string; nome: string };
 
+export type ClassificacaoOption = { id: string; nome: string; grupo: string; tipo: "DESPESA" | "RECEITA" };
+
 type Props = {
   initialPayables: PayableSummary[];
   initialReceivables: ReceivableSummary[];
@@ -14,6 +16,8 @@ type Props = {
   clientes?: ClienteOption[];
   /** Maquininhas/cartões para detalhar "como foi pago" no cartão (contas a pagar). */
   maquinas?: MaquinaCartaoOption[];
+  /** Plano de classificação financeira (para categorizar as contas → fechamento mensal). */
+  classificacoes?: ClassificacaoOption[];
   /** Mostra a ação de EXCLUIR conta a pagar (apenas perfil admin). */
   isAdmin?: boolean;
 };
@@ -46,6 +50,24 @@ function PaymentMethodOptions({ tipo, formas }: { tipo: Aba; formas: FormaPagame
     return <>{formas.map((f) => <option key={f.id} value={f.nome}>{f.nome}</option>)}</>;
   }
   return <>{FORMAS_FIXAS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</>;
+}
+
+/** Opções de classificação agrupadas por grupo (despesas p/ contas a pagar; receitas p/ receber). */
+function ClassificacaoOptions({ tipo, classificacoes }: { tipo: Aba; classificacoes: ClassificacaoOption[] }) {
+  const tipoAlvo = tipo === "pagar" ? "DESPESA" : "RECEITA";
+  const relevantes = classificacoes.filter((c) => c.tipo === tipoAlvo);
+  const grupos = [...new Set(relevantes.map((c) => c.grupo))];
+  return (
+    <>
+      {grupos.map((g) => (
+        <optgroup key={g} label={g}>
+          {relevantes.filter((c) => c.grupo === g).map((c) => (
+            <option key={c.id} value={c.id}>{c.nome}</option>
+          ))}
+        </optgroup>
+      ))}
+    </>
+  );
 }
 
 // ─── Formulário de baixa ──────────────────────────────────────────────────────
@@ -262,11 +284,12 @@ type NewAccountFormProps = {
   tipo: Aba;
   formasPagamento: FormaPagamentoOption[];
   clientes: ClienteOption[];
+  classificacoes: ClassificacaoOption[];
   onSuccess: (item: PayableSummary | ReceivableSummary) => void;
   onClose: () => void;
 };
 
-function NewAccountForm({ tipo, formasPagamento, clientes, onSuccess, onClose }: NewAccountFormProps) {
+function NewAccountForm({ tipo, formasPagamento, clientes, classificacoes, onSuccess, onClose }: NewAccountFormProps) {
   const [descricao, setDescricao] = useState("");
   const [valor, setValor] = useState("");
   const [vencimento, setVencimento] = useState(new Date().toISOString().substring(0, 10));
@@ -274,6 +297,7 @@ function NewAccountForm({ tipo, formasPagamento, clientes, onSuccess, onClose }:
   const [numeroDocumento, setNumeroDocumento] = useState("");
   const [observacoes, setObservacoes] = useState("");
   const [clienteId, setClienteId] = useState("");
+  const [classificacaoId, setClassificacaoId] = useState("");
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState("");
 
@@ -302,6 +326,7 @@ function NewAccountForm({ tipo, formasPagamento, clientes, onSuccess, onClose }:
           formaPagamento: formaPagamento || undefined,
           numeroDocumento: numeroDocumento || undefined,
           observacoes: observacoes || undefined,
+          classificacaoId: classificacaoId || undefined,
           ...(tipo === "receber" ? { clienteId } : {})
         })
       });
@@ -325,6 +350,8 @@ function NewAccountForm({ tipo, formasPagamento, clientes, onSuccess, onClose }:
         statusLabel: "Aberto",
         statusTone: "info",
         formaPagamento: formaPagamento || "—",
+        classificacaoId: classificacaoId || null,
+        classificacaoNome: classificacaoId ? (classificacoes.find((c) => c.id === classificacaoId)?.nome ?? null) : null,
         canSettle: true,
         canDelete: true
       };
@@ -414,6 +441,16 @@ function NewAccountForm({ tipo, formasPagamento, clientes, onSuccess, onClose }:
                   <PaymentMethodOptions tipo={tipo} formas={formasPagamento} />
                 </select>
               </label>
+              {classificacoes.length > 0 && (
+                <label className="full">
+                  Classificação financeira
+                  <select value={classificacaoId} onChange={(e) => setClassificacaoId(e.target.value)}>
+                    <option value="">Sem classificação</option>
+                    <ClassificacaoOptions tipo={tipo} classificacoes={classificacoes} />
+                  </select>
+                  <span className="sublabel">Alimenta o fechamento mensal (relatórios por classificação).</span>
+                </label>
+              )}
               <label className="full">
                 Observações
                 <textarea
@@ -442,7 +479,7 @@ function NewAccountForm({ tipo, formasPagamento, clientes, onSuccess, onClose }:
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-export function FinanceManager({ initialPayables, initialReceivables, bankAccounts, formasPagamento = [], clientes = [], maquinas = [], isAdmin = false }: Props) {
+export function FinanceManager({ initialPayables, initialReceivables, bankAccounts, formasPagamento = [], clientes = [], maquinas = [], classificacoes = [], isAdmin = false }: Props) {
   const [aba, setAba] = useState<Aba>("pagar");
   const [payables, setPayables] = useState(initialPayables);
   const [receivables, setReceivables] = useState(initialReceivables);
@@ -451,6 +488,32 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
   const [showNewForm, setShowNewForm] = useState(false);
   const [globalError, setGlobalError] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
+
+  // Classificação inline na listagem: PATCH e atualização otimista da linha.
+  async function classificarConta(id: string, classificacaoId: string) {
+    const endpoint =
+      aba === "pagar"
+        ? `/api/erp/financeiro/contas-pagar/${id}/classificacao`
+        : `/api/erp/financeiro/contas-receber/${id}/classificacao`;
+    setGlobalError("");
+    const nome = classificacaoId ? (classificacoes.find((c) => c.id === classificacaoId)?.nome ?? null) : null;
+    function aplicar<T extends PayableSummary | ReceivableSummary>(items: T[]): T[] {
+      return items.map((r) => (r.id === id ? { ...r, classificacaoId: classificacaoId || null, classificacaoNome: nome } : r));
+    }
+    if (aba === "pagar") setPayables((prev) => aplicar(prev));
+    else setReceivables((prev) => aplicar(prev));
+    try {
+      const res = await fetch(endpoint, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ classificacaoId: classificacaoId || null })
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(data.error || "Não foi possível classificar a conta.");
+    } catch (e) {
+      setGlobalError(e instanceof Error ? e.message : "Falha ao classificar a conta.");
+    }
+  }
 
   async function excluirPagar(id: string, descricao: string) {
     if (!window.confirm(`Excluir a conta a pagar "${descricao}"? Esta ação não pode ser desfeita.`)) return;
@@ -611,6 +674,7 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
               <th className="num">Pago</th>
               <th className="num">Saldo</th>
               <th>Situação</th>
+              {classificacoes.length > 0 && <th>Classificação</th>}
               <th className="actions">Ações</th>
             </tr>
           </thead>
@@ -641,6 +705,19 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
                     {r.statusLabel}
                   </span>
                 </td>
+                {classificacoes.length > 0 && (
+                  <td>
+                    <select
+                      value={r.classificacaoId ?? ""}
+                      onChange={(e) => classificarConta(r.id, e.target.value)}
+                      style={{ maxWidth: 170, fontSize: 12, padding: "4px 6px", border: "1px solid var(--erp-line)", borderRadius: 6, background: r.classificacaoId ? "#fff" : "var(--erp-bg)" }}
+                      title="Classificação financeira (fechamento mensal)"
+                    >
+                      <option value="">— classificar —</option>
+                      <ClassificacaoOptions tipo={aba} classificacoes={classificacoes} />
+                    </select>
+                  </td>
+                )}
                 <td className="actions">
                   {r.canSettle && (
                     <button
@@ -678,7 +755,7 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
             ))}
             {!filtered.length && (
               <tr>
-                <td colSpan={9}>
+                <td colSpan={classificacoes.length > 0 ? 10 : 9}>
                   <div className="empty-st">
                     <h4>{query ? "Nenhum resultado" : aba === "pagar" ? "Nenhuma conta a pagar" : "Nenhuma conta a receber"}</h4>
                     <p>
@@ -725,6 +802,7 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
           tipo={aba}
           formasPagamento={formasPagamento}
           clientes={clientes}
+          classificacoes={classificacoes}
           onSuccess={handleNewSuccess}
           onClose={() => setShowNewForm(false)}
         />

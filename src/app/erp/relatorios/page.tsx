@@ -4,6 +4,8 @@ import { accountingPackageReport, apuracaoImpostosReport, salesReport, stockRepo
 import type { AccountingPackageReport, ApuracaoImpostosReport, SalesReport, StockReport, FinanceReport, FiscalReport, DreSimplificado } from "@/lib/services/reports";
 import { livroEntradasReport } from "@/lib/services/livro-entradas";
 import type { LivroEntradasReport } from "@/lib/services/livro-entradas";
+import { fechamentoMensalReport } from "@/lib/services/fechamento-mensal";
+import type { FechamentoMensalReport } from "@/lib/services/fechamento-mensal";
 
 export const dynamic = "force-dynamic";
 
@@ -110,6 +112,32 @@ const EMPTY_LIVRO_ENTRADAS: LivroEntradasReport = {
   avisos: []
 };
 
+const EMPTY_FECHAMENTO: FechamentoMensalReport = {
+  competencia: "",
+  inicio: "",
+  fim: "",
+  temPlano: false,
+  resumo: {
+    totalPago: "R$ 0,00",
+    totalPagoNum: 0,
+    totalRecebido: "R$ 0,00",
+    totalRecebidoNum: 0,
+    totalVendas: "R$ 0,00",
+    totalVendasNum: 0,
+    resultado: "R$ 0,00",
+    resultadoNum: 0,
+    totalIdeal: "R$ 0,00",
+    totalIdealNum: 0,
+    desvioTotal: "R$ 0,00",
+    desvioTotalNum: 0,
+    titulosPagos: 0,
+    titulosSemClassificacao: 0
+  },
+  despesas: [],
+  receitas: [],
+  titulosPorClassificacao: []
+};
+
 const EMPTY_APURACAO: ApuracaoImpostosReport = {
   competencia: "",
   inicio: "",
@@ -135,6 +163,7 @@ export default async function RelatoriosPage({ searchParams }: { searchParams?: 
   let accounting: AccountingPackageReport = EMPTY_ACCOUNTING;
   let apuracao: ApuracaoImpostosReport = EMPTY_APURACAO;
   let livroEntradas: LivroEntradasReport = EMPTY_LIVRO_ENTRADAS;
+  let fechamento: FechamentoMensalReport = EMPTY_FECHAMENTO;
   const errors: string[] = [];
   const mes = Number(searchParams?.mes);
   const ano = Number(searchParams?.ano);
@@ -144,7 +173,7 @@ export default async function RelatoriosPage({ searchParams }: { searchParams?: 
   };
 
   // Cada relatório isolado para não derrubar os demais
-  const [salesResult, stockResult, financeResult, fiscalResult, dreResult, accountingResult, apuracaoResult, livroEntradasResult] = await Promise.allSettled([
+  const [salesResult, stockResult, financeResult, fiscalResult, dreResult, accountingResult, apuracaoResult, livroEntradasResult, fechamentoResult] = await Promise.allSettled([
     salesReport(30),
     stockReport(),
     financeReport(),
@@ -152,7 +181,8 @@ export default async function RelatoriosPage({ searchParams }: { searchParams?: 
     dreSimplificado(30),
     accountingPackageReport(accountingParams),
     apuracaoImpostosReport(accountingParams),
-    livroEntradasReport(accountingParams)
+    livroEntradasReport(accountingParams),
+    fechamentoMensalReport(accountingParams)
   ]);
 
   if (salesResult.status === "fulfilled") {
@@ -203,6 +233,12 @@ export default async function RelatoriosPage({ searchParams }: { searchParams?: 
     errors.push(`Livro de entradas: ${livroEntradasResult.reason instanceof Error ? livroEntradasResult.reason.message : "erro desconhecido"}`);
   }
 
+  if (fechamentoResult.status === "fulfilled") {
+    fechamento = fechamentoResult.value;
+  } else {
+    errors.push(`Fechamento mensal: ${fechamentoResult.reason instanceof Error ? fechamentoResult.reason.message : "erro desconhecido"}`);
+  }
+
   return (
     <>
       <PageHeader
@@ -230,6 +266,7 @@ export default async function RelatoriosPage({ searchParams }: { searchParams?: 
         accounting={accounting}
         apuracao={apuracao}
         livroEntradas={livroEntradas}
+        fechamento={fechamento}
         accountingParams={accountingParams}
       />
     </>

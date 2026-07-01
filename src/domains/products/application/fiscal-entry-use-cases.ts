@@ -10,6 +10,7 @@ import { callOpenRouter } from "@/domains/ai/openrouter-service";
 import { cfopIndicaSt, isSubstituicaoTributaria } from "@/domains/fiscal/cfop";
 import { cfopVendaPadrao, creditoPorFinalidade, finalidadeEhInsumo, finalidadeMovimentaEstoque, isFinalidadeEntrada, notaEhDevolucao, resolveCfopEntrada } from "@/domains/fiscal/finalidade-entrada";
 import { loadFinalidadeRules, resolveFinalidadeForItem } from "@/domains/fiscal/application/finalidade-regra-use-cases";
+import { sugerirClassificacaoEntrada } from "@/domains/finance/application/classificacao-use-cases";
 import { sugerirCategoriasEntrada } from "./ai-enrichment-use-cases";
 
 const FISCAL_TRANSACTION_OPTIONS = {
@@ -1193,6 +1194,13 @@ export async function processFiscalEntry(
       });
     }
 
+    // Classificação financeira sugerida (finalidade predominante dos itens → plano; senão memória
+    // do fornecedor) — alimenta o fechamento mensal sem exigir classificação manual conta a conta.
+    const classificacaoSugerida = await sugerirClassificacaoEntrada(tx, scope, {
+      fornecedorId: entrada.fornecedorId,
+      itens: entrada.itens.map((i) => ({ finalidade: i.finalidade, valorTotal: i.valorTotal }))
+    });
+
     for (const parcela of parcelas) {
       await tx.contaPagar.create({
         data: {
@@ -1208,6 +1216,7 @@ export async function processFiscalEntry(
           origem: "ENTRADA_FISCAL",
           vencimento: parcela.vencimento,
           valor: parcela.valor,
+          classificacaoId: classificacaoSugerida,
           status: "ABERTO"
         }
       });

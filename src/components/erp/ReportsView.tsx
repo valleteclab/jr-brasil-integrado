@@ -5,13 +5,15 @@ import { KpiCard } from "@/components/shared/KpiCard";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import type { AccountingPackageReport, ApuracaoImpostosReport, SalesReport, StockReport, FinanceReport, FiscalReport, DreSimplificado } from "@/lib/services/reports";
 import type { LivroEntradasReport } from "@/lib/services/livro-entradas";
+import type { FechamentoMensalReport, FechamentoGrupo } from "@/lib/services/fechamento-mensal";
 
-type Tab = "vendas" | "estoque" | "financeiro" | "fiscal" | "dre" | "contabil" | "apuracao" | "entradas";
+type Tab = "vendas" | "estoque" | "financeiro" | "fechamento" | "fiscal" | "dre" | "contabil" | "apuracao" | "entradas";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "vendas", label: "Vendas" },
   { id: "estoque", label: "Estoque" },
   { id: "financeiro", label: "Financeiro" },
+  { id: "fechamento", label: "Fechamento mensal" },
   { id: "fiscal", label: "Fiscal" },
   { id: "dre", label: "DRE" },
   { id: "contabil", label: "Pacote contábil" },
@@ -28,6 +30,7 @@ type Props = {
   accounting: AccountingPackageReport;
   apuracao: ApuracaoImpostosReport;
   livroEntradas: LivroEntradasReport;
+  fechamento: FechamentoMensalReport;
   accountingParams: { mes?: number; ano?: number };
 };
 
@@ -551,6 +554,198 @@ function SimpleTable({ title, rows, limit = 8 }: { title: string; rows: Record<s
   );
 }
 
+// ─── Aba Fechamento mensal (classificação financeira: IDEAL × REAL) ─────────────
+
+function fechamentoHref(params: { mes?: number; ano?: number }): string {
+  const qs = new URLSearchParams();
+  if (params.mes) qs.set("mes", String(params.mes));
+  if (params.ano) qs.set("ano", String(params.ano));
+  const query = qs.toString();
+  return `/api/erp/relatorios/fechamento/csv${query ? `?${query}` : ""}`;
+}
+
+function TabelaFechamentoGrupos({ titulo, grupos }: { titulo: string; grupos: FechamentoGrupo[] }) {
+  if (!grupos.length) return null;
+  const totalIdeal = grupos.reduce((s, g) => s + g.ideal, 0);
+  const totalReal = grupos.reduce((s, g) => s + g.real, 0);
+  const brl = (v: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
+  return (
+    <section className="erp-card" style={{ marginTop: "1.5rem" }}>
+      <div className="erp-card-head"><h3>{titulo}</h3></div>
+      <div className="erp-table-wrap">
+        <table className="erp-table">
+          <thead>
+            <tr>
+              <th>Classificação</th>
+              <th className="num">IDEAL (meta)</th>
+              <th className="num">REAL</th>
+              <th className="num">Desvio</th>
+              <th className="num">Títulos</th>
+            </tr>
+          </thead>
+          <tbody>
+            {grupos.map((g) => (
+              <FechamentoGrupoRows key={g.grupo} grupo={g} />
+            ))}
+            <tr style={{ background: "var(--erp-bg, #f6f7f9)" }}>
+              <td><strong>TOTAL</strong></td>
+              <td className="num"><strong>{brl(totalIdeal)}</strong></td>
+              <td className="num"><strong>{brl(totalReal)}</strong></td>
+              <td className="num">
+                <strong style={{ color: totalReal - totalIdeal > 0 ? "var(--erp-danger, #b42318)" : "var(--erp-success, #067647)" }}>
+                  {brl(totalReal - totalIdeal)}
+                </strong>
+              </td>
+              <td />
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function FechamentoGrupoRows({ grupo }: { grupo: FechamentoGrupo }) {
+  return (
+    <>
+      <tr style={{ background: "var(--erp-bg, #f6f7f9)" }}>
+        <td colSpan={2}><strong>{grupo.grupo}</strong></td>
+        <td className="num"><strong>{grupo.realFmt}</strong></td>
+        <td className="num">
+          {grupo.ideal > 0 ? (
+            <span style={{ color: grupo.desvio > 0 ? "var(--erp-danger, #b42318)" : "var(--erp-success, #067647)", fontWeight: 600 }}>
+              {grupo.desvioFmt}
+            </span>
+          ) : "—"}
+        </td>
+        <td />
+      </tr>
+      {grupo.linhas.map((l) => (
+        <tr key={l.classificacaoId ?? l.nome}>
+          <td style={{ paddingLeft: 24 }}>
+            {l.codigo ? <span className="mono" style={{ marginRight: 6 }}>{l.codigo}</span> : null}
+            {l.nome}
+          </td>
+          <td className="num">{l.temMeta ? l.idealFmt : "—"}</td>
+          <td className="num">{l.realFmt}</td>
+          <td className="num">
+            {l.temMeta ? (
+              <span style={{ color: l.desvio > 0 ? "var(--erp-danger, #b42318)" : "var(--erp-success, #067647)" }}>
+                {l.desvioFmt}
+              </span>
+            ) : "—"}
+          </td>
+          <td className="num">{l.titulos || "—"}</td>
+        </tr>
+      ))}
+    </>
+  );
+}
+
+function AbaFechamento({ data, params }: { data: FechamentoMensalReport; params: { mes?: number; ano?: number } }) {
+  return (
+    <div>
+      <div className="alert info" style={{ marginBottom: "1rem" }}>
+        <strong>Fechamento mensal — {data.competencia}.</strong>{" "}
+        Gastos e recebimentos do mês por classificação financeira, comparados com a meta (IDEAL) de cada uma,
+        e o detalhamento de títulos pagos por classificação. Baixas de {data.inicio} a {data.fim}.
+      </div>
+
+      <form action="/erp/relatorios" style={{ display: "flex", gap: "0.75rem", alignItems: "end", marginBottom: "1rem" }}>
+        <label>Mês<br /><input name="mes" type="number" min="1" max="12" defaultValue={params.mes ?? new Date().getMonth() + 1} /></label>
+        <label>Ano<br /><input name="ano" type="number" min="2000" max="2100" defaultValue={params.ano ?? new Date().getFullYear()} /></label>
+        <button className="btn" type="submit">Filtrar</button>
+        <a className="btn light" href={fechamentoHref(params)}>Exportar CSV</a>
+        <a className="btn light" href="/erp/financeiro/classificacoes">Plano / metas</a>
+      </form>
+
+      {!data.temPlano && (
+        <div className="alert warn" style={{ marginBottom: "1rem" }}>
+          <strong>Nenhuma classificação cadastrada.</strong>{" "}
+          Crie o plano em <a href="/erp/financeiro/classificacoes">Financeiro → Plano de classificações</a> (há um
+          plano padrão pronto) e classifique as contas — aí este fechamento passa a agrupar tudo automaticamente.
+        </div>
+      )}
+
+      {data.resumo.titulosSemClassificacao > 0 && (
+        <div className="alert warn" style={{ marginBottom: "1rem" }}>
+          <strong>{data.resumo.titulosSemClassificacao} título(s) pago(s) sem classificação neste mês.</strong>{" "}
+          Classifique-os em <a href="/erp/financeiro">Contas a Pagar e Receber</a> (coluna Classificação) para o
+          fechamento ficar completo.
+        </div>
+      )}
+
+      <div className="kpi-row">
+        <KpiCard label="Recebido no mês" value={data.resumo.totalRecebido} tone="success" />
+        <KpiCard label="Pago no mês" value={data.resumo.totalPago} tone="warn" />
+        <KpiCard label="Resultado (caixa)" value={data.resumo.resultado} tone={data.resumo.resultadoNum >= 0 ? "success" : "danger"} />
+        <KpiCard label="Vendas do mês" value={data.resumo.totalVendas} tone="info" />
+        <KpiCard label="Meta de gastos (IDEAL)" value={data.resumo.totalIdeal} tone="default" />
+        <KpiCard
+          label="Desvio da meta"
+          value={data.resumo.desvioTotal}
+          tone={data.resumo.desvioTotalNum > 0 ? "danger" : "success"}
+        />
+      </div>
+
+      <TabelaFechamentoGrupos titulo="Gastos por classificação (IDEAL × REAL)" grupos={data.despesas} />
+      <TabelaFechamentoGrupos titulo="Receitas por classificação" grupos={data.receitas} />
+
+      <section className="erp-card" style={{ marginTop: "1.5rem" }}>
+        <div className="erp-card-head">
+          <h3>Títulos pagos por classificação ({data.resumo.titulosPagos} título(s))</h3>
+        </div>
+        {data.titulosPorClassificacao.length === 0 ? (
+          <div className="empty-st"><span>Nenhum título pago no período.</span></div>
+        ) : (
+          data.titulosPorClassificacao.map((bloco) => (
+            <div key={bloco.classificacao} className="erp-table-wrap" style={{ marginBottom: 12 }}>
+              <table className="erp-table">
+                <thead>
+                  <tr>
+                    <th colSpan={3} style={{ fontSize: 13 }}>{bloco.classificacao}</th>
+                    <th className="num" colSpan={4} style={{ fontSize: 12 }}>
+                      {bloco.registros.length} registro(s) · Total {bloco.totalPago}
+                    </th>
+                  </tr>
+                  <tr>
+                    <th>Título</th>
+                    <th>Nº doc</th>
+                    <th>Parceiro</th>
+                    <th>Data baixa</th>
+                    <th className="num">Valor título</th>
+                    <th className="num">Juros + multa</th>
+                    <th className="num">Total pago</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {bloco.registros.map((r, i) => (
+                    <tr key={`${r.titulo}-${i}`}>
+                      <td>{r.titulo}</td>
+                      <td><span className="mono">{r.numeroDocumento || "—"}</span></td>
+                      <td>{r.parceiro}</td>
+                      <td>{r.dataBaixa}</td>
+                      <td className="num">{r.valorTitulo}</td>
+                      <td className="num">{r.jurosMulta}</td>
+                      <td className="num"><strong>{r.totalPago}</strong></td>
+                    </tr>
+                  ))}
+                  <tr style={{ background: "var(--erp-bg, #f6f7f9)" }}>
+                    <td colSpan={4}><strong>Subtotal {bloco.classificacao}</strong></td>
+                    <td className="num" />
+                    <td className="num"><strong>{bloco.totalJurosMulta}</strong></td>
+                    <td className="num"><strong>{bloco.totalPago}</strong></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          ))
+        )}
+      </section>
+    </div>
+  );
+}
+
 function AbaContabil({ data, params }: { data: AccountingPackageReport; params: { mes?: number; ano?: number } }) {
   return (
     <div>
@@ -841,7 +1036,7 @@ function AbaLivroEntradas({ data, params }: { data: LivroEntradasReport; params:
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-export function ReportsView({ sales, stock, finance, fiscal, dre, accounting, apuracao, livroEntradas, accountingParams }: Props) {
+export function ReportsView({ sales, stock, finance, fiscal, dre, accounting, apuracao, livroEntradas, fechamento, accountingParams }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>("vendas");
 
   return (
@@ -864,6 +1059,7 @@ export function ReportsView({ sales, stock, finance, fiscal, dre, accounting, ap
       {activeTab === "vendas" && <AbaVendas data={sales} />}
       {activeTab === "estoque" && <AbaEstoque data={stock} />}
       {activeTab === "financeiro" && <AbaFinanceiro data={finance} />}
+      {activeTab === "fechamento" && <AbaFechamento data={fechamento} params={accountingParams} />}
       {activeTab === "fiscal" && <AbaFiscal data={fiscal} />}
       {activeTab === "dre" && <AbaDre data={dre} />}
       {activeTab === "contabil" && <AbaContabil data={accounting} params={accountingParams} />}

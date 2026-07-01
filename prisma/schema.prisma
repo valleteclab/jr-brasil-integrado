@@ -85,6 +85,11 @@ enum StatusFinanceiro {
   CANCELADO
 }
 
+enum TipoClassificacaoFinanceira {
+  DESPESA
+  RECEITA
+}
+
 enum StatusComissao {
   A_PAGAR
   PAGO
@@ -349,6 +354,7 @@ model Empresa {
   pedidosCompra             PedidoCompra[]
   contasPagar               ContaPagar[]
   contasReceber             ContaReceber[]
+  classificacoesFinanceiras ClassificacaoFinanceira[]
   notasFiscais              NotaFiscal[]
   xmlImportacoes            XmlImportacao[]
   entradasFiscais           EntradaFiscal[]
@@ -1642,6 +1648,31 @@ model RegraFinalidadeEntrada {
   @@index([tenantId, empresaId, ativo])
 }
 
+/// Plano de classificação financeira GERENCIAL (não contábil): categoriza ContaPagar/ContaReceber
+/// para os relatórios "pagamentos por classificação" e "fechamento mensal" (orçado × realizado).
+/// Dois níveis: `grupo` (bloco do fechamento, ex.: "Custos operacionais") → classificação analítica
+/// (ex.: "Mercadoria para revenda"). `codigo` é livre (o plano do cliente pode ter máscara própria).
+/// `orcamentoMensal` é o valor IDEAL/meta mensal usado no fechamento (0 = sem meta).
+model ClassificacaoFinanceira {
+  id              String         @id @default(cuid())
+  tenantId        String
+  empresaId       String
+  empresa         Empresa        @relation(fields: [empresaId], references: [id])
+  codigo          String?
+  nome            String
+  grupo           String
+  tipo            TipoClassificacaoFinanceira @default(DESPESA)
+  orcamentoMensal Decimal        @default(0) @db.Decimal(14, 2)
+  ativo           Boolean        @default(true)
+  contasPagar     ContaPagar[]
+  contasReceber   ContaReceber[]
+  criadoEm        DateTime       @default(now())
+  atualizadoEm    DateTime       @updatedAt
+
+  @@unique([tenantId, empresaId, nome])
+  @@index([tenantId, empresaId, grupo])
+}
+
 model ContaPagar {
   id                     String                @id @default(cuid())
   tenantId               String
@@ -1670,6 +1701,8 @@ model ContaPagar {
   observacoes            String?
   contaBancariaId        String?
   contaBancaria          ContaBancaria?        @relation(fields: [contaBancariaId], references: [id])
+  classificacaoId        String?
+  classificacao          ClassificacaoFinanceira? @relation(fields: [classificacaoId], references: [id])
   movimentos             MovimentoFinanceiro[]
   status                 StatusFinanceiro      @default(ABERTO)
   pagoEm                 DateTime?
@@ -1679,6 +1712,7 @@ model ContaPagar {
   @@index([tenantId, empresaId, status])
   @@index([tenantId, empresaId, fornecedorId, vencimento])
   @@index([tenantId, empresaId, entradaFiscalId])
+  @@index([tenantId, empresaId, classificacaoId])
 }
 
 model ContaReceber {
@@ -1709,6 +1743,8 @@ model ContaReceber {
   observacoes     String?
   contaBancariaId String?
   contaBancaria   ContaBancaria?        @relation(fields: [contaBancariaId], references: [id])
+  classificacaoId String?
+  classificacao   ClassificacaoFinanceira? @relation(fields: [classificacaoId], references: [id])
   movimentos      MovimentoFinanceiro[]
   status          StatusFinanceiro      @default(ABERTO)
   pagoEm          DateTime?
@@ -1717,6 +1753,7 @@ model ContaReceber {
 
   @@index([tenantId, empresaId, status])
   @@index([tenantId, empresaId, clienteId, vencimento])
+  @@index([tenantId, empresaId, classificacaoId])
 }
 
 model NotaFiscal {

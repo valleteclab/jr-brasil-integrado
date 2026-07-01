@@ -16,6 +16,7 @@ export async function POST(request: Request) {
       formaPagamento?: string;
       numeroDocumento?: string;
       observacoes?: string;
+      classificacaoId?: string;
     };
 
     const conta = await createPayable(scope, {
@@ -25,7 +26,8 @@ export async function POST(request: Request) {
       vencimento: new Date(body.vencimento),
       formaPagamento: body.formaPagamento,
       numeroDocumento: body.numeroDocumento,
-      observacoes: body.observacoes
+      observacoes: body.observacoes,
+      classificacaoId: body.classificacaoId || undefined
     });
 
     return NextResponse.json({ id: conta.id });
