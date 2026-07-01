@@ -8,6 +8,7 @@
 import https from "node:https";
 import { rootCertificates } from "node:tls";
 import { ICP_BRASIL_ROOT_V10 } from "./icp-brasil-ca";
+import { pfxTlsOptions } from "../pfx-utils";
 
 // CAs aceitas no TLS dos web services da SEFAZ: as padrão do Node + a raiz ICP-Brasil v10 (os
 // servidores da SEFAZ usam certificados de servidor ICP-Brasil, ausentes da store pública do Node).
@@ -77,7 +78,7 @@ function doPostSoap(
   endpoint: string,
   payload: Buffer,
   contentType: string,
-  cert: { pfx: Buffer; senha: string },
+  tlsCert: { key: string; cert: string },
   timeoutMs: number,
   validarCadeia: boolean
 ): Promise<SoapResponse> {
@@ -89,8 +90,8 @@ function doPostSoap(
         hostname: url.hostname,
         port: url.port || 443,
         path: url.pathname + url.search,
-        pfx: cert.pfx,
-        passphrase: cert.senha,
+        key: tlsCert.key,
+        cert: tlsCert.cert,
         ca: SEFAZ_CA,
         rejectUnauthorized: validarCadeia,
         minVersion: "TLSv1.2",
@@ -122,8 +123,10 @@ export function postSoap(
 ): Promise<SoapResponse> {
   const payload = Buffer.from(envelope, "utf8");
   const contentType = `application/soap+xml; charset=utf-8${action ? `; action="${action}"` : ""}`;
-  return doPostSoap(endpoint, payload, contentType, cert, timeoutMs, true).catch((err) => {
-    if (isTlsCaError(err)) return doPostSoap(endpoint, payload, contentType, cert, timeoutMs, false);
+  // Converte o A1 (pfx) → key/cert PEM uma vez (o Node/OpenSSL 3 não carrega PFX legado via `pfx`).
+  const tlsCert = pfxTlsOptions(cert);
+  return doPostSoap(endpoint, payload, contentType, tlsCert, timeoutMs, true).catch((err) => {
+    if (isTlsCaError(err)) return doPostSoap(endpoint, payload, contentType, tlsCert, timeoutMs, false);
     throw err;
   });
 }

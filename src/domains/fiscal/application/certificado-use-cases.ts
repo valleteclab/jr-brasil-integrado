@@ -1,8 +1,9 @@
-import forge from "node-forge";
+import { X509Certificate } from "node:crypto";
 import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import { scopedByTenantCompany } from "@/lib/auth/dev-session";
 import { encryptSecret, decryptSecret } from "@/lib/security/secret-crypto";
+import { pfxToPem } from "@/domains/fiscal/providers/pfx-utils";
 
 /**
  * GUARDA CRIPTOGRAFADA do certificado digital A1 (.pfx) por empresa.
@@ -33,38 +34,40 @@ function onlyDigits(value: string): string {
  * ou no serialNumber do subject. Lança se a senha estiver incorreta.
  */
 function lerMetadados(pfx: Buffer, senha: string): { titularCnpj: string | null; validade: Date | null } {
-  let p12: forge.pkcs12.Pkcs12Pfx;
+  // pfxToPem lê o A1 (forge + fallback OpenSSL p/ PFX moderno). Falha aqui = arquivo/senha inválidos.
+  let certPem: string;
   try {
-    const asn1 = forge.asn1.fromDer(forge.util.createBuffer(pfx.toString("binary")));
-    p12 = forge.pkcs12.pkcs12FromAsn1(asn1, senha);
+    certPem = pfxToPem(pfx, senha).certPem;
   } catch {
-    // forge lança quando a senha está errada (MAC inválido) ou o arquivo é inválido.
-    throw new CertificadoNacionalError("Senha do certificado inválida.");
+    throw new CertificadoNacionalError("Não foi possível ler o certificado — verifique o arquivo (.pfx) e a senha.");
   }
 
-  const certBag = p12.getBags({ bagType: forge.pki.oids.certBag })[forge.pki.oids.certBag]?.[0];
-  const cert = certBag?.cert;
-  if (!cert) {
+  let cert: X509Certificate;
+  try {
+    cert = new X509Certificate(certPem);
+  } catch {
     return { titularCnpj: null, validade: null };
   }
 
-  const validade = cert.validity?.notAfter ?? null;
+  const validade = cert.validTo ? new Date(cert.validTo) : null;
 
-  // Procura o CNPJ no subject: CN (commonName) e serialNumber são os campos usuais.
+  // Procura o CNPJ (14 dígitos) no subject — CN (commonName) e serialNumber são os campos usuais.
+  // X509Certificate.subject vem como "CN=EMPRESA:00000000000191\nserialNumber=...".
   let titularCnpj: string | null = null;
-  for (const field of ["commonName", "serialNumber"] as const) {
-    const attr = cert.subject.getField(field);
-    const raw = typeof attr?.value === "string" ? attr.value : "";
-    const digits = onlyDigits(raw);
-    // CNPJ tem 14 dígitos; pega o trecho de 14 dígitos quando houver mais (CN com nome+número).
-    const match = digits.match(/\d{14}/) ?? (digits.length === 14 ? [digits] : null);
+  for (const linha of (cert.subject ?? "").split("\n")) {
+    const idx = linha.indexOf("=");
+    if (idx < 0) continue;
+    const chave = linha.slice(0, idx).trim();
+    if (chave !== "CN" && chave !== "serialNumber") continue;
+    const digits = onlyDigits(linha.slice(idx + 1));
+    const match = digits.match(/\d{14}/);
     if (match) {
       titularCnpj = match[0];
       break;
     }
   }
 
-  return { titularCnpj, validade };
+  return { titularCnpj, validade: Number.isNaN(validade?.getTime()) ? null : validade };
 }
 
 /**

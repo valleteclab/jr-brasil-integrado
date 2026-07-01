@@ -6,6 +6,7 @@ import type { AmbienteFiscal, Prisma } from "@prisma/client";
 import { carregarCertificado } from "@/domains/fiscal/application/certificado-use-cases";
 import { getFiscalRuntimeConfig } from "@/domains/fiscal/application/fiscal-config-use-cases";
 import { buildDanfse } from "@/domains/fiscal/providers/nacional/danfse";
+import { pfxTlsOptions } from "@/domains/fiscal/providers/pfx-utils";
 
 /**
  * Distribuição de NFS-e do Sistema Nacional (ADN — Ambiente de Dados Nacional).
@@ -37,7 +38,7 @@ type AdnLote = {
 function getAdn(host: string, path: string, cert: { pfx: Buffer; senha: string }): Promise<{ statusCode: number; body: string }> {
   return new Promise((resolve) => {
     const req = https.request(
-      { hostname: host, path, method: "GET", pfx: cert.pfx, passphrase: cert.senha, timeout: 20000,
+      { hostname: host, path, method: "GET", ...pfxTlsOptions(cert), timeout: 20000,
         headers: { "User-Agent": "Mozilla/5.0", Accept: "application/json" } },
       (res) => { let d = ""; res.on("data", (c) => (d += c)); res.on("end", () => resolve({ statusCode: res.statusCode ?? 0, body: d })); }
     );
@@ -51,7 +52,7 @@ function getAdn(host: string, path: string, cert: { pfx: Buffer; senha: string }
 function getAdnBinary(host: string, path: string, cert: { pfx: Buffer; senha: string }): Promise<{ statusCode: number; contentType: string; body: Buffer }> {
   return new Promise((resolve) => {
     const req = https.request(
-      { hostname: host, path, method: "GET", pfx: cert.pfx, passphrase: cert.senha, timeout: 25000,
+      { hostname: host, path, method: "GET", ...pfxTlsOptions(cert), timeout: 25000,
         headers: { "User-Agent": "Mozilla/5.0", Accept: "application/pdf" } },
       (res) => { const ch: Buffer[] = []; res.on("data", (c) => ch.push(c)); res.on("end", () => resolve({ statusCode: res.statusCode ?? 0, contentType: String(res.headers["content-type"] ?? ""), body: Buffer.concat(ch) })); }
     );

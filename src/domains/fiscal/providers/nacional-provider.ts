@@ -9,7 +9,7 @@
  */
 import { gzipSync, gunzipSync } from "node:zlib";
 import https from "node:https";
-import forge from "node-forge";
+import { pfxToPem, pfxTlsOptions } from "./pfx-utils";
 import { SignedXml } from "xml-crypto";
 import type { AmbienteFiscal, ProvedorFiscal } from "@prisma/client";
 import { cTribNacFromCodigo, exigeGrupoObra } from "@/domains/fiscal/codigo-tributacao-nacional";
@@ -198,15 +198,6 @@ function buildDpsXml(input: EmitInput, ctx: ProviderContext): { xml: string; id:
   return { xml: `<DPS xmlns="http://www.sped.fazenda.gov.br/nfse" versao="1.00">${infDPS}</DPS>`, id };
 }
 
-/** Lê o A1 .pfx → PEM (chave + cert) para assinar. */
-function pfxToPem(pfx: Buffer, senha: string): { privateKeyPem: string; certPem: string } {
-  const p12 = forge.pkcs12.pkcs12FromAsn1(forge.asn1.fromDer(forge.util.createBuffer(pfx.toString("binary"))), senha);
-  const keyBag = p12.getBags({ bagType: forge.pki.oids.pkcs8ShroudedKeyBag })[forge.pki.oids.pkcs8ShroudedKeyBag]?.[0]
-    ?? p12.getBags({ bagType: forge.pki.oids.keyBag })[forge.pki.oids.keyBag]?.[0];
-  const certBag = p12.getBags({ bagType: forge.pki.oids.certBag })[forge.pki.oids.certBag]?.[0];
-  if (!keyBag?.key || !certBag?.cert) throw new Error("Certificado A1 sem chave privada ou certificado.");
-  return { privateKeyPem: forge.pki.privateKeyToPem(keyBag.key), certPem: forge.pki.certificateToPem(certBag.cert) };
-}
 
 /** Assina (XMLDSig enveloped) o elemento `localName` referenciado pelo seu Id. Prologo UTF-8. */
 function signInfoEl(xml: string, localName: string, privateKeyPem: string, certPem: string): string {
@@ -255,7 +246,7 @@ function postEventoNfse(baseUrl: string, chave: string, eventoGZipB64: string, c
   const payload = JSON.stringify({ pedidoRegistroEventoXmlGZipB64: eventoGZipB64 });
   return new Promise((resolve, reject) => {
     const req = https.request(
-      { method: "POST", hostname: url.hostname, path: url.pathname, pfx: cert.pfx, passphrase: cert.senha,
+      { method: "POST", hostname: url.hostname, path: url.pathname, ...pfxTlsOptions(cert),
         headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(payload) } },
       (res) => { let data = ""; res.on("data", (c) => (data += c)); res.on("end", () => resolve({ statusCode: res.statusCode ?? 0, body: data })); }
     );
@@ -271,7 +262,7 @@ function getSefin(baseUrl: string, path: string, cert: { pfx: Buffer; senha: str
   const url = new URL(`${baseUrl}${path}`);
   return new Promise((resolve, reject) => {
     const req = https.request(
-      { method: "GET", hostname: url.hostname, path: url.pathname, pfx: cert.pfx, passphrase: cert.senha },
+      { method: "GET", hostname: url.hostname, path: url.pathname, ...pfxTlsOptions(cert) },
       (res) => {
         let data = "";
         res.on("data", (c) => (data += c));
@@ -288,7 +279,7 @@ function headDps(baseUrl: string, idDps: string, cert: { pfx: Buffer; senha: str
   const url = new URL(`${baseUrl}/dps/${idDps}`);
   return new Promise((resolve) => {
     const req = https.request(
-      { method: "HEAD", hostname: url.hostname, path: url.pathname, pfx: cert.pfx, passphrase: cert.senha },
+      { method: "HEAD", hostname: url.hostname, path: url.pathname, ...pfxTlsOptions(cert) },
       (res) => { res.resume(); resolve((res.statusCode ?? 0) >= 200 && (res.statusCode ?? 0) < 300); }
     );
     req.on("error", () => resolve(false)); // erro de rede → não bloqueia a emissão (a SEFIN ainda valida)
@@ -301,7 +292,7 @@ function getBinary(baseUrl: string, path: string, cert: { pfx: Buffer; senha: st
   const url = new URL(`${baseUrl}${path}`);
   return new Promise((resolve, reject) => {
     const req = https.request(
-      { method: "GET", hostname: url.hostname, path: url.pathname, pfx: cert.pfx, passphrase: cert.senha, headers: { Accept: "application/pdf" } },
+      { method: "GET", hostname: url.hostname, path: url.pathname, ...pfxTlsOptions(cert), headers: { Accept: "application/pdf" } },
       (res) => {
         const chunks: Buffer[] = [];
         res.on("data", (c) => chunks.push(c));
@@ -320,7 +311,7 @@ function postSefinNfse(baseUrl: string, dpsXmlGZipB64: string, cert: { pfx: Buff
     const req = https.request(
       {
         method: "POST", hostname: url.hostname, path: url.pathname,
-        pfx: cert.pfx, passphrase: cert.senha,
+        ...pfxTlsOptions(cert),
         headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(payload) }
       },
       (res) => {
