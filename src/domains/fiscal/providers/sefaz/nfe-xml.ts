@@ -404,6 +404,8 @@ export function buildNfeXml(input: EmitInput): BuildNfeResult {
       tag("uTrib", esc(sanitize(item.unidade) || "UN")) +
       tag("qTrib", fmtQ(item.quantidade)) +
       tag("vUnTrib", fmtUn(item.valorUnitario)) +
+      // Frete rateado por item: o ICMSTot.vFrete deve = Σ det/prod/vFrete (rejeição 610).
+      ((item.freteRateado ?? 0) > 0 ? tag("vFrete", fmt(item.freteRateado as number)) : "") +
       (item.desconto > 0 ? tag("vDesc", fmt(item.desconto)) : "") +
       `<indTot>1</indTot>` +
       `</prod>`;
@@ -461,7 +463,12 @@ export function buildNfeXml(input: EmitInput): BuildNfeResult {
     `<vOutro>${fmt(doc.outrasDespesas)}</vOutro><vNF>${fmt(input.total)}</vNF>` +
     `</ICMSTot>${ibsCbsTot}</total>`;
 
-  const modFrete = doc.modalidadeFrete ?? (doc.valorFrete > 0 ? 0 : 9);
+  // Coerência frete × modalidade: com vFrete > 0 a modalidade NÃO pode ser 9 (sem transporte) — o
+  // form costuma deixar 9 por padrão e o usuário só preenche o valor; força 0 (CIF, por conta do
+  // emitente) nesse caso. Sem frete, mantém a informada ou 9.
+  const modFrete = doc.valorFrete > 0
+    ? (doc.modalidadeFrete != null && doc.modalidadeFrete !== 9 ? doc.modalidadeFrete : 0)
+    : (doc.modalidadeFrete ?? 9);
   const transp = `<transp><modFrete>${modFrete}</modFrete></transp>`;
 
   // pag: devolução = sem pagamento (90); senão, pagamentos informados ou único pelo total.

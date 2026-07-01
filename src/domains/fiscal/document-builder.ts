@@ -136,6 +136,22 @@ export function buildDocumentFromPedido(input: PedidoFiscalInput): NormalizedFis
       }
     }
   }
+  // Mesma regra para o FRETE: ICMSTot.vFrete tem de ser igual ao somatório dos vFrete dos itens
+  // (rejeição 610 "Total do Frete difere do somatório dos itens"). Rateia o frete do documento pelo
+  // peso do valor de cada item; o último leva o resíduo do arredondamento.
+  const freteDoc = round2(input.frete ?? 0);
+  if (freteDoc > 0 && itens.length > 0) {
+    const bases = itens.map((it) => Math.max(round2(it.valorTotal - it.desconto), 0));
+    const baseTotal = round2(bases.reduce((s, v) => s + v, 0));
+    let aplicado = 0;
+    for (let i = 0; i < itens.length; i++) {
+      const cota = i === itens.length - 1
+        ? round2(freteDoc - aplicado)
+        : round2(((baseTotal > 0 ? bases[i] / baseTotal : 1 / itens.length)) * freteDoc);
+      itens[i].freteRateado = round2((itens[i].freteRateado ?? 0) + cota);
+      aplicado = round2(aplicado + cota);
+    }
+  }
   return {
     modelo,
     finalidade: input.finalidade ?? "NORMAL",

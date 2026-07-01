@@ -56,6 +56,9 @@ export type NormalizedFiscalItem = {
   valorUnitario: number;
   valorTotal: number;
   desconto: number;
+  /** Frete do documento RATEADO neste item (prod/vFrete). A SEFAZ exige ICMSTot.vFrete = Σ dos itens
+   *  (rejeição 610), então o frete global é distribuído pelos itens antes de emitir. */
+  freteRateado?: number;
   origem: string | null;
   regraTributariaId: string | null;
   /** Mercadoria com ICMS já recolhido por substituição tributária (contribuinte substituído):

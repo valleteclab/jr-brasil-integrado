@@ -725,6 +725,8 @@ export class AcbrFiscalProvider implements FiscalProvider {
           cProd: item.codigo?.trim() || String(numeroItem), cEAN: "SEM GTIN", xProd: item.descricao,
           NCM: item.ncm ?? "00000000", CFOP: item.cfop ?? (isNfce ? "5102" : "5102"),
           uCom: item.unidade, qCom: item.quantidade, vUnCom: item.valorUnitario, vProd: item.valorTotal,
+          // Frete rateado por item: ICMSTot.vFrete deve = soma dos vFrete dos itens (rejeicao 610).
+          vFrete: (item.freteRateado ?? 0) > 0 ? item.freteRateado : undefined,
           cEANTrib: "SEM GTIN", uTrib: item.unidade, qTrib: item.quantidade, vUnTrib: item.valorUnitario,
           vDesc: item.desconto || undefined, indTot: 1
         },
@@ -771,8 +773,13 @@ export class AcbrFiscalProvider implements FiscalProvider {
             vPIS: round2(sum.vPIS), vCOFINS: round2(sum.vCOFINS), vOutro: input.document.outrasDespesas, vNF: input.total
           }
         },
-        // modFrete: usa a modalidade informada; senão deriva (9=sem transporte se frete=0, senão 0=CIF).
-        transp: { modFrete: input.document.modalidadeFrete ?? (input.document.valorFrete > 0 ? 0 : 9) },
+        // modFrete coerente com o frete: com vFrete > 0 a modalidade nao pode ser 9 (sem transporte) —
+        // forca 0 (CIF) quando o form deixou 9/vazio; sem frete, mantem a informada ou 9.
+        transp: {
+          modFrete: input.document.valorFrete > 0
+            ? (input.document.modalidadeFrete != null && input.document.modalidadeFrete !== 9 ? input.document.modalidadeFrete : 0)
+            : (input.document.modalidadeFrete ?? 9)
+        },
         // Devolução: sem contraprestação (tPag=90). Demais: um detPag por forma informada,
         // com o grupo `card` (tpIntegra=2, não integrado/POS) nos cartões — exigido pela SEFAZ.
         pag: buildPag(input, tpPag)
