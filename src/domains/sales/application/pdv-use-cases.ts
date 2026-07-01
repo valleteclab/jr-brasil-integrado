@@ -9,6 +9,7 @@ import { criarRetiradaExpedicao } from "./expedicao-use-cases";
 import { emitServiceInvoiceAvulsa } from "@/domains/fiscal/application/standalone-emission-use-cases";
 import { getCaixaAberto, registrarRecebimentoPdv, type PagamentoDetalhado } from "@/domains/cashier/application/cashier-use-cases";
 import { assertModuloLiberado } from "@/lib/auth/tenant-features";
+import { classificacaoReceitaPadraoId } from "@/domains/finance/application/classificacao-use-cases";
 
 const FORMA_CREDIARIO = "CREDIARIO";
 const FORMA_DINHEIRO = "DINHEIRO";
@@ -325,12 +326,14 @@ export async function pdvCheckout(scope: TenantScope, input: PdvCheckoutInput): 
     const parcelas = gerarParcelas(valorCrediario, input.condicaoCrediario ?? "30");
     const descricaoBase = pedidoNumero ? `Venda PDV ${pedidoNumero}` : "Venda PDV (serviços)";
     await prisma.$transaction(async (tx) => {
+      const classificacaoReceita = await classificacaoReceitaPadraoId(tx, scope, "vendas");
       for (const parcela of parcelas) {
         await tx.contaReceber.create({
           data: {
             ...scopedByTenantCompanyAmbiente(scope),
             clienteId: input.clienteId as string,
             pedidoVendaId: pedidoVendaId ?? null,
+            classificacaoId: classificacaoReceita,
             descricao: `${descricaoBase} crediário${rotuloParcela(parcela)}`,
             numeroDocumento: pedidoNumero,
             origem: "VENDA",

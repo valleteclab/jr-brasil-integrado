@@ -279,6 +279,24 @@ export async function seedPlanoPadrao(scope: TenantScope): Promise<{ criadas: nu
 
 // ─── Auto-classificação ──────────────────────────────────────────────────────
 
+/**
+ * Id da classificação de RECEITA padrão para recebíveis automáticos (vendas/PDV/adquirente → "Receita
+ * de vendas"; ordem de serviço → "Receita de serviços"). Lookup por nome no plano da empresa (o seed
+ * cria ambas); null quando o plano não existe — a conta fica sem classificação, sem erro.
+ */
+export async function classificacaoReceitaPadraoId(
+  tx: Prisma.TransactionClient,
+  scope: TenantScope,
+  tipo: "vendas" | "servicos"
+): Promise<string | null> {
+  const nome = tipo === "servicos" ? "Receita de serviços" : "Receita de vendas";
+  const c = await tx.classificacaoFinanceira.findFirst({
+    where: { ...scopedByTenantCompany(scope), ativo: true, tipo: "RECEITA", nome: { equals: nome, mode: "insensitive" } },
+    select: { id: true }
+  });
+  return c?.id ?? null;
+}
+
 /** Nome da classificação-alvo por finalidade de entrada (batido com o PLANO_PADRAO acima). */
 const CLASSIFICACAO_POR_FINALIDADE: Partial<Record<FinalidadeEntrada, string>> = {
   REVENDA: "Mercadoria para revenda",
@@ -334,4 +352,85 @@ export async function sugerirClassificacaoEntrada(
     if (ultima?.classificacaoId) return ultima.classificacaoId;
   }
   return null;
+}
+
+/**
+ * BACKFILL: classifica em lote as contas EXISTENTES sem classificação, usando só inferências seguras —
+ * mesma lógica da criação, aplicada ao legado (contas criadas antes do plano existir):
+ *  - ContaPagar de entrada fiscal → finalidade predominante dos itens (+ memória do fornecedor);
+ *  - ContaPagar restantes com fornecedor → memória do fornecedor;
+ *  - ContaReceber de OS → "Receita de serviços"; de venda/PDV/adquirente/NF → "Receita de vendas".
+ * Idempotente (só toca classificacaoId = null). Roda após o seed do plano e pelo botão da tela.
+ */
+export async function backfillClassificacoes(scope: TenantScope): Promise<{ pagar: number; receber: number }> {
+  const where = scopedByTenantCompany(scope);
+  let pagar = 0;
+
+  // 1) Contas de ENTRADA FISCAL: agrupa por entrada (todas as parcelas recebem a mesma classificação).
+  const contasEntrada = await prisma.contaPagar.findMany({
+    where: { ...where, classificacaoId: null, entradaFiscalId: { not: null } },
+    select: { id: true, entradaFiscalId: true }
+  });
+  const porEntrada = new Map<string, string[]>();
+  for (const c of contasEntrada) {
+    const arr = porEntrada.get(c.entradaFiscalId as string) ?? [];
+    arr.push(c.id);
+    porEntrada.set(c.entradaFiscalId as string, arr);
+  }
+  for (const [entradaId, contaIds] of porEntrada) {
+    const entrada = await prisma.entradaFiscal.findFirst({
+      where: { id: entradaId, ...where },
+      select: { fornecedorId: true, itens: { select: { finalidade: true, valorTotal: true } } }
+    });
+    if (!entrada) continue;
+    const classificacaoId = await sugerirClassificacaoEntrada(prisma, scope, entrada);
+    if (!classificacaoId) continue;
+    await prisma.contaPagar.updateMany({ where: { id: { in: contaIds } }, data: { classificacaoId } });
+    pagar += contaIds.length;
+  }
+
+  // 2) Demais contas a pagar com fornecedor: memória (última classificação usada para ele).
+  const manuais = await prisma.contaPagar.findMany({
+    where: { ...where, classificacaoId: null, fornecedorId: { not: null } },
+    select: { id: true, fornecedorId: true }
+  });
+  const memoria = new Map<string, string | null>();
+  for (const c of manuais) {
+    const fid = c.fornecedorId as string;
+    if (!memoria.has(fid)) {
+      const ultima = await prisma.contaPagar.findFirst({
+        where: { ...where, fornecedorId: fid, classificacaoId: { not: null } },
+        orderBy: { criadoEm: "desc" },
+        select: { classificacaoId: true }
+      });
+      memoria.set(fid, ultima?.classificacaoId ?? null);
+    }
+    const classificacaoId = memoria.get(fid);
+    if (!classificacaoId) continue;
+    await prisma.contaPagar.update({ where: { id: c.id }, data: { classificacaoId } });
+    pagar++;
+  }
+
+  // 3) Contas a receber automáticas → receita padrão.
+  let receber = 0;
+  const recServicos = await classificacaoReceitaPadraoId(prisma, scope, "servicos");
+  const recVendas = await classificacaoReceitaPadraoId(prisma, scope, "vendas");
+  if (recServicos) {
+    receber += (await prisma.contaReceber.updateMany({
+      where: { ...where, classificacaoId: null, ordemServicoId: { not: null } },
+      data: { classificacaoId: recServicos }
+    })).count;
+  }
+  if (recVendas) {
+    receber += (await prisma.contaReceber.updateMany({
+      where: {
+        ...where,
+        classificacaoId: null,
+        OR: [{ pedidoVendaId: { not: null } }, { notaFiscalId: { not: null } }, { origem: { in: ["VENDA", "ADQUIRENTE", "PDV"] } }]
+      },
+      data: { classificacaoId: recVendas }
+    })).count;
+  }
+
+  return { pagar, receber };
 }

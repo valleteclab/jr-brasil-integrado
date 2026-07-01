@@ -16,6 +16,7 @@ import { emitFiscalDocument, previewFiscalDocument } from "@/domains/fiscal/appl
 import { gerarParcelas, rotuloParcela } from "@/lib/finance/condicao-pagamento";
 import { validarSenhaAdmin } from "@/lib/auth/admin-credential";
 import { criarComissaoVenda, cancelarComissaoPedido } from "./comissao-use-cases";
+import { classificacaoReceitaPadraoId } from "@/domains/finance/application/classificacao-use-cases";
 import { publishRealtime } from "@/lib/realtime/broker";
 
 const TX_OPTIONS = { maxWait: 15000, timeout: 30000 };
@@ -237,6 +238,7 @@ export async function confirmSale(scope: TenantScope, id: string, options?: Conf
     // identificado (venda anônima de balcão é paga à vista, sem contas a receber).
     if (pedido.clienteId && modoContasReceber === "AUTO") {
       const parcelas = gerarParcelas(Number(pedido.total), pedido.condicaoPagamento);
+      const classificacaoReceita = await classificacaoReceitaPadraoId(tx, scope, "vendas");
       for (const parcela of parcelas) {
         await tx.contaReceber.create({
           data: {
@@ -245,6 +247,7 @@ export async function confirmSale(scope: TenantScope, id: string, options?: Conf
             ambiente: scope.ambiente ?? "HOMOLOGACAO",
             clienteId: pedido.clienteId,
             pedidoVendaId: pedido.id,
+            classificacaoId: classificacaoReceita,
             descricao: `Pedido ${pedido.numero}${rotuloParcela(parcela)}`,
             numeroDocumento: pedido.numero,
             origem: "VENDA",
@@ -555,6 +558,7 @@ export async function editConfirmedSale(scope: TenantScope, id: string, input: E
     // 8. Regenera as contas a receber (mesma regra do confirmSale), preservando o modo original.
     if (clienteId && tinhaContasReceber) {
       const parcelas = gerarParcelas(total, condicaoPagamento);
+      const classificacaoReceita = await classificacaoReceitaPadraoId(tx, scope, "vendas");
       for (const parcela of parcelas) {
         await tx.contaReceber.create({
           data: {
@@ -563,6 +567,7 @@ export async function editConfirmedSale(scope: TenantScope, id: string, input: E
             ambiente: scope.ambiente ?? "HOMOLOGACAO",
             clienteId,
             pedidoVendaId: id,
+            classificacaoId: classificacaoReceita,
             descricao: `Pedido ${pedido.numero}${rotuloParcela(parcela)}`,
             numeroDocumento: pedido.numero,
             origem: "VENDA",

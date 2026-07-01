@@ -6,6 +6,7 @@ import { commitReservationsAsExit } from "@/domains/stock/application/stock-serv
 import { buildDocumentFromPedido } from "@/domains/fiscal/document-builder";
 import { emitFiscalDocument } from "@/domains/fiscal/application/fiscal-emission-use-cases";
 import { criarRetiradaExpedicao } from "@/domains/sales/application/expedicao-use-cases";
+import { classificacaoReceitaPadraoId } from "@/domains/finance/application/classificacao-use-cases";
 import { publishRealtime } from "@/lib/realtime/broker";
 
 /**
@@ -114,6 +115,7 @@ async function rotearDestinosPagamento(
           ...scopedByTenantCompanyAmbiente(scope),
           clienteId,
           pedidoVendaId: ctx.pedidoVendaId,
+          classificacaoId: await classificacaoReceitaPadraoId(tx, scope, "vendas"),
           contaBancariaId: maq.contaBancariaId,
           descricao: `Cartão ${credito ? "crédito" : "débito"} ${maq.nome} — venda ${ctx.numero}${parcelas > 1 ? ` (${parcelas}x)` : ""}`,
           numeroDocumento: p.nsu ?? null,

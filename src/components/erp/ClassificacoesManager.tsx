@@ -54,17 +54,41 @@ export function ClassificacoesManager({ initial, gruposSugeridos }: Props) {
     setAviso("");
     try {
       const res = await fetch("/api/erp/financeiro/classificacoes/seed", { method: "POST" });
-      const data = (await res.json()) as { criadas?: number; error?: string };
+      const data = (await res.json()) as { criadas?: number; contasClassificadas?: number; error?: string };
       if (!res.ok) throw new Error(data.error || "Não foi possível criar o plano padrão.");
       await recarregar();
-      setAviso(
-        data.criadas
-          ? `${data.criadas} classificação(ões) criadas. Ajuste nomes/metas como preferir.`
-          : "O plano já estava completo — nada a criar."
-      );
+      const partes = [
+        data.criadas ? `${data.criadas} classificação(ões) criadas` : "plano já estava completo",
+        data.contasClassificadas ? `${data.contasClassificadas} conta(s) existentes classificadas automaticamente` : null
+      ].filter(Boolean);
+      setAviso(`${partes.join("; ")}. Ajuste nomes/metas como preferir.`);
       router.refresh();
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Falha ao criar o plano padrão.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Backfill: classifica as contas antigas sem classificação (entrada fiscal/fornecedor/vendas). */
+  async function classificarExistentes() {
+    setBusy(true);
+    setErro("");
+    setAviso("");
+    try {
+      const res = await fetch("/api/erp/financeiro/classificacoes/backfill", { method: "POST" });
+      const data = (await res.json()) as { pagar?: number; receber?: number; error?: string };
+      if (!res.ok) throw new Error(data.error || "Não foi possível classificar as contas.");
+      const total = (data.pagar ?? 0) + (data.receber ?? 0);
+      setAviso(
+        total
+          ? `${total} conta(s) classificadas automaticamente (${data.pagar ?? 0} a pagar, ${data.receber ?? 0} a receber).`
+          : "Nenhuma conta pôde ser classificada automaticamente — as restantes precisam de classificação manual."
+      );
+      await recarregar();
+      router.refresh();
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Falha ao classificar as contas.");
     } finally {
       setBusy(false);
     }
@@ -168,8 +192,19 @@ export function ClassificacoesManager({ initial, gruposSugeridos }: Props) {
         </span>
         <div className="grow" />
         <button type="button" className="btn-erp ghost sm" onClick={criarPlanoPadrao} disabled={busy}>
-          {busy ? "Criando…" : itens.length ? "Completar plano padrão" : "Criar plano padrão"}
+          {busy ? "Processando…" : itens.length ? "Completar plano padrão" : "Criar plano padrão"}
         </button>
+        {itens.length > 0 && (
+          <button
+            type="button"
+            className="btn-erp ghost sm"
+            title="Classifica as contas antigas sem classificação: entrada fiscal pela finalidade, demais pela memória do fornecedor, recebíveis de venda/OS pelas receitas padrão."
+            onClick={classificarExistentes}
+            disabled={busy}
+          >
+            {busy ? "Processando…" : "Classificar contas existentes"}
+          </button>
+        )}
         <button type="button" className="btn-erp primary sm" onClick={() => setShowForm((v) => !v)}>
           + Nova classificação
         </button>

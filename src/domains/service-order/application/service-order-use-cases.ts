@@ -19,6 +19,7 @@ import type { StatusOrdemServico } from "@prisma/client";
 import type { TaxationTypeIss } from "@/domains/fiscal/types";
 import { assertModuloLiberado } from "@/lib/auth/tenant-features";
 import { gerarParcelas, rotuloParcela } from "@/lib/finance/condicao-pagamento";
+import { classificacaoReceitaPadraoId } from "@/domains/finance/application/classificacao-use-cases";
 
 const TX_OPTIONS = { maxWait: 10000, timeout: 30000 };
 
@@ -415,12 +416,14 @@ export async function faturarOrdemServico(scope: TenantScope, id: string, input:
     // "30/60/90" gera 3 parcelas, "à vista" vence hoje; sem condição, 1 parcela em 30 dias.
     const parcelas = gerarParcelas(Number(os.total), condicaoPagamento);
     const contasReceber = [] as Array<{ id: string }>;
+    const classificacaoReceita = await classificacaoReceitaPadraoId(tx, scope, "servicos");
     for (const parcela of parcelas) {
       const cr = await tx.contaReceber.create({
         data: {
           ...scopedByTenantCompanyAmbiente(scope),
           clienteId: os.clienteId,
           ordemServicoId: id,
+          classificacaoId: classificacaoReceita,
           descricao: `OS ${os.numero} — ${os.equipamento}${rotuloParcela(parcela)}`,
           numeroDocumento: os.numero,
           origem: "OS",
