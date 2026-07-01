@@ -17,6 +17,7 @@ import { gerarParcelas, rotuloParcela } from "@/lib/finance/condicao-pagamento";
 import { validarSenhaAdmin } from "@/lib/auth/admin-credential";
 import { criarComissaoVenda, cancelarComissaoPedido } from "./comissao-use-cases";
 import { classificacaoReceitaPadraoId } from "@/domains/finance/application/classificacao-use-cases";
+import { gerarBoletosDoPedido } from "@/domains/finance/application/boleto-use-cases";
 import { publishRealtime } from "@/lib/realtime/broker";
 
 const TX_OPTIONS = { maxWait: 15000, timeout: 30000 };
@@ -289,6 +290,13 @@ export async function confirmSale(scope: TenantScope, id: string, options?: Conf
   // Tempo real: saiu da fila de pré-vendas do caixa e mudou na lista de vendas.
   publishRealtime(scope, "caixa");
   publishRealtime(scope, "vendas");
+
+  // Venda com forma de pagamento BOLETO: gera automaticamente o boleto de cada parcela criada
+  // (venda parcelada = um boleto por parcela). Best-effort FORA da transação: falha em boleto não
+  // desfaz a venda — as parcelas ficam no financeiro com o botão "Gerar boleto" para retentar.
+  if (/boleto/i.test(confirmado.formaPagamento ?? "")) {
+    await gerarBoletosDoPedido(scope, id).catch(() => undefined);
+  }
 
   return confirmado;
 }

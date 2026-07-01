@@ -1,0 +1,28 @@
+{
+  "numeroCliente": 25546454,
+  "codigoModalidade": 1,
+  "numeroContaCorrente": 0,
+  "codigoEspecieDocumento": "DM",
+  "dataEmissao": "2026-07-02",
+  "seuNumero": "TESTE00001",
+  "identificacaoEmissaoBoleto": 1,
+  "identificacaoDistribuicaoBoleto": 1,
+  "valor": 156.23,
+  "dataVencimento": "2026-08-01",
+  "tipoDesconto": 0,
+  "tipoMulta": 0,
+  "tipoJurosMora": 3,
+  "numeroParcela": 1,
+  "aceite": false,
+  "pagador": {
+    "numeroCpfCnpj": "98765432185",
+    "nome": "Cliente Teste ERP",
+    "endereco": "Rua Madri, 60",
+    "bairro": "Tropical Ville",
+    "cidade": "Luis Eduardo Magalhaes",
+    "cep": "47850000",
+    "uf": "BA"
+  },
+  "mensagensInstrucao": ["Teste de integracao ERP"],
+  "gerarPdf": true
+}

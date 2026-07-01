@@ -280,6 +280,84 @@ export async function sincronizarBoleto(scope: TenantScope, contaReceberId: stri
   return { status: situacao || "EM ABERTO", baixado: false };
 }
 
+/**
+ * Gera boletos para TODAS as parcelas em aberto de um pedido de venda (venda parcelada no boleto:
+ * cada parcela vira um boleto). Best-effort: falhas em uma parcela não impedem as demais — o
+ * botão "Gerar boleto" no financeiro cobre a retentativa. Usa a primeira conta com cobrança ativa.
+ */
+export async function gerarBoletosDoPedido(
+  scope: TenantScope,
+  pedidoVendaId: string,
+  usuarioId?: string
+): Promise<{ gerados: number; erros: string[] }> {
+  const contas = await listContasComCobranca(scope);
+  if (!contas.length) return { gerados: 0, erros: ["Nenhuma conta bancária com cobrança Sicoob configurada."] };
+  const titulos = await prisma.contaReceber.findMany({
+    where: {
+      ...scopedByTenantCompany(scope),
+      pedidoVendaId,
+      status: { in: ["ABERTO", "PARCIAL", "VENCIDO"] },
+      boleto: null
+    },
+    orderBy: { vencimento: "asc" },
+    select: { id: true, descricao: true }
+  });
+  let gerados = 0;
+  const erros: string[] = [];
+  for (const t of titulos) {
+    try {
+      await gerarBoletoParaRecebivel(scope, t.id, { contaBancariaId: contas[0].id }, usuarioId);
+      gerados++;
+    } catch (e) {
+      erros.push(`${t.descricao}: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+  return { gerados, erros };
+}
+
+/**
+ * CRON: consulta no Sicoob todos os boletos REGISTRADOS cujo título segue em aberto e sincroniza —
+ * boleto liquidado no banco vira baixa automática do título COM crédito na conta bancária (o
+ * `sincronizarBoleto` usa a settleReceivable: atualiza saldo e cria o MovimentoFinanceiro na data
+ * do pagamento). Roda para todas as empresas; o ambiente vem do próprio título.
+ */
+export async function sincronizarBoletosCron(): Promise<{
+  pendentes: number;
+  baixados: number;
+  erros: string[];
+}> {
+  const pendentes = await prisma.boletoCobranca.findMany({
+    where: {
+      status: "REGISTRADO",
+      nossoNumero: { not: null },
+      contaReceber: { status: { in: ["ABERTO", "PARCIAL", "VENCIDO"] } }
+    },
+    orderBy: { criadoEm: "asc" },
+    take: 200,
+    select: {
+      contaReceberId: true,
+      tenantId: true,
+      empresaId: true,
+      contaReceber: { select: { ambiente: true, descricao: true } }
+    }
+  });
+
+  let baixados = 0;
+  const erros: string[] = [];
+  for (const b of pendentes) {
+    const scope = { tenantId: b.tenantId, empresaId: b.empresaId, ambiente: b.contaReceber.ambiente } as TenantScope;
+    try {
+      const r = await sincronizarBoleto(scope, b.contaReceberId);
+      if (r.baixado) baixados++;
+    } catch (e) {
+      erros.push(`${b.contaReceber.descricao}: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    // Intervalo suave entre consultas (evita throttling da API).
+    await new Promise((resolve) => setTimeout(resolve, 400));
+  }
+  return { pendentes: pendentes.length, baixados, erros };
+}
+
 /** PDF do boleto (2ª via a partir do base64 guardado no registro). */
 export async function pdfDoBoleto(scope: TenantScope, contaReceberId: string): Promise<Buffer> {
   const boleto = await prisma.boletoCobranca.findFirst({
