@@ -32,8 +32,12 @@ do cadastro); fluxo de deploy = desenvolve local → `git push` → `./deploy/vp
   conta, data do banco). Model BoletoCobranca (migration 20260702150000); provider
   src/domains/finance/providers/sicoob-cobranca.ts. **PENDENTE p/ ativar: credenciamento do cliente no
   Sicoob (client_id) — testar 1º em sandbox com token do portal dev. NÃO TESTADO contra a API real.**
-- [ ] 1.2 **Integração bancária (Sicoob)** — próximo: cron de sincronização dos boletos em aberto (baixa
-  automática sem clique), webhook de liquidação, extrato/conciliação (API conta-corrente) e Pix.
+- [~] 1.2 **Integração bancária (Sicoob)** — PARCIAL 2026-07-02: cron de sincronização FEITO
+  (/api/cron/boletos a cada 30min no crontab da VPS; boleto liquidado → baixa automática do título com
+  CRÉDITO na conta bancária na data do banco). Venda com forma "boleto" gera automaticamente um boleto
+  POR PARCELA (hook no confirmSale, best-effort). Pendentes: webhook de liquidação (em vez de polling),
+  extrato/conciliação (API conta-corrente v4), Pix, e cancelar/baixar boleto no banco quando a conta é
+  cancelada/editada no ERP (hoje o boleto fica órfão no Sicoob).
 - [ ] 1.3 **API de consulta de clientes (bureau de crédito)** — integrar Serasa/SPC/similar na análise de
   crédito/venda. Provedor a definir; entra no cadastro/fluxo de venda.
 - [x] 1.4 **Antecipação de recebíveis (v1 sem banco)** — FEITO 2026-07-02: tela
