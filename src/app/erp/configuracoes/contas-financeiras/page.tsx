@@ -1,17 +1,21 @@
 import { PageHeader } from "@/components/shared/PageHeader";
 import { ContasFinanceirasManager } from "@/components/erp/ContasFinanceirasManager";
+import { SicoobCobrancaConfig } from "@/components/erp/SicoobCobrancaConfig";
 import { listContasFinanceiras } from "@/domains/finance/application/payment-config-use-cases";
+import { listConfigCobranca, type ConfigCobrancaConta } from "@/domains/finance/application/boleto-use-cases";
 import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
 
 export const dynamic = "force-dynamic";
 
 export default async function ContasFinanceirasPage() {
   let contas: Array<{ id: string; nome: string; tipo: string; banco: string; agencia: string; conta: string; chavePix: string; tipoChavePix: string; saldoInicial: number; ativo: boolean }> = [];
+  let configCobranca: ConfigCobrancaConta[] = [];
   let loadError = "";
 
   try {
     const scope = await getDevelopmentTenantScope();
     const rows = await listContasFinanceiras(scope);
+    configCobranca = await listConfigCobranca(scope);
     contas = rows.map((c) => ({
       id: c.id,
       nome: c.nome,
@@ -44,6 +48,7 @@ export default async function ContasFinanceirasPage() {
         </div>
       )}
       <ContasFinanceirasManager initial={contas} />
+      {!loadError && <SicoobCobrancaConfig contas={configCobranca} />}
     </>
   );
 }

@@ -18,16 +18,22 @@ do cadastro); fluxo de deploy = desenvolve local → `git push` → `./deploy/vp
 6. ~~Entradas de notas / vínculo de produtos (1ª leva)~~ ✅ 2026-07-02 (memória no vínculo manual,
    IA prioriza histórico do fornecedor, ação em massa "novo SKU") — restam 4.3/4.4 da seção 4
 7. ~~Antecipação de recebíveis (v1 sem banco)~~ ✅ 2026-07-02
-8. **Emissão de boleto + integração bancária + bureau** — DEPENDEM de decidir **qual banco/provedor**
-   (Sicoob/BB/Itaú/Inter ou agregador Asaas/Cobre Fácil). Decisão com o cliente ANTES de codar → itens 1.1–1.3
+8. **Boleto/integração bancária: DECIDIDO SICOOB (API oficial)** — emissão de boleto FEITA 2026-07-02
+   (ver 1.1); pendências: credenciamento do cliente, webhook/cron de liquidação, extrato/conciliação (1.2)
+   e bureau (1.3, provedor a definir)
 
 ## 1. Financeiro / Bancário
 
-- [ ] 1.1 **Emissão de boleto** — gerar boleto a partir dos recebíveis (`ContaReceber`): convênio/carteira do
-  banco, nosso número, linha digitável/código de barras, PDF, registro (CNAB ou API do banco). Não existe hoje.
-  **Bloqueado por: escolha do banco/provedor.**
-- [ ] 1.2 **Integração bancária** — extrato + baixa automática de recebíveis/pagáveis + remessa/retorno
-  (CNAB ou API/Open Finance). É a base para o boleto e para a antecipação. **Bloqueado por: escolha do banco.**
+- [x] 1.1 **Emissão de boleto (Sicoob API v3)** — FEITO 2026-07-02: config por conta bancária em
+  Configurações → Contas financeiras (card "Cobrança Sicoob": client_id, nº do beneficiário, produção
+  com mTLS pelo A1 da empresa OU sandbox por token); botão "Gerar boleto" no recebível (registra na API,
+  guarda nossoNumero/linha digitável/PDF, valida CPF/CNPJ+endereço do cliente); 2ª via PDF; botão
+  "Consultar pgto" sincroniza a situação e BAIXA o título automaticamente quando liquidado (crédito na
+  conta, data do banco). Model BoletoCobranca (migration 20260702150000); provider
+  src/domains/finance/providers/sicoob-cobranca.ts. **PENDENTE p/ ativar: credenciamento do cliente no
+  Sicoob (client_id) — testar 1º em sandbox com token do portal dev. NÃO TESTADO contra a API real.**
+- [ ] 1.2 **Integração bancária (Sicoob)** — próximo: cron de sincronização dos boletos em aberto (baixa
+  automática sem clique), webhook de liquidação, extrato/conciliação (API conta-corrente) e Pix.
 - [ ] 1.3 **API de consulta de clientes (bureau de crédito)** — integrar Serasa/SPC/similar na análise de
   crédito/venda. Provedor a definir; entra no cadastro/fluxo de venda.
 - [x] 1.4 **Antecipação de recebíveis (v1 sem banco)** — FEITO 2026-07-02: tela

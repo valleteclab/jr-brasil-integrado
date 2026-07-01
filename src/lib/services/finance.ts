@@ -47,6 +47,9 @@ export type ReceivableSummary = {
   formaPagamento: string;
   classificacaoId: string | null;
   classificacaoNome: string | null;
+  /** Boleto Sicoob deste título (null = sem boleto). */
+  boletoStatus?: string | null;
+  boletoLinhaDigitavel?: string | null;
   canSettle: boolean;
   /** Tem baixa estornável: valorPago > 0 e status PAGO/PARCIAL. Opcional para não quebrar objetos otimistas. */
   canEstornar?: boolean;
@@ -256,7 +259,8 @@ export async function listReceivables(filtroStatus?: string): Promise<Receivable
     where: { ...scopedByTenantCompanyAmbiente(scope), ...whereStatus },
     include: {
       cliente: { select: { razaoSocial: true, nomeFantasia: true } },
-      classificacao: { select: { id: true, nome: true } }
+      classificacao: { select: { id: true, nome: true } },
+      boleto: { select: { status: true, linhaDigitavel: true } }
     },
     orderBy: [{ vencimento: "asc" }, { criadoEm: "desc" }]
   });
@@ -290,6 +294,8 @@ export async function listReceivables(filtroStatus?: string): Promise<Receivable
       formaPagamento: c.formaPagamento ?? "—",
       classificacaoId: c.classificacao?.id ?? null,
       classificacaoNome: c.classificacao?.nome ?? null,
+      boletoStatus: c.boleto?.status ?? null,
+      boletoLinhaDigitavel: c.boleto?.linhaDigitavel ?? null,
       canSettle,
       // Estornar baixa: há recebimento registrado e a conta está quitada/parcial.
       canEstornar: valorPago > 0 && (c.status === "PAGO" || c.status === "PARCIAL")

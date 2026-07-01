@@ -18,6 +18,8 @@ type Props = {
   maquinas?: MaquinaCartaoOption[];
   /** Plano de classificação financeira (para categorizar as contas → fechamento mensal). */
   classificacoes?: ClassificacaoOption[];
+  /** Contas bancárias com cobrança Sicoob habilitada (mostra "Gerar boleto" nos recebíveis). */
+  contasCobranca?: Array<{ id: string; nome: string }>;
   /** Mostra a ação de EXCLUIR conta a pagar (apenas perfil admin). */
   isAdmin?: boolean;
 };
@@ -479,7 +481,7 @@ function NewAccountForm({ tipo, formasPagamento, clientes, classificacoes, onSuc
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-export function FinanceManager({ initialPayables, initialReceivables, bankAccounts, formasPagamento = [], clientes = [], maquinas = [], classificacoes = [], isAdmin = false }: Props) {
+export function FinanceManager({ initialPayables, initialReceivables, bankAccounts, formasPagamento = [], clientes = [], maquinas = [], classificacoes = [], contasCobranca = [], isAdmin = false }: Props) {
   const [aba, setAba] = useState<Aba>("pagar");
   const [payables, setPayables] = useState(initialPayables);
   const [receivables, setReceivables] = useState(initialReceivables);
@@ -488,6 +490,52 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
   const [showNewForm, setShowNewForm] = useState(false);
   const [globalError, setGlobalError] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
+
+  // Boleto Sicoob: registra na API e mostra linha digitável/PDF; sincronizar baixa quando liquidado.
+  async function gerarBoleto(id: string, descricao: string) {
+    if (!contasCobranca.length) return;
+    if (!window.confirm(`Emitir boleto Sicoob para "${descricao}" na conta ${contasCobranca[0].nome}?`)) return;
+    setBusyId(id);
+    setGlobalError("");
+    try {
+      const res = await fetch(`/api/erp/financeiro/contas-receber/${id}/boleto`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contaBancariaId: contasCobranca[0].id })
+      });
+      const data = (await res.json().catch(() => ({}))) as { status?: string; linhaDigitavel?: string; error?: string };
+      if (!res.ok) throw new Error(data.error || "Não foi possível emitir o boleto.");
+      setReceivables((prev) => prev.map((r) => (r.id === id
+        ? { ...r, boletoStatus: data.status ?? "REGISTRADO", boletoLinhaDigitavel: data.linhaDigitavel ?? null, formaPagamento: "BOLETO" }
+        : r)));
+    } catch (e) {
+      setGlobalError(e instanceof Error ? e.message : "Falha ao emitir o boleto.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function sincronizarBoleto(id: string) {
+    setBusyId(id);
+    setGlobalError("");
+    try {
+      const res = await fetch(`/api/erp/financeiro/contas-receber/${id}/boleto/sincronizar`, { method: "POST" });
+      const data = (await res.json().catch(() => ({}))) as { status?: string; baixado?: boolean; error?: string };
+      if (!res.ok) throw new Error(data.error || "Não foi possível consultar o boleto.");
+      setReceivables((prev) => prev.map((r) => {
+        if (r.id !== id) return r;
+        const atualizado = { ...r, boletoStatus: data.status ?? r.boletoStatus };
+        if (data.baixado) {
+          return { ...atualizado, statusLabel: "Pago", statusTone: "success" as const, canSettle: false, valorPago: r.valor, saldo: "R$ 0,00", saldoNumber: 0, canEstornar: true };
+        }
+        return atualizado;
+      }));
+    } catch (e) {
+      setGlobalError(e instanceof Error ? e.message : "Falha ao consultar o boleto.");
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   // Classificação inline na listagem: PATCH e atualização otimista da linha.
   async function classificarConta(id: string, classificacaoId: string) {
@@ -727,6 +775,41 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
                     >
                       Baixar
                     </button>
+                  )}
+                  {aba === "receber" && contasCobranca.length > 0 && r.canSettle && !(r as ReceivableSummary).boletoStatus && (
+                    <button
+                      type="button"
+                      className="btn-erp ghost xs"
+                      title="Registrar boleto Sicoob para este título"
+                      disabled={busyId === r.id}
+                      onClick={() => gerarBoleto(r.id, r.descricao)}
+                    >
+                      {busyId === r.id ? "..." : "Gerar boleto"}
+                    </button>
+                  )}
+                  {aba === "receber" && (r as ReceivableSummary).boletoStatus && (
+                    <>
+                      <a
+                        className="btn-erp ghost xs"
+                        href={`/api/erp/financeiro/contas-receber/${r.id}/boleto/pdf`}
+                        target="_blank"
+                        rel="noreferrer"
+                        title={(r as ReceivableSummary).boletoLinhaDigitavel ? `Linha digitável: ${(r as ReceivableSummary).boletoLinhaDigitavel}` : "2ª via do boleto"}
+                      >
+                        Boleto ({(r as ReceivableSummary).boletoStatus?.toLowerCase()})
+                      </a>
+                      {r.canSettle && (
+                        <button
+                          type="button"
+                          className="btn-erp ghost xs"
+                          title="Consultar no Sicoob — se liquidado, baixa o título automaticamente"
+                          disabled={busyId === r.id}
+                          onClick={() => sincronizarBoleto(r.id)}
+                        >
+                          {busyId === r.id ? "..." : "Consultar pgto"}
+                        </button>
+                      )}
+                    </>
                   )}
                   {r.canEstornar && (
                     <button

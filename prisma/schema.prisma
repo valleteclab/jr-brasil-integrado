@@ -1779,6 +1779,7 @@ model ContaReceber {
   /// Operação de antecipação que baixou este título (null = baixa normal/aberto).
   antecipacaoId   String?
   antecipacao     AntecipacaoRecebivel? @relation(fields: [antecipacaoId], references: [id])
+  boleto          BoletoCobranca?
   status          StatusFinanceiro      @default(ABERTO)
   pagoEm          DateTime?
   criadoEm        DateTime              @default(now())
@@ -2246,11 +2247,54 @@ model ContaBancaria {
   contasReceber   ContaReceber[]
   formasPagamento FormaPagamento[]
   antecipacoes    AntecipacaoRecebivel[]
+  // ── Cobrança Sicoob (emissão de boleto pela API oficial) ──
+  // Credenciamento por conta: client_id (obtido no Sicoob Desenvolvedores), número do cliente
+  // (código do beneficiário/cooperado) e conta corrente de cobrança. O mTLS de produção usa o
+  // A1 e-CNPJ da empresa (CertificadoDigital, o mesmo do fiscal). Sandbox usa token do portal.
+  sicoobClientId        String?
+  sicoobNumeroCliente   Int?
+  sicoobContaCorrente   String?
+  /// Modalidade de cobrança (1 = simples com registro).
+  sicoobModalidade      Int      @default(1)
+  /// Ambiente da API: true = sandbox (token do portal, sem mTLS).
+  sicoobSandbox         Boolean  @default(false)
+  /// Token do sandbox (criptografado com encryptSecret).
+  sicoobSandboxToken    String?
+  boletos               BoletoCobranca[]
   criadoEm        DateTime              @default(now())
   atualizadoEm    DateTime              @updatedAt
 
   @@unique([tenantId, empresaId, nome])
   @@index([tenantId, empresaId])
+}
+
+/// Boleto REGISTRADO na API de Cobrança do Sicoob para uma ContaReceber. Guarda os dados de
+/// cobrança (nosso número, linha digitável, código de barras, PDF) e o status do ciclo de vida.
+model BoletoCobranca {
+  id              String        @id @default(cuid())
+  tenantId        String
+  empresaId       String
+  contaReceberId  String        @unique
+  contaReceber    ContaReceber  @relation(fields: [contaReceberId], references: [id])
+  contaBancariaId String
+  contaBancaria   ContaBancaria @relation(fields: [contaBancariaId], references: [id])
+  /// EMITIDO → REGISTRADO (confirmado no banco) → LIQUIDADO | BAIXADO | ERRO
+  status          String        @default("EMITIDO")
+  nossoNumero     String?
+  seuNumero       String?
+  linhaDigitavel  String?
+  codigoBarras    String?
+  valor           Decimal       @db.Decimal(14, 2)
+  vencimento      DateTime
+  /// PDF do boleto em base64 (retornado no registro), servido pela rota de download.
+  pdfBase64       String?
+  ultimoErro      String?
+  payload         Json?
+  criadoEm        DateTime      @default(now())
+  atualizadoEm    DateTime      @updatedAt
+
+  @@index([tenantId, empresaId, status])
+  @@index([tenantId, empresaId, nossoNumero])
 }
 
 // Forma de pagamento cadastrável (como se paga): Dinheiro, Pix, Cartão de crédito/débito,

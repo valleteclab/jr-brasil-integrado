@@ -5,6 +5,7 @@ import { listPayables, listReceivables, listBankAccounts, getFinanceSummary, lis
 import type { PayableSummary, ReceivableSummary, BankAccountSummary, FinanceSummary, ClienteOption, MaquinaCartaoOption } from "@/lib/services/finance";
 import { listFormasPagamentoAtivas } from "@/domains/finance/application/payment-config-use-cases";
 import { listClassificacoes } from "@/domains/finance/application/classificacao-use-cases";
+import { listContasComCobranca } from "@/domains/finance/application/boleto-use-cases";
 import { Button } from "@/components/shared/Button";
 import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
 import { getSession } from "@/lib/auth/session";
@@ -25,11 +26,12 @@ export default async function FinanceiroPage() {
   let clientes: ClienteOption[] = [];
   let maquinas: MaquinaCartaoOption[] = [];
   let classificacoes: Array<{ id: string; nome: string; grupo: string; tipo: "DESPESA" | "RECEITA" }> = [];
+  let contasCobranca: Array<{ id: string; nome: string }> = [];
   let loadError = "";
 
   try {
     const scope = await getDevelopmentTenantScope();
-    const [pay, rec, banks, sum, formas, cli, maqs, classes] = await Promise.all([
+    const [pay, rec, banks, sum, formas, cli, maqs, classes, cobranca] = await Promise.all([
       listPayables(),
       listReceivables(),
       listBankAccounts(),
@@ -37,7 +39,8 @@ export default async function FinanceiroPage() {
       listFormasPagamentoAtivas(scope),
       listActiveClienteOptions(),
       listMaquinasCartaoOptions(),
-      listClassificacoes(scope)
+      listClassificacoes(scope),
+      listContasComCobranca(scope)
     ]);
     payables = pay;
     receivables = rec;
@@ -47,6 +50,7 @@ export default async function FinanceiroPage() {
     clientes = cli;
     maquinas = maqs;
     classificacoes = classes.map((c) => ({ id: c.id, nome: c.nome, grupo: c.grupo, tipo: c.tipo }));
+    contasCobranca = cobranca;
   } catch (error) {
     loadError = error instanceof Error ? error.message : "Não foi possível carregar o módulo financeiro.";
   }
@@ -115,6 +119,7 @@ export default async function FinanceiroPage() {
           clientes={clientes}
           maquinas={maquinas}
           classificacoes={classificacoes}
+          contasCobranca={contasCobranca}
           isAdmin={isAdmin}
         />
       )}
