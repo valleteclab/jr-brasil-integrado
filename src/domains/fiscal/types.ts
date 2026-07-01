@@ -140,6 +140,16 @@ export type SubstituicaoNfse = {
   cMotivo: string;
   /** Descrição do motivo (obrigatória quando cMotivo = 99). */
   xMotivo?: string | null;
+  // Campos IMUTÁVEIS na substituição (E0060): a DPS substituta tem de repeti-los IDÊNTICOS aos da
+  // NFS-e original (extraídos do XML dela). Quando ausentes, o provider recalcula (comportamento antigo).
+  /** Data de competência da original (YYYY-MM-DD) — a substituta não pode usar "hoje". */
+  dCompetOriginal?: string | null;
+  /** Subitem da lista nacional (cTribNac) da original. */
+  cTribNacOriginal?: string | null;
+  /** Local da prestação (cLocPrestacao/cLocIncid, cód. IBGE do município) da original. */
+  cLocPrestacaoOriginal?: string | null;
+  /** Código complementar municipal (cTribMun) da original, quando houver. */
+  cTribMunOriginal?: string | null;
 };
 
 /**

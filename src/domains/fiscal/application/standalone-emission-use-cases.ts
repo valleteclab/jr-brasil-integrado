@@ -7,6 +7,7 @@ import { exitStock, getDefaultDeposito, applyStockMovement } from "@/domains/sto
 import { buildDocumentFromPedido, buildNfseFromOrdemServico } from "@/domains/fiscal/document-builder";
 import { emitFiscalDocument, previewFiscalDocument } from "@/domains/fiscal/application/fiscal-emission-use-cases";
 import { getFiscalRuntimeConfig } from "@/domains/fiscal/application/fiscal-config-use-cases";
+import { extrairCamposImutaveisSubstituicao } from "@/domains/fiscal/providers/nacional-provider";
 import { isCodigoServicoValido } from "@/domains/fiscal/codigo-tributacao-nacional";
 import { sugerirPorLc116 } from "@/domains/fiscal/nbs";
 import type { ObraInfo, TaxationTypeIss } from "@/domains/fiscal/types";
@@ -455,6 +456,28 @@ export async function emitServiceInvoiceAvulsa(scope: TenantScope, input: Servic
 
   const retencoes = computeRetencoes(valorServicos, input.retencoes);
 
+  // Substituição de NFS-e: a SEFIN não deixa alterar data de competência, subitem da lista, código
+  // complementar municipal e local da prestação (E0060). Extrai esses campos do XML da NFS-e original
+  // e os repassa, para a substituta repeti-los idênticos.
+  let camposImutaveisSubst: ReturnType<typeof extrairCamposImutaveisSubstituicao> | null = null;
+  if (input.substituicao) {
+    const chave = input.substituicao.chaveSubstituida.replace(/\D/g, "");
+    const original = await prisma.notaFiscal.findFirst({
+      where: {
+        ...scopedByTenantCompany(scope),
+        ...(input.substituicao.notaSubstituidaId ? { id: input.substituicao.notaSubstituidaId } : { chaveAcesso: chave })
+      },
+      select: { xml: true, emitidaEm: true }
+    });
+    if (original?.xml) camposImutaveisSubst = extrairCamposImutaveisSubstituicao(original.xml);
+    // Fallback da data de competência: se não veio do XML, a competência original = data de emissão
+    // (no fuso de Brasília, -03:00), que foi como o dCompet foi gerado na emissão original.
+    if (original?.emitidaEm && !camposImutaveisSubst?.dCompet) {
+      const dCompetFallback = new Date(original.emitidaEm.getTime() - 3 * 3600 * 1000).toISOString().slice(0, 10);
+      camposImutaveisSubst = { ...(camposImutaveisSubst ?? { dCompet: null, cTribNac: null, cLocPrestacao: null, cTribMun: null }), dCompet: dCompetFallback };
+    }
+  }
+
   const doc = buildNfseFromOrdemServico({
     cliente,
     observacoes: input.observacoes ?? null,
@@ -468,7 +491,11 @@ export async function emitServiceInvoiceAvulsa(scope: TenantScope, input: Servic
       ? {
           chaveSubstituida: input.substituicao.chaveSubstituida,
           cMotivo: input.substituicao.cMotivo,
-          xMotivo: input.substituicao.xMotivo ?? null
+          xMotivo: input.substituicao.xMotivo ?? null,
+          dCompetOriginal: camposImutaveisSubst?.dCompet ?? null,
+          cTribNacOriginal: camposImutaveisSubst?.cTribNac ?? null,
+          cLocPrestacaoOriginal: camposImutaveisSubst?.cLocPrestacao ?? null,
+          cTribMunOriginal: camposImutaveisSubst?.cTribMun ?? null
         }
       : null
   });

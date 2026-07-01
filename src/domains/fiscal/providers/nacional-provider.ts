@@ -154,10 +154,24 @@ function buildDpsXml(input: EmitInput, ctx: ProviderContext): { xml: string; id:
   // <subst> (chave substituída + motivo). A SEFIN cancela a anterior por substituição e gera a nova.
   const sub = doc.substituicao;
   const chSubstda = onlyDigits(sub?.chaveSubstituida);
-  const subst = chSubstda.length === 50
+  const substituindo = chSubstda.length === 50;
+  const subst = substituindo
     ? `<subst><chSubstda>${chSubstda}</chSubstda><cMotivo>${pad(sub!.cMotivo || "99", 2)}</cMotivo>` +
       `${sub!.xMotivo ? `<xMotivo>${esc(sanitizeTextoNfse(sub!.xMotivo))}</xMotivo>` : ""}</subst>`
     : "";
+
+  // Campos IMUTÁVEIS na substituição (E0060): quando a SEFIN cancela a original e emite a substituta,
+  // estes têm de ser IDÊNTICOS aos da NFS-e original. Reusa os valores extraídos dela (quando existirem);
+  // senão mantém o cálculo normal (emissão nova). A data de competência é a causa mais comum (a original
+  // foi de outra data e a substituta não pode usar "hoje").
+  const dCompet = substituindo && sub?.dCompetOriginal && /^\d{4}-\d{2}-\d{2}$/.test(sub.dCompetOriginal)
+    ? sub.dCompetOriginal
+    : dhEmiBrasilia().slice(0, 10);
+  const cTribNacFinal = substituindo && sub?.cTribNacOriginal ? sub.cTribNacOriginal : cTribNac;
+  const cLocPrestacao = substituindo && onlyDigits(sub?.cLocPrestacaoOriginal).length >= 7
+    ? onlyDigits(sub!.cLocPrestacaoOriginal)
+    : cMun;
+  const cTribMun = substituindo ? onlyDigits(sub?.cTribMunOriginal) : "";
 
   const infDPS =
     `<infDPS Id="${id}">` +
@@ -166,15 +180,15 @@ function buildDpsXml(input: EmitInput, ctx: ProviderContext): { xml: string; id:
       `<verAplic>ERP-1.0</verAplic>` +
       `<serie>${esc(serie)}</serie>` +
       `<nDPS>${esc(nDPS)}</nDPS>` +
-      `<dCompet>${dhEmiBrasilia().slice(0, 10)}</dCompet>` +
+      `<dCompet>${dCompet}</dCompet>` +
       `<tpEmit>1</tpEmit>` +
       `<cLocEmi>${cMun}</cLocEmi>` +
       subst +
       `<prest><CNPJ>${cnpjEmit}</CNPJ>${e.inscricaoMunicipal ? `<IM>${onlyDigits(e.inscricaoMunicipal)}</IM>` : ""}` +
         `<regTrib><opSimpNac>${opSimpNac}</opSimpNac><regEspTrib>0</regEspTrib></regTrib></prest>` +
       toma +
-      `<serv><locPrest><cLocPrestacao>${cMun}</cLocPrestacao></locPrest>` +
-        `<cServ><cTribNac>${cTribNac}</cTribNac><xDescServ>${esc(xDescServ)}</xDescServ>${cNBS.length === 9 ? `<cNBS>${cNBS}</cNBS>` : ""}</cServ>${obra}</serv>` +
+      `<serv><locPrest><cLocPrestacao>${cLocPrestacao}</cLocPrestacao></locPrest>` +
+        `<cServ><cTribNac>${cTribNacFinal}</cTribNac>${cTribMun ? `<cTribMun>${cTribMun}</cTribMun>` : ""}<xDescServ>${esc(xDescServ)}</xDescServ>${cNBS.length === 9 ? `<cNBS>${cNBS}</cNBS>` : ""}</cServ>${obra}</serv>` +
       `<valores><vServPrest><vServ>${vServ}</vServ></vServPrest>` +
         `<trib><tribMun><tribISSQN>1</tribISSQN><tpRetISSQN>${issRetido ? "2" : "1"}</tpRetISSQN></tribMun>` +
         tribFed +
@@ -343,6 +357,37 @@ function chaveFromNfseB64(nfseXmlGZipB64: string | undefined): string | undefine
   } catch {
     return undefined;
   }
+}
+
+/** Devolve o XML da NFS-e salvo (aceita XML puro OU GZip+Base64, como fica em NotaFiscal.xml). */
+function unwrapNfseXml(raw: string): string {
+  const t = raw.trim();
+  if (t.startsWith("<")) return t;
+  try { return gunzipSync(Buffer.from(t, "base64")).toString("utf8"); } catch { return t; }
+}
+
+/**
+ * Extrai da NFS-e ORIGINAL os campos que a SEFIN NÃO deixa alterar na substituição (E0060):
+ * data de competência, subitem da lista (cTribNac), local da prestação (cLocPrestacao/cLocIncid) e
+ * código complementar municipal (cTribMun). A substituta deve repeti-los idênticos. Aceita o valor
+ * bruto de NotaFiscal.xml (GZip+Base64 no provedor nacional). Campo ausente → null (o provider
+ * recalcula, mantendo o comportamento antigo).
+ */
+export function extrairCamposImutaveisSubstituicao(notaXmlRaw: string): {
+  dCompet: string | null; cTribNac: string | null; cLocPrestacao: string | null; cTribMun: string | null;
+} {
+  const xml = unwrapNfseXml(notaXmlRaw);
+  const pick = (tag: string): string | null => {
+    const m = xml.match(new RegExp(`<(?:\\w+:)?${tag}>\\s*([^<]+?)\\s*</(?:\\w+:)?${tag}>`));
+    return m ? m[1].trim() : null;
+  };
+  return {
+    dCompet: pick("dCompet"),
+    cTribNac: pick("cTribNac"),
+    // No DPS o local vem em cLocPrestacao; no infNFSe processado pode aparecer como cLocIncid.
+    cLocPrestacao: pick("cLocPrestacao") ?? pick("cLocIncid"),
+    cTribMun: pick("cTribMun")
+  };
 }
 
 export class NacionalFiscalProvider implements FiscalProvider {
