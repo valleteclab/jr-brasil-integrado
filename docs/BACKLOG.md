@@ -35,9 +35,14 @@ do cadastro); fluxo de deploy = desenvolve local → `git push` → `./deploy/vp
 
 ## 3. Contas a pagar / receber
 
-- [ ] **Estorno de baixa** — não existe função para reverter um pagamento já feito (devolver saldo +
-  status + estornar `MovimentoFinanceiro`). A mensagem de erro em `deletePayable` já cita "estorne a baixa
-  antes", mas a operação não existe. Implementar `estornarBaixaPayable/Receivable`.
+- [x] **Estorno de baixa** — FEITO (rotas `/api/erp/financeiro/contas-*/{id}/estornar` + botão "Estornar
+  baixa" no FinanceManager; desfaz pagamento e ajusta saldo bancário).
+- [x] **Classificação financeira + Fechamento mensal (2026-07-01)** — FEITO: plano de classificações
+  gerencial (grupo → classificação, meta mensal IDEAL) em `/erp/financeiro/classificacoes` (plano padrão
+  com 1 clique), coluna "Classificação" com select inline no financeiro, auto-classificação das contas de
+  entrada fiscal (por finalidade + memória do fornecedor) e aba **Fechamento mensal** nos relatórios
+  (IDEAL × REAL por grupo/classificação + títulos pagos por classificação + export CSV). Substitui o
+  fechamento que o cliente fazia no Excel.
 - [ ] **Melhorar os RELATÓRIOS de contas a pagar/receber** (escopo fechado com o usuário — 4 visões). Hoje
   `financeReport` (`src/lib/services/reports.ts`) traz só totais em aberto/vencido + aging por status.
   Dados em `ContaReceber`/`ContaPagar` (vencimento, valor, valorPago, pagoEm, status, cliente/fornecedor):
