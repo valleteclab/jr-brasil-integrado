@@ -284,8 +284,20 @@ export async function sincronizarBoleto(scope: TenantScope, contaReceberId: stri
 export async function pdfDoBoleto(scope: TenantScope, contaReceberId: string): Promise<Buffer> {
   const boleto = await prisma.boletoCobranca.findFirst({
     where: { contaReceberId, tenantId: scope.tenantId, empresaId: scope.empresaId },
-    select: { pdfBase64: true }
+    select: { pdfBase64: true, linhaDigitavel: true, contaBancaria: { select: { sicoobSandbox: true } } }
   });
   if (!boleto?.pdfBase64) throw new BoletoError("PDF do boleto não disponível.");
-  return Buffer.from(boleto.pdfBase64, "base64");
+  const pdf = Buffer.from(boleto.pdfBase64, "base64");
+  // O SANDBOX do Sicoob devolve um "PDF" de exemplo truncado (~100 bytes) que não abre — não é
+  // erro do sistema. Detecta e explica; em produção o PDF real vem completo.
+  const valido = pdf.subarray(0, 4).toString("latin1") === "%PDF" && pdf.length > 2000;
+  if (!valido) {
+    const contexto = boleto.contaBancaria.sicoobSandbox
+      ? "O ambiente SANDBOX do Sicoob devolve um PDF de exemplo inválido (não abre) — em produção o boleto real é retornado."
+      : "O PDF retornado pelo Sicoob está incompleto.";
+    throw new BoletoError(
+      `${contexto}${boleto.linhaDigitavel ? ` Linha digitável do registro: ${boleto.linhaDigitavel}` : ""}`
+    );
+  }
+  return pdf;
 }
