@@ -52,6 +52,18 @@ do cadastro); fluxo de deploy = desenvolve local → `git push` → `./deploy/vp
     (cobv), boleto híbrido com QR Pix embutido (grupo `pix.utilizarPix` do PATCH v3).
 - [ ] 1.3 **API de consulta de clientes (bureau de crédito)** — integrar Serasa/SPC/similar na análise de
   crédito/venda. Provedor a definir; entra no cadastro/fluxo de venda.
+- [x] 1.7 **Apuração Simples Nacional / MEI com SEGREGAÇÃO de receitas** — FEITO 2026-07-02: página
+  /erp/fiscal/simples (link em Relatórios). RBT12 (proporcionalizado p/ empresa nova), alíquota
+  efetiva LC 123 (tabelas anexos I–V + partilha por tributo em src/domains/fiscal/simples/
+  tabelas-lc123.ts), DAS estimado COM × SEM segregação e a ECONOMIA do mês em destaque: receita de
+  produto MONOFÁSICO (flag ProdutoFiscal.pisCofinsMonofasico OU NCM nas listas das Leis
+  10.485/10.147/13.097/9.718) sai de PIS/COFINS; ICMS-ST (flag icmsSt / CSOSN 500 / CST 60) sai do
+  ICMS. Botão "Detectar monofásicos por NCM" (marcação em massa, só ativa). Fator R (folha mensal
+  na empresa), alertas de sublimite 3,6M/limite 4,8M. MEI: painel de limite anual (81k) com % 
+  consumido, projeção e alertas de desenquadramento. Enquadramento (anexo+folha) salvo na Empresa.
+  Impressão p/ contador (conferência do PGDAS-D). DISCLAIMER: estimativa gerencial — oficial é o
+  PGDAS-D. Futuro: detalhamento por produto/nota da segregação (anexo p/ contador), receita sem
+  nota (recibo) opcional, export CSV.
 - [x] 1.6 **Despesas recorrentes (folha, aluguel, energia...)** — FEITO 2026-07-02: página
   /erp/financeiro/recorrentes — modelo com descrição, fornecedor, valor (fixo ou VARIÁVEL =
   estimativa ajustada na baixa), periodicidade (mensal a anual), dia do vencimento (clamp fim de

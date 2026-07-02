@@ -397,6 +397,11 @@ model Empresa {
   telefone                  String?
   email                     String?
   regimeTributario          RegimeTributario           @default(SIMPLES_NACIONAL)
+  /// Anexo do Simples Nacional (1=Comércio, 2=Indústria, 3/4/5=Serviços) — apuração do DAS.
+  simplesAnexo              Int?
+  /// Folha de salários MENSAL média (pró-labore + salários + encargos) — Fator R (folha 12m/RBT12
+  /// >= 28% leva serviços do Anexo V para o III). Informativo, preenchido com o contador.
+  simplesFolhaMensal        Decimal?                   @db.Decimal(14, 2)
   tipoNegocio               TipoNegocio                @default(AMBOS)
   segmento                  SegmentoEmpresa            @default(GERAL)
   // Identidade visual (branding) exibida no sistema — não confundir com a logo fiscal (DANFE).
@@ -936,6 +941,11 @@ model ProdutoFiscal {
   // Memorizado na entrada (NF-e com CST 60/CSOSN 500): na revenda a saída sai sem ICMS próprio
   // (CST 60 / CSOSN 500) e com CFOP de ST (5405/6404), sem novo débito de ICMS.
   icmsSt                Boolean            @default(false)
+  /// PIS/COFINS MONOFÁSICO (Leis 10.485 autopeças, 10.147 farmácia/perfumaria, 13.097 bebidas
+  /// frias, 9.718 combustíveis): o fabricante/importador já recolheu — a REVENDA sai com alíquota
+  /// zero e, no Simples, a receita é SEGREGADA no PGDAS-D (reduz o DAS). Sugerido por NCM,
+  /// confirmado no cadastro.
+  pisCofinsMonofasico   Boolean            @default(false)
   observacoes           String?
   criadoEm              DateTime           @default(now())
   atualizadoEm          DateTime           @updatedAt

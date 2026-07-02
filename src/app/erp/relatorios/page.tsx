@@ -1,4 +1,5 @@
 import { PageHeader } from "@/components/shared/PageHeader";
+import { Button } from "@/components/shared/Button";
 import { ReportsView } from "@/components/erp/ReportsView";
 import { accountingPackageReport, apuracaoImpostosReport, salesReport, stockReport, financeReport, fiscalReport, dreSimplificado } from "@/lib/services/reports";
 import type { AccountingPackageReport, ApuracaoImpostosReport, SalesReport, StockReport, FinanceReport, FiscalReport, DreSimplificado } from "@/lib/services/reports";
@@ -289,6 +290,7 @@ export default async function RelatoriosPage({ searchParams }: { searchParams?: 
       <PageHeader
         eyebrow="Análises"
         title="Relatórios gerenciais"
+        action={<Button href="/erp/fiscal/simples" variant="light">Simples Nacional / MEI</Button>}
       >
         <p>Dados em tempo real — período padrão 30 dias para vendas e DRE.</p>
       </PageHeader>
