@@ -10,7 +10,7 @@ import { emitServiceInvoiceAvulsa } from "@/domains/fiscal/application/standalon
 import { getCaixaAberto, registrarRecebimentoPdv, type PagamentoDetalhado } from "@/domains/cashier/application/cashier-use-cases";
 import { assertModuloLiberado } from "@/lib/auth/tenant-features";
 import { classificacaoReceitaPadraoId } from "@/domains/finance/application/classificacao-use-cases";
-import { gerarBoletoParaRecebivel, listContasComCobranca } from "@/domains/finance/application/boleto-use-cases";
+import { processarVendaBoleto } from "@/domains/finance/application/boleto-use-cases";
 
 const FORMA_CREDIARIO = "CREDIARIO";
 const FORMA_BOLETO = "BOLETO";
@@ -373,72 +373,17 @@ export async function pdvCheckout(scope: TenantScope, input: PdvCheckoutInput): 
     };
   }
 
-  // 4b. BOLETO → parcelas no contas a receber (como o crediário) + boletos registrados no Sicoob.
-  // Best-effort na emissão dos boletos: falha não desfaz a venda; as parcelas ficam no financeiro
-  // com o botão "Gerar boleto" para retentar (ex.: cobrança não configurada, endereço incompleto).
+  // 4b. BOLETO → parcelas no contas a receber + boletos Sicoob (helper compartilhado com o caixa).
   let boleto: PdvCheckoutResult["boleto"] = null;
   if (valorBoleto > 0 && input.clienteId) {
-    const parcelas = gerarParcelas(valorBoleto, input.condicaoCrediario ?? "30");
-    const descricaoBase = pedidoNumero ? `Venda PDV ${pedidoNumero}` : "Venda PDV (serviços)";
-    const contaReceberIds: string[] = [];
-    await prisma.$transaction(async (tx) => {
-      const classificacaoReceita = await classificacaoReceitaPadraoId(tx, scope, "vendas");
-      for (const parcela of parcelas) {
-        const cr = await tx.contaReceber.create({
-          data: {
-            ...scopedByTenantCompanyAmbiente(scope),
-            clienteId: input.clienteId as string,
-            pedidoVendaId: pedidoVendaId ?? null,
-            classificacaoId: classificacaoReceita,
-            descricao: `${descricaoBase} boleto${rotuloParcela(parcela)}`,
-            numeroDocumento: pedidoNumero,
-            origem: "VENDA",
-            formaPagamento: FORMA_BOLETO,
-            vencimento: parcela.vencimento,
-            valor: parcela.valor,
-            valorPago: 0,
-            juros: 0,
-            multa: 0,
-            descontoBaixa: 0,
-            status: "ABERTO"
-          },
-          select: { id: true }
-        });
-        contaReceberIds.push(cr.id);
-      }
-      await createAuditLog(tx, {
-        scope,
-        entidade: "PedidoVenda",
-        entidadeId: pedidoVendaId ?? "PDV",
-        acao: "BOLETO_PDV",
-        payload: { clienteId: input.clienteId, valor: valorBoleto, parcelas: parcelas.length, condicao: input.condicaoCrediario ?? "30" }
-      });
-    });
-
-    let boletosGerados = 0;
-    let avisoBoleto: string | null = null;
-    const contasCobranca = await listContasComCobranca(scope);
-    if (!contasCobranca.length) {
-      avisoBoleto = 'Nenhuma conta bancária com cobrança Sicoob configurada — as parcelas ficaram no contas a receber sem boleto (configure em Configurações → Contas financeiras e use "Gerar boleto").';
-    } else {
-      const erros: string[] = [];
-      for (const contaId of contaReceberIds) {
-        try {
-          await gerarBoletoParaRecebivel(scope, contaId, { contaBancariaId: contasCobranca[0].id });
-          boletosGerados++;
-        } catch (e) {
-          erros.push(e instanceof Error ? e.message : String(e));
-        }
-      }
-      if (erros.length) avisoBoleto = `Boleto(s) não registrados: ${[...new Set(erros)].join("; ")}. As parcelas estão no contas a receber — corrija e use "Gerar boleto".`;
-    }
-    boleto = {
+    boleto = await processarVendaBoleto(scope, {
+      clienteId: input.clienteId,
+      pedidoVendaId,
+      numero: pedidoNumero,
       valor: valorBoleto,
-      parcelas: parcelas.length,
-      boletosGerados,
-      primeiroVencimento: parcelas[0].vencimento.toISOString(),
-      aviso: avisoBoleto
-    };
+      condicao: input.condicaoCrediario,
+      descricaoBase: pedidoNumero ? `Venda PDV ${pedidoNumero}` : "Venda PDV (serviços)"
+    });
   }
 
   // 5. Recibo de retirada na expedição (só faz sentido quando a venda tem produtos).

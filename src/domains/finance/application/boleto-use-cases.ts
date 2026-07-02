@@ -1,11 +1,13 @@
 import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
-import { scopedByTenantCompany } from "@/lib/auth/dev-session";
+import { scopedByTenantCompany, scopedByTenantCompanyAmbiente } from "@/lib/auth/dev-session";
 import { createAuditLog } from "@/lib/audit/audit-service";
 import { carregarCertificado } from "@/domains/fiscal/application/certificado-use-cases";
 import { encryptSecret, decryptSecret } from "@/lib/security/secret-crypto";
 import { incluirBoleto, consultarBoleto as consultarBoletoSicoob, SicoobError, type SicoobAuth } from "@/domains/finance/providers/sicoob-cobranca";
 import { settleReceivable } from "@/domains/finance/application/finance-use-cases";
+import { classificacaoReceitaPadraoId } from "@/domains/finance/application/classificacao-use-cases";
+import { gerarParcelas, rotuloParcela } from "@/lib/finance/condicao-pagamento";
 
 /**
  * EMISSÃO DE BOLETO (Sicoob) a partir de uma ContaReceber: registra o boleto na API de Cobrança,
@@ -356,6 +358,92 @@ export async function sincronizarBoletosCron(): Promise<{
     await new Promise((resolve) => setTimeout(resolve, 400));
   }
   return { pendentes: pendentes.length, baixados, erros };
+}
+
+export type VendaBoletoResultado = {
+  valor: number;
+  parcelas: number;
+  boletosGerados: number;
+  primeiroVencimento: string;
+  aviso: string | null;
+};
+
+/**
+ * Venda A PRAZO no BOLETO (compartilhado por PDV e caixa): cria as parcelas no contas a receber
+ * (classificadas como Receita de vendas, vinculadas ao pedido) e registra o boleto Sicoob de cada
+ * uma. Best-effort na emissão: falha vira `aviso` (as parcelas ficam com o botão "Gerar boleto").
+ */
+export async function processarVendaBoleto(
+  scope: TenantScope,
+  input: {
+    clienteId: string;
+    pedidoVendaId: string | null;
+    numero: string | null;
+    valor: number;
+    condicao?: string | null;
+    descricaoBase: string;
+  }
+): Promise<VendaBoletoResultado> {
+  const parcelas = gerarParcelas(input.valor, input.condicao ?? "30");
+  const contaReceberIds: string[] = [];
+  await prisma.$transaction(async (tx) => {
+    const classificacaoReceita = await classificacaoReceitaPadraoId(tx, scope, "vendas");
+    for (const parcela of parcelas) {
+      const cr = await tx.contaReceber.create({
+        data: {
+          ...scopedByTenantCompanyAmbiente(scope),
+          clienteId: input.clienteId,
+          pedidoVendaId: input.pedidoVendaId,
+          classificacaoId: classificacaoReceita,
+          descricao: `${input.descricaoBase} boleto${rotuloParcela(parcela)}`,
+          numeroDocumento: input.numero,
+          origem: "VENDA",
+          formaPagamento: "BOLETO",
+          vencimento: parcela.vencimento,
+          valor: parcela.valor,
+          valorPago: 0,
+          juros: 0,
+          multa: 0,
+          descontoBaixa: 0,
+          status: "ABERTO"
+        },
+        select: { id: true }
+      });
+      contaReceberIds.push(cr.id);
+    }
+    await createAuditLog(tx, {
+      scope,
+      entidade: "PedidoVenda",
+      entidadeId: input.pedidoVendaId ?? "VENDA",
+      acao: "BOLETO_VENDA",
+      payload: { clienteId: input.clienteId, valor: input.valor, parcelas: parcelas.length, condicao: input.condicao ?? "30" }
+    });
+  });
+
+  let boletosGerados = 0;
+  let aviso: string | null = null;
+  const contasCobranca = await listContasComCobranca(scope);
+  if (!contasCobranca.length) {
+    aviso = 'Nenhuma conta bancária com cobrança Sicoob configurada — as parcelas ficaram no contas a receber sem boleto (configure em Configurações → Contas financeiras e use "Gerar boleto").';
+  } else {
+    const erros: string[] = [];
+    for (const contaId of contaReceberIds) {
+      try {
+        await gerarBoletoParaRecebivel(scope, contaId, { contaBancariaId: contasCobranca[0].id });
+        boletosGerados++;
+      } catch (e) {
+        erros.push(e instanceof Error ? e.message : String(e));
+      }
+    }
+    if (erros.length) aviso = `Boleto(s) não registrados: ${[...new Set(erros)].join("; ")}. As parcelas estão no contas a receber — corrija e use "Gerar boleto".`;
+  }
+  return {
+    valor: input.valor,
+    parcelas: parcelas.length,
+    boletosGerados,
+    primeiroVencimento: parcelas[0].vencimento.toISOString(),
+    aviso
+  };
 }
 
 /** PDF do boleto (2ª via a partir do base64 guardado no registro). */

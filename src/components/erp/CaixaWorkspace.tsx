@@ -63,7 +63,7 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
   const [query, setQuery] = useState("");
   const [pedidoAbertoId, setPedidoAbertoId] = useState<string | null>(null);
   const [retiradaExpedicao, setRetiradaExpedicao] = useState(false);
-  const [resultado, setResultado] = useState<{ pedidoNumero: string; troco: number; notaId: string | null; notaStatus: string | null; emitErro: string | null; retirada: { id: string; codigo: string } | null } | null>(null);
+  const [resultado, setResultado] = useState<{ pedidoNumero: string; troco: number; notaId: string | null; notaStatus: string | null; emitErro: string | null; boleto: { valor: number; parcelas: number; boletosGerados: number; primeiroVencimento: string; aviso: string | null } | null; retirada: { id: string; codigo: string } | null } | null>(null);
 
   const caixa = data.caixa;
 
@@ -247,7 +247,7 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
         })),
         retiradaExpedicao: data.expedicaoHabilitada && retiradaExpedicao
       });
-      setResultado({ pedidoNumero: r.pedidoNumero, troco: r.troco, notaId: r.nota?.id ?? null, notaStatus: r.nota?.status ?? null, emitErro: r.emitErro ?? null, retirada: r.retirada ?? null });
+      setResultado({ pedidoNumero: r.pedidoNumero, troco: r.troco, notaId: r.nota?.id ?? null, notaStatus: r.nota?.status ?? null, emitErro: r.emitErro ?? null, boleto: r.boleto ?? null, retirada: r.retirada ?? null });
       // Impressão automática: DANFE/DANFCE quando fiscal; recibo HTML do pedido quando não fiscal.
       if (isRecibo) {
         window.open(`/api/erp/vendas/${sel.id}/recibo`, "_blank", "noopener,noreferrer");
@@ -496,6 +496,14 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
               <div className="erp-card-head"><h3>Recebido · {resultado.pedidoNumero}</h3></div>
               <div className="erp-card-body">
                 {resultado.troco > 0 && <div className="alert info"><span className="lead">Troco:</span> {brl(resultado.troco)}</div>}
+                {resultado.boleto && (
+                  <div className={`alert ${resultado.boleto.aviso ? "warn" : "info"}`}>
+                    <span className="lead">Boleto:</span> {brl(resultado.boleto.valor)} em {resultado.boleto.parcelas} parcela(s),
+                    1º venc. {new Date(resultado.boleto.primeiroVencimento).toLocaleDateString("pt-BR")} — {resultado.boleto.boletosGerados} boleto(s) registrado(s)
+                    (Financeiro → Contas a receber).
+                    {resultado.boleto.aviso && <> Atenção: {resultado.boleto.aviso}</>}
+                  </div>
+                )}
                 {resultado.retirada && (
                   <div className="alert info">
                     <span className="lead">Retirada na expedição:</span> recibo <strong style={{ letterSpacing: 2 }}>{resultado.retirada.codigo}</strong>{" "}

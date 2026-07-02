@@ -7,6 +7,7 @@ import { buildDocumentFromPedido } from "@/domains/fiscal/document-builder";
 import { emitFiscalDocument } from "@/domains/fiscal/application/fiscal-emission-use-cases";
 import { criarRetiradaExpedicao } from "@/domains/sales/application/expedicao-use-cases";
 import { classificacaoReceitaPadraoId } from "@/domains/finance/application/classificacao-use-cases";
+import { processarVendaBoleto, type VendaBoletoResultado } from "@/domains/finance/application/boleto-use-cases";
 import { publishRealtime } from "@/lib/realtime/broker";
 
 /**
@@ -480,6 +481,8 @@ export type ReceberPagamentoResult = {
   troco: number;
   nota: { id: string; status: string; numero: string | null; chaveAcesso: string | null; motivo: string | null } | null;
   emitErro: string | null;
+  /** Venda (ou parte) no BOLETO: parcelas no contas a receber + boletos registrados no banco. */
+  boleto: VendaBoletoResultado | null;
   /** Recibo de retirada na expedição (quando solicitado). */
   retirada: { id: string; codigo: string } | null;
 };
@@ -538,6 +541,16 @@ export async function receberPagamentoEEmitir(
     if (liquido > 0) liquidoPorForma.push({ forma, valor: liquido });
   }
 
+  // BOLETO no caixa é venda a prazo (como no PDV): exige cliente identificado; as parcelas e o
+  // registro no banco são processados após a transação principal.
+  const FORMA_BOLETO = "BOLETO";
+  const valorBoleto = round2(
+    pagamentos.filter((p) => p.forma === FORMA_BOLETO).reduce((s, p) => s + Number(p.valor), 0)
+  );
+  if (valorBoleto > 0 && !pedido.clienteId) {
+    throw new CaixaError("Venda no boleto exige um cliente identificado — identifique o cliente na pré-venda.");
+  }
+
   // 1) Estoque + pagamentos + movimento de caixa — antes de emitir (o dinheiro já foi recebido).
   await prisma.$transaction(async (tx) => {
     // Revalida o turno dentro da transação (anti-corrida com fecharCaixa).
@@ -577,6 +590,7 @@ export async function receberPagamentoEEmitir(
       });
     }
     // Roteia o destino: PIX/transferência → saldo da conta; cartão → recebível da adquirente.
+    // (BOLETO é tratado após esta transação: parcelas no contas a receber + registro no Sicoob.)
     await rotearDestinosPagamento(
       tx,
       scope,
@@ -592,6 +606,19 @@ export async function receberPagamentoEEmitir(
       }
     });
   });
+
+  // 1b) BOLETO → parcelas no contas a receber + boletos Sicoob (helper compartilhado com o PDV).
+  let boleto: VendaBoletoResultado | null = null;
+  if (valorBoleto > 0 && pedido.clienteId) {
+    boleto = await processarVendaBoleto(scope, {
+      clienteId: pedido.clienteId,
+      pedidoVendaId: pedido.id,
+      numero: pedido.numero,
+      valor: valorBoleto,
+      condicao: pedido.condicaoPagamento,
+      descricaoBase: `Venda ${pedido.numero}`
+    });
+  }
 
   // 2) Documento fiscal a partir da pré-venda (consumidor anônimo quando não há cliente).
   const clienteLike = pedido.cliente
@@ -682,5 +709,5 @@ export async function receberPagamentoEEmitir(
   publishRealtime(scope, "caixa");
   publishRealtime(scope, "vendas");
 
-  return { pedidoId: pedido.id, pedidoNumero: pedido.numero, troco, nota, emitErro, retirada };
+  return { pedidoId: pedido.id, pedidoNumero: pedido.numero, troco, nota, emitErro, boleto, retirada };
 }
