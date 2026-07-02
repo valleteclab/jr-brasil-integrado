@@ -129,6 +129,11 @@ gate por ambiente para não quebrar produção antes da hora.
 - **`dhSaiEnt`** (data/hora de saída/entrada) deve ser preenchido (= `dhEmi`), senão a DANFE sai com
   "DATA/HORA SAÍDA" em branco. Vale NF-e 55 (não NFC-e). Ver `nfe-xml.ts` e `acbr-provider.ts`.
 - **BA exige o grupo `autXML`** (CNPJ SEFAZ-BA) senão rejeita. Ver `UF_AUTXML_CNPJ` em `nfe-xml.ts`.
+- **ICMSSN201 exige `pCredSN`/`vCredICMSSN` SEMPRE** (obrigatórios no XSD, mesmo zerados) — só o
+  ICMSSN202/203 não os tem. Blogs tratam como opcionais. Já o grupo FCP-ST (vBCFCPST/pFCPST/vFCPST)
+  é uma `sequence minOccurs=0` (opcional em bloco). Conferido no XSD local em 2026-07 (ST
+  interestadual, Conv. 142/2018). O cStat **234 (IE não vinculada ao CNPJ)** em teste de
+  homologação significa que o SCHEMA passou — é validação cadastral, vem depois do 215/225.
 - **Numeração por AMBIENTE:** homologação e produção têm sequências separadas (`SequenciaFiscal` com
   `ambiente`). Retry automático em `cStat 539` (duplicidade). Ver `lib/numbering.ts`.
 - **DANFE em PDF (lib `nfe-danfe-pdf`)** usa **fontes built-in do PDFKit** e exige
