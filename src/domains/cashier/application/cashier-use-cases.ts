@@ -473,6 +473,8 @@ export type ReceberPagamentoInput = {
   retiradaExpedicao?: boolean;
   /** Quando false, fecha só com RECIBO (cupom não fiscal) — exige Empresa.permiteVendaNaoFiscal. */
   emitirFiscal?: boolean;
+  /** Opções do BOLETO escolhidas no caixa: conta de cobrança, nº de parcelas e 1º vencimento (ISO). */
+  boletoOpcoes?: { contaBancariaId?: string | null; parcelas?: number | null; primeiroVencimento?: string | null } | null;
 };
 
 export type ReceberPagamentoResult = {
@@ -616,7 +618,16 @@ export async function receberPagamentoEEmitir(
       numero: pedido.numero,
       valor: valorBoleto,
       condicao: pedido.condicaoPagamento,
-      descricaoBase: `Venda ${pedido.numero}`
+      descricaoBase: `Venda ${pedido.numero}`,
+      opcoes: input.boletoOpcoes
+        ? {
+            contaBancariaId: input.boletoOpcoes.contaBancariaId ?? null,
+            parcelas: input.boletoOpcoes.parcelas ?? null,
+            primeiroVencimento: input.boletoOpcoes.primeiroVencimento
+              ? new Date(`${input.boletoOpcoes.primeiroVencimento}T12:00:00`)
+              : null
+          }
+        : null
     });
   }
 

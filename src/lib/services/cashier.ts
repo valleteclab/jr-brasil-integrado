@@ -2,6 +2,7 @@ import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
 import { scopedByTenantCompany, scopedByTenantCompanyAmbiente } from "@/lib/auth/dev-session";
 import { prisma } from "@/lib/db/prisma";
 import { getCaixaAberto, getResumoCaixa, type ResumoCaixa } from "@/domains/cashier/application/cashier-use-cases";
+import { listContasComCobranca } from "@/domains/finance/application/boleto-use-cases";
 
 export type PreVendaResumo = {
   id: string;
@@ -43,6 +44,8 @@ export type CaixaPageData = {
   expedicaoHabilitada: boolean;
   /** Empresa permite fechar a venda só com RECIBO (sem NF). Mostra opção no caixa. */
   permiteVendaNaoFiscal: boolean;
+  /** Contas com cobrança de boleto ativa (o operador escolhe a conta/banco na venda em boleto). */
+  contasCobranca: Array<{ id: string; nome: string }>;
 };
 
 /** Dados da tela de caixa: turno aberto (com resumo) e pré-vendas aguardando pagamento. */
@@ -135,6 +138,7 @@ export async function getCaixaPageData(): Promise<CaixaPageData> {
       documento: c.documento ?? null
     })),
     expedicaoHabilitada: Boolean(tenant?.expedicaoHabilitada),
-    permiteVendaNaoFiscal: Boolean(empresa?.permiteVendaNaoFiscal)
+    permiteVendaNaoFiscal: Boolean(empresa?.permiteVendaNaoFiscal),
+    contasCobranca: await listContasComCobranca(scope)
   };
 }

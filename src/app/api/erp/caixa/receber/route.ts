@@ -14,6 +14,7 @@ export async function POST(request: Request) {
       pagamentos?: PagamentoDetalhado[];
       retiradaExpedicao?: boolean;
       emitirFiscal?: boolean;
+      boletoOpcoes?: { contaBancariaId?: string | null; parcelas?: number | null; primeiroVencimento?: string | null } | null;
     };
     if (!body.pedidoId) return NextResponse.json({ error: "Pré-venda não informada." }, { status: 400 });
     const result = await receberPagamentoEEmitir(scope, {
@@ -21,7 +22,8 @@ export async function POST(request: Request) {
       modelo: body.modelo === "NFE" ? "NFE" : "NFCE",
       pagamentos: body.pagamentos ?? [],
       retiradaExpedicao: body.retiradaExpedicao,
-      emitirFiscal: body.emitirFiscal
+      emitirFiscal: body.emitirFiscal,
+      boletoOpcoes: body.boletoOpcoes ?? null
     });
     return NextResponse.json(result);
   } catch (error) {

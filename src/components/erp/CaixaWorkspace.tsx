@@ -43,11 +43,15 @@ type PagamentoLinha = {
   nsu?: string;
   bandeira?: string;
   parcelas?: number;
+  /** BOLETO: 1º vencimento escolhido (ISO date). */
+  vencimento?: string;
 };
 const uid = () => Math.random().toString(36).slice(2, 9);
 
 export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
   const router = useRouter();
+  // 1º vencimento padrão do boleto: hoje + 30 dias.
+  const vencPadraoBoleto = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
   const lastAutoRefreshRef = useRef(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -63,7 +67,7 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
   const [query, setQuery] = useState("");
   const [pedidoAbertoId, setPedidoAbertoId] = useState<string | null>(null);
   const [retiradaExpedicao, setRetiradaExpedicao] = useState(false);
-  const [resultado, setResultado] = useState<{ pedidoNumero: string; troco: number; notaId: string | null; notaStatus: string | null; emitErro: string | null; boleto: { valor: number; parcelas: number; boletosGerados: number; primeiroVencimento: string; aviso: string | null } | null; retirada: { id: string; codigo: string } | null } | null>(null);
+  const [resultado, setResultado] = useState<{ pedidoNumero: string; troco: number; notaId: string | null; notaStatus: string | null; emitErro: string | null; boleto: { valor: number; parcelas: number; boletosGerados: number; primeiroVencimento: string; aviso: string | null; titulos?: Array<{ contaReceberId: string; vencimento: string; linhaDigitavel: string | null; temPdf: boolean }> } | null; retirada: { id: string; codigo: string } | null } | null>(null);
 
   const caixa = data.caixa;
 
@@ -245,7 +249,13 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
           bandeira: isCartao(p.forma) ? p.bandeira ?? null : null,
           parcelas: p.forma === "CARTAO_CREDITO" ? p.parcelas ?? 1 : null
         })),
-        retiradaExpedicao: data.expedicaoHabilitada && retiradaExpedicao
+        retiradaExpedicao: data.expedicaoHabilitada && retiradaExpedicao,
+        boletoOpcoes: (() => {
+          const lb = pagamentos.find((p) => p.forma === "BOLETO" && Number(p.valor) > 0);
+          return lb
+            ? { contaBancariaId: lb.contaBancariaId ?? null, parcelas: lb.parcelas ?? 1, primeiroVencimento: lb.vencimento ?? vencPadraoBoleto }
+            : undefined;
+        })()
       });
       setResultado({ pedidoNumero: r.pedidoNumero, troco: r.troco, notaId: r.nota?.id ?? null, notaStatus: r.nota?.status ?? null, emitErro: r.emitErro ?? null, boleto: r.boleto ?? null, retirada: r.retirada ?? null });
       // Impressão automática: DANFE/DANFCE quando fiscal; recibo HTML do pedido quando não fiscal.
@@ -429,7 +439,7 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6, margin: "10px 0" }}>
                   {pagamentos.map((p) => (
-                    <div key={p.uid} style={{ display: "flex", flexDirection: "column", gap: 4, borderBottom: isPixOuTransfer(p.forma) || isCartao(p.forma) ? "1px dashed var(--erp-line)" : "none", paddingBottom: isPixOuTransfer(p.forma) || isCartao(p.forma) ? 6 : 0 }}>
+                    <div key={p.uid} style={{ display: "flex", flexDirection: "column", gap: 4, borderBottom: isPixOuTransfer(p.forma) || isCartao(p.forma) || p.forma === "BOLETO" ? "1px dashed var(--erp-line)" : "none", paddingBottom: isPixOuTransfer(p.forma) || isCartao(p.forma) || p.forma === "BOLETO" ? 6 : 0 }}>
                       <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                         <select value={p.forma} onChange={(e) => updPag(p.uid, { forma: e.target.value, contaBancariaId: undefined, maquinaCartaoId: undefined })} style={{ flex: 1, height: 32 }}>
                           {FORMAS.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
@@ -442,6 +452,24 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
                           <option value="">Conta recebedora…{data.contas.length ? "" : " (cadastre em Contas financeiras)"}</option>
                           {data.contas.map((c) => <option key={c.id} value={c.id}>{c.nome}{c.chavePix ? ` · PIX ${c.chavePix}` : ""}</option>)}
                         </select>
+                      )}
+                      {p.forma === "BOLETO" && (
+                        <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                          <select value={p.contaBancariaId ?? ""} onChange={(e) => updPag(p.uid, { contaBancariaId: e.target.value || undefined })} style={{ flex: "1 1 100%", height: 30, fontSize: 12 }} title="Banco/conta que emite o boleto">
+                            <option value="">{data.contasCobranca.length ? "Banco do boleto…" : "Nenhuma conta com cobrança configurada (Configurações → Contas financeiras)"}</option>
+                            {data.contasCobranca.map((c) => <option key={c.id} value={c.id}>Boleto — {c.nome}</option>)}
+                          </select>
+                          <input
+                            type="number" min={1} max={24} value={p.parcelas ?? 1}
+                            onChange={(e) => updPag(p.uid, { parcelas: Math.max(1, Number(e.target.value) || 1) })}
+                            style={{ flex: "0 0 64px", height: 30, fontSize: 12, textAlign: "center" }} title="Quantidade de parcelas (uma por mês)"
+                          />
+                          <input
+                            type="date" value={p.vencimento ?? vencPadraoBoleto}
+                            onChange={(e) => updPag(p.uid, { vencimento: e.target.value })}
+                            style={{ flex: "1 1 120px", height: 30, fontSize: 12 }} title="1º vencimento"
+                          />
+                        </div>
                       )}
                       {isCartao(p.forma) && (
                         <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
@@ -502,6 +530,22 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
                     1º venc. {new Date(resultado.boleto.primeiroVencimento).toLocaleDateString("pt-BR")} — {resultado.boleto.boletosGerados} boleto(s) registrado(s)
                     (Financeiro → Contas a receber).
                     {resultado.boleto.aviso && <> Atenção: {resultado.boleto.aviso}</>}
+                    {(resultado.boleto.titulos ?? []).some((t) => t.temPdf) && (
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+                        {(resultado.boleto.titulos ?? []).map((t, i) => t.temPdf ? (
+                          <a
+                            key={t.contaReceberId}
+                            className="btn-erp light xs"
+                            href={`/api/erp/financeiro/contas-receber/${t.contaReceberId}/boleto/pdf`}
+                            target="_blank"
+                            rel="noreferrer"
+                            title={t.linhaDigitavel ? `Linha digitável: ${t.linhaDigitavel}` : undefined}
+                          >
+                            🖨 Boleto {i + 1} · {new Date(t.vencimento).toLocaleDateString("pt-BR")}
+                          </a>
+                        ) : null)}
+                      </div>
+                    )}
                   </div>
                 )}
                 {resultado.retirada && (

@@ -569,7 +569,20 @@ export async function emitFiscalDocument(
 
   // IBPT / Lei 12.741: informa o valor aproximado dos tributos no documento.
   const ibptText = `Valor aproximado dos tributos: ${new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(totals.valorTotalTributos)} (Lei 12.741/2012).`;
-  const informacoesComplementares = [document.informacoesComplementares, ibptText]
+  // Forma de pagamento nas Informações Complementares: o DANFE (modelo 55) não tem campo próprio
+  // de pagamento, então este texto garante a informação impressa em qualquer DANFE/DANFCE.
+  const formaLabel = (f: string): string => {
+    const m: Record<string, string> = {
+      DINHEIRO: "Dinheiro", PIX: "Pix", BOLETO: "Boleto", CREDIARIO: "Crediário",
+      CARTAO_CREDITO: "Cartão de crédito", CARTAO_DEBITO: "Cartão de débito", TRANSFERENCIA: "Transferência"
+    };
+    return m[f.toUpperCase()] ?? f;
+  };
+  const formasPagas = [...new Set((document.pagamentos ?? []).filter((p) => Number(p.valor) > 0).map((p) => formaLabel(p.forma)))];
+  const pagamentoTexto = modelo !== "NFSE"
+    ? (formasPagas.length ? `Pagamento: ${formasPagas.join(" + ")}.` : document.formaPagamento ? `Pagamento: ${formaLabel(document.formaPagamento)}.` : null)
+    : null;
+  const informacoesComplementares = [pagamentoTexto, document.informacoesComplementares, ibptText]
     .filter((part) => part && part.trim())
     .join(" ");
 

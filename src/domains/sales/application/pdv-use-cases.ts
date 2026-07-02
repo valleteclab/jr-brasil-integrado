@@ -31,6 +31,8 @@ export type PdvCheckoutInput = {
   pagamentos: PagamentoDetalhado[];
   /** Condição do crediário ("30", "30/60/90"...) quando há forma CREDIARIO. Padrão: 30 dias. */
   condicaoCrediario?: string | null;
+  /** Opções do BOLETO (conta de cobrança, parcelas e 1º vencimento ISO) escolhidas no PDV. */
+  boletoOpcoes?: { contaBancariaId?: string | null; parcelas?: number | null; primeiroVencimento?: string | null } | null;
   /** Desconto global em R$ (rateado nos itens pelo document-builder antes de emitir). */
   descontoGlobal?: number;
   /** Senha de um administrador (qualquer admin do tenant). Exigida quando o desconto efetivo > limite. */
@@ -382,7 +384,16 @@ export async function pdvCheckout(scope: TenantScope, input: PdvCheckoutInput): 
       numero: pedidoNumero,
       valor: valorBoleto,
       condicao: input.condicaoCrediario,
-      descricaoBase: pedidoNumero ? `Venda PDV ${pedidoNumero}` : "Venda PDV (serviços)"
+      descricaoBase: pedidoNumero ? `Venda PDV ${pedidoNumero}` : "Venda PDV (serviços)",
+      opcoes: input.boletoOpcoes
+        ? {
+            contaBancariaId: input.boletoOpcoes.contaBancariaId ?? null,
+            parcelas: input.boletoOpcoes.parcelas ?? null,
+            primeiroVencimento: input.boletoOpcoes.primeiroVencimento
+              ? new Date(`${input.boletoOpcoes.primeiroVencimento}T12:00:00`)
+              : null
+          }
+        : null
     });
   }
 

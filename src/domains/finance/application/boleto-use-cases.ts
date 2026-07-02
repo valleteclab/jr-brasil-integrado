@@ -7,7 +7,7 @@ import { encryptSecret, decryptSecret } from "@/lib/security/secret-crypto";
 import { incluirBoleto, consultarBoleto as consultarBoletoSicoob, SicoobError, type SicoobAuth } from "@/domains/finance/providers/sicoob-cobranca";
 import { settleReceivable } from "@/domains/finance/application/finance-use-cases";
 import { classificacaoReceitaPadraoId } from "@/domains/finance/application/classificacao-use-cases";
-import { gerarParcelas, rotuloParcela } from "@/lib/finance/condicao-pagamento";
+import { gerarParcelas, rotuloParcela, type ParcelaGerada } from "@/lib/finance/condicao-pagamento";
 
 /**
  * EMISSÃO DE BOLETO (Sicoob) a partir de uma ContaReceber: registra o boleto na API de Cobrança,
@@ -366,7 +366,25 @@ export type VendaBoletoResultado = {
   boletosGerados: number;
   primeiroVencimento: string;
   aviso: string | null;
+  /** Títulos criados (para imprimir os boletos direto do resultado da venda). */
+  titulos: Array<{ contaReceberId: string; vencimento: string; linhaDigitavel: string | null; temPdf: boolean }>;
 };
+
+/** Parcelas customizadas do boleto: N parcelas MENSAIS iguais a partir do 1º vencimento escolhido. */
+function parcelasBoletoCustom(valor: number, quantidade: number, primeiroVencimento: Date): ParcelaGerada[] {
+  const total = Math.max(1, Math.min(60, Math.floor(quantidade)));
+  const base = Math.floor((valor / total) * 100) / 100;
+  const out: ParcelaGerada[] = [];
+  let acumulado = 0;
+  for (let i = 0; i < total; i++) {
+    const v = i === total - 1 ? Math.round((valor - acumulado) * 100) / 100 : base;
+    acumulado = Math.round((acumulado + v) * 100) / 100;
+    const vencimento = new Date(primeiroVencimento);
+    vencimento.setMonth(vencimento.getMonth() + i);
+    out.push({ numero: i + 1, totalParcelas: total, vencimento, valor: v });
+  }
+  return out;
+}
 
 /**
  * Venda A PRAZO no BOLETO (compartilhado por PDV e caixa): cria as parcelas no contas a receber
@@ -382,10 +400,22 @@ export async function processarVendaBoleto(
     valor: number;
     condicao?: string | null;
     descricaoBase: string;
+    /** Escolhas do operador na venda: conta de cobrança, nº de parcelas e 1º vencimento. */
+    opcoes?: { contaBancariaId?: string | null; parcelas?: number | null; primeiroVencimento?: Date | null } | null;
   }
 ): Promise<VendaBoletoResultado> {
-  const parcelas = gerarParcelas(input.valor, input.condicao ?? "30");
-  const contaReceberIds: string[] = [];
+  // Parcelas: escolha explícita do operador (N mensais a partir do 1º vencimento) tem prioridade;
+  // senão vale a condição de pagamento da venda ("30/60/90"...), com fallback 1x em 30 dias.
+  const primeiroVenc = input.opcoes?.primeiroVencimento ?? null;
+  const qtdParcelas = input.opcoes?.parcelas ?? null;
+  const parcelas = qtdParcelas || primeiroVenc
+    ? parcelasBoletoCustom(
+        input.valor,
+        qtdParcelas ?? 1,
+        primeiroVenc ?? new Date(Date.now() + 30 * 86400000)
+      )
+    : gerarParcelas(input.valor, input.condicao ?? "30");
+  const contaReceberIds: Array<{ id: string; vencimento: Date }> = [];
   await prisma.$transaction(async (tx) => {
     const classificacaoReceita = await classificacaoReceitaPadraoId(tx, scope, "vendas");
     for (const parcela of parcelas) {
@@ -409,7 +439,7 @@ export async function processarVendaBoleto(
         },
         select: { id: true }
       });
-      contaReceberIds.push(cr.id);
+      contaReceberIds.push({ id: cr.id, vencimento: parcela.vencimento });
     }
     await createAuditLog(tx, {
       scope,
@@ -422,17 +452,24 @@ export async function processarVendaBoleto(
 
   let boletosGerados = 0;
   let aviso: string | null = null;
+  const titulos: VendaBoletoResultado["titulos"] = [];
   const contasCobranca = await listContasComCobranca(scope);
-  if (!contasCobranca.length) {
+  const contaEscolhida = input.opcoes?.contaBancariaId
+    ? contasCobranca.find((c) => c.id === input.opcoes?.contaBancariaId) ?? contasCobranca[0]
+    : contasCobranca[0];
+  if (!contaEscolhida) {
     aviso = 'Nenhuma conta bancária com cobrança Sicoob configurada — as parcelas ficaram no contas a receber sem boleto (configure em Configurações → Contas financeiras e use "Gerar boleto").';
+    for (const c of contaReceberIds) titulos.push({ contaReceberId: c.id, vencimento: c.vencimento.toISOString(), linhaDigitavel: null, temPdf: false });
   } else {
     const erros: string[] = [];
-    for (const contaId of contaReceberIds) {
+    for (const c of contaReceberIds) {
       try {
-        await gerarBoletoParaRecebivel(scope, contaId, { contaBancariaId: contasCobranca[0].id });
+        const b = await gerarBoletoParaRecebivel(scope, c.id, { contaBancariaId: contaEscolhida.id });
         boletosGerados++;
+        titulos.push({ contaReceberId: c.id, vencimento: c.vencimento.toISOString(), linhaDigitavel: b.linhaDigitavel, temPdf: Boolean(b.pdfBase64) });
       } catch (e) {
         erros.push(e instanceof Error ? e.message : String(e));
+        titulos.push({ contaReceberId: c.id, vencimento: c.vencimento.toISOString(), linhaDigitavel: null, temPdf: false });
       }
     }
     if (erros.length) aviso = `Boleto(s) não registrados: ${[...new Set(erros)].join("; ")}. As parcelas estão no contas a receber — corrija e use "Gerar boleto".`;
@@ -442,7 +479,8 @@ export async function processarVendaBoleto(
     parcelas: parcelas.length,
     boletosGerados,
     primeiroVencimento: parcelas[0].vencimento.toISOString(),
-    aviso
+    aviso,
+    titulos
   };
 }
 
