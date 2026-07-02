@@ -47,6 +47,17 @@ do cadastro); fluxo de deploy = desenvolve local → `git push` → `./deploy/vp
   → líquido no saldo, fechamento/DRE batem. Testado ponta a ponta. Refinamentos futuros: estorno da
   operação inteira; regresso (cliente não paga o boleto antecipado, banco debita de volta).
 
+## 1b. Boleto / fluxo de venda (refinamentos)
+
+- [ ] 1b.1 **Imprimir boletos na tela de VENDAS (fluxo Pedido faturado)** — o endpoint
+  GET /api/erp/vendas/{id}/boletos já existe; falta o botão na lista/detalhe de /erp/vendas
+  (pós-confirmação, os boletos são gerados automaticamente pelo hook do confirmSale).
+- [ ] 1b.2 **Atendimento: ao escolher forma "Boleto" na Venda balcão, sugerir o tipo "Pedido
+  faturado"** (boleto é venda a prazo; o balcão via caixa continua funcionando para "leva agora,
+  paga boleto").
+- [ ] 1b.3 Valores POR PARCELA editáveis no boleto (hoje as datas são editáveis; os valores são
+  divididos igualmente com resíduo na última).
+
 ## 2. Emissão de NF-e (saída)
 
 - [x] 2.0 **Frete não sai na nota fiscal (BUG)** — CORRIGIDO 2026-07-02: o frete chegava ao XML só no
