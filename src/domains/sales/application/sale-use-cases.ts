@@ -846,10 +846,38 @@ export type CheckoutResult = {
 export async function checkoutSale(
   scope: TenantScope,
   input: CreateSaleInput,
-  options: { modelo: "NFE" | "NFCE"; contasReceber?: ConfirmSaleOptions["contasReceber"]; emitirFiscal?: boolean }
+  options: {
+    modelo: "NFE" | "NFCE";
+    contasReceber?: ConfirmSaleOptions["contasReceber"];
+    emitirFiscal?: boolean;
+    /** Pagamentos recebidos (líquidos por linha) — persistidos ANTES da emissão para a NF sair
+     *  com o detPag por forma (senão a nota cai no fallback de forma única). */
+    pagamentosVenda?: Array<{ forma: string; valor: number; contaBancariaId?: string | null; maquinaCartaoId?: string | null; nsu?: string | null; bandeira?: string | null; parcelas?: number | null; autorizacao?: string | null }>;
+  }
 ): Promise<CheckoutResult> {
   const pedido = await createSale(scope, input);
   await confirmSale(scope, pedido.id, { contasReceber: options.contasReceber });
+
+  if (options.pagamentosVenda?.length) {
+    await prisma.pagamentoVenda.createMany({
+      data: options.pagamentosVenda
+        .filter((p) => Number(p.valor) > 0)
+        .map((p) => ({
+          tenantId: scope.tenantId,
+          empresaId: scope.empresaId,
+          pedidoVendaId: pedido.id,
+          forma: p.forma,
+          valor: Math.round((Number(p.valor) + Number.EPSILON) * 100) / 100,
+          troco: 0,
+          contaBancariaId: p.contaBancariaId ?? null,
+          maquinaCartaoId: p.maquinaCartaoId ?? null,
+          nsu: p.nsu ?? null,
+          bandeira: p.bandeira ?? null,
+          parcelas: p.parcelas ?? null,
+          autorizacao: p.autorizacao ?? null
+        }))
+    });
+  }
 
   // Venda NÃO fiscal: estoque e financeiro já rodaram em confirmSale; agora só fechamos
   // o pedido como ENVIADO sem chamar a SEFAZ. Exige flag da empresa (validada no entry point).

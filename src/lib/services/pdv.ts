@@ -2,6 +2,7 @@ import { getDevelopmentTenantScope, scopedByTenantCompany } from "@/lib/auth/dev
 import { prisma } from "@/lib/db/prisma";
 import { getSession } from "@/lib/auth/session";
 import type { TipoNegocio } from "@/lib/auth/modules";
+import { listContasComCobranca } from "@/domains/finance/application/boleto-use-cases";
 
 export type PdvProduto = { id: string; sku: string; nome: string; descricao: string | null; descricaoComercial: string | null; gtin: string | null; codigoOriginal: string | null; codigoFabricante: string | null; preco: number; disponivel: number; unidade: string };
 export type PdvServico = { id: string; nome: string; preco: number; codigoServicoLc116: string | null; codigoNbs: string | null };
@@ -33,6 +34,8 @@ export type PdvData = {
   maquinas: PdvMaquinaCartao[];
   /** Formas de pagamento cadastradas (ativas) — o que aparece no PDV. */
   formas: Array<{ id: string; nome: string; tipo: string }>;
+  /** Contas com cobrança de boleto ativa (escolha do banco na venda em boleto). */
+  contasCobranca: Array<{ id: string; nome: string }>;
 };
 
 /**
@@ -152,6 +155,7 @@ export async function getPdvData(): Promise<PdvData> {
     vendedorLogadoId,
     contas,
     maquinas,
-    formas
+    formas,
+    contasCobranca: await listContasComCobranca(scope)
   };
 }

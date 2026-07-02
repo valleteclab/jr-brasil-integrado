@@ -41,6 +41,8 @@ type Pagamento = {
   nsu?: string;
   bandeira?: string;
   parcelas?: number;
+  /** BOLETO: 1º vencimento escolhido (ISO date). */
+  vencimento?: string;
 };
 
 type CaixaAberto = { id: string; operador: string; abertoEm: string };
@@ -148,7 +150,7 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
     notas: NotaResultado[];
     troco: number;
     crediario: { valor: number; parcelas: number; primeiroVencimento: string } | null;
-    boleto: { valor: number; parcelas: number; boletosGerados: number; primeiroVencimento: string; aviso: string | null } | null;
+    boleto: { valor: number; parcelas: number; boletosGerados: number; primeiroVencimento: string; aviso: string | null; titulos?: Array<{ contaReceberId: string; vencimento: string; linhaDigitavel: string | null; temPdf: boolean }> } | null;
     retirada: { id: string; codigo: string } | null;
     // Aviso quando a venda foi emitida mas o recebimento NÃO entrou no caixa (lançar manualmente).
     avisoRecebimento: string | null;
@@ -351,6 +353,16 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
         servicos: cart.filter((i) => i.kind === "servico").map((i) => ({ descricao: i.nome, valor: i.preco * i.qtd, codigoServicoLc116: i.codigoServicoLc116, codigoNbs: i.codigoNbs })),
         pagamentos,
         condicaoCrediario: condicaoCrediario || null,
+        boletoOpcoes: (() => {
+          const lb = pagamentos.find((p) => p.forma === "BOLETO" && (Number(p.valor) || 0) > 0);
+          return lb
+            ? {
+                contaBancariaId: lb.contaBancariaId ?? null,
+                parcelas: lb.parcelas ?? 1,
+                primeiroVencimento: lb.vencimento ?? new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10)
+              }
+            : undefined;
+        })(),
         descontoGlobal: descontoGlobalVal,
         // Senha de admin (qualquer admin do tenant) — o servidor revalida e exige se desconto > limite.
         senhaAdmin: senhaAdmin || undefined,
@@ -366,7 +378,7 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
         troco?: number;
         pedidoVendaId?: string | null;
         crediario?: { valor: number; parcelas: number; primeiroVencimento: string } | null;
-        boleto?: { valor: number; parcelas: number; boletosGerados: number; primeiroVencimento: string; aviso: string | null } | null;
+        boleto?: { valor: number; parcelas: number; boletosGerados: number; primeiroVencimento: string; aviso: string | null; titulos?: Array<{ contaReceberId: string; vencimento: string; linhaDigitavel: string | null; temPdf: boolean }> } | null;
         retirada?: { id: string; codigo: string } | null;
         // Recebimento não lançado no caixa — operador precisa lançar manualmente.
         avisoRecebimento?: string | null;
@@ -610,9 +622,24 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
                   <div className={`alert ${resultado.boleto.aviso ? "warn" : "info"}`}>
                     Boleto: <strong>{brl(resultado.boleto.valor)}</strong> em {resultado.boleto.parcelas} parcela(s),
                     1º vencimento {new Date(resultado.boleto.primeiroVencimento).toLocaleDateString("pt-BR")} —{" "}
-                    <strong>{resultado.boleto.boletosGerados}</strong> boleto(s) registrado(s) no banco
-                    (veja em Financeiro → Contas a receber).
+                    <strong>{resultado.boleto.boletosGerados}</strong> boleto(s) registrado(s) no banco.
                     {resultado.boleto.aviso && <><br /><strong>Atenção:</strong> {resultado.boleto.aviso}</>}
+                    {(resultado.boleto.titulos ?? []).some((t) => t.temPdf) && (
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+                        {(resultado.boleto.titulos ?? []).map((t, i) => t.temPdf ? (
+                          <a
+                            key={t.contaReceberId}
+                            className="btn-erp light xs"
+                            href={`/api/erp/financeiro/contas-receber/${t.contaReceberId}/boleto/pdf`}
+                            target="_blank"
+                            rel="noreferrer"
+                            title={t.linhaDigitavel ? `Linha digitável: ${t.linhaDigitavel}` : undefined}
+                          >
+                            🖨 Boleto {i + 1} · {new Date(t.vencimento).toLocaleDateString("pt-BR")}
+                          </a>
+                        ) : null)}
+                      </div>
+                    )}
                   </div>
                 )}
                 {resultado.retirada && (
@@ -639,7 +666,7 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
       </div>
 
       {pagamentoAberto && (
-        <PagamentoModal total={total} loading={loading} clienteSelecionado={Boolean(clienteId)} contas={data.contas} maquinas={data.maquinas} formas={data.formas} onCancel={() => setPagamentoAberto(false)} onConfirm={finalizar} />
+        <PagamentoModal total={total} loading={loading} clienteSelecionado={Boolean(clienteId)} contas={data.contas} maquinas={data.maquinas} formas={data.formas} contasCobranca={data.contasCobranca} onCancel={() => setPagamentoAberto(false)} onConfirm={finalizar} />
       )}
       {movimentoAberto && (
         <MovimentoModal onClose={() => setMovimentoAberto(false)} />
@@ -849,7 +876,9 @@ function DescontoPctModal({
 
 // ─── Modal de pagamento (múltiplas formas + troco) ──────────────────────────────
 
-function PagamentoModal({ total, loading, clienteSelecionado, contas, maquinas, formas, onCancel, onConfirm }: { total: number; loading: boolean; clienteSelecionado: boolean; contas: PdvContaRecebedora[]; maquinas: PdvMaquinaCartao[]; formas: Array<{ id: string; nome: string; tipo: string }>; onCancel: () => void; onConfirm: (p: Pagamento[], condicaoCrediario: string) => void }) {
+function PagamentoModal({ total, loading, clienteSelecionado, contas, maquinas, formas, contasCobranca, onCancel, onConfirm }: { total: number; loading: boolean; clienteSelecionado: boolean; contas: PdvContaRecebedora[]; maquinas: PdvMaquinaCartao[]; formas: Array<{ id: string; nome: string; tipo: string }>; contasCobranca: Array<{ id: string; nome: string }>; onCancel: () => void; onConfirm: (p: Pagamento[], condicaoCrediario: string) => void }) {
+  // 1º vencimento padrão do boleto: hoje + 30 dias.
+  const vencPadraoBoleto = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
   // Formas cadastradas (deduplicadas por tipo, pois o PDV opera por tipo) + Crediário (a prazo).
   const FORMAS = [
     ...(formas.length ? Array.from(new Map(formas.map((f) => [f.tipo, { value: f.tipo, label: f.nome }])).values()) : FORMAS_FALLBACK),
@@ -892,6 +921,16 @@ function PagamentoModal({ total, loading, clienteSelecionado, contas, maquinas, 
                 <option value="">Conta recebedora…{contas.length ? "" : " (cadastre em Contas financeiras)"}</option>
                 {contas.map((c) => <option key={c.id} value={c.id}>{c.nome}{c.chavePix ? ` · PIX ${c.chavePix}` : ""}</option>)}
               </select>
+            )}
+            {l.forma === "BOLETO" && (
+              <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                <select value={l.contaBancariaId ?? ""} onChange={(e) => set(idx, { contaBancariaId: e.target.value || undefined })} style={{ flex: "1 1 100%", height: 34 }} title="Banco/conta que emite o boleto">
+                  <option value="">{contasCobranca.length ? "Banco do boleto…" : "Nenhuma conta com cobrança configurada (Configurações → Contas financeiras)"}</option>
+                  {contasCobranca.map((c) => <option key={c.id} value={c.id}>Boleto — {c.nome}</option>)}
+                </select>
+                <input type="number" min={1} max={24} value={l.parcelas ?? 1} onChange={(e) => set(idx, { parcelas: Math.max(1, Number(e.target.value) || 1) })} style={{ flex: "0 0 70px", height: 34, textAlign: "center" }} title="Parcelas do boleto (mensais)" />
+                <input type="date" value={l.vencimento ?? vencPadraoBoleto} onChange={(e) => set(idx, { vencimento: e.target.value })} style={{ flex: "1 1 130px", height: 34 }} title="1º vencimento" />
+              </div>
             )}
             {isCartao(l.forma) && (
               <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>

@@ -187,6 +187,24 @@ export async function pdvCheckout(scope: TenantScope, input: PdvCheckoutInput): 
   let pedidoVendaId: string | null = null;
   let pedidoNumero: string | null = null;
 
+  // Valores LÍQUIDOS por linha de pagamento (o troco sai do dinheiro): persistidos no pedido antes
+  // da emissão, para a NF levar o detPag correto por forma (soma = vNF).
+  const trocoPrevisto = round2(Math.max(somaPago - total, 0));
+  const pagamentosLiquidos = (() => {
+    let restante = trocoPrevisto;
+    const out: typeof pagamentos = [];
+    for (const p of pagamentos) {
+      let valor = round2(Number(p.valor));
+      if (restante > 0 && p.forma === FORMA_DINHEIRO) {
+        const abate = Math.min(valor, restante);
+        valor = round2(valor - abate);
+        restante = round2(restante - abate);
+      }
+      if (valor > 0) out.push({ ...p, valor });
+    }
+    return out;
+  })();
+
   // 1. Produtos → NFC-e / NF-e
   if (temProdutos) {
     try {
@@ -208,8 +226,9 @@ export async function pdvCheckout(scope: TenantScope, input: PdvCheckoutInput): 
           }))
         },
         // O PDV recebe à vista no caixa e trata o crediário aqui — a confirmação da venda
-        // não deve gerar contas a receber.
-        { modelo: modeloProduto, contasReceber: "NENHUMA", emitirFiscal: input.emitirFiscal }
+        // não deve gerar contas a receber. Os pagamentos líquidos vão junto para a NF sair
+        // com o detPag por forma.
+        { modelo: modeloProduto, contasReceber: "NENHUMA", emitirFiscal: input.emitirFiscal, pagamentosVenda: pagamentosLiquidos }
       );
       // Auditoria do desconto autorizado (vinculada ao pedido criado).
       const admin = autorizadoPor;
@@ -319,7 +338,9 @@ export async function pdvCheckout(scope: TenantScope, input: PdvCheckoutInput): 
       total,
       numero: pedidoNumero ?? undefined,
       clienteId: input.clienteId ?? null,
-      pagamentos
+      pagamentos,
+      // O checkoutSale já persistiu os PagamentoVenda (antes da emissão) quando houve pedido.
+      pagamentosJaRegistrados: Boolean(pedidoVendaId)
     });
     troco = r.troco;
   } catch (error) {

@@ -219,6 +219,8 @@ export async function registrarRecebimentoPdv(
     numero?: string;
     clienteId?: string | null;
     pagamentos: PagamentoDetalhado[];
+    /** true quando o chamador já persistiu os PagamentoVenda (evita duplicar; caixa/movimento seguem normais). */
+    pagamentosJaRegistrados?: boolean;
   }
 ): Promise<{ troco: number; caixaId: string }> {
   const caixa = await getCaixaAbertoOrThrow(scope);
@@ -254,7 +256,7 @@ export async function registrarRecebimentoPdv(
   await prisma.$transaction(async (tx) => {
     // Revalida o turno dentro da transação (anti-corrida com fecharCaixa).
     await assertCaixaAbertoTx(tx, scope, caixa.id);
-    if (input.pedidoVendaId) {
+    if (input.pedidoVendaId && !input.pagamentosJaRegistrados) {
       for (const p of pagamentos) {
         await tx.pagamentoVenda.create({
           data: {
