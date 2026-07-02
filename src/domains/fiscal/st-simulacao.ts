@@ -33,6 +33,12 @@ export type SimulacaoStParams = {
   gnreProduto?: string;
   /** Código de RECEITA GNRE da UF destino (ex.: PR 100099 = ST por operação; default 100048). */
   gnreReceita?: string;
+  /** Tipo de doc de origem GNRE (10 = nº da nota; 22 = chave — MT/PA exigem 22). */
+  gnreTipoDocOrigem?: string;
+  /** Detalhamento da receita GNRE (TO 000003 · MT 000017 · MA 000020). */
+  gnreDetalhamento?: string;
+  /** JSON [{codigo, valor}] dos campos extras GNRE da UF ({CHAVE}/{NUMERO} substituídos). */
+  gnreCamposExtras?: string;
 };
 
 export type SimulacaoStResultado = {
@@ -122,10 +128,17 @@ export async function simularStInterestadual(params: SimulacaoStParams): Promise
   const regraExistente = await prisma.regraTributaria.findFirst({
     where: { tenantId: scope.tenantId, empresaId: scope.empresaId, nome: nomeRegra }
   });
+  const gnre = {
+    gnreProduto: params.gnreProduto ?? null,
+    gnreReceita: params.gnreReceita ?? null,
+    gnreTipoDocOrigem: params.gnreTipoDocOrigem ?? null,
+    gnreDetalhamento: params.gnreDetalhamento ?? null,
+    gnreCamposExtras: params.gnreCamposExtras ?? null
+  };
   if (regraExistente) {
     await prisma.regraTributaria.update({
       where: { id: regraExistente.id },
-      data: { mva, aliquotaIcmsSt: aliqSt, ativo: true, gnreProduto: params.gnreProduto ?? null, gnreReceita: params.gnreReceita ?? null }
+      data: { mva, aliquotaIcmsSt: aliqSt, ativo: true, ...gnre }
     });
     log.push(`Regra atualizada: ${nomeRegra}`);
   } else {
@@ -134,7 +147,7 @@ export async function simularStInterestadual(params: SimulacaoStParams): Promise
         tenantId: scope.tenantId, empresaId: scope.empresaId, nome: nomeRegra,
         tributo: "ICMS", operacao: "VENDA", ncm: NCM, ufDestino: clienteUf,
         mva, aliquotaIcmsSt: aliqSt, ativo: true, vigenciaInicio: new Date("2020-01-01"),
-        gnreProduto: params.gnreProduto ?? null, gnreReceita: params.gnreReceita ?? null
+        ...gnre
       }
     });
     log.push(`Regra criada: ${nomeRegra}`);

@@ -1627,6 +1627,12 @@ model RegraTributaria {
   gnreProduto           String?
   /// Código de RECEITA da GNRE da UF de destino (ex.: PR 100099 = ST por operação; consulte GnreConfigUF).
   gnreReceita           String?
+  /// Tipo de documento de origem aceito pela UF (10 = nº da NF; 22 = chave — MT/PA só aceitam 22).
+  gnreTipoDocOrigem     String?
+  /// Detalhamento da receita exigido por algumas UFs (ex.: TO 000003, MT 000017, MA 000020).
+  gnreDetalhamento      String?
+  /// JSON [{codigo, valor}] dos campos extras da UF; {CHAVE}/{NUMERO} são substituídos na emissão.
+  gnreCamposExtras      String?
   codigoBeneficioFiscal String?
   aliquota              Decimal?           @db.Decimal(8, 4)
   reducaoBase           Decimal?           @db.Decimal(8, 4)
@@ -2455,6 +2461,10 @@ model GuiaRecolhimento {
   produtoGnre    String?
   /// Código de RECEITA da GNRE da UF favorecida (default 100048; PR usa 100099 p/ operação).
   receitaGnre    String?
+  /// Tipo de doc de origem, detalhamento e campos extras (JSON) herdados da regra da UF.
+  tipoDocOrigemGnre String?
+  detalhamentoGnre  String?
+  camposExtrasGnre  String?
   /// Emissão pelo webservice GNRE: recibo do lote, linha digitável, código de barras e PDF.
   reciboLote     String?
   linhaDigitavel String?

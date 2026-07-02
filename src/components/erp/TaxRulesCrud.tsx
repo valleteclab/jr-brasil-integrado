@@ -32,6 +32,11 @@ const emptyForm: TaxRuleForm = {
   mva: "",
   stRate: "",
   fcp: "",
+  gnreReceita: "",
+  gnreProduto: "",
+  gnreTipoDocOrigem: "",
+  gnreDetalhamento: "",
+  gnreCamposExtras: "",
   validFrom: new Date().toISOString().slice(0, 10),
   validUntil: "",
   active: true,
@@ -308,8 +313,13 @@ export function TaxRulesCrud({ initialRules, fiscalCodes = {} }: TaxRulesCrudPro
                 <label>Diferimento %<input value={form.deferral} onChange={(event) => updateField("deferral", event.target.value)} /></label>
                 <label>Crédito presumido %<input value={form.presumedCredit} onChange={(event) => updateField("presumedCredit", event.target.value)} /></label>
                 <label>MVA % (ICMS-ST)<input value={form.mva} onChange={(event) => updateField("mva", event.target.value)} /></label>
-                <label>Alíquota ICMS-ST %<input value={form.stRate} onChange={(event) => updateField("stRate", event.target.value)} /></label>
+                <label>Alíquota ICMS-ST %<input value={form.stRate} onChange={(event) => updateField("stRate", event.target.value)} /><small className="field-hint">Alíquota interna da UF de destino</small></label>
                 <label>FCP %<input value={form.fcp} onChange={(event) => updateField("fcp", event.target.value)} /></label>
+                <label>Receita GNRE<input maxLength={6} placeholder="100099" value={form.gnreReceita} onChange={(event) => updateField("gnreReceita", event.target.value)} /><small className="field-hint">Código da UF destino: 100099 ST por Operação · 100048 por Apuração</small></label>
+                <label>Produto GNRE<input maxLength={4} placeholder="20" value={form.gnreProduto} onChange={(event) => updateField("gnreProduto", event.target.value)} /><small className="field-hint">Tabela da UF (autopeças: 20; MA usa 90) — só se a UF exigir</small></label>
+                <label>Doc. origem GNRE<select value={form.gnreTipoDocOrigem} onChange={(event) => updateField("gnreTipoDocOrigem", event.target.value)}><option value="">10 — Nº da nota (padrão)</option><option value="10">10 — Nº da nota</option><option value="22">22 — Chave da NF-e</option></select><small className="field-hint">MT e PA só aceitam a chave (22)</small></label>
+                <label>Detalhamento GNRE<input maxLength={6} placeholder="000017" value={form.gnreDetalhamento} onChange={(event) => updateField("gnreDetalhamento", event.target.value)} /><small className="field-hint">Se a UF exigir (TO 000003 · MT 000017 · MA 000020)</small></label>
+                <label className="full">Campos extras GNRE<input placeholder='[{"codigo":"38","valor":"{CHAVE}"}]' value={form.gnreCamposExtras} onChange={(event) => updateField("gnreCamposExtras", event.target.value)} /><small className="field-hint">JSON exigido por algumas UFs; {"{CHAVE}"} e {"{NUMERO}"} são preenchidos com os dados da nota</small></label>
                 <label>Vigência início<input type="date" value={form.validFrom} onChange={(event) => updateField("validFrom", event.target.value)} /></label>
                 <label>Vigência fim<input type="date" value={form.validUntil} onChange={(event) => updateField("validUntil", event.target.value)} /></label>
                 <label className="check-row"><input checked={form.active} type="checkbox" onChange={(event) => updateField("active", event.target.checked)} /> Regra ativa</label>

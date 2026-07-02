@@ -24,6 +24,16 @@ export type TaxRuleSummary = {
   mva: string;
   stRate: string;
   fcp: string;
+  /** Código de RECEITA da GNRE na UF destino (ex.: 100099 ST por Operação; 100048 por Apuração). */
+  gnreReceita: string;
+  /** Código de PRODUTO da GNRE na UF destino (ex.: 20 = autopeças; MA usa 90). */
+  gnreProduto: string;
+  /** Tipo de documento de origem da GNRE (10 = nº da NF; 22 = chave — MT/PA exigem 22). */
+  gnreTipoDocOrigem: string;
+  /** Detalhamento da receita GNRE exigido por algumas UFs (TO/MT/MA). */
+  gnreDetalhamento: string;
+  /** JSON [{codigo, valor}] com campos extras da UF ({CHAVE}/{NUMERO} são substituídos). */
+  gnreCamposExtras: string;
   validFrom: string;
   validUntil: string;
   active: boolean;
@@ -64,6 +74,11 @@ export function mapTaxRule(rule: RegraTributaria): TaxRuleSummary {
     mva: decimalToInput(rule.mva),
     stRate: decimalToInput(rule.aliquotaIcmsSt),
     fcp: decimalToInput(rule.fcp),
+    gnreReceita: rule.gnreReceita ?? "",
+    gnreProduto: rule.gnreProduto ?? "",
+    gnreTipoDocOrigem: rule.gnreTipoDocOrigem ?? "",
+    gnreDetalhamento: rule.gnreDetalhamento ?? "",
+    gnreCamposExtras: rule.gnreCamposExtras ?? "",
     validFrom: dateToInput(rule.vigenciaInicio),
     validUntil: dateToInput(rule.vigenciaFim),
     active: rule.ativo

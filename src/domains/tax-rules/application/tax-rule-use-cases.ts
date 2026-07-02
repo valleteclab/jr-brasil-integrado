@@ -85,6 +85,36 @@ function validatePayload(payload: TaxRulePayload) {
     throw new Error("Informe a vigência inicial da regra.");
   }
 
+  const gnreReceita = onlyDigits(text(payload, "gnreReceita"));
+  const gnreProduto = onlyDigits(text(payload, "gnreProduto"));
+
+  if (gnreReceita && gnreReceita.length !== 6) {
+    throw new Error("Receita GNRE deve conter 6 dígitos (ex.: 100099).");
+  }
+
+  if (gnreProduto && gnreProduto.length > 4) {
+    throw new Error("Produto GNRE deve conter até 4 dígitos (tabela da UF).");
+  }
+
+  const gnreTipoDocOrigem = onlyDigits(text(payload, "gnreTipoDocOrigem"));
+  const gnreDetalhamento = onlyDigits(text(payload, "gnreDetalhamento"));
+  const gnreCamposExtras = text(payload, "gnreCamposExtras");
+
+  if (gnreTipoDocOrigem && gnreTipoDocOrigem.length > 2) {
+    throw new Error("Tipo de documento de origem GNRE deve ter 2 dígitos (10 = nº da nota, 22 = chave).");
+  }
+
+  if (gnreCamposExtras) {
+    try {
+      const parsed = JSON.parse(gnreCamposExtras) as { codigo?: unknown; valor?: unknown }[];
+      if (!Array.isArray(parsed) || parsed.some((c) => !c || typeof c.codigo !== "string" || typeof c.valor !== "string")) {
+        throw new Error("estrutura");
+      }
+    } catch {
+      throw new Error('Campos extras GNRE devem ser JSON no formato [{"codigo":"38","valor":"{CHAVE}"}].');
+    }
+  }
+
   return {
     nome: name,
     tributo: tax,
@@ -106,6 +136,11 @@ function validatePayload(payload: TaxRulePayload) {
     mva: numeric(payload, "mva"),
     aliquotaIcmsSt: numeric(payload, "stRate"),
     fcp: numeric(payload, "fcp"),
+    gnreReceita: gnreReceita || null,
+    gnreProduto: gnreProduto || null,
+    gnreTipoDocOrigem: gnreTipoDocOrigem ? gnreTipoDocOrigem.padStart(2, "0") : null,
+    gnreDetalhamento: gnreDetalhamento ? gnreDetalhamento.padStart(6, "0") : null,
+    gnreCamposExtras: gnreCamposExtras || null,
     vigenciaInicio: validFrom,
     vigenciaFim: validUntil,
     ativo: bool(payload, "active", true)

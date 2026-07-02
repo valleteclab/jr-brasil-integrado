@@ -120,24 +120,46 @@ export async function emitirGuiaGnre(
       }
     : null;
 
-  const produto = opts?.produto !== undefined ? opts.produto : guia.produtoGnre;
-  // Documento de origem: tipo 10 = Nota Fiscal, com o NÚMERO da NF-e (não a chave) — é o formato
-  // aceito pelas UFs na receita 100048 (testado no portal de testes; os tipos de "chave" 22/24
-  // existem no domínio mas as UFs não os habilitam para esta receita).
-  const docOrigem = opts?.tipoDocOrigem && opts.tipoDocOrigem !== "10"
+  // Parâmetros por UF: opts > cópia na guia > regra tributária ATUAL da UF destino (permite
+  // corrigir guias pendentes editando a regra na tela, sem reemitir a nota).
+  const regraUf = await prisma.regraTributaria.findFirst({
+    where: {
+      ...scopedByTenantCompany(scope),
+      ufDestino: guia.ufFavorecida,
+      ativo: true,
+      OR: [{ gnreReceita: { not: null } }, { gnreTipoDocOrigem: { not: null } }, { gnreProduto: { not: null } }]
+    },
+    orderBy: { atualizadoEm: "desc" }
+  });
+  const produto = opts?.produto !== undefined ? opts.produto : (guia.produtoGnre ?? regraUf?.gnreProduto ?? null);
+  const receita = opts?.receita ?? guia.receitaGnre ?? regraUf?.gnreReceita ?? null;
+  const tipoDocOrigem = opts?.tipoDocOrigem ?? guia.tipoDocOrigemGnre ?? regraUf?.gnreTipoDocOrigem ?? "10";
+  const detalhamento = opts?.detalhamento ?? guia.detalhamentoGnre ?? regraUf?.gnreDetalhamento ?? null;
+  let camposExtras = opts?.camposExtras ?? null;
+  const camposExtrasJson = guia.camposExtrasGnre ?? regraUf?.gnreCamposExtras ?? null;
+  if (!camposExtras && camposExtrasJson) {
+    try {
+      camposExtras = JSON.parse(camposExtrasJson) as { codigo: string; valor: string }[];
+    } catch {
+      throw new GuiaError("Campos extras GNRE da regra inválidos (esperado JSON [{codigo, valor}]).");
+    }
+  }
+  // Documento de origem: tipo 10 = NÚMERO da NF-e (PR/TO/PI/MA); tipos 22/24 = CHAVE (MT/PA só
+  // aceitam a chave). O tipo certo por UF vem da regra tributária (GnreConfigUF da UF).
+  const docOrigem = tipoDocOrigem !== "10"
     ? guia.notaFiscal.chaveAcesso
     : (guia.notaFiscal.numero ?? "").replace(/\D+/g, "") || guia.notaFiscal.chaveAcesso;
   const lote = buildLoteGnreXml({
     ufFavorecida: guia.ufFavorecida,
-    // Receita por UF (GnreConfigUF): vem da regra tributária (guia.receitaGnre) — ex.: PR usa
-    // 100099 (ST por operação); default 100048 (aceito no DF). DIFAL: 100102 por operação.
-    receita: guia.tipo === "GNRE_DIFAL" ? "100102" : (opts?.receita ?? guia.receitaGnre ?? "100048"),
+    // Receita por UF (GnreConfigUF): vem da regra tributária — ex.: PR/TO/PI/MT/PA/MA usam
+    // 100099 (ST por operação); default 100048. DIFAL: 100102 por operação.
+    receita: guia.tipo === "GNRE_DIFAL" ? "100102" : (receita ?? "100048"),
     chaveNfe: opts?.semDocOrigem ? "" : docOrigem,
-    tipoDocOrigem: opts?.tipoDocOrigem,
+    tipoDocOrigem,
     produto,
     valorFecp: opts?.valorFecp ?? null,
-    detalhamento: opts?.detalhamento ?? null,
-    camposExtras: opts?.camposExtras?.map((c) => ({
+    detalhamento,
+    camposExtras: camposExtras?.map((c) => ({
       codigo: c.codigo,
       valor: c.valor
         .replaceAll("{CHAVE}", guia.notaFiscal.chaveAcesso ?? "")
