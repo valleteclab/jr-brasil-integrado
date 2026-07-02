@@ -131,8 +131,14 @@ do cadastro); fluxo de deploy = desenvolve local → `git push` → `./deploy/vp
     segue o da nota (homologação → testegnre.pe.gov.br, cujo certificado de servidor é de
     *.sefaz.pe.gov.br — hostname relaxado SÓ no teste). Transporte validado ponta a ponta: o portal
     de testes respondeu **situação 102 "CNPJ não habilitado para uso do serviço"** = XML/SOAP/mTLS
-    corretos. ⚠ PENDENTE OPERACIONAL: habilitar o CNPJ no Portal GNRE (gnre.pe.gov.br → Automação,
-    credenciamento único; vale p/ teste e produção).
+    corretos. CNPJ da JR BRASIL HABILITADO em 2026-07-02 → validação avançou TODAS as etapas de
+    negócio: produto GNRE exigido (RegraTributaria.gnreProduto, DF 20 = autopeças; consulta oficial
+    GnreConfigUF implementada), documento de origem = NÚMERO da NF-e no tipo 10 (testado: a receita
+    100048 aceita tipos 02/04/06/08/10/18 e NENHUM aceita chave 44 díg; tipos de chave 22/24 não
+    habilitados p/ a receita), cadeia mTLS completa (fix: pfxTlsOptions enviava só a folha → alert
+    42). Último status: **703 "Falha na comunicação com o serviço da UF"** = serviço do DF FORA no
+    ambiente de testes (não é nosso XML — todas as validações passaram). Retestar depois pelo botão
+    "Emitir GNRE" da tela; em produção o serviço da UF é o real.
   - Fase 2 (pendente): DIFAL EC 87 (grupo ICMSUFDest p/ consumidor final interestadual — hoje não
     suportado); cadastro assistido de MVAs por protocolo (ex.: Protocolo 41/2008 autopeças).
 
