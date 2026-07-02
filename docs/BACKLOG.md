@@ -32,12 +32,24 @@ do cadastro); fluxo de deploy = desenvolve local → `git push` → `./deploy/vp
   conta, data do banco). Model BoletoCobranca (migration 20260702150000); provider
   src/domains/finance/providers/sicoob-cobranca.ts. **PENDENTE p/ ativar: credenciamento do cliente no
   Sicoob (client_id) — testar 1º em sandbox com token do portal dev. NÃO TESTADO contra a API real.**
-- [~] 1.2 **Integração bancária (Sicoob)** — PARCIAL 2026-07-02: cron de sincronização FEITO
-  (/api/cron/boletos a cada 30min no crontab da VPS; boleto liquidado → baixa automática do título com
-  CRÉDITO na conta bancária na data do banco). Venda com forma "boleto" gera automaticamente um boleto
-  POR PARCELA (hook no confirmSale, best-effort). Pendentes: webhook de liquidação (em vez de polling),
-  extrato/conciliação (API conta-corrente v4), Pix, e cancelar/baixar boleto no banco quando a conta é
-  cancelada/editada no ERP (hoje o boleto fica órfão no Sicoob).
+- [x] 1.2 **Integração bancária (Sicoob) — fase 2** — FEITO 2026-07-02 (validado no sandbox; produção
+  depende do credenciamento + escopos webhooks/cob/pix/cco):
+  - **Webhook de liquidação (tempo real)**: botão "⚡ Ativar tempo real" no card Cobrança Sicoob;
+    cadastra POST /webhooks (tipo mov. 7) com URL pública secreta /api/webhooks/sicoob/cobranca/{segredo};
+    o receiver NUNCA confia no corpo — re-consulta a API antes de baixar. Cron 30min segue como rede
+    de segurança.
+  - **Gestão do boleto no banco**: "Prorrogar" (PATCH prorrogacaoVencimento, ajusta título) e
+    "Baixar no banco" (PATCH /boletos/{nn}/baixar — resolve o boleto órfão) direto no financeiro.
+  - **Pix Recebimentos (QR dinâmico)**: model PixCobranca (migration 20260702230000); provider
+    sicoob-pix.ts (PUT/GET cob BACEN v2); "Pix QR" no título do contas a receber (pagamento → baixa
+    AUTOMÁTICA), "▦ QR Pix" na linha PIX do Caixa e do PDV (QR + copia-e-cola + verificar); cron
+    sincroniza cobranças ativas junto com os boletos. Chave recebedora = chave Pix da conta bancária.
+  - **Extrato/conciliação (conta-corrente v4)**: página /erp/financeiro/extrato — saldo real + extrato
+    do período conciliado com os MovimentoFinanceiro (CONCILIADO / SÓ NO BANCO / SÓ NO ERP) e
+    **detecção de créditos de ANTECIPAÇÃO DE RECEBÍVEIS** (casa com as operações da tela de
+    Antecipação — cliente antecipa no Sicoob hoje; não há API própria de antecipação no portal).
+  - Pendentes menores: registrar webhook Pix da chave (provider pronto, sem UI), Pix com vencimento
+    (cobv), boleto híbrido com QR Pix embutido (grupo `pix.utilizarPix` do PATCH v3).
 - [ ] 1.3 **API de consulta de clientes (bureau de crédito)** — integrar Serasa/SPC/similar na análise de
   crédito/venda. Provedor a definir; entra no cadastro/fluxo de venda.
 - [x] 1.4 **Antecipação de recebíveis (v1 sem banco)** — FEITO 2026-07-02: tela

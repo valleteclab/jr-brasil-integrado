@@ -1783,6 +1783,7 @@ model ContaReceber {
   antecipacaoId   String?
   antecipacao     AntecipacaoRecebivel? @relation(fields: [antecipacaoId], references: [id])
   boleto          BoletoCobranca?
+  pixCobranca     PixCobranca?
   status          StatusFinanceiro      @default(ABERTO)
   pagoEm          DateTime?
   criadoEm        DateTime              @default(now())
@@ -2263,7 +2264,12 @@ model ContaBancaria {
   sicoobSandbox         Boolean  @default(false)
   /// Token do sandbox (criptografado com encryptSecret).
   sicoobSandboxToken    String?
+  /// Webhook de liquidação da cobrança (baixa em tempo real): id devolvido pelo Sicoob no cadastro
+  /// e segredo aleatório embutido na URL pública (autentica a chamada do banco sem depender do corpo).
+  sicoobWebhookId       Int?
+  sicoobWebhookSecret   String?
   boletos               BoletoCobranca[]
+  pixCobrancas          PixCobranca[]
   criadoEm        DateTime              @default(now())
   atualizadoEm    DateTime              @updatedAt
 
@@ -2298,6 +2304,41 @@ model BoletoCobranca {
 
   @@index([tenantId, empresaId, status])
   @@index([tenantId, empresaId, nossoNumero])
+}
+
+/// Cobrança PIX dinâmica (QR Code) criada na API Pix do Sicoob (BACEN cob). Vinculada à venda
+/// e/ou à conta a receber quando usada para receber um título; a liquidação chega por
+/// consulta/cron/webhook e marca CONCLUIDA.
+model PixCobranca {
+  id              String         @id @default(cuid())
+  tenantId        String
+  empresaId       String
+  ambiente        AmbienteFiscal @default(HOMOLOGACAO)
+  contaBancariaId String
+  contaBancaria   ContaBancaria  @relation(fields: [contaBancariaId], references: [id])
+  contaReceberId  String?        @unique
+  contaReceber    ContaReceber?  @relation(fields: [contaReceberId], references: [id])
+  pedidoVendaId   String?
+  /// txid BACEN (26-35 chars alfanuméricos), gerado pelo ERP.
+  txid            String         @unique
+  /// ATIVA → CONCLUIDA (paga) | REMOVIDA (expirada/cancelada) | ERRO
+  status          String         @default("ATIVA")
+  valor           Decimal        @db.Decimal(14, 2)
+  chave           String
+  /// Copia-e-cola (BR Code) para render do QR na tela.
+  brcode          String?
+  descricao       String?
+  expiracaoSeg    Int            @default(3600)
+  /// endToEndId do pagamento recebido (conciliação).
+  e2eid           String?
+  pagoEm          DateTime?
+  ultimoErro      String?
+  payload         Json?
+  criadoEm        DateTime       @default(now())
+  atualizadoEm    DateTime       @updatedAt
+
+  @@index([tenantId, empresaId, status])
+  @@index([tenantId, empresaId, pedidoVendaId])
 }
 
 // Forma de pagamento cadastrável (como se paga): Dinheiro, Pix, Cartão de crédito/débito,

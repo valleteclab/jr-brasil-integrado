@@ -50,6 +50,9 @@ type PagamentoLinha = {
 };
 const uid = () => Math.random().toString(36).slice(2, 9);
 
+/** QR Pix dinâmico (Sicoob) gerado para a linha PIX do recebimento. */
+type PixQrInfo = { id: string; qrDataUrl: string | null; brcode: string | null; valor: number; status: string; aviso: string | null };
+
 export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
   const router = useRouter();
   // 1º vencimento padrão do boleto: hoje + 30 dias. Demais parcelas: +1 mês cada (editáveis).
@@ -93,6 +96,8 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
   const [query, setQuery] = useState("");
   const [pedidoAbertoId, setPedidoAbertoId] = useState<string | null>(null);
   const [retiradaExpedicao, setRetiradaExpedicao] = useState(false);
+  const [pixQr, setPixQr] = useState<PixQrInfo | null>(null);
+  const [pixBusy, setPixBusy] = useState(false);
   const [resultado, setResultado] = useState<{ pedidoNumero: string; troco: number; notaId: string | null; notaStatus: string | null; emitErro: string | null; boleto: { valor: number; parcelas: number; boletosGerados: number; primeiroVencimento: string; aviso: string | null; titulos?: Array<{ contaReceberId: string; vencimento: string; linhaDigitavel: string | null; temPdf: boolean }> } | null; retirada: { id: string; codigo: string } | null } | null>(null);
 
   const caixa = data.caixa;
@@ -299,6 +304,48 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
     finally { setBusy(false); }
   }
 
+  // QR Pix dinâmico (Sicoob) da linha PIX: o cliente paga na hora; "Verificar" consulta o banco.
+  async function gerarPixQr(p: PagamentoLinha) {
+    if (!p.contaBancariaId) { setError("Escolha a conta recebedora (com chave Pix) para gerar o QR."); return; }
+    if (!(Number(p.valor) > 0)) { setError("Informe o valor da linha PIX para gerar o QR."); return; }
+    setPixBusy(true);
+    setError("");
+    try {
+      const res = await fetch("/api/erp/pix/cobranca", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contaBancariaId: p.contaBancariaId,
+          valor: Number(p.valor),
+          descricao: sel ? `Venda ${sel.numero}` : "Venda no caixa",
+          pedidoVendaId: sel?.id ?? null
+        })
+      });
+      const data = (await res.json().catch(() => ({}))) as Partial<PixQrInfo> & { error?: string };
+      if (!res.ok || !data.id) throw new Error(data.error || "Não foi possível gerar o QR Pix.");
+      setPixQr({ id: data.id, qrDataUrl: data.qrDataUrl ?? null, brcode: data.brcode ?? null, valor: data.valor ?? Number(p.valor), status: data.status ?? "ATIVA", aviso: data.aviso ?? null });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Falha ao gerar o QR Pix.");
+    } finally {
+      setPixBusy(false);
+    }
+  }
+
+  async function verificarPixQr() {
+    if (!pixQr) return;
+    setPixBusy(true);
+    try {
+      const res = await fetch(`/api/erp/pix/cobranca/${pixQr.id}`);
+      const data = (await res.json().catch(() => ({}))) as { status?: string; error?: string };
+      if (!res.ok) throw new Error(data.error || "Não foi possível verificar o pagamento.");
+      setPixQr((cur) => (cur ? { ...cur, status: data.status ?? cur.status } : cur));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Falha ao verificar o Pix.");
+    } finally {
+      setPixBusy(false);
+    }
+  }
+
   // ---- Caixa fechado: abertura ----
   if (!caixa) {
     return (
@@ -474,10 +521,17 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
                         {pagamentos.length > 1 && <button type="button" className="btn-erp ghost xs icon-only" onClick={() => rmPag(p.uid)}>✕</button>}
                       </div>
                       {isPixOuTransfer(p.forma) && (
-                        <select value={p.contaBancariaId ?? ""} onChange={(e) => updPag(p.uid, { contaBancariaId: e.target.value || undefined })} style={{ height: 30, fontSize: 12 }}>
-                          <option value="">Conta recebedora…{data.contas.length ? "" : " (cadastre em Contas financeiras)"}</option>
-                          {data.contas.map((c) => <option key={c.id} value={c.id}>{c.nome}{c.chavePix ? ` · PIX ${c.chavePix}` : ""}</option>)}
-                        </select>
+                        <div style={{ display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center" }}>
+                          <select value={p.contaBancariaId ?? ""} onChange={(e) => updPag(p.uid, { contaBancariaId: e.target.value || undefined })} style={{ flex: "1 1 auto", height: 30, fontSize: 12 }}>
+                            <option value="">Conta recebedora…{data.contas.length ? "" : " (cadastre em Contas financeiras)"}</option>
+                            {data.contas.map((c) => <option key={c.id} value={c.id}>{c.nome}{c.chavePix ? ` · PIX ${c.chavePix}` : ""}</option>)}
+                          </select>
+                          {p.forma === "PIX" && Boolean(data.contas.find((c) => c.id === p.contaBancariaId)?.chavePix) && (
+                            <button type="button" className="btn-erp ghost xs" disabled={pixBusy} onClick={() => gerarPixQr(p)} title="Gerar QR Code Pix dinâmico (Sicoob) no valor desta linha">
+                              {pixBusy ? "…" : "▦ QR Pix"}
+                            </button>
+                          )}
+                        </div>
                       )}
                       {p.forma === "BOLETO" && (
                         <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
@@ -676,6 +730,36 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
           onClose={() => setShowNovoCli(false)}
           onCreated={onClienteCriado}
         />
+      )}
+
+      {pixQr && (
+        <div onClick={() => setPixQr(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 10, padding: 20, width: 360, maxWidth: "92vw", display: "flex", flexDirection: "column", gap: 10 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <strong>Pix — R$ {pixQr.valor.toFixed(2)}</strong>
+              <button type="button" className="btn-erp ghost xs" onClick={() => setPixQr(null)}>Fechar</button>
+            </div>
+            {pixQr.status === "CONCLUIDA" ? (
+              <div className="alert success"><strong>✓ Pago!</strong> Finalize o recebimento normalmente.</div>
+            ) : (
+              <>
+                {pixQr.qrDataUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={pixQr.qrDataUrl} alt="QR Code Pix" style={{ width: 240, height: 240, alignSelf: "center", border: "1px solid var(--erp-line)", borderRadius: 8 }} />
+                ) : (
+                  <div className="alert warn">QR indisponível{pixQr.aviso ? ` — ${pixQr.aviso}` : "."}</div>
+                )}
+                {pixQr.brcode && (
+                  <textarea readOnly value={pixQr.brcode} rows={3} style={{ width: "100%", fontSize: 11, fontFamily: "monospace" }} onFocus={(e) => e.currentTarget.select()} title="Pix copia-e-cola" />
+                )}
+                {pixQr.aviso && pixQr.qrDataUrl && <div style={{ fontSize: 11, color: "var(--erp-slate)" }}>{pixQr.aviso}</div>}
+                <button type="button" className="btn-erp primary sm" disabled={pixBusy} onClick={verificarPixQr}>
+                  {pixBusy ? "Verificando…" : "Verificar pagamento"}
+                </button>
+              </>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );

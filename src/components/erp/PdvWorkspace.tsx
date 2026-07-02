@@ -913,6 +913,47 @@ function PagamentoModal({ total, loading, clienteSelecionado, contas, maquinas, 
   ];
   const [linhas, setLinhas] = useState<Pagamento[]>([{ forma: "DINHEIRO", valor: total }]);
   const [condicaoCrediario, setCondicaoCrediario] = useState("30");
+  // QR Pix dinâmico (Sicoob) da linha PIX.
+  const [pixQr, setPixQr] = useState<{ id: string; qrDataUrl: string | null; brcode: string | null; valor: number; status: string; aviso: string | null } | null>(null);
+  const [pixBusy, setPixBusy] = useState(false);
+  const [pixErro, setPixErro] = useState("");
+
+  async function gerarPixQr(l: Pagamento) {
+    if (!l.contaBancariaId) { setPixErro("Escolha a conta recebedora (com chave Pix)."); return; }
+    if (!(Number(l.valor) > 0)) { setPixErro("Informe o valor da linha PIX."); return; }
+    setPixBusy(true);
+    setPixErro("");
+    try {
+      const res = await fetch("/api/erp/pix/cobranca", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contaBancariaId: l.contaBancariaId, valor: Number(l.valor), descricao: "Venda PDV" })
+      });
+      const data = (await res.json().catch(() => ({}))) as { id?: string; qrDataUrl?: string | null; brcode?: string | null; valor?: number; status?: string; aviso?: string | null; error?: string };
+      if (!res.ok || !data.id) throw new Error(data.error || "Não foi possível gerar o QR Pix.");
+      setPixQr({ id: data.id, qrDataUrl: data.qrDataUrl ?? null, brcode: data.brcode ?? null, valor: data.valor ?? Number(l.valor), status: data.status ?? "ATIVA", aviso: data.aviso ?? null });
+    } catch (e) {
+      setPixErro(e instanceof Error ? e.message : "Falha ao gerar o QR Pix.");
+    } finally {
+      setPixBusy(false);
+    }
+  }
+
+  async function verificarPixQr() {
+    if (!pixQr) return;
+    setPixBusy(true);
+    setPixErro("");
+    try {
+      const res = await fetch(`/api/erp/pix/cobranca/${pixQr.id}`);
+      const data = (await res.json().catch(() => ({}))) as { status?: string; error?: string };
+      if (!res.ok) throw new Error(data.error || "Não foi possível verificar o pagamento.");
+      setPixQr((cur) => (cur ? { ...cur, status: data.status ?? cur.status } : cur));
+    } catch (e) {
+      setPixErro(e instanceof Error ? e.message : "Falha ao verificar o Pix.");
+    } finally {
+      setPixBusy(false);
+    }
+  }
   const pago = round2(linhas.reduce((s, l) => s + (Number(l.valor) || 0), 0));
   const troco = round2(Math.max(pago - total, 0));
   const falta = round2(Math.max(total - pago, 0));
@@ -944,10 +985,17 @@ function PagamentoModal({ total, loading, clienteSelecionado, contas, maquinas, 
               {linhas.length > 1 && <button className="pdv-item-x" onClick={() => setLinhas((cur) => cur.filter((_, i) => i !== idx))}>×</button>}
             </div>
             {isPixOuTransfer(l.forma) && (
-              <select value={l.contaBancariaId ?? ""} onChange={(e) => set(idx, { contaBancariaId: e.target.value || undefined })} style={{ height: 34 }}>
-                <option value="">Conta recebedora…{contas.length ? "" : " (cadastre em Contas financeiras)"}</option>
-                {contas.map((c) => <option key={c.id} value={c.id}>{c.nome}{c.chavePix ? ` · PIX ${c.chavePix}` : ""}</option>)}
-              </select>
+              <div style={{ display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center" }}>
+                <select value={l.contaBancariaId ?? ""} onChange={(e) => set(idx, { contaBancariaId: e.target.value || undefined })} style={{ flex: "1 1 auto", height: 34 }}>
+                  <option value="">Conta recebedora…{contas.length ? "" : " (cadastre em Contas financeiras)"}</option>
+                  {contas.map((c) => <option key={c.id} value={c.id}>{c.nome}{c.chavePix ? ` · PIX ${c.chavePix}` : ""}</option>)}
+                </select>
+                {l.forma === "PIX" && Boolean(contas.find((c) => c.id === l.contaBancariaId)?.chavePix) && (
+                  <button type="button" className="pdv-add-forma" style={{ margin: 0 }} disabled={pixBusy} onClick={() => gerarPixQr(l)} title="Gerar QR Code Pix dinâmico (Sicoob) no valor desta linha">
+                    {pixBusy ? "…" : "▦ QR Pix"}
+                  </button>
+                )}
+              </div>
             )}
             {l.forma === "BOLETO" && (
               <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
@@ -1010,6 +1058,34 @@ function PagamentoModal({ total, loading, clienteSelecionado, contas, maquinas, 
           </div>
         ))}
         <button className="pdv-add-forma" onClick={() => setLinhas((cur) => [...cur, { forma: "PIX", valor: falta }])}>+ outra forma</button>
+
+        {pixErro && <div className="alert danger">{pixErro}</div>}
+        {pixQr && (
+          <div style={{ border: "1px solid var(--erp-line, #ddd)", borderRadius: 8, padding: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <strong>Pix — R$ {pixQr.valor.toFixed(2)}</strong>
+              <button type="button" className="pdv-item-x" onClick={() => setPixQr(null)}>×</button>
+            </div>
+            {pixQr.status === "CONCLUIDA" ? (
+              <div className="alert success"><strong>✓ Pago!</strong> Finalize a venda normalmente.</div>
+            ) : (
+              <>
+                {pixQr.qrDataUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={pixQr.qrDataUrl} alt="QR Code Pix" style={{ width: 220, height: 220, alignSelf: "center" }} />
+                ) : (
+                  <div className="alert warn">QR indisponível{pixQr.aviso ? ` — ${pixQr.aviso}` : "."}</div>
+                )}
+                {pixQr.brcode && (
+                  <textarea readOnly value={pixQr.brcode} rows={2} style={{ width: "100%", fontSize: 11, fontFamily: "monospace" }} onFocus={(e) => e.currentTarget.select()} title="Pix copia-e-cola" />
+                )}
+                <button type="button" className="pdv-add-forma" style={{ margin: 0 }} disabled={pixBusy} onClick={verificarPixQr}>
+                  {pixBusy ? "Verificando…" : "Verificar pagamento"}
+                </button>
+              </>
+            )}
+          </div>
+        )}
 
         {temCrediario && (
           <label className="pdv-cliente">

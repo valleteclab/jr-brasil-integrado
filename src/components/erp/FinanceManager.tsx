@@ -490,6 +490,12 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
   const [showNewForm, setShowNewForm] = useState(false);
   const [globalError, setGlobalError] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
+  // Cobrança Pix dinâmica de um título (drawer com QR + verificação de pagamento).
+  const [pixPanel, setPixPanel] = useState<{
+    contaReceberId: string; descricao: string; id: string; qrDataUrl: string | null;
+    brcode: string | null; valor: number; status: string; aviso: string | null;
+  } | null>(null);
+  const [pixBusy, setPixBusy] = useState(false);
 
   // Boleto Sicoob: registra na API e mostra linha digitável/PDF; sincronizar baixa quando liquidado.
   async function gerarBoleto(id: string, descricao: string) {
@@ -532,6 +538,90 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
       }));
     } catch (e) {
       setGlobalError(e instanceof Error ? e.message : "Falha ao consultar o boleto.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  // Cobrança Pix dinâmica: cria o QR no Sicoob vinculado ao título — quando o pagamento cai
+  // (verificação, cron ou webhook), o título baixa sozinho com crédito na conta.
+  async function cobrarViaPix(r: ReceivableSummary) {
+    if (!contasCobranca.length) return;
+    setBusyId(r.id);
+    setGlobalError("");
+    try {
+      const res = await fetch("/api/erp/pix/cobranca", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contaBancariaId: contasCobranca[0].id, valor: r.saldoNumber, descricao: r.descricao, contaReceberId: r.id })
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        id?: string; qrDataUrl?: string | null; brcode?: string | null; valor?: number; status?: string; aviso?: string | null; error?: string;
+      };
+      if (!res.ok || !data.id) throw new Error(data.error || "Não foi possível criar a cobrança Pix.");
+      setPixPanel({
+        contaReceberId: r.id, descricao: r.descricao, id: data.id, qrDataUrl: data.qrDataUrl ?? null,
+        brcode: data.brcode ?? null, valor: data.valor ?? r.saldoNumber, status: data.status ?? "ATIVA", aviso: data.aviso ?? null
+      });
+    } catch (e) {
+      setGlobalError(e instanceof Error ? e.message : "Falha ao criar a cobrança Pix.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function verificarPix() {
+    if (!pixPanel) return;
+    setPixBusy(true);
+    try {
+      const res = await fetch(`/api/erp/pix/cobranca/${pixPanel.id}`);
+      const data = (await res.json().catch(() => ({}))) as { status?: string; pago?: boolean; error?: string };
+      if (!res.ok) throw new Error(data.error || "Não foi possível verificar o pagamento.");
+      setPixPanel((cur) => (cur ? { ...cur, status: data.status ?? cur.status } : cur));
+      if (data.pago) handleSettleSuccess(pixPanel.contaReceberId, "PAGO");
+    } catch (e) {
+      setGlobalError(e instanceof Error ? e.message : "Falha ao verificar o Pix.");
+    } finally {
+      setPixBusy(false);
+    }
+  }
+
+  // Gestão do boleto NO BANCO: prorrogar vencimento e baixar (cancelar) sem sair do financeiro.
+  async function prorrogarBoletoBanco(r: ReceivableSummary) {
+    const sugestao = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+    const nova = window.prompt(`Novo vencimento do boleto de "${r.descricao}" (AAAA-MM-DD, só adiar):`, sugestao);
+    if (!nova) return;
+    setBusyId(r.id);
+    setGlobalError("");
+    try {
+      const res = await fetch(`/api/erp/financeiro/contas-receber/${r.id}/boleto/prorrogar`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ vencimento: nova })
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(data.error || "Não foi possível prorrogar o boleto.");
+      setReceivables((prev) => prev.map((x) => (x.id === r.id
+        ? { ...x, vencimento: new Date(`${nova}T12:00:00`).toLocaleDateString("pt-BR"), vencimentoRaw: `${nova}T12:00:00` }
+        : x)));
+    } catch (e) {
+      setGlobalError(e instanceof Error ? e.message : "Falha ao prorrogar o boleto.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function baixarBoletoBanco(r: ReceivableSummary) {
+    if (!window.confirm(`Baixar (cancelar) o boleto de "${r.descricao}" NO BANCO? Ele deixa de ser pagável; o título continua em aberto no ERP.`)) return;
+    setBusyId(r.id);
+    setGlobalError("");
+    try {
+      const res = await fetch(`/api/erp/financeiro/contas-receber/${r.id}/boleto/baixar`, { method: "POST" });
+      const data = (await res.json().catch(() => ({}))) as { status?: string; error?: string };
+      if (!res.ok) throw new Error(data.error || "Não foi possível baixar o boleto no banco.");
+      setReceivables((prev) => prev.map((x) => (x.id === r.id ? { ...x, boletoStatus: data.status ?? "BAIXADO" } : x)));
+    } catch (e) {
+      setGlobalError(e instanceof Error ? e.message : "Falha ao baixar o boleto no banco.");
     } finally {
       setBusyId(null);
     }
@@ -809,7 +899,40 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
                           {busyId === r.id ? "..." : "Consultar pgto"}
                         </button>
                       )}
+                      {r.canSettle && (r as ReceivableSummary).boletoStatus === "REGISTRADO" && (
+                        <>
+                          <button
+                            type="button"
+                            className="btn-erp ghost xs"
+                            title="Prorrogar o vencimento do boleto no banco (e do título)"
+                            disabled={busyId === r.id}
+                            onClick={() => prorrogarBoletoBanco(r as ReceivableSummary)}
+                          >
+                            {busyId === r.id ? "..." : "Prorrogar"}
+                          </button>
+                          <button
+                            type="button"
+                            className="btn-erp ghost xs"
+                            title="Baixar (cancelar) o boleto no banco — o título continua em aberto no ERP"
+                            disabled={busyId === r.id}
+                            onClick={() => baixarBoletoBanco(r as ReceivableSummary)}
+                          >
+                            {busyId === r.id ? "..." : "Baixar no banco"}
+                          </button>
+                        </>
+                      )}
                     </>
+                  )}
+                  {aba === "receber" && contasCobranca.length > 0 && r.canSettle && (r as ReceivableSummary).boletoStatus !== "REGISTRADO" && (
+                    <button
+                      type="button"
+                      className="btn-erp ghost xs"
+                      title="Gerar QR Code Pix para este título — o pagamento baixa automaticamente"
+                      disabled={busyId === r.id}
+                      onClick={() => cobrarViaPix(r as ReceivableSummary)}
+                    >
+                      {busyId === r.id ? "..." : "Pix QR"}
+                    </button>
                   )}
                   {r.canEstornar && (
                     <button
@@ -863,6 +986,47 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
           </div>
         )}
       </div>
+
+      {/* Drawer da cobrança Pix (QR + verificação) */}
+      {pixPanel && (
+        <>
+          <div className="drawer-bd" onClick={() => setPixPanel(null)} />
+          <aside className="drawer">
+            <header className="drawer-head">
+              <h2>Cobrança Pix — R$ {pixPanel.valor.toFixed(2)}</h2>
+              <button type="button" className="btn-erp ghost xs" onClick={() => setPixPanel(null)}>Fechar</button>
+            </header>
+            <div className="drawer-body" style={{ padding: 20, display: "flex", flexDirection: "column", gap: 12 }}>
+              <div style={{ fontSize: 12, color: "var(--erp-slate)" }}>{pixPanel.descricao}</div>
+              {pixPanel.status === "CONCLUIDA" ? (
+                <div className="alert success"><strong>✓ Pago!</strong> O título foi baixado com crédito na conta.</div>
+              ) : (
+                <>
+                  {pixPanel.qrDataUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={pixPanel.qrDataUrl} alt="QR Code Pix" style={{ width: 260, height: 260, alignSelf: "center", border: "1px solid var(--erp-line)", borderRadius: 8 }} />
+                  ) : (
+                    <div className="alert warn">QR Code indisponível{pixPanel.aviso ? ` — ${pixPanel.aviso}` : "."}</div>
+                  )}
+                  {pixPanel.brcode && (
+                    <label style={{ fontSize: 12 }}>
+                      Pix copia-e-cola
+                      <textarea readOnly value={pixPanel.brcode} rows={3} style={{ width: "100%", fontSize: 11, fontFamily: "monospace" }} onFocus={(e) => e.currentTarget.select()} />
+                    </label>
+                  )}
+                  {pixPanel.aviso && pixPanel.qrDataUrl && <div style={{ fontSize: 11.5, color: "var(--erp-slate)" }}>{pixPanel.aviso}</div>}
+                  <button type="button" className="btn-erp primary" disabled={pixBusy} onClick={verificarPix}>
+                    {pixBusy ? "Verificando…" : "Verificar pagamento"}
+                  </button>
+                  <div style={{ fontSize: 11, color: "var(--erp-slate)" }}>
+                    Mesmo sem verificar aqui, o pagamento é detectado pela sincronização automática e o título baixa sozinho.
+                  </div>
+                </>
+              )}
+            </div>
+          </aside>
+        </>
+      )}
 
       {/* Modal de baixa */}
       {settlingId && settlingItem && (

@@ -30,6 +30,26 @@ export function SicoobCobrancaConfig({ contas }: { contas: ConfigCobrancaConta[]
     });
   }
 
+  // Webhook de liquidação: o Sicoob passa a avisar o ERP na hora em que um boleto é pago
+  // (baixa em tempo real; o cron continua como rede de segurança).
+  async function ativarWebhook(c: ConfigCobrancaConta) {
+    if (!window.confirm(`Ativar a baixa em tempo real (webhook Sicoob) para a conta "${c.nome}"?`)) return;
+    setBusy(true);
+    setErro("");
+    setOk("");
+    try {
+      const res = await fetch(`/api/erp/financeiro/contas-bancarias/${c.id}/sicoob/webhook`, { method: "POST" });
+      const data = (await res.json().catch(() => ({}))) as { idWebhook?: number; url?: string; error?: string };
+      if (!res.ok) throw new Error(data.error || "Não foi possível ativar o webhook.");
+      setOk(`Webhook ativado (id ${data.idWebhook}). O Sicoob valida a URL e passa a notificar as liquidações.`);
+      router.refresh();
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Falha ao ativar o webhook.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function salvar(id: string) {
     setBusy(true);
     setErro("");
@@ -91,6 +111,23 @@ export function SicoobCobrancaConfig({ contas }: { contas: ConfigCobrancaConta[]
                 </td>
                 <td className="actions">
                   <button type="button" className="btn-erp ghost xs" onClick={() => abrir(c)}>Configurar</button>
+                  {c.configurada && (
+                    c.temWebhook ? (
+                      <span className="pill success" title="O Sicoob notifica o ERP quando um boleto é pago (baixa em tempo real)">
+                        <span className="dot" />⚡ Tempo real
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        className="btn-erp ghost xs"
+                        title="Ativar baixa em tempo real: o Sicoob avisa o ERP na hora em que o boleto é pago"
+                        disabled={busy}
+                        onClick={() => ativarWebhook(c)}
+                      >
+                        ⚡ Ativar tempo real
+                      </button>
+                    )
+                  )}
                 </td>
               </tr>
             ))}

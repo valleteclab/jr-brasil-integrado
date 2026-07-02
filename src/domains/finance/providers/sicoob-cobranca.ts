@@ -1,115 +1,22 @@
-import https from "node:https";
-import { pfxTlsOptions } from "@/domains/fiscal/providers/pfx-utils";
+import { type HttpResult, type SicoobAuth, SicoobError, parseErroSicoob, sicoobApi } from "./sicoob-http";
 
 /**
- * Cliente da API de COBRANÇA BANCÁRIA do Sicoob (v3) — registro/consulta de boletos.
- *
- * Autenticação:
- *  - PRODUÇÃO: OAuth2 client_credentials em auth.sicoob.com.br, com mTLS usando o certificado
- *    ICP-Brasil e-CNPJ A1 da empresa (o MESMO A1 já guardado para o fiscal) + client_id do
- *    credenciamento "Sicoob Desenvolvedores".
- *  - SANDBOX: token Bearer fixo do portal dev (sem mTLS) — permite testar sem credenciamento.
+ * Cliente da API de COBRANÇA BANCÁRIA do Sicoob (v3) — registro/consulta/gestão de boletos
+ * e webhooks de movimento. HTTP/autenticação em ./sicoob-http (compartilhado com Pix e Conta).
  *
  * Referência: developers.sicoob.com.br (Cobrança Bancária v3).
  */
 
-const PROD_AUTH_URL = "https://auth.sicoob.com.br/auth/realms/cooperado/protocol/openid-connect/token";
-const PROD_API_BASE = "https://api.sicoob.com.br/cobranca-bancaria/v3";
-const SANDBOX_API_BASE = "https://sandbox.sicoob.com.br/sicoob/sandbox/cobranca-bancaria/v3";
+export { SicoobError, type SicoobAuth } from "./sicoob-http";
 
-const SCOPES = "boletos_inclusao boletos_consulta boletos_alteracao";
-
-export class SicoobError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "SicoobError";
-  }
-}
-
-export type SicoobAuth = {
-  sandbox: boolean;
-  clientId?: string | null;
-  /** Token do portal (sandbox). */
-  sandboxToken?: string | null;
-  /** A1 da empresa para o mTLS de produção. */
-  certificado?: { pfx: Buffer; senha: string } | null;
+const COBRANCA = {
+  prodBase: "https://api.sicoob.com.br/cobranca-bancaria/v3",
+  sandboxBase: "https://sandbox.sicoob.com.br/sicoob/sandbox/cobranca-bancaria/v3",
+  scopes: "boletos_inclusao boletos_consulta boletos_alteracao webhooks_inclusao webhooks_consulta webhooks_alteracao"
 };
 
-type HttpResult = { statusCode: number; body: string };
-
-function request(
-  url: string,
-  opts: { method: string; headers: Record<string, string>; tls?: { key: string; cert: string } | null },
-  payload?: string
-): Promise<HttpResult> {
-  const u = new URL(url);
-  return new Promise((resolve, reject) => {
-    const req = https.request(
-      {
-        method: opts.method,
-        hostname: u.hostname,
-        port: u.port || 443,
-        path: u.pathname + u.search,
-        headers: opts.headers,
-        ...(opts.tls ? { key: opts.tls.key, cert: opts.tls.cert } : {}),
-        timeout: 30000
-      },
-      (res) => {
-        let data = "";
-        res.setEncoding("utf8");
-        res.on("data", (c) => (data += c));
-        res.on("end", () => resolve({ statusCode: res.statusCode ?? 0, body: data }));
-      }
-    );
-    req.on("timeout", () => req.destroy(new Error("Timeout ao chamar a API do Sicoob.")));
-    req.on("error", reject);
-    if (payload) req.write(payload);
-    req.end();
-  });
-}
-
-/** Obtém o access token (produção: client_credentials + mTLS; sandbox: token do portal direto). */
-async function getAccessToken(auth: SicoobAuth): Promise<{ token: string; tls: { key: string; cert: string } | null }> {
-  if (auth.sandbox) {
-    const token = auth.sandboxToken?.trim();
-    if (!token) throw new SicoobError("Informe o token de sandbox do portal Sicoob Desenvolvedores na conta bancária.");
-    return { token, tls: null };
-  }
-  if (!auth.clientId?.trim()) throw new SicoobError("Informe o client_id do credenciamento Sicoob na conta bancária.");
-  if (!auth.certificado?.pfx) throw new SicoobError("Certificado A1 da empresa não disponível para o mTLS do Sicoob.");
-  const tls = pfxTlsOptions(auth.certificado);
-  const body = new URLSearchParams({
-    grant_type: "client_credentials",
-    client_id: auth.clientId.trim(),
-    scope: SCOPES
-  }).toString();
-  const res = await request(PROD_AUTH_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded", "Content-Length": String(Buffer.byteLength(body)) },
-    tls
-  }, body);
-  if (res.statusCode < 200 || res.statusCode >= 300) {
-    throw new SicoobError(`Falha na autenticação Sicoob (HTTP ${res.statusCode}): ${res.body.slice(0, 300)}`);
-  }
-  const token = (JSON.parse(res.body) as { access_token?: string }).access_token;
-  if (!token) throw new SicoobError("Autenticação Sicoob não retornou access_token.");
-  return { token, tls };
-}
-
-async function api(auth: SicoobAuth, method: string, path: string, payload?: unknown): Promise<HttpResult> {
-  const { token, tls } = await getAccessToken(auth);
-  const base = auth.sandbox ? SANDBOX_API_BASE : PROD_API_BASE;
-  const body = payload !== undefined ? JSON.stringify(payload) : undefined;
-  return request(`${base}${path}`, {
-    method,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: "application/json",
-      ...(auth.sandbox && auth.clientId ? { client_id: auth.clientId } : {}),
-      ...(body ? { "Content-Type": "application/json", "Content-Length": String(Buffer.byteLength(body)) } : {})
-    },
-    tls
-  }, body);
+function api(auth: SicoobAuth, method: string, path: string, payload?: unknown): Promise<HttpResult> {
+  return sicoobApi(auth, COBRANCA, method, path, payload);
 }
 
 export type IncluirBoletoInput = {
@@ -219,12 +126,78 @@ export async function consultarBoleto(
   };
 }
 
-function parseErro(res: HttpResult): string {
-  try {
-    const data = JSON.parse(res.body) as { mensagens?: Array<{ mensagem?: string; codigo?: string }>; message?: string };
-    const msgs = (data.mensagens ?? []).map((m) => `${m.codigo ? `${m.codigo}: ` : ""}${m.mensagem ?? ""}`).filter(Boolean);
-    if (msgs.length) return `Sicoob rejeitou (HTTP ${res.statusCode}): ${msgs.join("; ")}`;
-    if (data.message) return `Sicoob (HTTP ${res.statusCode}): ${data.message}`;
-  } catch { /* corpo não-JSON */ }
-  return `Falha na API do Sicoob (HTTP ${res.statusCode}): ${res.body.slice(0, 300)}`;
+/** Baixa (cancela) um boleto registrado no banco — para de ser cobrado/pagável. */
+export async function baixarBoleto(
+  auth: SicoobAuth,
+  params: { numeroCliente: number; codigoModalidade: number; nossoNumero: string }
+): Promise<void> {
+  const res = await api(auth, "PATCH", `/boletos/${params.nossoNumero}/baixar`, {
+    numeroCliente: params.numeroCliente,
+    codigoModalidade: params.codigoModalidade
+  });
+  if (res.statusCode < 200 || res.statusCode >= 300) throw new SicoobError(parseErro(res));
 }
+
+/** Prorroga o vencimento de um boleto já registrado (grupo prorrogacaoVencimento do PATCH v3). */
+export async function prorrogarVencimentoBoleto(
+  auth: SicoobAuth,
+  params: { numeroCliente: number; codigoModalidade: number; nossoNumero: string; dataVencimento: string }
+): Promise<void> {
+  const res = await api(auth, "PATCH", `/boletos/${params.nossoNumero}`, {
+    numeroCliente: params.numeroCliente,
+    codigoModalidade: params.codigoModalidade,
+    prorrogacaoVencimento: { dataVencimento: params.dataVencimento }
+  });
+  if (res.statusCode < 200 || res.statusCode >= 300) throw new SicoobError(parseErro(res));
+}
+
+export type WebhookCobranca = {
+  idWebhook: number;
+  url: string | null;
+  codigoTipoMovimento: number | null;
+  codigoSituacao: number | null;
+  descricaoSituacao: string | null;
+};
+
+/**
+ * Cadastra o webhook de movimento da cobrança. Tipo 7 = Pagamento (baixa operacional): o Sicoob
+ * chama a URL quando um boleto liquida. codigoPeriodoMovimento 1 = movimento do dia (D0).
+ */
+export async function cadastrarWebhookCobranca(
+  auth: SicoobAuth,
+  params: { url: string; email: string; codigoTipoMovimento?: number }
+): Promise<number> {
+  const res = await api(auth, "POST", "/webhooks", {
+    url: params.url,
+    email: params.email,
+    codigoTipoMovimento: params.codigoTipoMovimento ?? 7,
+    codigoPeriodoMovimento: 1
+  });
+  if (res.statusCode < 200 || res.statusCode >= 300) throw new SicoobError(parseErro(res));
+  let data: unknown = {};
+  try { data = JSON.parse(res.body); } catch { /* vazio */ }
+  const id = ((data as { resultado?: { idWebhook?: number } }).resultado ?? {}).idWebhook;
+  if (id == null) throw new SicoobError("Cadastro do webhook Sicoob não retornou idWebhook.");
+  return Number(id);
+}
+
+/** Lista os webhooks cadastrados (situação 3 = validado com sucesso). */
+export async function consultarWebhooksCobranca(auth: SicoobAuth, codigoTipoMovimento = 7): Promise<WebhookCobranca[]> {
+  const res = await api(auth, "GET", `/webhooks?codigoTipoMovimento=${codigoTipoMovimento}`);
+  if (res.statusCode < 200 || res.statusCode >= 300) throw new SicoobError(parseErro(res));
+  let data: unknown = {};
+  try { data = JSON.parse(res.body); } catch { /* vazio */ }
+  const lista = (data as { resultado?: unknown }).resultado;
+  return (Array.isArray(lista) ? lista : []).map((w) => {
+    const r = w as Record<string, unknown>;
+    return {
+      idWebhook: Number(r.idWebhook),
+      url: (r.url as string) ?? null,
+      codigoTipoMovimento: r.codigoTipoMovimento != null ? Number(r.codigoTipoMovimento) : null,
+      codigoSituacao: r.codigoSituacao != null ? Number(r.codigoSituacao) : null,
+      descricaoSituacao: (r.descricaoSituacao as string) ?? null
+    };
+  });
+}
+
+const parseErro = parseErroSicoob;

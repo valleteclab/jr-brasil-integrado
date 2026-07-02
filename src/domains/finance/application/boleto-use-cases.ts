@@ -4,7 +4,17 @@ import { scopedByTenantCompany, scopedByTenantCompanyAmbiente } from "@/lib/auth
 import { createAuditLog } from "@/lib/audit/audit-service";
 import { carregarCertificado } from "@/domains/fiscal/application/certificado-use-cases";
 import { encryptSecret, decryptSecret } from "@/lib/security/secret-crypto";
-import { incluirBoleto, consultarBoleto as consultarBoletoSicoob, SicoobError, type SicoobAuth } from "@/domains/finance/providers/sicoob-cobranca";
+import {
+  incluirBoleto,
+  consultarBoleto as consultarBoletoSicoob,
+  baixarBoleto as baixarBoletoSicoob,
+  prorrogarVencimentoBoleto,
+  cadastrarWebhookCobranca,
+  consultarWebhooksCobranca,
+  SicoobError,
+  type SicoobAuth
+} from "@/domains/finance/providers/sicoob-cobranca";
+import { randomBytes } from "node:crypto";
 import { settleReceivable } from "@/domains/finance/application/finance-use-cases";
 import { classificacaoReceitaPadraoId } from "@/domains/finance/application/classificacao-use-cases";
 import { gerarParcelas, rotuloParcela, type ParcelaGerada } from "@/lib/finance/condicao-pagamento";
@@ -56,13 +66,14 @@ export async function configurarSicoob(
   });
 }
 
-type ContaCobranca = NonNullable<Awaited<ReturnType<typeof prisma.contaBancaria.findFirst>>>;
+export type ContaCobranca = NonNullable<Awaited<ReturnType<typeof prisma.contaBancaria.findFirst>>>;
 
-function contaTemCobranca(conta: ContaCobranca): boolean {
+export function contaTemCobranca(conta: ContaCobranca): boolean {
   return Boolean(conta.sicoobNumeroCliente && (conta.sicoobSandbox ? conta.sicoobSandboxToken : conta.sicoobClientId));
 }
 
-async function authDaConta(scope: TenantScope, conta: ContaCobranca): Promise<SicoobAuth> {
+/** Auth Sicoob da conta (compartilhada por cobrança, Pix e conta-corrente — mesmo credenciamento). */
+export async function authDaConta(scope: TenantScope, conta: ContaCobranca): Promise<SicoobAuth> {
   if (!contaTemCobranca(conta)) {
     throw new BoletoError(
       `A conta "${conta.nome}" não está configurada para cobrança Sicoob (client_id/nº do beneficiário em Configurações → Contas financeiras).`
@@ -90,6 +101,8 @@ export type ConfigCobrancaConta = {
   sicoobSandbox: boolean;
   temSandboxToken: boolean;
   configurada: boolean;
+  /** Webhook de liquidação já cadastrado no Sicoob (baixa em tempo real). */
+  temWebhook: boolean;
 };
 
 /** Config de cobrança por conta (sem expor o token) — para a tela de Configurações. */
@@ -99,7 +112,8 @@ export async function listConfigCobranca(scope: TenantScope): Promise<ConfigCobr
     orderBy: { nome: "asc" },
     select: {
       id: true, nome: true, sicoobClientId: true, sicoobNumeroCliente: true,
-      sicoobContaCorrente: true, sicoobModalidade: true, sicoobSandbox: true, sicoobSandboxToken: true
+      sicoobContaCorrente: true, sicoobModalidade: true, sicoobSandbox: true, sicoobSandboxToken: true,
+      sicoobWebhookId: true
     }
   });
   return contas.map((c) => ({
@@ -111,7 +125,8 @@ export async function listConfigCobranca(scope: TenantScope): Promise<ConfigCobr
     sicoobModalidade: c.sicoobModalidade,
     sicoobSandbox: c.sicoobSandbox,
     temSandboxToken: Boolean(c.sicoobSandboxToken),
-    configurada: Boolean(c.sicoobNumeroCliente && (c.sicoobSandbox ? c.sicoobSandboxToken : c.sicoobClientId))
+    configurada: Boolean(c.sicoobNumeroCliente && (c.sicoobSandbox ? c.sicoobSandboxToken : c.sicoobClientId)),
+    temWebhook: Boolean(c.sicoobWebhookId)
   }));
 }
 
@@ -524,6 +539,149 @@ export async function processarVendaBoleto(
     aviso,
     titulos
   };
+}
+
+/**
+ * BAIXA (cancela) o boleto NO BANCO — ele deixa de ser pagável. Use ao cancelar/renegociar o
+ * título no ERP, para o boleto não ficar órfão cobrável no Sicoob. O título em si não é alterado.
+ */
+export async function baixarBoletoNoBanco(scope: TenantScope, contaReceberId: string, usuarioId?: string) {
+  const boleto = await prisma.boletoCobranca.findFirst({
+    where: { contaReceberId, tenantId: scope.tenantId, empresaId: scope.empresaId },
+    include: { contaBancaria: true }
+  });
+  if (!boleto) throw new BoletoError("Este título não tem boleto emitido.");
+  if (!boleto.nossoNumero) throw new BoletoError("Boleto sem nosso número (registro não confirmado).");
+  if (boleto.status === "LIQUIDADO") throw new BoletoError("O boleto já foi liquidado no banco — não pode ser baixado.");
+  if (boleto.status === "BAIXADO") return boleto;
+  const auth = await authDaConta(scope, boleto.contaBancaria);
+  await baixarBoletoSicoob(auth, {
+    numeroCliente: boleto.contaBancaria.sicoobNumeroCliente as number,
+    codigoModalidade: boleto.contaBancaria.sicoobModalidade,
+    nossoNumero: boleto.nossoNumero
+  });
+  const atualizado = await prisma.boletoCobranca.update({ where: { id: boleto.id }, data: { status: "BAIXADO" } });
+  await prisma.$transaction(async (tx) => createAuditLog(tx, {
+    scope, usuarioId, entidade: "BoletoCobranca", entidadeId: boleto.id, acao: "BAIXA_BANCO",
+    payload: { contaReceberId, nossoNumero: boleto.nossoNumero }
+  }));
+  return atualizado;
+}
+
+/**
+ * PRORROGA o vencimento do boleto no banco e ajusta o vencimento do título/registro no ERP.
+ * (Prorrogação só anda para frente: o Sicoob não aceita antecipar a data.)
+ */
+export async function prorrogarBoletoNoBanco(scope: TenantScope, contaReceberId: string, novaData: Date, usuarioId?: string) {
+  if (Number.isNaN(novaData.getTime())) throw new BoletoError("Data de vencimento inválida.");
+  const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+  if (novaData < hoje) throw new BoletoError("O novo vencimento não pode ficar no passado.");
+  const boleto = await prisma.boletoCobranca.findFirst({
+    where: { contaReceberId, tenantId: scope.tenantId, empresaId: scope.empresaId },
+    include: { contaBancaria: true }
+  });
+  if (!boleto) throw new BoletoError("Este título não tem boleto emitido.");
+  if (!boleto.nossoNumero) throw new BoletoError("Boleto sem nosso número (registro não confirmado).");
+  if (boleto.status !== "REGISTRADO") throw new BoletoError(`O boleto não está em aberto no banco (${boleto.status}).`);
+  if (novaData <= boleto.vencimento) {
+    throw new BoletoError("A prorrogação só pode ADIAR o vencimento (o Sicoob não aceita antecipar). Para outra data, baixe o boleto e emita um novo.");
+  }
+  const auth = await authDaConta(scope, boleto.contaBancaria);
+  await prorrogarVencimentoBoleto(auth, {
+    numeroCliente: boleto.contaBancaria.sicoobNumeroCliente as number,
+    codigoModalidade: boleto.contaBancaria.sicoobModalidade,
+    nossoNumero: boleto.nossoNumero,
+    dataVencimento: DATE_ISO(novaData)
+  });
+  await prisma.boletoCobranca.update({ where: { id: boleto.id }, data: { vencimento: novaData } });
+  await prisma.contaReceber.update({ where: { id: contaReceberId }, data: { vencimento: novaData } });
+  await prisma.$transaction(async (tx) => createAuditLog(tx, {
+    scope, usuarioId, entidade: "BoletoCobranca", entidadeId: boleto.id, acao: "PRORROGACAO",
+    payload: { contaReceberId, nossoNumero: boleto.nossoNumero, novaData: DATE_ISO(novaData) }
+  }));
+  return { vencimento: novaData };
+}
+
+/**
+ * ATIVA o webhook de liquidação da cobrança para uma conta: o Sicoob passa a chamar o ERP quando
+ * um boleto é pago (baixa em tempo real, sem esperar o cron). A URL pública carrega um segredo
+ * aleatório por conta — e o receiver NUNCA confia no corpo: sempre re-consulta a API antes de baixar.
+ */
+export async function ativarWebhookCobranca(scope: TenantScope, contaBancariaId: string, usuarioId?: string) {
+  const conta = await prisma.contaBancaria.findFirst({ where: { id: contaBancariaId, ...scopedByTenantCompany(scope), ativo: true } });
+  if (!conta) throw new BoletoError("Conta bancária não encontrada.");
+  const auth = await authDaConta(scope, conta);
+  const baseUrl = (process.env.ERP_BASE ?? process.env.APP_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? "").trim().replace(/\/+$/, "");
+  if (!/^https:\/\//.test(baseUrl)) {
+    throw new BoletoError("Defina ERP_BASE (https, endereço público do ERP) no ambiente para ativar o webhook — o Sicoob precisa alcançar o servidor.");
+  }
+  const empresa = await prisma.empresa.findFirst({ where: { id: scope.empresaId }, select: { email: true } });
+  const email = empresa?.email?.trim();
+  if (!email) throw new BoletoError("Cadastre o e-mail da empresa (Configurações → Empresa) — o Sicoob exige um e-mail de contato no webhook.");
+  const secret = conta.sicoobWebhookSecret ?? randomBytes(24).toString("hex");
+  const url = `${baseUrl}/api/webhooks/sicoob/cobranca/${secret}`;
+  const idWebhook = await cadastrarWebhookCobranca(auth, { url, email });
+  await prisma.contaBancaria.update({ where: { id: conta.id }, data: { sicoobWebhookId: idWebhook, sicoobWebhookSecret: secret } });
+  await prisma.$transaction(async (tx) => createAuditLog(tx, {
+    scope, usuarioId, entidade: "ContaBancaria", entidadeId: conta.id, acao: "WEBHOOK_COBRANCA", payload: { idWebhook, url }
+  }));
+  return { idWebhook, url };
+}
+
+/** Situação do webhook no Sicoob (3 = validado com sucesso) — para a tela de Configurações. */
+export async function statusWebhookCobranca(scope: TenantScope, contaBancariaId: string) {
+  const conta = await prisma.contaBancaria.findFirst({ where: { id: contaBancariaId, ...scopedByTenantCompany(scope) } });
+  if (!conta) throw new BoletoError("Conta bancária não encontrada.");
+  if (!conta.sicoobWebhookId) return { ativo: false, situacao: null as string | null };
+  const auth = await authDaConta(scope, conta);
+  const lista = await consultarWebhooksCobranca(auth);
+  const meu = lista.find((w) => w.idWebhook === conta.sicoobWebhookId) ?? null;
+  return { ativo: Boolean(meu), situacao: meu?.descricaoSituacao ?? null };
+}
+
+/**
+ * Processa uma chamada do WEBHOOK (rota pública): identifica a conta pelo segredo da URL, extrai
+ * os nossos números citados no corpo (defensivo — qualquer formato) e re-consulta cada boleto na
+ * API antes de baixar. Corpo sem nosso número identificável → sincroniza os pendentes da conta.
+ */
+export async function processarWebhookCobranca(secret: string, payload: unknown): Promise<{ processados: number; baixados: number }> {
+  const conta = await prisma.contaBancaria.findFirst({ where: { sicoobWebhookSecret: secret, ativo: true } });
+  if (!conta) throw new BoletoError("Webhook desconhecido.");
+
+  const nossoNumeros = new Set<string>();
+  (function coletar(v: unknown, profundidade = 0): void {
+    if (profundidade > 6 || v == null) return;
+    if (Array.isArray(v)) { v.slice(0, 200).forEach((x) => coletar(x, profundidade + 1)); return; }
+    if (typeof v === "object") {
+      for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+        if (/nossonumero/i.test(k) && (typeof val === "string" || typeof val === "number")) nossoNumeros.add(String(val));
+        else coletar(val, profundidade + 1);
+      }
+    }
+  })(payload);
+
+  const boletos = await prisma.boletoCobranca.findMany({
+    where: {
+      tenantId: conta.tenantId,
+      empresaId: conta.empresaId,
+      contaBancariaId: conta.id,
+      status: "REGISTRADO",
+      nossoNumero: nossoNumeros.size ? { in: [...nossoNumeros] } : { not: null },
+      contaReceber: { status: { in: ["ABERTO", "PARCIAL", "VENCIDO"] } }
+    },
+    take: 50,
+    select: { contaReceberId: true, contaReceber: { select: { ambiente: true } } }
+  });
+
+  let baixados = 0;
+  for (const b of boletos) {
+    const scope = { tenantId: conta.tenantId, empresaId: conta.empresaId, ambiente: b.contaReceber.ambiente } as TenantScope;
+    try {
+      const r = await sincronizarBoleto(scope, b.contaReceberId);
+      if (r.baixado) baixados++;
+    } catch { /* segue os demais; o cron cobre retentativas */ }
+  }
+  return { processados: boletos.length, baixados };
 }
 
 /** PDF do boleto (2ª via a partir do base64 guardado no registro). */
