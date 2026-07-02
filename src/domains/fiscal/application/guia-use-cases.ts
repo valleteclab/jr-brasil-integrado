@@ -140,17 +140,27 @@ export async function emitirGuiaGnre(
   const recibo = await enviarLoteGnre({ pfx: certificado.pfx, senha: certificado.senha }, ambienteWs, lote);
   await prisma.guiaRecolhimento.update({ where: { id }, data: { reciboLote: recibo, situacaoWs: "ENVIADA", produtoGnre: produto ?? null } });
 
-  // Poll do resultado (processamento assíncrono do portal — normalmente segundos).
+  // Poll do resultado — o Manual v2.11 (4.2.3) manda aguardar NO MÍNIMO 30s antes da 1ª
+  // consulta (evita 401 "Lote em Processamento"); depois reconsulta a cada 10s.
+  const auth = { pfx: certificado.pfx, senha: certificado.senha };
   let ultimo: Awaited<ReturnType<typeof consultarResultadoGnre>> | null = null;
-  for (let i = 0; i < 6; i++) {
-    await new Promise((resolve) => setTimeout(resolve, 3000));
-    ultimo = await consultarResultadoGnre({ pfx: certificado.pfx, senha: certificado.senha }, ambienteWs, recibo);
+  await new Promise((resolve) => setTimeout(resolve, 30000));
+  for (let i = 0; i < 3; i++) {
+    ultimo = await consultarResultadoGnre(auth, ambienteWs, recibo);
     if (ultimo.representacaoNumerica || ultimo.erros.length) break;
+    await new Promise((resolve) => setTimeout(resolve, 10000));
   }
   if (!ultimo) throw new GuiaError("Sem resposta do portal GNRE — consulte novamente em instantes.");
   if (ultimo.erros.length && !ultimo.representacaoNumerica) {
     await prisma.guiaRecolhimento.update({ where: { id }, data: { situacaoWs: `REJEITADA: ${ultimo.erros.join("; ").slice(0, 500)}` } });
     throw new GuiaError(`GNRE rejeitou a guia: ${ultimo.erros.join("; ")}`);
+  }
+
+  // Guia processada: UMA consulta final pedindo o PDF (só o incluirPDFGuias=S faz o portal
+  // devolver o pdfGuias — e é mais lenta, por isso fica fora do poll).
+  if (ultimo.representacaoNumerica && !ultimo.pdfBase64) {
+    const comPdf = await consultarResultadoGnre(auth, ambienteWs, recibo, true);
+    if (comPdf.pdfBase64) ultimo = comPdf;
   }
 
   const atualizada = await prisma.guiaRecolhimento.update({

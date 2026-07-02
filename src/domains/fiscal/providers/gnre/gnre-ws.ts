@@ -5,12 +5,13 @@ import { pfxTlsOptions } from "../pfx-utils";
 
 /**
  * WEBSERVICE GNRE ONLINE (Portal GNRE, SEFAZ-PE) — emissão da guia de recolhimento estadual por
- * lote XML v2.00 + consulta do resultado. SOAP 1.1 com TLS-MÚTUO usando o MESMO A1 e-CNPJ da
- * empresa (nenhum credenciamento prévio: o certificado autentica).
+ * lote XML v2.00 + consulta do resultado. SOAP 1.2 (Document/Literal) com TLS-MÚTUO usando o
+ * MESMO A1 e-CNPJ da empresa (exige HABILITAÇÃO do CNPJ no portal — situação 102 sem ela).
  *
- * Fontes: Manual de Integração GNRE (CONFAZ) e ambiente oficial de TESTES
- * www.testegnre.pe.gov.br (endpoints /gnreWS/services/GnreLoteRecepcao e /GnreResultadoLote).
- * O processamento é ASSÍNCRONO: envia o lote → recibo → consulta o resultado (com PDF da guia).
+ * Fontes: Manual de Integração – Web Service de Lote v2.11 (jun/2024, docs/xsd-gnre/) e ambiente
+ * oficial de TESTES www.testegnre.pe.gov.br (/gnreWS/services/GnreLoteRecepcao e /GnreResultadoLote).
+ * O processamento é ASSÍNCRONO: envia o lote → recibo (10 OU 14 dígitos desde a v2.11) → consulta
+ * o resultado. O manual (4.2.3) manda aguardar NO MÍNIMO 30s antes da 1ª consulta (evita 401).
  */
 
 const ENDPOINTS = {
@@ -36,8 +37,9 @@ export class GnreError extends Error {
 export type GnreAuth = { pfx: Buffer; senha: string };
 export type GnreAmbiente = "PRODUCAO" | "HOMOLOGACAO";
 
+// Escapes exigidos pelo manual (3.2.1-e): > < & " '
 const esc = (v: string) =>
-  v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
 const dig = (v: string | null | undefined) => (v ?? "").replace(/\D+/g, "");
 
 export type GuiaGnreInput = {
@@ -237,14 +239,17 @@ export type ResultadoGnre = {
   bruto: string;
 };
 
-/** Consulta o resultado do lote (inclui o PDF da guia quando processada). */
-export async function consultarResultadoGnre(auth: GnreAuth, ambiente: GnreAmbiente, recibo: string): Promise<ResultadoGnre> {
-  // XSD oficial (docs/xsd-gnre/lote_gnre_consulta_v1.00.xsd): TConsLote_GNRE tem SOMENTE
-  // ambiente (1|2) e numeroRecibo — campos extras derrubam a consulta com situação 501.
+/** Consulta o resultado do lote. `incluirPdf` pede o PDF das guias (consulta mais LENTA — o
+ * manual manda usar só quando necessário; no poll use false e faça UMA consulta final com true). */
+export async function consultarResultadoGnre(auth: GnreAuth, ambiente: GnreAmbiente, recibo: string, incluirPdf = false): Promise<ResultadoGnre> {
+  // XSD oficial v2.11 (docs/xsd-gnre/lote_gnre_consulta_v1.00.xsd): TConsLote_GNRE NÃO tem
+  // atributo "versao" (incluí-lo derruba a consulta com 501); incluirPDFGuias é opcional e sem
+  // ele o portal NUNCA devolve o pdfGuias.
   const consulta =
     `<TConsLote_GNRE xmlns="http://www.gnre.pe.gov.br">` +
     `<ambiente>${ambiente === "PRODUCAO" ? "1" : "2"}</ambiente>` +
     `<numeroRecibo>${recibo}</numeroRecibo>` +
+    (incluirPdf ? `<incluirPDFGuias>S</incluirPDFGuias>` : "") +
     `</TConsLote_GNRE>`;
   const ns = "http://www.gnre.pe.gov.br/webservice/GnreResultadoLote";
   const body = `<gnreDadosMsg xmlns="${ns}">${consulta}</gnreDadosMsg>`;

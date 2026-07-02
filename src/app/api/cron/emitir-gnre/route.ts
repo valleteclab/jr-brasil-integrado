@@ -21,7 +21,7 @@ function autorizado(request: Request): boolean {
 export async function POST(request: Request) {
   if (!autorizado(request)) return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
   try {
-    const body = (await request.json()) as { empresa?: string; guiaId?: string; consultarRecibo?: string; configUf?: string; receita?: string; versaoDados?: string; tipoDocOrigem?: string; produto?: string };
+    const body = (await request.json()) as { empresa?: string; guiaId?: string; consultarRecibo?: string; incluirPdf?: boolean; configUf?: string; receita?: string; versaoDados?: string; tipoDocOrigem?: string; produto?: string };
     const cnpj = (body.empresa ?? "").replace(/\D+/g, "");
     const empresa = await prisma.empresa.findFirst({
       where: cnpj.length === 14 ? { cnpj } : { razaoSocial: { contains: body.empresa ?? "", mode: "insensitive" } }
@@ -60,7 +60,7 @@ export async function POST(request: Request) {
         if (!g?.reciboLote) throw new GuiaError("Nenhuma guia com recibo de lote encontrado.");
         recibo = g.reciboLote;
       }
-      const r = await consultarResultadoGnre({ pfx: cert.pfx, senha: cert.senha }, "HOMOLOGACAO", recibo);
+      const r = await consultarResultadoGnre({ pfx: cert.pfx, senha: cert.senha }, "HOMOLOGACAO", recibo, body.incluirPdf === true);
       return NextResponse.json({
         recibo,
         situacao: r.situacao,
