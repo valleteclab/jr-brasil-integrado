@@ -864,7 +864,7 @@ export async function emitFiscalDocument(
       const regraSt = itemComSt ? pickRule(rules, "ICMS", itemComSt.ncm, ufDestSt) : null;
       await tx.guiaRecolhimento.upsert({
         where: { notaFiscalId_tipo: { notaFiscalId: nota.id, tipo: "GNRE_ICMS_ST" } },
-        update: { valor: totals.valorIcmsSt, ufFavorecida: ufDestSt, status: "PENDENTE", produtoGnre: regraSt?.gnreProduto ?? null },
+        update: { valor: totals.valorIcmsSt, ufFavorecida: ufDestSt, status: "PENDENTE", produtoGnre: regraSt?.gnreProduto ?? null, receitaGnre: regraSt?.gnreReceita ?? null },
         create: {
           tenantId: scope.tenantId,
           empresaId: scope.empresaId,
@@ -873,7 +873,8 @@ export async function emitFiscalDocument(
           tipo: "GNRE_ICMS_ST",
           ufFavorecida: ufDestSt,
           valor: totals.valorIcmsSt,
-          produtoGnre: regraSt?.gnreProduto ?? null
+          produtoGnre: regraSt?.gnreProduto ?? null,
+          receitaGnre: regraSt?.gnreReceita ?? null
         }
       });
     }

@@ -20,13 +20,19 @@ export type SimulacaoStParams = {
   cidade?: string;
   ibge?: string;
   cep?: string;
+  logradouro?: string;
+  numero?: string;
+  bairro?: string;
+  telefone?: string;
   mva?: number;
   aliqSt?: number;
   valor?: number;
   ncm?: string;
   provedores?: string[];
-  /** Código de produto GNRE da UF destino (DF: 20 = autopeças). */
+  /** Código de produto GNRE da UF destino (tabela por UF via GnreConfigUF; ex.: DF 20 = autopeças). */
   gnreProduto?: string;
+  /** Código de RECEITA GNRE da UF destino (ex.: PR 100099 = ST por operação; default 100048). */
+  gnreReceita?: string;
 };
 
 export type SimulacaoStResultado = {
@@ -117,7 +123,10 @@ export async function simularStInterestadual(params: SimulacaoStParams): Promise
     where: { tenantId: scope.tenantId, empresaId: scope.empresaId, nome: nomeRegra }
   });
   if (regraExistente) {
-    await prisma.regraTributaria.update({ where: { id: regraExistente.id }, data: { mva, aliquotaIcmsSt: aliqSt, ativo: true, gnreProduto: params.gnreProduto ?? "20" } });
+    await prisma.regraTributaria.update({
+      where: { id: regraExistente.id },
+      data: { mva, aliquotaIcmsSt: aliqSt, ativo: true, gnreProduto: params.gnreProduto ?? null, gnreReceita: params.gnreReceita ?? null }
+    });
     log.push(`Regra atualizada: ${nomeRegra}`);
   } else {
     await prisma.regraTributaria.create({
@@ -125,11 +134,56 @@ export async function simularStInterestadual(params: SimulacaoStParams): Promise
         tenantId: scope.tenantId, empresaId: scope.empresaId, nome: nomeRegra,
         tributo: "ICMS", operacao: "VENDA", ncm: NCM, ufDestino: clienteUf,
         mva, aliquotaIcmsSt: aliqSt, ativo: true, vigenciaInicio: new Date("2020-01-01"),
-        gnreProduto: params.gnreProduto ?? "20"
+        gnreProduto: params.gnreProduto ?? null, gnreReceita: params.gnreReceita ?? null
       }
     });
     log.push(`Regra criada: ${nomeRegra}`);
   }
+
+  // ── 2b. Cadastro REAL do cliente (idempotente por tenant+documento) com endereço padrão ──
+  const endereco = {
+    logradouro: params.logradouro ?? "Rua Teste",
+    numero: params.numero ?? "100",
+    bairro: params.bairro ?? "Centro",
+    cep: dig(params.cep ?? "01310100"),
+    cidade: params.cidade ?? "Sao Paulo",
+    uf: clienteUf,
+    codigoMunicipioIbge: dig(params.ibge ?? "3550308")
+  };
+  const cliente = await prisma.cliente.upsert({
+    where: { tenantId_documento: { tenantId: scope.tenantId, documento: clienteCnpj } },
+    update: {
+      razaoSocial: params.clienteNome ?? "CLIENTE TESTE ST INTERESTADUAL",
+      inscricaoEstadual: clienteIe,
+      status: "ATIVO"
+    },
+    create: {
+      tenantId: scope.tenantId, empresaId: scope.empresaId,
+      razaoSocial: params.clienteNome ?? "CLIENTE TESTE ST INTERESTADUAL",
+      documento: clienteCnpj, inscricaoEstadual: clienteIe, status: "ATIVO"
+    }
+  });
+  const temEndereco = await prisma.clienteEndereco.findFirst({ where: { clienteId: cliente.id } });
+  if (!temEndereco) {
+    await prisma.clienteEndereco.create({
+      data: {
+        tenantId: scope.tenantId, empresaId: scope.empresaId, clienteId: cliente.id,
+        apelido: "Principal", padrao: true, ...endereco
+      }
+    });
+  }
+  if (params.telefone) {
+    const temContato = await prisma.clienteContato.findFirst({ where: { clienteId: cliente.id } });
+    if (!temContato) {
+      await prisma.clienteContato.create({
+        data: {
+          tenantId: scope.tenantId, empresaId: scope.empresaId, clienteId: cliente.id,
+          nome: cliente.razaoSocial, telefone: dig(params.telefone), principal: true
+        }
+      });
+    }
+  }
+  log.push(`Cliente cadastrado: ${cliente.razaoSocial} (${clienteCnpj}) · IE ${clienteIe} · ${endereco.cidade}/${endereco.uf}`);
 
   // ── 3. Emissão pelos provedores (alterna provedor global e restaura) ──
   const plataforma = await prisma.plataformaConfiguracao.upsert({ where: { id: "default" }, update: {}, create: { id: "default" } });
@@ -145,14 +199,10 @@ export async function simularStInterestadual(params: SimulacaoStParams): Promise
           modelo: "NFE",
           naturezaOperacao: "VENDA DE MERCADORIA",
           receiver: {
-            nome: params.clienteNome ?? "CLIENTE TESTE ST INTERESTADUAL",
+            nome: cliente.razaoSocial,
             documento: clienteCnpj,
             inscricaoEstadual: clienteIe,
-            endereco: {
-              logradouro: "Rua Teste", numero: "100", bairro: "Centro",
-              cep: dig(params.cep ?? "01310100"), cidade: params.cidade ?? "Sao Paulo",
-              uf: clienteUf, codigoMunicipioIbge: dig(params.ibge ?? "3550308")
-            }
+            endereco
           },
           formaPagamento: "Dinheiro",
           itens: [{ produtoId: produto.id, quantidade: 1, precoUnitario: valor }],

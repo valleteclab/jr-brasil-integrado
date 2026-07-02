@@ -21,7 +21,7 @@ function autorizado(request: Request): boolean {
 export async function POST(request: Request) {
   if (!autorizado(request)) return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
   try {
-    const body = (await request.json()) as { empresa?: string; guiaId?: string; consultarRecibo?: string; incluirPdf?: boolean; configUf?: string; receita?: string; versaoDados?: string; tipoDocOrigem?: string; produto?: string };
+    const body = (await request.json()) as { empresa?: string; guiaId?: string; consultarRecibo?: string; incluirPdf?: boolean; configUf?: string; receita?: string; receitaGuia?: string; versaoDados?: string; tipoDocOrigem?: string; produto?: string };
     const cnpj = (body.empresa ?? "").replace(/\D+/g, "");
     const empresa = await prisma.empresa.findFirst({
       where: cnpj.length === 14 ? { cnpj } : { razaoSocial: { contains: body.empresa ?? "", mode: "insensitive" } }
@@ -78,7 +78,7 @@ export async function POST(request: Request) {
         });
     if (!guia) throw new GuiaError("Nenhuma guia pendente encontrada.");
 
-    const r = await emitirGuiaGnre(scope, guia.id, undefined, { tipoDocOrigem: body.tipoDocOrigem, produto: body.produto });
+    const r = await emitirGuiaGnre(scope, guia.id, undefined, { tipoDocOrigem: body.tipoDocOrigem, produto: body.produto, receita: body.receitaGuia });
     return NextResponse.json({
       guiaId: r.id,
       situacaoWs: r.situacaoWs,

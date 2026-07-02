@@ -80,7 +80,7 @@ export async function emitirGuiaGnre(
   scope: TenantScope,
   id: string,
   usuarioId?: string,
-  opts?: { tipoDocOrigem?: string; produto?: string | null }
+  opts?: { tipoDocOrigem?: string; produto?: string | null; receita?: string | null }
 ) {
   const guia = await prisma.guiaRecolhimento.findFirst({
     where: { id, ...scopedByTenantCompany(scope) },
@@ -116,7 +116,9 @@ export async function emitirGuiaGnre(
     : (guia.notaFiscal.numero ?? "").replace(/\D+/g, "") || guia.notaFiscal.chaveAcesso;
   const lote = buildLoteGnreXml({
     ufFavorecida: guia.ufFavorecida,
-    receita: guia.tipo === "GNRE_DIFAL" ? "100102" : "100048", // ST por operação / DIFAL por operação
+    // Receita por UF (GnreConfigUF): vem da regra tributária (guia.receitaGnre) — ex.: PR usa
+    // 100099 (ST por operação); default 100048 (aceito no DF). DIFAL: 100102 por operação.
+    receita: guia.tipo === "GNRE_DIFAL" ? "100102" : (opts?.receita ?? guia.receitaGnre ?? "100048"),
     chaveNfe: docOrigem,
     tipoDocOrigem: opts?.tipoDocOrigem,
     produto,
