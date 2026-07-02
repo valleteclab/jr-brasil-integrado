@@ -52,6 +52,16 @@ do cadastro); fluxo de deploy = desenvolve local → `git push` → `./deploy/vp
     (cobv), boleto híbrido com QR Pix embutido (grupo `pix.utilizarPix` do PATCH v3).
 - [ ] 1.3 **API de consulta de clientes (bureau de crédito)** — integrar Serasa/SPC/similar na análise de
   crédito/venda. Provedor a definir; entra no cadastro/fluxo de venda.
+- [x] 1.5 **Empréstimos e financiamentos (contas a pagar estruturado)** — FEITO 2026-07-02: página
+  /erp/financeiro/emprestimos — contrato com instituição/credor, nº, principal, taxa % a.m., sistema
+  de amortização (PRICE, SAC, parcela do carnê, sem juros), total de parcelas, **parcelas já pagas**
+  (migração de contrato antigo) e 1º vencimento. Simulação do cronograma ANTES de salvar (mesma
+  função do servidor); parcelas em aberto viram ContaPagar (origem EMPRESTIMO, decomposição
+  juros+amortização na observação); **saldo devedor derivado** do cronograma + pagas (nunca digitado);
+  detalhe com cronograma completo; cancelamento do contrato cancela as parcelas abertas.
+  Futuro: quitação antecipada com desconto de juros; renegociação (novo contrato vinculado);
+  despesa de juros separada da amortização no fechamento (hoje a parcela inteira vai na classificação
+  escolhida).
 - [x] 1.4 **Antecipação de recebíveis (v1 sem banco)** — FEITO 2026-07-02: tela
   /erp/financeiro/antecipacao (seleção de títulos + taxa em R$ ou % + conta creditada + histórico).
   Efeitos em uma transação: títulos baixados pelo BRUTO (forma ANTECIPACAO, rastreados por

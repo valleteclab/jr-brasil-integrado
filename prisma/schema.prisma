@@ -356,6 +356,7 @@ model Empresa {
   contasReceber             ContaReceber[]
   classificacoesFinanceiras ClassificacaoFinanceira[]
   antecipacoesRecebiveis    AntecipacaoRecebivel[]
+  emprestimos               Emprestimo[]
   notasFiscais              NotaFiscal[]
   xmlImportacoes            XmlImportacao[]
   entradasFiscais           EntradaFiscal[]
@@ -1305,6 +1306,7 @@ model Fornecedor {
   entradasFiscais    EntradaFiscal[]
   pedidosCompra      PedidoCompra[]
   contasPagar        ContaPagar[]
+  emprestimos        Emprestimo[]
   criadoEm           DateTime            @default(now())
   atualizadoEm       DateTime            @updatedAt
 
@@ -1670,6 +1672,7 @@ model ClassificacaoFinanceira {
   ativo           Boolean        @default(true)
   contasPagar     ContaPagar[]
   contasReceber   ContaReceber[]
+  emprestimos     Emprestimo[]   @relation("EmprestimoClassificacao")
   criadoEm        DateTime       @default(now())
   atualizadoEm    DateTime       @updatedAt
 
@@ -1737,6 +1740,10 @@ model ContaPagar {
   classificacao          ClassificacaoFinanceira? @relation(fields: [classificacaoId], references: [id])
   movimentos             MovimentoFinanceiro[]
   antecipacaoTaxa        AntecipacaoRecebivel?
+  /// Parcela de um contrato de empréstimo/financiamento (cronograma gerado pelo contrato).
+  emprestimoId           String?
+  emprestimo             Emprestimo?           @relation(fields: [emprestimoId], references: [id])
+  emprestimoParcela      Int?
   status                 StatusFinanceiro      @default(ABERTO)
   pagoEm                 DateTime?
   criadoEm               DateTime              @default(now())
@@ -1746,6 +1753,56 @@ model ContaPagar {
   @@index([tenantId, empresaId, fornecedorId, vencimento])
   @@index([tenantId, empresaId, entradaFiscalId])
   @@index([tenantId, empresaId, classificacaoId])
+  @@index([tenantId, empresaId, emprestimoId])
+}
+
+/// Contrato de EMPRÉSTIMO/FINANCIAMENTO (padrão contábil: parcela = amortização do principal +
+/// juros/despesa financeira). O cronograma é DETERMINÍSTICO a partir dos parâmetros (sistema de
+/// amortização + taxa + nº de parcelas) e materializado como ContaPagar (uma por parcela em aberto);
+/// contratos antigos entram com `parcelasJaPagas` e só as restantes viram título. O saldo devedor
+/// é derivado do cronograma + parcelas pagas — nada é gravado duplicado.
+model Emprestimo {
+  id                   String         @id @default(cuid())
+  tenantId             String
+  empresaId            String
+  empresa              Empresa        @relation(fields: [empresaId], references: [id])
+  ambiente             AmbienteFiscal @default(HOMOLOGACAO)
+  /// EMPRESTIMO | FINANCIAMENTO | CONSIGNADO | OUTRO (livre — sem lista fixa no código).
+  tipo                 String         @default("EMPRESTIMO")
+  /// Credor (banco/financeira/pessoa) — texto livre; opcionalmente vinculado a um fornecedor.
+  instituicao          String
+  fornecedorId         String?
+  fornecedor           Fornecedor?    @relation(fields: [fornecedorId], references: [id])
+  numeroContrato       String?
+  dataContratacao      DateTime
+  /// Valor liberado/financiado (principal).
+  valorPrincipal       Decimal        @db.Decimal(14, 2)
+  /// Taxa de juros mensal em % (ex.: 1.99). 0 = sem juros.
+  taxaJurosMensal      Decimal        @default(0) @db.Decimal(8, 4)
+  /// PRICE (parcelas iguais) | SAC (amortização constante) | PARCELA_INFORMADA (valor fixado no
+  /// contrato, ex.: carnê) | SEM_JUROS (divide o principal igualmente).
+  sistemaAmortizacao   String         @default("PRICE")
+  totalParcelas        Int
+  /// Contrato antigo (migração): parcelas já quitadas antes do cadastro — não viram ContaPagar.
+  parcelasJaPagas      Int            @default(0)
+  /// Valor da parcela quando o sistema é PARCELA_INFORMADA (carnê/contrato define o valor).
+  valorParcela         Decimal?       @db.Decimal(14, 2)
+  /// Vencimento da PRIMEIRA parcela do contrato (inclui as já pagas); demais mensais.
+  primeiroVencimento   DateTime
+  /// Conta padrão de débito das parcelas.
+  contaBancariaId      String?
+  contaBancaria        ContaBancaria? @relation(fields: [contaBancariaId], references: [id])
+  /// Classificação financeira das parcelas (ex.: grupo Empréstimos) — escolhida pelo usuário.
+  classificacaoId      String?
+  classificacao        ClassificacaoFinanceira? @relation("EmprestimoClassificacao", fields: [classificacaoId], references: [id])
+  observacoes          String?
+  /// ATIVO | QUITADO | CANCELADO
+  status               String         @default("ATIVO")
+  parcelas             ContaPagar[]
+  criadoEm             DateTime       @default(now())
+  atualizadoEm         DateTime       @updatedAt
+
+  @@index([tenantId, empresaId, status])
 }
 
 model ContaReceber {
@@ -2270,6 +2327,7 @@ model ContaBancaria {
   sicoobWebhookSecret   String?
   boletos               BoletoCobranca[]
   pixCobrancas          PixCobranca[]
+  emprestimos           Emprestimo[]
   criadoEm        DateTime              @default(now())
   atualizadoEm    DateTime              @updatedAt
 
