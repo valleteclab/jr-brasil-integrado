@@ -368,6 +368,12 @@ function icmsGroup(
   }
 
   const cst = (taxes?.cstIcms ?? "00").padStart(2, "0");
+  // FCP do ICMS próprio: o schema exige o TRIO vBCFCP→pFCP→vFCP (grupo opcional em bloco) —
+  // enviar pFCP/vFCP soltos (mesmo zerados) quebra a validação ("Element 'pFCP' is unexpected...
+  // Expecting: vBCFCP"). Só entra quando há FCP de fato, e completo.
+  const fcpProprio = (taxes?.valorFcp ?? 0) > 0
+    ? { vBCFCP: round2(taxes?.baseIcms ?? base), pFCP: taxes?.percentualFcp ?? 0, vFCP: round2(taxes?.valorFcp ?? 0) }
+    : {};
   // CST 10/70: substituto que RECOLHE o ST (regime normal). Tem ICMS próprio + grupo ST.
   //  - 10: tributada integralmente + ST (vBC/pICMS/vICMS próprios + vBCST/pICMSST/vICMSST)
   //  - 70: com redução de base + ST. Só montamos esses grupos quando há ST efetivo (vICMSST>0).
@@ -376,8 +382,7 @@ function icmsGroup(
       [`ICMS${cst}`]: {
         orig, CST: cst, modBC: 3,
         vBC: taxes?.baseIcms ?? base, pICMS: taxes?.aliquotaIcms ?? 0, vICMS: taxes?.valorIcms ?? 0,
-        // FCP do ICMS próprio (reconcilia com ICMSTot.vFCP); ST destacado a seguir.
-        pFCP: taxes?.percentualFcp ?? 0, vFCP: taxes?.valorFcp ?? 0,
+        ...fcpProprio,
         ...stFields
       }
     };
@@ -399,8 +404,8 @@ function icmsGroup(
       ICMS00: {
         orig, CST: cst, modBC: 3,
         vBC: taxes?.baseIcms ?? base, pICMS: taxes?.aliquotaIcms ?? 0, vICMS: taxes?.valorIcms ?? 0,
-        // FCP por item para reconciliar com total.ICMSTot.vFCP (a SEFAZ valida a soma).
-        pFCP: taxes?.percentualFcp ?? 0, vFCP: taxes?.valorFcp ?? 0
+        // FCP por item (trio completo, só quando há FCP) para reconciliar com ICMSTot.vFCP.
+        ...fcpProprio
       }
     };
   }
@@ -409,7 +414,7 @@ function icmsGroup(
     ICMS90: {
       orig, CST: cst, modBC: 3,
       vBC: taxes?.baseIcms ?? base, pICMS: taxes?.aliquotaIcms ?? 0, vICMS: taxes?.valorIcms ?? 0,
-      pFCP: taxes?.percentualFcp ?? 0, vFCP: taxes?.valorFcp ?? 0
+      ...fcpProprio
     }
   };
 }

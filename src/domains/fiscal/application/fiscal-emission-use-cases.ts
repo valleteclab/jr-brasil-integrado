@@ -367,7 +367,9 @@ export async function previewFiscalDocument(
     const cfopCtx = {
       ufOrigem: config.emitter.uf,
       ufDestino,
-      substituicaoTributaria: isSubstituicaoTributaria(taxes)
+      substituicaoTributaria: isSubstituicaoTributaria(taxes),
+      // vICMSST > 0 = o remetente RETEM o ST nesta operacao (substituto) -> CFOP x.403.
+      substituto: (taxes.valorIcmsSt ?? 0) > 0
     };
     let cfop: string | null;
     if (item.servico) cfop = null;
@@ -536,7 +538,9 @@ export async function emitFiscalDocument(
     const cfopCtx = {
       ufOrigem: config.emitter.uf,
       ufDestino,
-      substituicaoTributaria: isSubstituicaoTributaria(taxes)
+      substituicaoTributaria: isSubstituicaoTributaria(taxes),
+      // vICMSST > 0 = o remetente RETEM o ST nesta operacao (substituto) -> CFOP x.403.
+      substituto: (taxes.valorIcmsSt ?? 0) > 0
     };
     let cfop: string | null;
     if (item.servico) {
