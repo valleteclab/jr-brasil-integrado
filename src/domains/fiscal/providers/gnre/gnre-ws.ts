@@ -241,7 +241,7 @@ export type ResultadoGnre = {
 
 /** Consulta o resultado do lote. `incluirPdf` pede o PDF das guias (consulta mais LENTA — o
  * manual manda usar só quando necessário; no poll use false e faça UMA consulta final com true). */
-export async function consultarResultadoGnre(auth: GnreAuth, ambiente: GnreAmbiente, recibo: string, incluirPdf = false): Promise<ResultadoGnre> {
+export async function consultarResultadoGnre(auth: GnreAuth, ambiente: GnreAmbiente, recibo: string, incluirPdf = false, incluirNoticias = false): Promise<ResultadoGnre> {
   // XSD oficial v2.11 (docs/xsd-gnre/lote_gnre_consulta_v1.00.xsd): TConsLote_GNRE NÃO tem
   // atributo "versao" (incluí-lo derruba a consulta com 501); incluirPDFGuias é opcional e sem
   // ele o portal NUNCA devolve o pdfGuias.
@@ -250,6 +250,7 @@ export async function consultarResultadoGnre(auth: GnreAuth, ambiente: GnreAmbie
     `<ambiente>${ambiente === "PRODUCAO" ? "1" : "2"}</ambiente>` +
     `<numeroRecibo>${recibo}</numeroRecibo>` +
     (incluirPdf ? `<incluirPDFGuias>S</incluirPDFGuias>` : "") +
+    (incluirNoticias ? `<incluirNoticias>S</incluirNoticias>` : "") +
     `</TConsLote_GNRE>`;
   const ns = "http://www.gnre.pe.gov.br/webservice/GnreResultadoLote";
   const body = `<gnreDadosMsg xmlns="${ns}">${consulta}</gnreDadosMsg>`;

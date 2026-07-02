@@ -21,7 +21,7 @@ function autorizado(request: Request): boolean {
 export async function POST(request: Request) {
   if (!autorizado(request)) return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
   try {
-    const body = (await request.json()) as { empresa?: string; guiaId?: string; consultarRecibo?: string; incluirPdf?: boolean; configUf?: string; receita?: string; receitaGuia?: string; versaoDados?: string; tipoDocOrigem?: string; produto?: string };
+    const body = (await request.json()) as { empresa?: string; guiaId?: string; listarGuias?: boolean; consultarRecibo?: string; incluirPdf?: boolean; incluirNoticias?: boolean; configUf?: string; receita?: string; receitaGuia?: string; versaoDados?: string; tipoDocOrigem?: string; produto?: string };
     const cnpj = (body.empresa ?? "").replace(/\D+/g, "");
     const empresa = await prisma.empresa.findFirst({
       where: cnpj.length === 14 ? { cnpj } : { razaoSocial: { contains: body.empresa ?? "", mode: "insensitive" } }
@@ -60,7 +60,7 @@ export async function POST(request: Request) {
         if (!g?.reciboLote) throw new GuiaError("Nenhuma guia com recibo de lote encontrado.");
         recibo = g.reciboLote;
       }
-      const r = await consultarResultadoGnre({ pfx: cert.pfx, senha: cert.senha }, "HOMOLOGACAO", recibo, body.incluirPdf === true);
+      const r = await consultarResultadoGnre({ pfx: cert.pfx, senha: cert.senha }, "HOMOLOGACAO", recibo, body.incluirPdf === true, body.incluirNoticias === true);
       return NextResponse.json({
         recibo,
         situacao: r.situacao,
@@ -68,6 +68,17 @@ export async function POST(request: Request) {
         erros: r.erros,
         brutoSample: r.bruto.replace(/>[A-Za-z0-9+/=]{400,}</g, ">[BASE64]<").slice(0, 4000)
       });
+    }
+
+    // Diagnóstico: lista as guias recentes (id + UF + situação) para reemissão por guiaId.
+    if (body.listarGuias) {
+      const guias = await prisma.guiaRecolhimento.findMany({
+        where: scopedByTenantCompany(scope),
+        orderBy: { criadoEm: "desc" },
+        take: 10,
+        select: { id: true, ufFavorecida: true, valor: true, status: true, situacaoWs: true, reciboLote: true, receitaGnre: true, produtoGnre: true }
+      });
+      return NextResponse.json({ guias });
     }
 
     const guia = body.guiaId
