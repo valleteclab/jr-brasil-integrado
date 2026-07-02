@@ -80,7 +80,16 @@ export async function emitirGuiaGnre(
   scope: TenantScope,
   id: string,
   usuarioId?: string,
-  opts?: { tipoDocOrigem?: string; produto?: string | null; receita?: string | null; ieSubstituto?: string | null }
+  opts?: {
+    tipoDocOrigem?: string;
+    produto?: string | null;
+    receita?: string | null;
+    ieSubstituto?: string | null;
+    /** Detalhamento da receita (UFs que exigem, ex.: TO — códigos via GnreConfigUF). */
+    detalhamento?: string | null;
+    /** Campos extras da UF; no valor, {CHAVE} vira a chave da NF-e e {NUMERO} o nº da nota. */
+    camposExtras?: { codigo: string; valor: string }[] | null;
+  }
 ) {
   const guia = await prisma.guiaRecolhimento.findFirst({
     where: { id, ...scopedByTenantCompany(scope) },
@@ -122,6 +131,13 @@ export async function emitirGuiaGnre(
     chaveNfe: docOrigem,
     tipoDocOrigem: opts?.tipoDocOrigem,
     produto,
+    detalhamento: opts?.detalhamento ?? null,
+    camposExtras: opts?.camposExtras?.map((c) => ({
+      codigo: c.codigo,
+      valor: c.valor
+        .replaceAll("{CHAVE}", guia.notaFiscal.chaveAcesso ?? "")
+        .replaceAll("{NUMERO}", (guia.notaFiscal.numero ?? "").replace(/\D+/g, ""))
+    })),
     valor: Number(guia.valor),
     dataVencimento: new Date(),
     dataPagamento: new Date(),

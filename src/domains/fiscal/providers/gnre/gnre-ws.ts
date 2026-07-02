@@ -50,8 +50,12 @@ export type GuiaGnreInput = {
   chaveNfe: string;
   /** Tipo do documento de origem (tabela do portal; 2 dígitos). */
   tipoDocOrigem?: string;
-  /** Código de PRODUTO da UF (obrigatório em UFs que exigem, ex.: DF 20 = autopeças). */
+  /** Código de PRODUTO da UF (obrigatório em UFs que exigem, ex.: DF/TO/PI 20 = autopeças). */
   produto?: string | null;
+  /** Código de DETALHAMENTO da receita (obrigatório em UFs que exigem, ex.: TO; via GnreConfigUF). */
+  detalhamento?: string | null;
+  /** Campos extras exigidos pela UF (ex.: TO 106=Observação, 107=Chave da NF-e), na ordem da UF. */
+  camposExtras?: { codigo: string; valor: string }[] | null;
   valor: number;
   dataVencimento: Date;
   dataPagamento: Date;
@@ -100,12 +104,16 @@ export function buildLoteGnreXml(g: GuiaGnreInput): string {
     `<itensGNRE>` +
     `<item>` +
     `<receita>${g.receita}</receita>` +
+    (g.detalhamento ? `<detalhamentoReceita>${dig(g.detalhamento).padStart(6, "0")}</detalhamentoReceita>` : "") +
     `<documentoOrigem tipo="${(g.tipoDocOrigem ?? "10").padStart(2, "0")}">${dig(g.chaveNfe)}</documentoOrigem>` +
     (g.produto ? `<produto>${dig(g.produto)}</produto>` : "") +
     `<referencia><periodo>0</periodo><mes>${String(competencia.getMonth() + 1).padStart(2, "0")}</mes><ano>${competencia.getFullYear()}</ano></referencia>` +
     `<dataVencimento>${iso(g.dataVencimento)}</dataVencimento>` +
     `<valor tipo="11">${g.valor.toFixed(2)}</valor>` + // 11 = valor principal
     dest +
+    (g.camposExtras?.length
+      ? `<camposExtras>${g.camposExtras.map((c) => `<campoExtra><codigo>${dig(c.codigo)}</codigo><valor>${esc(c.valor.slice(0, 100))}</valor></campoExtra>`).join("")}</camposExtras>`
+      : "") +
     `</item>` +
     `</itensGNRE>` +
     `<valorGNRE>${g.valor.toFixed(2)}</valorGNRE>` +
