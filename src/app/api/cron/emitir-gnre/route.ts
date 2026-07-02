@@ -30,13 +30,29 @@ export async function POST(request: Request) {
     const scope = { tenantId: empresa.tenantId, empresaId: empresa.id, ambiente: "HOMOLOGACAO" } as TenantScope;
 
     // Diagnóstico: consulta direta de um recibo já enviado, devolvendo um recorte do XML bruto.
+    // Aceita o nº do recibo, um guiaId (usa o reciboLote gravado) ou "ULTIMO".
     if (body.consultarRecibo) {
       const { carregarCertificado } = await import("@/domains/fiscal/application/certificado-use-cases");
       const { consultarResultadoGnre } = await import("@/domains/fiscal/providers/gnre/gnre-ws");
       const cert = await carregarCertificado(scope);
       if (!cert) throw new GuiaError("Certificado A1 não disponível.");
-      const r = await consultarResultadoGnre({ pfx: cert.pfx, senha: cert.senha }, "HOMOLOGACAO", body.consultarRecibo);
+      let recibo = body.consultarRecibo;
+      if (recibo === "ULTIMO" || recibo.length > 15) {
+        const g = await prisma.guiaRecolhimento.findFirst({
+          where: {
+            ...scopedByTenantCompany(scope),
+            reciboLote: { not: null },
+            ...(recibo !== "ULTIMO" ? { id: recibo } : {})
+          },
+          orderBy: { atualizadoEm: "desc" },
+          select: { reciboLote: true }
+        });
+        if (!g?.reciboLote) throw new GuiaError("Nenhuma guia com recibo de lote encontrado.");
+        recibo = g.reciboLote;
+      }
+      const r = await consultarResultadoGnre({ pfx: cert.pfx, senha: cert.senha }, "HOMOLOGACAO", recibo);
       return NextResponse.json({
+        recibo,
         situacao: r.situacao,
         descricao: r.descricaoSituacao,
         erros: r.erros,
