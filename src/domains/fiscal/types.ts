@@ -133,6 +133,8 @@ export type NormalizedFiscalDocument = {
   obra?: ObraInfo | null;
   /** NFS-e de substituição: grupo `subst` do DPS (chave da NFS-e substituída + motivo). */
   substituicao?: SubstituicaoNfse | null;
+  /** NF-e 55 a prazo: FATURAS/duplicatas (grupo cobr do XML — aparecem no DANFE). Uma por parcela. */
+  faturas?: Array<{ numero: string; vencimento: Date; valor: number }> | null;
 };
 
 /** Substituição de NFS-e (grupo `subst` do DPS nacional). */

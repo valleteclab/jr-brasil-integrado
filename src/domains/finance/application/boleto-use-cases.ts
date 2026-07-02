@@ -367,23 +367,38 @@ export type VendaBoletoResultado = {
   primeiroVencimento: string;
   aviso: string | null;
   /** Títulos criados (para imprimir os boletos direto do resultado da venda). */
-  titulos: Array<{ contaReceberId: string; vencimento: string; linhaDigitavel: string | null; temPdf: boolean }>;
+  titulos: Array<{ contaReceberId: string; vencimento: string; valor: number; linhaDigitavel: string | null; temPdf: boolean }>;
 };
+
+/** Divide o valor em N parcelas iguais (resíduo do arredondamento na última). */
+function dividirValor(valor: number, n: number): number[] {
+  const base = Math.floor((valor / n) * 100) / 100;
+  const out: number[] = [];
+  let acumulado = 0;
+  for (let i = 0; i < n; i++) {
+    const v = i === n - 1 ? Math.round((valor - acumulado) * 100) / 100 : base;
+    acumulado = Math.round((acumulado + v) * 100) / 100;
+    out.push(v);
+  }
+  return out;
+}
 
 /** Parcelas customizadas do boleto: N parcelas MENSAIS iguais a partir do 1º vencimento escolhido. */
 function parcelasBoletoCustom(valor: number, quantidade: number, primeiroVencimento: Date): ParcelaGerada[] {
   const total = Math.max(1, Math.min(60, Math.floor(quantidade)));
-  const base = Math.floor((valor / total) * 100) / 100;
-  const out: ParcelaGerada[] = [];
-  let acumulado = 0;
-  for (let i = 0; i < total; i++) {
-    const v = i === total - 1 ? Math.round((valor - acumulado) * 100) / 100 : base;
-    acumulado = Math.round((acumulado + v) * 100) / 100;
+  const valores = dividirValor(valor, total);
+  return valores.map((v, i) => {
     const vencimento = new Date(primeiroVencimento);
     vencimento.setMonth(vencimento.getMonth() + i);
-    out.push({ numero: i + 1, totalParcelas: total, vencimento, valor: v });
-  }
-  return out;
+    return { numero: i + 1, totalParcelas: total, vencimento, valor: v };
+  });
+}
+
+/** Parcelas com DATAS escolhidas uma a uma pelo operador (valores iguais, resíduo na última). */
+function parcelasBoletoPorDatas(valor: number, datas: Date[]): ParcelaGerada[] {
+  const ordenadas = [...datas].sort((a, b) => a.getTime() - b.getTime()).slice(0, 60);
+  const valores = dividirValor(valor, ordenadas.length);
+  return ordenadas.map((vencimento, i) => ({ numero: i + 1, totalParcelas: ordenadas.length, vencimento, valor: valores[i] }));
 }
 
 /**
@@ -400,22 +415,25 @@ export async function processarVendaBoleto(
     valor: number;
     condicao?: string | null;
     descricaoBase: string;
-    /** Escolhas do operador na venda: conta de cobrança, nº de parcelas e 1º vencimento. */
-    opcoes?: { contaBancariaId?: string | null; parcelas?: number | null; primeiroVencimento?: Date | null } | null;
+    /** Escolhas do operador na venda: conta de cobrança, nº de parcelas, 1º vencimento e/ou datas. */
+    opcoes?: { contaBancariaId?: string | null; parcelas?: number | null; primeiroVencimento?: Date | null; datas?: Date[] | null } | null;
   }
 ): Promise<VendaBoletoResultado> {
-  // Parcelas: escolha explícita do operador (N mensais a partir do 1º vencimento) tem prioridade;
-  // senão vale a condição de pagamento da venda ("30/60/90"...), com fallback 1x em 30 dias.
+  // Parcelas, por prioridade: DATAS escolhidas uma a uma > N mensais a partir do 1º vencimento >
+  // condição de pagamento da venda ("30/60/90"...), com fallback 1x em 30 dias.
+  const datasEscolhidas = (input.opcoes?.datas ?? []).filter((d) => !Number.isNaN(d.getTime()));
   const primeiroVenc = input.opcoes?.primeiroVencimento ?? null;
   const qtdParcelas = input.opcoes?.parcelas ?? null;
-  const parcelas = qtdParcelas || primeiroVenc
-    ? parcelasBoletoCustom(
-        input.valor,
-        qtdParcelas ?? 1,
-        primeiroVenc ?? new Date(Date.now() + 30 * 86400000)
-      )
-    : gerarParcelas(input.valor, input.condicao ?? "30");
-  const contaReceberIds: Array<{ id: string; vencimento: Date }> = [];
+  const parcelas = datasEscolhidas.length
+    ? parcelasBoletoPorDatas(input.valor, datasEscolhidas)
+    : qtdParcelas || primeiroVenc
+      ? parcelasBoletoCustom(
+          input.valor,
+          qtdParcelas ?? 1,
+          primeiroVenc ?? new Date(Date.now() + 30 * 86400000)
+        )
+      : gerarParcelas(input.valor, input.condicao ?? "30");
+  const contaReceberIds: Array<{ id: string; vencimento: Date; valor: number }> = [];
   await prisma.$transaction(async (tx) => {
     const classificacaoReceita = await classificacaoReceitaPadraoId(tx, scope, "vendas");
     for (const parcela of parcelas) {
@@ -439,7 +457,7 @@ export async function processarVendaBoleto(
         },
         select: { id: true }
       });
-      contaReceberIds.push({ id: cr.id, vencimento: parcela.vencimento });
+      contaReceberIds.push({ id: cr.id, vencimento: parcela.vencimento, valor: parcela.valor });
     }
     await createAuditLog(tx, {
       scope,
@@ -459,17 +477,17 @@ export async function processarVendaBoleto(
     : contasCobranca[0];
   if (!contaEscolhida) {
     aviso = 'Nenhuma conta bancária com cobrança Sicoob configurada — as parcelas ficaram no contas a receber sem boleto (configure em Configurações → Contas financeiras e use "Gerar boleto").';
-    for (const c of contaReceberIds) titulos.push({ contaReceberId: c.id, vencimento: c.vencimento.toISOString(), linhaDigitavel: null, temPdf: false });
+    for (const c of contaReceberIds) titulos.push({ contaReceberId: c.id, vencimento: c.vencimento.toISOString(), valor: c.valor, linhaDigitavel: null, temPdf: false });
   } else {
     const erros: string[] = [];
     for (const c of contaReceberIds) {
       try {
         const b = await gerarBoletoParaRecebivel(scope, c.id, { contaBancariaId: contaEscolhida.id });
         boletosGerados++;
-        titulos.push({ contaReceberId: c.id, vencimento: c.vencimento.toISOString(), linhaDigitavel: b.linhaDigitavel, temPdf: Boolean(b.pdfBase64) });
+        titulos.push({ contaReceberId: c.id, vencimento: c.vencimento.toISOString(), valor: c.valor, linhaDigitavel: b.linhaDigitavel, temPdf: Boolean(b.pdfBase64) });
       } catch (e) {
         erros.push(e instanceof Error ? e.message : String(e));
-        titulos.push({ contaReceberId: c.id, vencimento: c.vencimento.toISOString(), linhaDigitavel: null, temPdf: false });
+        titulos.push({ contaReceberId: c.id, vencimento: c.vencimento.toISOString(), valor: c.valor, linhaDigitavel: null, temPdf: false });
       }
     }
     if (erros.length) aviso = `Boleto(s) não registrados: ${[...new Set(erros)].join("; ")}. As parcelas estão no contas a receber — corrija e use "Gerar boleto".`;

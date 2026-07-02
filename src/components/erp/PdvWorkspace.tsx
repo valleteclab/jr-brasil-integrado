@@ -41,8 +41,15 @@ type Pagamento = {
   nsu?: string;
   bandeira?: string;
   parcelas?: number;
-  /** BOLETO: 1º vencimento escolhido (ISO date). */
-  vencimento?: string;
+  /** BOLETO: vencimento escolhido de CADA parcela (ISO date, índice = parcela-1). */
+  vencimentos?: string[];
+};
+
+/** Soma meses a uma data ISO (vencimentos sugeridos das parcelas do boleto). */
+const addMesesIso = (iso: string, meses: number) => {
+  const d = new Date(`${iso}T12:00:00`);
+  d.setMonth(d.getMonth() + meses);
+  return d.toISOString().slice(0, 10);
 };
 
 type CaixaAberto = { id: string; operador: string; abertoEm: string };
@@ -355,13 +362,11 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
         condicaoCrediario: condicaoCrediario || null,
         boletoOpcoes: (() => {
           const lb = pagamentos.find((p) => p.forma === "BOLETO" && (Number(p.valor) || 0) > 0);
-          return lb
-            ? {
-                contaBancariaId: lb.contaBancariaId ?? null,
-                parcelas: lb.parcelas ?? 1,
-                primeiroVencimento: lb.vencimento ?? new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10)
-              }
-            : undefined;
+          if (!lb) return undefined;
+          const base = lb.vencimentos?.[0] ?? new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+          const n = Math.max(1, lb.parcelas ?? 1);
+          const datas = Array.from({ length: n }, (_, i) => lb.vencimentos?.[i] ?? addMesesIso(base, i));
+          return { contaBancariaId: lb.contaBancariaId ?? null, parcelas: n, primeiroVencimento: datas[0], datas };
         })(),
         descontoGlobal: descontoGlobalVal,
         // Senha de admin (qualquer admin do tenant) — o servidor revalida e exige se desconto > limite.
@@ -877,8 +882,13 @@ function DescontoPctModal({
 // ─── Modal de pagamento (múltiplas formas + troco) ──────────────────────────────
 
 function PagamentoModal({ total, loading, clienteSelecionado, contas, maquinas, formas, contasCobranca, onCancel, onConfirm }: { total: number; loading: boolean; clienteSelecionado: boolean; contas: PdvContaRecebedora[]; maquinas: PdvMaquinaCartao[]; formas: Array<{ id: string; nome: string; tipo: string }>; contasCobranca: Array<{ id: string; nome: string }>; onCancel: () => void; onConfirm: (p: Pagamento[], condicaoCrediario: string) => void }) {
-  // 1º vencimento padrão do boleto: hoje + 30 dias.
+  // 1º vencimento padrão do boleto: hoje + 30 dias. Demais parcelas: +1 mês cada (editáveis).
   const vencPadraoBoleto = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+  const datasBoleto = (l: Pagamento): string[] => {
+    const n = Math.max(1, l.parcelas ?? 1);
+    const base = l.vencimentos?.[0] ?? vencPadraoBoleto;
+    return Array.from({ length: n }, (_, i) => l.vencimentos?.[i] ?? addMesesIso(base, i));
+  };
   // Formas cadastradas (deduplicadas por tipo, pois o PDV opera por tipo) + Crediário (a prazo).
   const FORMAS = [
     ...(formas.length ? Array.from(new Map(formas.map((f) => [f.tipo, { value: f.tipo, label: f.nome }])).values()) : FORMAS_FALLBACK),
@@ -928,8 +938,20 @@ function PagamentoModal({ total, loading, clienteSelecionado, contas, maquinas, 
                   <option value="">{contasCobranca.length ? "Banco do boleto…" : "Nenhuma conta com cobrança configurada (Configurações → Contas financeiras)"}</option>
                   {contasCobranca.map((c) => <option key={c.id} value={c.id}>Boleto — {c.nome}</option>)}
                 </select>
-                <input type="number" min={1} max={24} value={l.parcelas ?? 1} onChange={(e) => set(idx, { parcelas: Math.max(1, Number(e.target.value) || 1) })} style={{ flex: "0 0 70px", height: 34, textAlign: "center" }} title="Parcelas do boleto (mensais)" />
-                <input type="date" value={l.vencimento ?? vencPadraoBoleto} onChange={(e) => set(idx, { vencimento: e.target.value })} style={{ flex: "1 1 130px", height: 34 }} title="1º vencimento" />
+                <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12 }}>
+                  Parcelas
+                  <input type="number" min={1} max={24} value={l.parcelas ?? 1} onChange={(e) => set(idx, { parcelas: Math.max(1, Math.min(24, Number(e.target.value) || 1)) })} style={{ width: 60, height: 34, textAlign: "center" }} title="Quantidade de parcelas do boleto" />
+                </label>
+                {datasBoleto(l).map((data, i) => (
+                  <label key={i} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12 }}>
+                    {i + 1}ª venc.
+                    <input type="date" value={data} onChange={(e) => {
+                      const atual = datasBoleto(l);
+                      atual[i] = e.target.value;
+                      set(idx, { vencimentos: atual });
+                    }} style={{ height: 34 }} title={`Vencimento da parcela ${i + 1} (livre - ex.: 28 dias)`} />
+                  </label>
+                ))}
               </div>
             )}
             {isCartao(l.forma) && (

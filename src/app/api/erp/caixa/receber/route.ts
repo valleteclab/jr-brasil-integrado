@@ -14,7 +14,7 @@ export async function POST(request: Request) {
       pagamentos?: PagamentoDetalhado[];
       retiradaExpedicao?: boolean;
       emitirFiscal?: boolean;
-      boletoOpcoes?: { contaBancariaId?: string | null; parcelas?: number | null; primeiroVencimento?: string | null } | null;
+      boletoOpcoes?: { contaBancariaId?: string | null; parcelas?: number | null; primeiroVencimento?: string | null; datas?: string[] | null } | null;
     };
     if (!body.pedidoId) return NextResponse.json({ error: "Pré-venda não informada." }, { status: 400 });
     const result = await receberPagamentoEEmitir(scope, {

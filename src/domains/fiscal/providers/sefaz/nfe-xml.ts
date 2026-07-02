@@ -471,6 +471,17 @@ export function buildNfeXml(input: EmitInput): BuildNfeResult {
     : (doc.modalidadeFrete ?? 9);
   const transp = `<transp><modFrete>${modFrete}</modFrete></transp>`;
 
+  // cobr: FATURA + duplicatas (venda a prazo — boleto/faturado). Só na NF-e 55 (a NFC-e não tem o
+  // grupo). É o que faz as parcelas aparecerem no quadro FATURA do DANFE.
+  const fats = (doc.faturas ?? []).filter((f) => f.valor > 0);
+  const cobr = doc.modelo !== "NFCE" && fats.length
+    ? `<cobr><fat><nFat>${esc(sanitize(String(input.numero)))}</nFat><vOrig>${fmt(input.total)}</vOrig><vDesc>0.00</vDesc><vLiq>${fmt(input.total)}</vLiq></fat>` +
+      fats.map((f) =>
+        `<dup><nDup>${esc(sanitize(f.numero).slice(0, 60))}</nDup><dVenc>${f.vencimento.toISOString().slice(0, 10)}</dVenc><vDup>${fmt(f.valor)}</vDup></dup>`
+      ).join("") +
+      `</cobr>`
+    : "";
+
   // pag: devolução = sem pagamento (90); senão, pagamentos informados ou único pelo total.
   const tpPagFallback = doc.finalidade === "DEVOLUCAO" ? "90" : mapTpPag(doc.formaPagamento);
   const lista = (doc.pagamentos ?? []).filter((p) => Number(p.valor) > 0);
@@ -501,7 +512,7 @@ export function buildNfeXml(input: EmitInput): BuildNfeResult {
   const cpl = infoCompl || cplNfce;
   const infAdic = cpl ? `<infAdic><infCpl>${esc(cpl)}</infCpl></infAdic>` : "";
 
-  const infNFe = `<infNFe Id="NFe${chave}" versao="4.00">${ide}${emit}${dest}${autXML}${det}${total}${transp}${pag}${infAdic}</infNFe>`;
+  const infNFe = `<infNFe Id="NFe${chave}" versao="4.00">${ide}${emit}${dest}${autXML}${det}${total}${transp}${cobr}${pag}${infAdic}</infNFe>`;
   const xml = `<NFe xmlns="http://www.portalfiscal.inf.br/nfe">${infNFe}</NFe>`;
   return { xml, chave, cNF, cDV, nNF };
 }

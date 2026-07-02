@@ -475,8 +475,8 @@ export type ReceberPagamentoInput = {
   retiradaExpedicao?: boolean;
   /** Quando false, fecha só com RECIBO (cupom não fiscal) — exige Empresa.permiteVendaNaoFiscal. */
   emitirFiscal?: boolean;
-  /** Opções do BOLETO escolhidas no caixa: conta de cobrança, nº de parcelas e 1º vencimento (ISO). */
-  boletoOpcoes?: { contaBancariaId?: string | null; parcelas?: number | null; primeiroVencimento?: string | null } | null;
+  /** Opções do BOLETO escolhidas no caixa: conta de cobrança, parcelas e vencimentos (ISO). */
+  boletoOpcoes?: { contaBancariaId?: string | null; parcelas?: number | null; primeiroVencimento?: string | null; datas?: string[] | null } | null;
 };
 
 export type ReceberPagamentoResult = {
@@ -627,7 +627,8 @@ export async function receberPagamentoEEmitir(
             parcelas: input.boletoOpcoes.parcelas ?? null,
             primeiroVencimento: input.boletoOpcoes.primeiroVencimento
               ? new Date(`${input.boletoOpcoes.primeiroVencimento}T12:00:00`)
-              : null
+              : null,
+            datas: (input.boletoOpcoes.datas ?? []).filter(Boolean).map((d) => new Date(`${d}T12:00:00`))
           }
         : null
     });
@@ -679,6 +680,14 @@ export async function receberPagamentoEEmitir(
   });
   // Pagamentos do XML: líquidos por forma (somam o total da nota; troco fica fora).
   doc.pagamentos = liquidoPorForma;
+  // FATURAS na NF-e 55: parcelas do boleto viram duplicatas (quadro FATURA do DANFE).
+  if (input.modelo === "NFE" && boleto?.titulos?.length) {
+    doc.faturas = boleto.titulos.map((t, i) => ({
+      numero: String(i + 1).padStart(3, "0"),
+      vencimento: new Date(t.vencimento),
+      valor: t.valor
+    }));
+  }
 
   // 3) Emite (ou fecha só com recibo, se a empresa permite e o input pedir).
   let nota: ReceberPagamentoResult["nota"] = null;

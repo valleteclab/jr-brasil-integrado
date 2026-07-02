@@ -43,15 +43,25 @@ type PagamentoLinha = {
   nsu?: string;
   bandeira?: string;
   parcelas?: number;
-  /** BOLETO: 1º vencimento escolhido (ISO date). */
-  vencimento?: string;
+  /** BOLETO: vencimento escolhido de CADA parcela (ISO date, índice = parcela-1). */
+  vencimentos?: string[];
 };
 const uid = () => Math.random().toString(36).slice(2, 9);
 
 export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
   const router = useRouter();
-  // 1º vencimento padrão do boleto: hoje + 30 dias.
+  // 1º vencimento padrão do boleto: hoje + 30 dias. Demais parcelas: +1 mês cada (editáveis).
   const vencPadraoBoleto = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+  const addMesesIso = (iso: string, meses: number) => {
+    const d = new Date(`${iso}T12:00:00`);
+    d.setMonth(d.getMonth() + meses);
+    return d.toISOString().slice(0, 10);
+  };
+  const datasBoleto = (p: PagamentoLinha): string[] => {
+    const n = Math.max(1, p.parcelas ?? 1);
+    const base = p.vencimentos?.[0] ?? vencPadraoBoleto;
+    return Array.from({ length: n }, (_, i) => p.vencimentos?.[i] ?? addMesesIso(base, i));
+  };
   const lastAutoRefreshRef = useRef(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -252,9 +262,9 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
         retiradaExpedicao: data.expedicaoHabilitada && retiradaExpedicao,
         boletoOpcoes: (() => {
           const lb = pagamentos.find((p) => p.forma === "BOLETO" && Number(p.valor) > 0);
-          return lb
-            ? { contaBancariaId: lb.contaBancariaId ?? null, parcelas: lb.parcelas ?? 1, primeiroVencimento: lb.vencimento ?? vencPadraoBoleto }
-            : undefined;
+          if (!lb) return undefined;
+          const datas = datasBoleto(lb);
+          return { contaBancariaId: lb.contaBancariaId ?? null, parcelas: datas.length, primeiroVencimento: datas[0], datas };
         })()
       });
       setResultado({ pedidoNumero: r.pedidoNumero, troco: r.troco, notaId: r.nota?.id ?? null, notaStatus: r.nota?.status ?? null, emitErro: r.emitErro ?? null, boleto: r.boleto ?? null, retirada: r.retirada ?? null });
@@ -459,16 +469,28 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
                             <option value="">{data.contasCobranca.length ? "Banco do boleto…" : "Nenhuma conta com cobrança configurada (Configurações → Contas financeiras)"}</option>
                             {data.contasCobranca.map((c) => <option key={c.id} value={c.id}>Boleto — {c.nome}</option>)}
                           </select>
-                          <input
-                            type="number" min={1} max={24} value={p.parcelas ?? 1}
-                            onChange={(e) => updPag(p.uid, { parcelas: Math.max(1, Number(e.target.value) || 1) })}
-                            style={{ flex: "0 0 64px", height: 30, fontSize: 12, textAlign: "center" }} title="Quantidade de parcelas (uma por mês)"
-                          />
-                          <input
-                            type="date" value={p.vencimento ?? vencPadraoBoleto}
-                            onChange={(e) => updPag(p.uid, { vencimento: e.target.value })}
-                            style={{ flex: "1 1 120px", height: 30, fontSize: 12 }} title="1º vencimento"
-                          />
+                          <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "var(--erp-slate)" }}>
+                            Parcelas
+                            <input
+                              type="number" min={1} max={24} value={p.parcelas ?? 1}
+                              onChange={(e) => updPag(p.uid, { parcelas: Math.max(1, Math.min(24, Number(e.target.value) || 1)) })}
+                              style={{ width: 56, height: 30, fontSize: 12, textAlign: "center" }} title="Quantidade de parcelas do boleto"
+                            />
+                          </label>
+                          {datasBoleto(p).map((data, i) => (
+                            <label key={i} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "var(--erp-slate)" }}>
+                              {i + 1}ª venc.
+                              <input
+                                type="date" value={data}
+                                onChange={(e) => {
+                                  const atual = datasBoleto(p);
+                                  atual[i] = e.target.value;
+                                  updPag(p.uid, { vencimentos: atual });
+                                }}
+                                style={{ height: 30, fontSize: 12 }} title={`Vencimento da parcela ${i + 1} (livre - ex.: 28 dias)`}
+                              />
+                            </label>
+                          ))}
                         </div>
                       )}
                       {isCartao(p.forma) && (

@@ -582,7 +582,12 @@ export async function emitFiscalDocument(
   const pagamentoTexto = modelo !== "NFSE"
     ? (formasPagas.length ? `Pagamento: ${formasPagas.join(" + ")}.` : document.formaPagamento ? `Pagamento: ${formaLabel(document.formaPagamento)}.` : null)
     : null;
-  const informacoesComplementares = [pagamentoTexto, document.informacoesComplementares, ibptText]
+  // Faturas também em texto: além do grupo cobr do XML, o infCpl garante as parcelas visíveis em
+  // qualquer DANFE (o quadro FATURA depende do gerador de PDF).
+  const faturasTexto = modelo !== "NFSE" && document.faturas?.length
+    ? `Faturas: ${document.faturas.map((f) => `${f.numero} venc. ${f.vencimento.toLocaleDateString("pt-BR")} R$ ${f.valor.toFixed(2).replace(".", ",")}`).join("; ")}.`
+    : null;
+  const informacoesComplementares = [pagamentoTexto, faturasTexto, document.informacoesComplementares, ibptText]
     .filter((part) => part && part.trim())
     .join(" ");
 
