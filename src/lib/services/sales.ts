@@ -42,6 +42,8 @@ export type SaleSummary = {
   /** NF-e/NFC-e de venda autorizada (para atalho de PDF/XML direto na lista). */
   notaFiscalId: string | null;
   notaCanDownload: boolean;
+  /** Rótulo do modelo da nota de venda ("NF-e"/"NFC-e"/"NFS-e") — botões de impressão/cancelamento. */
+  notaModeloLabel: string | null;
   /** Pedido ainda pode ser editado (estoque/itens). Clique na linha → /editar quando true. */
   editavel: boolean;
   /** Venda no boleto já confirmada — mostra o atalho "Boletos" (imprimir parcelas) na lista. */
@@ -163,7 +165,7 @@ export async function listSales(): Promise<SaleSummary[]> {
         itens: { select: { id: true } },
         notasFiscais: {
           where: { status: "AUTORIZADA" },
-          select: { id: true, finalidade: true, providerRef: true }
+          select: { id: true, finalidade: true, providerRef: true, modelo: true }
         }
       },
       orderBy: { criadoEm: "desc" }
@@ -194,6 +196,7 @@ export async function listSales(): Promise<SaleSummary[]> {
         temNotaAutorizada: temNota,
         notaFiscalId: notaVenda?.id ?? null,
         notaCanDownload: Boolean(notaVenda?.providerRef),
+        notaModeloLabel: notaVenda ? MODELO_NOTA_LABEL[notaVenda.modelo] ?? null : null,
         // Edição reaproveita a regra de "ainda não saiu da casa": sem NF e em status mutável.
         editavel: !temNota && ["RASCUNHO", "AGUARDANDO_PAGAMENTO", "AGUARDANDO_NOTA", "SEPARACAO"].includes(p.status),
         // Boletos só existem após a confirmação (pedido faturado) ou o recebimento (caixa/PDV).
@@ -289,6 +292,7 @@ export async function getSaleDetail(id: string): Promise<SaleDetail | null> {
       temNotaAutorizada: temNota,
       notaFiscalId: notaVendaPrincipal?.id ?? null,
       notaCanDownload: Boolean(notaVendaPrincipal?.providerRef),
+      notaModeloLabel: notaVendaPrincipal ? MODELO_NOTA_LABEL[notaVendaPrincipal.modelo as ModeloFiscal] ?? null : null,
       editavel: !temNota && ["RASCUNHO", "AGUARDANDO_PAGAMENTO", "AGUARDANDO_NOTA", "SEPARACAO"].includes(p.status),
       temBoleto: /boleto/i.test(p.formaPagamento ?? "") && !["RASCUNHO", "AGUARDANDO_PAGAMENTO", "CANCELADO"].includes(p.status),
       canReturn: temNotaVendaComChave && (p.status === "ENVIADO" || p.status === "ENTREGUE"),

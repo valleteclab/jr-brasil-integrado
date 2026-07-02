@@ -161,6 +161,51 @@ export function SalesList({ sales, isAdmin = false }: Props) {
     }
   }
 
+  // Cancela a NOTA na SEFAZ — a cascata do servidor cancela também o pedido, as contas a
+  // receber e os boletos no banco. Prazo legal: NF-e 24h, NFC-e 30min após a autorização.
+  async function cancelarNota(row: SaleSummary) {
+    if (!row.notaFiscalId) return;
+    const modelo = row.notaModeloLabel ?? "nota fiscal";
+    const justificativa = window.prompt(
+      `Cancelar a ${modelo} do pedido ${row.numero}?\nIsso cancela a nota na SEFAZ, o pedido, as parcelas e os boletos no banco.\n\nJustificativa (mínimo 15 caracteres):`,
+      "Cancelamento da venda a pedido do cliente"
+    );
+    if (justificativa === null) return;
+    if (justificativa.trim().length < 15) {
+      setError("A justificativa de cancelamento deve ter ao menos 15 caracteres.");
+      return;
+    }
+    setBusyId(row.id);
+    setError("");
+    try {
+      const res = await fetch(`/api/erp/fiscal/${row.notaFiscalId}/cancelar`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ justificativa: justificativa.trim() })
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(data.error || "Não foi possível cancelar a nota fiscal.");
+      updateRow(row.id, {
+        status: "CANCELADO",
+        statusLabel: "Cancelado",
+        statusTone: "danger",
+        canConfirm: false,
+        canInvoice: false,
+        canCancel: false,
+        temNotaAutorizada: false,
+        notaFiscalId: null,
+        notaCanDownload: false,
+        temBoleto: false,
+        canceladoEm: new Date().toLocaleDateString("pt-BR")
+      });
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao cancelar a nota fiscal.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function excluir(row: SaleSummary) {
     if (!window.confirm(`Excluir definitivamente o pedido ${row.numero}? Esta ação não pode ser desfeita.`)) return;
     setBusyId(row.id);
@@ -262,7 +307,7 @@ export function SalesList({ sales, isAdmin = false }: Props) {
                   )}
                   {row.notaFiscalId && row.notaCanDownload && (
                     <>
-                      <a className="btn-erp ghost xs" href={`/api/erp/fiscal/${row.notaFiscalId}/pdf`} target="_blank" rel="noopener noreferrer" title="Imprimir DANFE/cupom">🖨️ PDF</a>
+                      <a className="btn-erp ghost xs" href={`/api/erp/fiscal/${row.notaFiscalId}/pdf`} target="_blank" rel="noopener noreferrer" title="Imprimir DANFE/cupom (PDF)">🖨️ {row.notaModeloLabel ?? "PDF"}</a>
                       <a className="btn-erp ghost xs" href={`/api/erp/fiscal/${row.notaFiscalId}/xml`} title="Baixar XML">XML</a>
                     </>
                   )}
@@ -304,6 +349,17 @@ export function SalesList({ sales, isAdmin = false }: Props) {
                       onClick={() => cancelar(row)}
                     >
                       {busyId === row.id ? "Processando..." : "Cancelar"}
+                    </button>
+                  )}
+                  {row.temNotaAutorizada && row.notaFiscalId && row.status !== "CANCELADO" && (
+                    <button
+                      className="btn-erp danger xs"
+                      type="button"
+                      title={`Cancelar a ${row.notaModeloLabel ?? "nota"} na SEFAZ — cascateia: pedido, parcelas e boletos no banco`}
+                      disabled={busyId === row.id}
+                      onClick={() => cancelarNota(row)}
+                    >
+                      {busyId === row.id ? "Processando..." : `Cancelar ${row.notaModeloLabel ?? "NF"}`}
                     </button>
                   )}
                   {isAdmin && (row.status === "RASCUNHO" || row.status === "CANCELADO") && (
