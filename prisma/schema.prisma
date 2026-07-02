@@ -357,6 +357,7 @@ model Empresa {
   classificacoesFinanceiras ClassificacaoFinanceira[]
   antecipacoesRecebiveis    AntecipacaoRecebivel[]
   emprestimos               Emprestimo[]
+  despesasRecorrentes       DespesaRecorrente[]
   notasFiscais              NotaFiscal[]
   xmlImportacoes            XmlImportacao[]
   entradasFiscais           EntradaFiscal[]
@@ -1307,6 +1308,7 @@ model Fornecedor {
   pedidosCompra      PedidoCompra[]
   contasPagar        ContaPagar[]
   emprestimos        Emprestimo[]
+  despesasRecorrentes DespesaRecorrente[]
   criadoEm           DateTime            @default(now())
   atualizadoEm       DateTime            @updatedAt
 
@@ -1673,6 +1675,7 @@ model ClassificacaoFinanceira {
   contasPagar     ContaPagar[]
   contasReceber   ContaReceber[]
   emprestimos     Emprestimo[]   @relation("EmprestimoClassificacao")
+  recorrencias    DespesaRecorrente[] @relation("RecorrenciaClassificacao")
   criadoEm        DateTime       @default(now())
   atualizadoEm    DateTime       @updatedAt
 
@@ -1744,6 +1747,10 @@ model ContaPagar {
   emprestimoId           String?
   emprestimo             Emprestimo?           @relation(fields: [emprestimoId], references: [id])
   emprestimoParcela      Int?
+  /// Ocorrência de uma despesa recorrente (folha, aluguel, energia...) — competência "AAAA-MM".
+  recorrenciaId          String?
+  recorrencia            DespesaRecorrente?    @relation(fields: [recorrenciaId], references: [id])
+  recorrenciaCompetencia String?
   status                 StatusFinanceiro      @default(ABERTO)
   pagoEm                 DateTime?
   criadoEm               DateTime              @default(now())
@@ -1754,6 +1761,48 @@ model ContaPagar {
   @@index([tenantId, empresaId, entradaFiscalId])
   @@index([tenantId, empresaId, classificacaoId])
   @@index([tenantId, empresaId, emprestimoId])
+  @@index([tenantId, empresaId, recorrenciaId])
+  // Idempotência da geração automática: uma ocorrência por recorrência+competência.
+  @@unique([recorrenciaId, recorrenciaCompetencia])
+}
+
+/// DESPESA RECORRENTE (folha salarial, aluguel, energia, contador, assinaturas...): modelo que
+/// gera automaticamente as ContaPagar por competência (cron + idempotência por recorrência+mês).
+/// Valor VARIÁVEL = o título nasce com a estimativa (último valor) e o operador ajusta na baixa.
+model DespesaRecorrente {
+  id              String         @id @default(cuid())
+  tenantId        String
+  empresaId       String
+  empresa         Empresa        @relation(fields: [empresaId], references: [id])
+  ambiente        AmbienteFiscal @default(HOMOLOGACAO)
+  descricao       String
+  fornecedorId    String?
+  fornecedor      Fornecedor?    @relation(fields: [fornecedorId], references: [id])
+  /// Valor de cada ocorrência (estimativa quando valorVariavel).
+  valor           Decimal        @db.Decimal(14, 2)
+  /// true = valor muda todo mês (energia, folha) — o título nasce como estimativa.
+  valorVariavel   Boolean        @default(false)
+  /// MENSAL | BIMESTRAL | TRIMESTRAL | SEMESTRAL | ANUAL
+  periodicidade   String         @default("MENSAL")
+  /// Dia do vencimento (1–31, ajustado ao fim do mês curto).
+  diaVencimento   Int
+  /// Primeira competência (a partir deste mês as ocorrências são geradas).
+  dataInicio      DateTime
+  /// Última competência (null = por prazo indeterminado).
+  dataFim         DateTime?
+  formaPagamento  String?
+  contaBancariaId String?
+  contaBancaria   ContaBancaria? @relation(fields: [contaBancariaId], references: [id])
+  classificacaoId String?
+  classificacao   ClassificacaoFinanceira? @relation("RecorrenciaClassificacao", fields: [classificacaoId], references: [id])
+  observacoes     String?
+  /// ATIVA | PAUSADA | ENCERRADA
+  status          String         @default("ATIVA")
+  ocorrencias     ContaPagar[]
+  criadoEm        DateTime       @default(now())
+  atualizadoEm    DateTime       @updatedAt
+
+  @@index([tenantId, empresaId, status])
 }
 
 /// Contrato de EMPRÉSTIMO/FINANCIAMENTO (padrão contábil: parcela = amortização do principal +
@@ -2328,6 +2377,7 @@ model ContaBancaria {
   boletos               BoletoCobranca[]
   pixCobrancas          PixCobranca[]
   emprestimos           Emprestimo[]
+  despesasRecorrentes   DespesaRecorrente[]
   criadoEm        DateTime              @default(now())
   atualizadoEm    DateTime              @updatedAt
 

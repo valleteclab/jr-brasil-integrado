@@ -52,6 +52,13 @@ do cadastro); fluxo de deploy = desenvolve local → `git push` → `./deploy/vp
     (cobv), boleto híbrido com QR Pix embutido (grupo `pix.utilizarPix` do PATCH v3).
 - [ ] 1.3 **API de consulta de clientes (bureau de crédito)** — integrar Serasa/SPC/similar na análise de
   crédito/venda. Provedor a definir; entra no cadastro/fluxo de venda.
+- [x] 1.6 **Despesas recorrentes (folha, aluguel, energia...)** — FEITO 2026-07-02: página
+  /erp/financeiro/recorrentes — modelo com descrição, fornecedor, valor (fixo ou VARIÁVEL =
+  estimativa ajustada na baixa), periodicidade (mensal a anual), dia do vencimento (clamp fim de
+  mês), início/fim, forma, conta e classificação. Geração AUTOMÁTICA das ContaPagar por competência
+  (na criação + cron de 30min), idempotente pelo unique (recorrenciaId, competência "AAAA-MM").
+  Pausar (para de gerar), reativar e encerrar (cancela as abertas). Origem RECORRENTE.
+  Futuro: reajuste anual programado (aluguel), recorrência de RECEITAS (mensalidades).
 - [x] 1.5 **Empréstimos e financiamentos (contas a pagar estruturado)** — FEITO 2026-07-02: página
   /erp/financeiro/emprestimos — contrato com instituição/credor, nº, principal, taxa % a.m., sistema
   de amortização (PRICE, SAC, parcela do carnê, sem juros), total de parcelas, **parcelas já pagas**

@@ -65,6 +65,7 @@ export default async function FinanceiroPage() {
         title="Contas a Pagar e Receber"
         action={
           <span style={{ display: "inline-flex", gap: 8, flexWrap: "wrap" }}>
+            <Button href="/erp/financeiro/recorrentes" variant="light">Despesas recorrentes</Button>
             <Button href="/erp/financeiro/emprestimos" variant="light">Empréstimos</Button>
             <Button href="/erp/financeiro/extrato" variant="light">Extrato do banco</Button>
             <Button href="/erp/financeiro/antecipacao" variant="light">Antecipação de recebíveis</Button>

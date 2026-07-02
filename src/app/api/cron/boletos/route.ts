@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { sincronizarBoletosCron } from "@/domains/finance/application/boleto-use-cases";
 import { sincronizarPixCron } from "@/domains/finance/application/pix-use-cases";
+import { gerarOcorrenciasRecorrentes } from "@/domains/finance/application/recorrencia-use-cases";
 
 // Disparado pelo crontab da VPS (mesmo esquema do /api/cron/distribuicao): consulta os boletos
 // registrados E as cobranças Pix ativas no Sicoob, baixando automaticamente os títulos pagos
@@ -24,7 +25,9 @@ async function handle(request: Request) {
   try {
     const result = await sincronizarBoletosCron();
     const pix = await sincronizarPixCron().catch((e) => ({ pendentes: 0, pagos: 0, erros: [e instanceof Error ? e.message : String(e)] }));
-    return NextResponse.json({ ok: true, ...result, pix });
+    // Despesas recorrentes (folha, aluguel...): materializa as competências devidas (idempotente).
+    const recorrentes = await gerarOcorrenciasRecorrentes().catch((e) => ({ geradas: 0, erros: [e instanceof Error ? e.message : String(e)] }));
+    return NextResponse.json({ ok: true, ...result, pix, recorrentes });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Falha na sincronização de boletos.";
     return NextResponse.json({ error: message }, { status: 500 });
