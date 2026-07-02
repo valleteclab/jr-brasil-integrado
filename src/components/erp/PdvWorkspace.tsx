@@ -148,6 +148,7 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
     notas: NotaResultado[];
     troco: number;
     crediario: { valor: number; parcelas: number; primeiroVencimento: string } | null;
+    boleto: { valor: number; parcelas: number; boletosGerados: number; primeiroVencimento: string; aviso: string | null } | null;
     retirada: { id: string; codigo: string } | null;
     // Aviso quando a venda foi emitida mas o recebimento NÃO entrou no caixa (lançar manualmente).
     avisoRecebimento: string | null;
@@ -365,6 +366,7 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
         troco?: number;
         pedidoVendaId?: string | null;
         crediario?: { valor: number; parcelas: number; primeiroVencimento: string } | null;
+        boleto?: { valor: number; parcelas: number; boletosGerados: number; primeiroVencimento: string; aviso: string | null } | null;
         retirada?: { id: string; codigo: string } | null;
         // Recebimento não lançado no caixa — operador precisa lançar manualmente.
         avisoRecebimento?: string | null;
@@ -372,7 +374,7 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
       };
       if (!res.ok) throw new Error(dataRes.error || "Falha ao finalizar.");
       const notas = dataRes.notas ?? [];
-      setResultado({ notas, troco: dataRes.troco ?? 0, crediario: dataRes.crediario ?? null, retirada: dataRes.retirada ?? null, avisoRecebimento: dataRes.avisoRecebimento ?? null });
+      setResultado({ notas, troco: dataRes.troco ?? 0, crediario: dataRes.crediario ?? null, boleto: dataRes.boleto ?? null, retirada: dataRes.retirada ?? null, avisoRecebimento: dataRes.avisoRecebimento ?? null });
       setCart([]);
       setClienteId("");
       setRetiradaExpedicao(false);
@@ -602,6 +604,15 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
                   <div className="alert info">
                     Crediário: <strong>{brl(resultado.crediario.valor)}</strong> em {resultado.crediario.parcelas} parcela(s),
                     1º vencimento {new Date(resultado.crediario.primeiroVencimento).toLocaleDateString("pt-BR")}.
+                  </div>
+                )}
+                {resultado.boleto && (
+                  <div className={`alert ${resultado.boleto.aviso ? "warn" : "info"}`}>
+                    Boleto: <strong>{brl(resultado.boleto.valor)}</strong> em {resultado.boleto.parcelas} parcela(s),
+                    1º vencimento {new Date(resultado.boleto.primeiroVencimento).toLocaleDateString("pt-BR")} —{" "}
+                    <strong>{resultado.boleto.boletosGerados}</strong> boleto(s) registrado(s) no banco
+                    (veja em Financeiro → Contas a receber).
+                    {resultado.boleto.aviso && <><br /><strong>Atenção:</strong> {resultado.boleto.aviso}</>}
                   </div>
                 )}
                 {resultado.retirada && (
@@ -850,9 +861,10 @@ function PagamentoModal({ total, loading, clienteSelecionado, contas, maquinas, 
   const troco = round2(Math.max(pago - total, 0));
   const falta = round2(Math.max(total - pago, 0));
   const temCrediario = linhas.some((l) => l.forma === "CREDIARIO" && (Number(l.valor) || 0) > 0);
-  const crediarioSemCliente = temCrediario && !clienteSelecionado;
+  const temBoleto = linhas.some((l) => l.forma === "BOLETO" && (Number(l.valor) || 0) > 0);
+  const crediarioSemCliente = (temCrediario || temBoleto) && !clienteSelecionado;
   const somaDinheiro = round2(linhas.filter((l) => l.forma === "DINHEIRO").reduce((s, l) => s + (Number(l.valor) || 0), 0));
-  const trocoInvalido = temCrediario && troco > somaDinheiro;
+  const trocoInvalido = (temCrediario || temBoleto) && troco > somaDinheiro;
 
   function set(idx: number, patch: Partial<Pagamento>) {
     setLinhas((cur) => cur.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
@@ -912,8 +924,8 @@ function PagamentoModal({ total, loading, clienteSelecionado, contas, maquinas, 
             />
           </label>
         )}
-        {crediarioSemCliente && <div className="alert danger">Crediário exige cliente identificado — selecione o cliente antes de finalizar.</div>}
-        {trocoInvalido && <div className="alert danger">O troco só pode sair do dinheiro — reduza o valor do crediário para fechar a conta.</div>}
+        {crediarioSemCliente && <div className="alert danger">{temBoleto ? "Venda no boleto exige cliente identificado" : "Crediário exige cliente identificado"} — selecione o cliente antes de finalizar.</div>}
+        {trocoInvalido && <div className="alert danger">O troco só pode sair do dinheiro — reduza o valor do crediário/boleto para fechar a conta.</div>}
 
         <div className="pdv-pag-resumo">
           <div><span>Pago</span><strong>{brl(pago)}</strong></div>

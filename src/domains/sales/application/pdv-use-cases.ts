@@ -10,8 +10,10 @@ import { emitServiceInvoiceAvulsa } from "@/domains/fiscal/application/standalon
 import { getCaixaAberto, registrarRecebimentoPdv, type PagamentoDetalhado } from "@/domains/cashier/application/cashier-use-cases";
 import { assertModuloLiberado } from "@/lib/auth/tenant-features";
 import { classificacaoReceitaPadraoId } from "@/domains/finance/application/classificacao-use-cases";
+import { gerarBoletoParaRecebivel, listContasComCobranca } from "@/domains/finance/application/boleto-use-cases";
 
 const FORMA_CREDIARIO = "CREDIARIO";
+const FORMA_BOLETO = "BOLETO";
 const FORMA_DINHEIRO = "DINHEIRO";
 const round2 = (v: number) => Math.round((v + Number.EPSILON) * 100) / 100;
 
@@ -56,6 +58,8 @@ export type PdvCheckoutResult = {
   pedidoVendaId: string | null;
   /** Parcelas geradas no contas a receber quando parte da venda foi em crediário. */
   crediario: { valor: number; parcelas: number; primeiroVencimento: string } | null;
+  /** Venda (ou parte) no BOLETO: parcelas no contas a receber + boletos registrados no banco. */
+  boleto: { valor: number; parcelas: number; boletosGerados: number; primeiroVencimento: string; aviso: string | null } | null;
   /** Recibo de retirada na expedição (quando solicitado). */
   retirada: { id: string; codigo: string } | null;
   /**
@@ -151,23 +155,29 @@ export async function pdvCheckout(scope: TenantScope, input: PdvCheckoutInput): 
     throw new Error(`Pagamento insuficiente: total ${total.toFixed(2)}, recebido ${somaPago.toFixed(2)}.`);
   }
 
-  // Crediário (venda a prazo): exige cliente e não pode gerar/absorver troco.
+  // Vendas A PRAZO (crediário e boleto): exigem cliente e não podem gerar/absorver troco.
   const valorCrediario = round2(
     pagamentos.filter((p) => p.forma === FORMA_CREDIARIO).reduce((s, p) => s + Number(p.valor), 0)
   );
-  if (valorCrediario > 0) {
+  // Boleto no PDV é venda a prazo como o crediário — vira contas a receber + boleto registrado no
+  // banco (não é dinheiro que entrou no caixa).
+  const valorBoleto = round2(
+    pagamentos.filter((p) => p.forma === FORMA_BOLETO).reduce((s, p) => s + Number(p.valor), 0)
+  );
+  const valorAPrazo = round2(valorCrediario + valorBoleto);
+  if (valorAPrazo > 0) {
     if (!input.clienteId) {
-      throw new Error("Crediário (venda a prazo) exige um cliente identificado.");
+      throw new Error(valorBoleto > 0 ? "Venda no boleto exige um cliente identificado." : "Crediário (venda a prazo) exige um cliente identificado.");
     }
-    if (valorCrediario > total + 0.0001) {
-      throw new Error(`Crediário (${valorCrediario.toFixed(2)}) não pode ser maior que o total da venda (${total.toFixed(2)}).`);
+    if (valorAPrazo > total + 0.0001) {
+      throw new Error(`Crediário/boleto (${valorAPrazo.toFixed(2)}) não pode ser maior que o total da venda (${total.toFixed(2)}).`);
     }
     const troco = round2(somaPago - total);
     const somaDinheiro = round2(
       pagamentos.filter((p) => p.forma === FORMA_DINHEIRO).reduce((s, p) => s + Number(p.valor), 0)
     );
     if (troco > somaDinheiro + 0.0001) {
-      throw new Error("O troco só pode sair do dinheiro — ajuste o valor do crediário para fechar a conta.");
+      throw new Error("O troco só pode sair do dinheiro — ajuste o valor do crediário/boleto para fechar a conta.");
     }
   }
 
@@ -186,7 +196,7 @@ export async function pdvCheckout(scope: TenantScope, input: PdvCheckoutInput): 
           vendedorId: input.vendedorId ?? null,
           canal: "PDV",
           formaPagamento: formaResumo || undefined,
-          condicaoPagamento: valorCrediario > 0 ? (input.condicaoCrediario ?? "30") : undefined,
+          condicaoPagamento: valorAPrazo > 0 ? (input.condicaoCrediario ?? "30") : undefined,
           desconto: descontoGlobal,
           itens: input.produtos.map((p) => ({
             produtoId: p.produtoId,
@@ -363,6 +373,74 @@ export async function pdvCheckout(scope: TenantScope, input: PdvCheckoutInput): 
     };
   }
 
+  // 4b. BOLETO → parcelas no contas a receber (como o crediário) + boletos registrados no Sicoob.
+  // Best-effort na emissão dos boletos: falha não desfaz a venda; as parcelas ficam no financeiro
+  // com o botão "Gerar boleto" para retentar (ex.: cobrança não configurada, endereço incompleto).
+  let boleto: PdvCheckoutResult["boleto"] = null;
+  if (valorBoleto > 0 && input.clienteId) {
+    const parcelas = gerarParcelas(valorBoleto, input.condicaoCrediario ?? "30");
+    const descricaoBase = pedidoNumero ? `Venda PDV ${pedidoNumero}` : "Venda PDV (serviços)";
+    const contaReceberIds: string[] = [];
+    await prisma.$transaction(async (tx) => {
+      const classificacaoReceita = await classificacaoReceitaPadraoId(tx, scope, "vendas");
+      for (const parcela of parcelas) {
+        const cr = await tx.contaReceber.create({
+          data: {
+            ...scopedByTenantCompanyAmbiente(scope),
+            clienteId: input.clienteId as string,
+            pedidoVendaId: pedidoVendaId ?? null,
+            classificacaoId: classificacaoReceita,
+            descricao: `${descricaoBase} boleto${rotuloParcela(parcela)}`,
+            numeroDocumento: pedidoNumero,
+            origem: "VENDA",
+            formaPagamento: FORMA_BOLETO,
+            vencimento: parcela.vencimento,
+            valor: parcela.valor,
+            valorPago: 0,
+            juros: 0,
+            multa: 0,
+            descontoBaixa: 0,
+            status: "ABERTO"
+          },
+          select: { id: true }
+        });
+        contaReceberIds.push(cr.id);
+      }
+      await createAuditLog(tx, {
+        scope,
+        entidade: "PedidoVenda",
+        entidadeId: pedidoVendaId ?? "PDV",
+        acao: "BOLETO_PDV",
+        payload: { clienteId: input.clienteId, valor: valorBoleto, parcelas: parcelas.length, condicao: input.condicaoCrediario ?? "30" }
+      });
+    });
+
+    let boletosGerados = 0;
+    let avisoBoleto: string | null = null;
+    const contasCobranca = await listContasComCobranca(scope);
+    if (!contasCobranca.length) {
+      avisoBoleto = 'Nenhuma conta bancária com cobrança Sicoob configurada — as parcelas ficaram no contas a receber sem boleto (configure em Configurações → Contas financeiras e use "Gerar boleto").';
+    } else {
+      const erros: string[] = [];
+      for (const contaId of contaReceberIds) {
+        try {
+          await gerarBoletoParaRecebivel(scope, contaId, { contaBancariaId: contasCobranca[0].id });
+          boletosGerados++;
+        } catch (e) {
+          erros.push(e instanceof Error ? e.message : String(e));
+        }
+      }
+      if (erros.length) avisoBoleto = `Boleto(s) não registrados: ${[...new Set(erros)].join("; ")}. As parcelas estão no contas a receber — corrija e use "Gerar boleto".`;
+    }
+    boleto = {
+      valor: valorBoleto,
+      parcelas: parcelas.length,
+      boletosGerados,
+      primeiroVencimento: parcelas[0].vencimento.toISOString(),
+      aviso: avisoBoleto
+    };
+  }
+
   // 5. Recibo de retirada na expedição (só faz sentido quando a venda tem produtos).
   let retirada: PdvCheckoutResult["retirada"] = null;
   if (input.retiradaExpedicao && pedidoVendaId) {
@@ -370,5 +448,5 @@ export async function pdvCheckout(scope: TenantScope, input: PdvCheckoutInput): 
     retirada = { id: r.id, codigo: r.codigo };
   }
 
-  return { notas, troco, total, pedidoVendaId, crediario, retirada, avisoRecebimento };
+  return { notas, troco, total, pedidoVendaId, crediario, boleto, retirada, avisoRecebimento };
 }
