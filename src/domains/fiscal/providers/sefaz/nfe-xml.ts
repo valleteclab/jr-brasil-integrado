@@ -118,7 +118,8 @@ function icmsXml(simples: boolean, taxes: ItemTaxResult | undefined, base: numbe
   if (simples) {
     const csosn = (taxes?.csosn ?? "102").padStart(3, "0");
     if ((csosn === "201" || csosn === "202" || csosn === "203") && vICMSST > 0) {
-      const credito = csosn === "201" && vICMS > 0 ? tag("pCredSN", fmt(pICMS)) + tag("vCredICMSSN", fmt(vICMS)) : "";
+      // XSD: no ICMSSN201, pCredSN/vCredICMSSN são OBRIGATÓRIOS (mesmo zerados); no 202/203 não existem.
+      const credito = csosn === "201" ? tag("pCredSN", fmt(pICMS)) + tag("vCredICMSSN", fmt(vICMS)) : "";
       return `<ICMS><ICMSSN${csosn}><orig>${orig}</orig><CSOSN>${csosn}</CSOSN>${stSubst}${credito}</ICMSSN${csosn}></ICMS>`;
     }
     if (csosn === "500") {

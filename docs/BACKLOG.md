@@ -106,18 +106,27 @@ do cadastro); fluxo de deploy = desenvolve local → `git push` → `./deploy/vp
   além do ICMS-ST (que já era detectado por CST 60/10/30/70, CSOSN 201/202/203/500 e CFOP), a
   entrada agora marca ProdutoFiscal.pisCofinsMonofasico quando o item do fornecedor vem com CST de
   PIS 04/05 OU o NCM está nas listas de lei — alimenta a segregação do Simples sem trabalho manual.
-- [ ] 2.b **Venda interestadual de produto ST (remetente = substituto) + GNRE/DIFAL** — fluxo real
-  pesquisado 2026-07-02: venda interestadual p/ CONTRIBUINTE com protocolo/convênio (autopeças =
-  Protocolo 41/2008): a nota NÃO sai CSOSN 500 — sai CSOSN 201/202 (CST 10) + CFOP 6403/6404 com
-  grupo ICMSST: BC-ST = preço × (1 + MVA ORIGINAL do destino — Simples não usa ajustada, Conv.
-  142/2018), ST = BC-ST × alíq. interna destino − ICMS interestadual; recolhe por GNRE ANTES da
-  saída (nº da guia informado na nota). Venda interestadual a consumidor final: DIFAL (EC 87)
-  também por GNRE. HOJE o sistema mantém 500/6404 sem novo ST (correto SÓ quando não há protocolo
-  com a UF destino) e não tem nada de GNRE/DIFAL. Plano: (1) RegraTributaria por NCM+ufDestino com
-  MVA cadastrada = protocolo aplicável → tax-engine troca CSOSN p/ 201/202 e calcula o grupo ICMSST;
-  (2) tabela GuiaRecolhimento (nota, tipo GNRE-ST/GNRE-DIFAL, UF favorecida, valor, status) + tela
-  "Guias a recolher" com aviso na emissão; (3) fase 2: emissão da guia pelo webservice GNRE Online
-  (lote XML + certificado). ⚠ Mexer no XML exige o runbook de leiaute fiscal (XSD + gates + testes).
+- [x] 2.b **Venda interestadual de produto ST (remetente = substituto) + guias GNRE** — FEITO
+  2026-07-02, fontes oficiais: XSD leiaute 4.00 local (grupos ICMSSN201/202) + Convênio ICMS
+  142/2018 (CONFAZ; cl. 11ª §1º MVA original p/ Simples, cl. 13ª §1º dedução pela alíquota
+  interestadual, cl. 18ª GNRE por operação antes da saída):
+  - **Gatilho = RegraTributaria de ICMS com NCM + ufDestino + MVA** (protocolo/convênio cadastrado,
+    com o contador): venda interestadual de produto ST deixa de sair 500/6404 e sai **CSOSN 202
+    (ou 201) / CST 10 + CFOP 6403** com grupo ICMSST calculado. Sem regra p/ a UF → mantém 500/6404
+    (sem protocolo, correto). Interna continua 500/5405 intocada.
+  - Cálculo validado: Simples usa MVA ORIGINAL + dedução interestadual (BA→SP 12%: base 1000, MVA
+    71,78 → BC-ST 1.717,80, ST 189,20); regime normal usa **MVA AJUSTADA** automática (84,35% no
+    mesmo caso) com ICMS próprio destacado. Fix: regra só-de-ST sem alíquota própria não zera o
+    ICMS próprio; fix XSD: pCredSN/vCredICMSSN obrigatórios no ICMSSN201.
+  - **XML VÁLIDO contra o XSD oficial** (wrap-nfe) e emissão de TESTE em homologação SEFAZ-BA
+    passou do schema (rejeição só cadastral, cStat 234 — IE fictícia; com cliente real autoriza).
+  - **GuiaRecolhimento** (migration 20260703060000): NF-e autorizada interestadual com ST retido →
+    guia GNRE PENDENTE p/ UF de destino + texto no infCpl (DANFE); tela /erp/fiscal/guias
+    (alerta "recolher antes da saída", link gnre.pe.gov.br, registrar pagamento c/ nº da guia);
+    cancelamento da NF-e cancela a guia pendente.
+  - Fase 2 (pendente): DIFAL EC 87 (grupo ICMSUFDest p/ consumidor final interestadual — hoje não
+    suportado) e emissão da guia via webservice GNRE Online; cadastro assistido de MVAs por
+    protocolo (ex.: Protocolo 41/2008 autopeças).
 
 - [x] 2.0 **Frete não sai na nota fiscal (BUG)** — CORRIGIDO 2026-07-02: o frete chegava ao XML só no
   ICMSTot, sem rateio nos itens (`det/prod/vFrete`), violando a regra da SEFAZ "ICMSTot.vFrete = Σ itens"

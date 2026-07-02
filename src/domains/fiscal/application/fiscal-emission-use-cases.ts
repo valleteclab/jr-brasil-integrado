@@ -175,6 +175,9 @@ function resolveCfopSaida(modelo: ModeloFiscal, cfopItem: string | null | undefi
   const interestadual = Boolean(origem && destino && origem !== destino);
   const prefixoEsperado = interestadual ? "6" : "5";
   const valido = new RegExp(`^${prefixoEsperado}\\d{3}$`).test(cfop);
+  // CFOP de SUBSTITUÍDO herdado do cadastro (5405/6404) não vale quando ESTA operação retém o
+  // ST (substituto, Conv. 142/2018) — re-deriva para 5403/6403.
+  if (valido && ctx.substituto && (cfop === "5405" || cfop === "6404")) return resolveCfopVenda(ctx);
   return valido ? cfop : resolveCfopVenda(ctx);
 }
 
@@ -587,7 +590,14 @@ export async function emitFiscalDocument(
   const faturasTexto = modelo !== "NFSE" && document.faturas?.length
     ? `Faturas: ${document.faturas.map((f) => `${f.numero} venc. ${f.vencimento.toLocaleDateString("pt-BR")} R$ ${f.valor.toFixed(2).replace(".", ",")}`).join("; ")}.`
     : null;
-  const informacoesComplementares = [pagamentoTexto, faturasTexto, document.informacoesComplementares, ibptText]
+  // ST interestadual retido pelo remetente (substituto, Conv. ICMS 142/2018): informa no DANFE o
+  // recolhimento por GNRE à UF de destino — a guia acompanha o transporte (cláusula 18ª).
+  const ufDestSt = document.destinatario.uf?.trim().toUpperCase() || null;
+  const stInterestadualTexto =
+    modelo === "NFE" && totals.valorIcmsSt > 0 && ufDestSt && config.emitter.uf && ufDestSt !== config.emitter.uf.toUpperCase()
+      ? `ICMS-ST retido para a UF de destino (${ufDestSt}) conforme Conv. ICMS 142/2018: R$ ${totals.valorIcmsSt.toFixed(2).replace(".", ",")} — recolhimento por GNRE.`
+      : null;
+  const informacoesComplementares = [pagamentoTexto, faturasTexto, stInterestadualTexto, document.informacoesComplementares, ibptText]
     .filter((part) => part && part.trim())
     .join(" ");
 
@@ -840,6 +850,24 @@ export async function emitFiscalDocument(
       include: { itens: { orderBy: { numeroItem: "asc" } } }
     });
 
+    // GUIA GNRE (Conv. 142/2018 cl. 18ª): NF-e interestadual com ICMS-ST retido pelo remetente →
+    // registra a guia PENDENTE para a UF de destino (recolher POR OPERAÇÃO, antes da saída).
+    if (authorized && modelo === "NFE" && totals.valorIcmsSt > 0 && ufDestSt && config.emitter.uf && ufDestSt !== config.emitter.uf.toUpperCase()) {
+      await tx.guiaRecolhimento.upsert({
+        where: { notaFiscalId_tipo: { notaFiscalId: nota.id, tipo: "GNRE_ICMS_ST" } },
+        update: { valor: totals.valorIcmsSt, ufFavorecida: ufDestSt, status: "PENDENTE" },
+        create: {
+          tenantId: scope.tenantId,
+          empresaId: scope.empresaId,
+          ambiente: config.ambiente,
+          notaFiscalId: nota.id,
+          tipo: "GNRE_ICMS_ST",
+          ufFavorecida: ufDestSt,
+          valor: totals.valorIcmsSt
+        }
+      });
+    }
+
     await createAuditLog(tx, {
       scope,
       entidade: "NotaFiscal",
@@ -933,6 +961,11 @@ export async function cancelNotaFiscal(scope: TenantScope, notaId: string, justi
       await tx.notaFiscal.update({
         where: { id: nota.id },
         data: { status: "CANCELADA", canceladaEm: new Date(), motivo: justificativa.trim() }
+      });
+      // Nota cancelada → guia GNRE pendente da nota também é cancelada (nada mais a recolher).
+      await tx.guiaRecolhimento.updateMany({
+        where: { notaFiscalId: nota.id, status: "PENDENTE" },
+        data: { status: "CANCELADA" }
       });
     }
 

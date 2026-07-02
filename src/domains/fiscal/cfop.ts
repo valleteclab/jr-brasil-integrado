@@ -12,6 +12,8 @@ export type CfopVendaContext = {
   ufDestino: string | null;
   /** Mercadoria sujeita a ST já recolhida (contribuinte substituído). */
   substituicaoTributaria?: boolean;
+  /** O remetente RETÉM o ICMS-ST NESTA operação (contribuinte substituto — vICMSST > 0). */
+  substituto?: boolean;
   /** Produção do próprio estabelecimento (industrialização). Padrão: revenda. */
   producaoPropria?: boolean;
 };
@@ -25,9 +27,12 @@ export function resolveCfopVenda(ctx: CfopVendaContext): string {
   const prefixo = interestadual ? "6" : "5";
 
   if (ctx.substituicaoTributaria) {
-    // Revenda de mercadoria sujeita a ST: 5405 (interna) / 6404 (interestadual);
-    // produção própria com ST: 5401 / 6401.
+    // Produção própria com ST (substituto industrial): 5401 / 6401.
     if (ctx.producaoPropria) return interestadual ? "6401" : "5401";
+    // Revenda na condição de SUBSTITUTO (retém o ST nesta operação — ex.: venda interestadual
+    // com protocolo, Conv. 142/2018): 5403 / 6403.
+    if (ctx.substituto) return interestadual ? "6403" : "5403";
+    // Revenda na condição de SUBSTITUÍDO (imposto retido anteriormente): 5405 / 6404.
     return interestadual ? "6404" : "5405";
   }
 

@@ -39,6 +39,8 @@ export default async function FiscalPage() {
         title="Documentos fiscais"
         action={
           <>
+            <Button href="/erp/fiscal/guias" variant="light">Guias GNRE</Button>
+            <Button href="/erp/fiscal/simples" variant="light">Simples/MEI</Button>
             <Button href="/erp/configuracoes/fiscal" variant="light">Configurar emissão</Button>
             <Button href="/erp/fiscal/emitir">+ Emitir nota</Button>
           </>

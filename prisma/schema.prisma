@@ -358,6 +358,7 @@ model Empresa {
   antecipacoesRecebiveis    AntecipacaoRecebivel[]
   emprestimos               Emprestimo[]
   despesasRecorrentes       DespesaRecorrente[]
+  guiasRecolhimento         GuiaRecolhimento[]
   notasFiscais              NotaFiscal[]
   xmlImportacoes            XmlImportacao[]
   entradasFiscais           EntradaFiscal[]
@@ -1984,6 +1985,7 @@ model NotaFiscal {
   canceladaEm               DateTime?
   itens                     NotaFiscalItem[]
   eventos                   NotaFiscalEvento[]
+  guiasRecolhimento         GuiaRecolhimento[]
   contasReceber             ContaReceber[]
   criadoEm                  DateTime           @default(now())
   atualizadoEm              DateTime           @updatedAt
@@ -2422,6 +2424,34 @@ model BoletoCobranca {
 
   @@index([tenantId, empresaId, status])
   @@index([tenantId, empresaId, nossoNumero])
+}
+
+/// GUIA DE RECOLHIMENTO ESTADUAL gerada pela emissão (Conv. ICMS 142/2018, cl. 18ª): remetente
+/// sem inscrição na UF de destino recolhe o ICMS-ST retido POR OPERAÇÃO via GNRE ANTES da saída
+/// (a guia acompanha o transporte). v1: o ERP calcula, registra e controla (pendente/paga); a
+/// guia em si é emitida no portal GNRE Online — webservice é fase futura.
+model GuiaRecolhimento {
+  id           String         @id @default(cuid())
+  tenantId     String
+  empresaId    String
+  empresa      Empresa        @relation(fields: [empresaId], references: [id])
+  ambiente     AmbienteFiscal @default(HOMOLOGACAO)
+  notaFiscalId String
+  notaFiscal   NotaFiscal     @relation(fields: [notaFiscalId], references: [id])
+  /// GNRE_ICMS_ST | GNRE_DIFAL
+  tipo         String         @default("GNRE_ICMS_ST")
+  ufFavorecida String
+  valor        Decimal        @db.Decimal(14, 2)
+  /// PENDENTE | PAGA | CANCELADA
+  status       String         @default("PENDENTE")
+  numeroGuia   String?
+  pagoEm       DateTime?
+  observacoes  String?
+  criadoEm     DateTime       @default(now())
+  atualizadoEm DateTime       @updatedAt
+
+  @@unique([notaFiscalId, tipo])
+  @@index([tenantId, empresaId, status])
 }
 
 /// Cobrança PIX dinâmica (QR Code) criada na API Pix do Sicoob (BACEN cob). Vinculada à venda

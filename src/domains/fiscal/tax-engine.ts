@@ -19,9 +19,15 @@ function somaTributos(parts: number[]): number {
 }
 
 /**
- * Calcula ICMS-ST por MVA quando a regra define `mva`. Não recalcula para mercadoria já
- * substituída (CSOSN 500 / CST 60). Base ST = (base própria + IPI) × (1 + MVA); ST = base ST ×
- * alíquota interna do destino − ICMS próprio.
+ * Calcula ICMS-ST por MVA quando a regra define `mva` (Convênio ICMS 142/2018):
+ *  - Base ST = (base própria + frete/encargos já embutidos + IPI) × (1 + MVA) — cláusula 11ª;
+ *  - ST devido = Base ST × alíquota interna do destino − dedução da operação própria — cláusula 13ª
+ *    (para remetente do SIMPLES a dedução é a alíquota INTERESTADUAL sobre a base própria, §1º);
+ *  - A `mva` cadastrada na RegraTributaria é sempre a MVA ORIGINAL. Remetente do Simples usa a
+ *    original mesmo interestadual (cláusula 11ª §1º); regime normal interestadual usa a MVA
+ *    AJUSTADA, calculada aqui: [(1+MVA)×(1−aliqInter)/(1−aliqInternaDestino)]−1.
+ * Não recalcula para mercadoria já substituída (CSOSN 500 / CST 60) — quem decide reabrir o ST na
+ * interestadual (remetente vira substituto de novo) é o computeItemTaxes, trocando o CSOSN/CST.
  */
 function computeIcmsSt(
   rule: RegraTributaria | null,
@@ -29,17 +35,24 @@ function computeIcmsSt(
   cstIcms: string | null,
   baseProprio: number,
   valorIpi: number,
-  valorIcmsProprio: number,
-  ufDestino: string | null
+  deducaoOperacaoPropria: number,
+  ufDestino: string | null,
+  opts?: { ajustarMva?: boolean; aliquotaInterestadual?: number }
 ) {
-  const mva = rule?.mva != null ? Number(rule.mva) : 0;
+  const mvaOriginal = rule?.mva != null ? Number(rule.mva) : 0;
   const substituido = csosn === "500" || cstIcms === "60";
-  if (!mva || substituido) {
+  if (!mvaOriginal || substituido) {
     return { modalidadeBcSt: null as string | null, percentualMva: 0, baseIcmsSt: 0, aliquotaIcmsSt: 0, valorIcmsSt: 0 };
   }
-  const baseSt = round2((baseProprio + valorIpi) * (1 + mva / 100));
   const aliqSt = rule?.aliquotaIcmsSt != null ? Number(rule.aliquotaIcmsSt) : aliquotaInternaIcmsSafe(ufDestino);
-  const valorSt = Math.max(round2(baseSt * (aliqSt / 100) - valorIcmsProprio), 0);
+  // MVA ajustada (regime normal, interestadual): compensa a diferença entre a alíquota
+  // interestadual e a interna do destino. Só ajusta quando o resultado é maior (aliqInter < aliqSt).
+  let mva = mvaOriginal;
+  if (opts?.ajustarMva && opts.aliquotaInterestadual != null && opts.aliquotaInterestadual < aliqSt) {
+    mva = round2((((1 + mvaOriginal / 100) * (1 - opts.aliquotaInterestadual / 100)) / (1 - aliqSt / 100) - 1) * 100);
+  }
+  const baseSt = round2((baseProprio + valorIpi) * (1 + mva / 100));
+  const valorSt = Math.max(round2(baseSt * (aliqSt / 100) - deducaoOperacaoPropria), 0);
   return { modalidadeBcSt: "MVA", percentualMva: mva, baseIcmsSt: baseSt, aliquotaIcmsSt: aliqSt, valorIcmsSt: valorSt };
 }
 
@@ -236,10 +249,19 @@ export function computeItemTaxes(
   const aliquotaPis = pisRule ? num(pisRule.aliquota) : pisCofinsFallback.pis;
   const aliquotaCofins = cofinsRule ? num(cofinsRule.aliquota) : pisCofinsFallback.cofins;
 
+  const interestadual = Boolean(ctx.ufOrigem && ctx.ufDestino && ctx.ufOrigem !== ctx.ufDestino);
+  // Mercadoria substituída em VENDA INTERESTADUAL: o ST retido na compra só vale para operações
+  // internas — havendo protocolo/convênio com a UF de destino (= RegraTributaria de ICMS com MVA
+  // para o NCM+UF), o REMETENTE volta a ser substituto (Conv. 142/2018): a nota NÃO sai CSOSN
+  // 500/CST 60, sai 201/202 (ou CST 10) com novo ICMS-ST calculado. Sem regra cadastrada para o
+  // destino, mantém o comportamento substituído (500/60 + CFOP 6404).
+  const regraStDestino = item.icmsSt && interestadual ? pickRule(rules, "ICMS", item.ncm, ctx.ufDestino) : null;
+  const reabreStInterestadual = Boolean(regraStDestino?.mva != null && Number(regraStDestino.mva) > 0 && regraStDestino?.ufDestino);
+
   // Mercadoria substituída (ICMS-ST já recolhido na cadeia): a saída NÃO tem ICMS próprio nem
   // novo ICMS-ST. Sai com CSOSN 500 (Simples) ou CST 60 (regime normal) — o que faz a emissão
   // derivar o CFOP de ST (5405/6404). IPI/PIS/COFINS seguem o cálculo normal do regime.
-  if (item.icmsSt) {
+  if (item.icmsSt && !reabreStInterestadual) {
     const valorIpi = round2(base * (aliquotaIpi / 100));
     const valorPis = round2(base * (aliquotaPis / 100));
     const valorCofins = round2(base * (aliquotaCofins / 100));
@@ -278,7 +300,14 @@ export function computeItemTaxes(
     const valorPis = round2(base * (aliquotaPis / 100));
     const valorCofins = round2(base * (aliquotaCofins / 100));
     // No Simples o substituto tributário (CSOSN 201/202) ainda destaca ICMS-ST quando há MVA.
-    const st = computeIcmsSt(icmsRuleSimples, csosn, null, base, valorIpi, 0, ctx.ufDestino);
+    // Dedução da operação própria (Conv. 142/2018 cl. 13ª §1º, remetente Simples): o resultado da
+    // alíquota INTERESTADUAL sobre a base própria (interna: alíquota interna da UF), mesmo sem
+    // destaque de ICMS na nota. MVA usada é sempre a ORIGINAL (cl. 11ª §1º).
+    const aliqDeducaoSimples = interestadual
+      ? aliquotaIcmsVendaSafe(ctx.ufOrigem, ctx.ufDestino, origem)
+      : aliquotaInternaIcmsSafe(ctx.ufDestino);
+    const deducaoSimples = round2(base * (aliqDeducaoSimples / 100));
+    const st = computeIcmsSt(icmsRuleSimples, csosn, null, base, valorIpi, deducaoSimples, ctx.ufDestino);
     // Só quando há ST efetivo (valorSt>0) promovemos o CSOSN para 201/202; sem ST, mantém 102.
     const csosnFinal = st.valorIcmsSt > 0 ? promoteCsosnStSimples(csosn) : csosn;
     return {
@@ -318,7 +347,9 @@ export function computeItemTaxes(
   // "cálculo automático" de outros ERPs. Uma regra cadastrada (mesmo com 0%) sempre prevalece.
   // Passa a origem do item: produto importado (origem 1/2/3/8) em operação interestadual usa 4%
   // (Res. SF 13/2012); a base nacional resolve isso quando não há regra específica cadastrada.
-  const aliquotaIcms = icmsRule ? num(icmsRule.aliquota) : aliquotaIcmsVendaSafe(ctx.ufOrigem, ctx.ufDestino, origem);
+  // Regra SÓ de ST (mva/aliquotaIcmsSt preenchidas, aliquota própria vazia) não zera o ICMS
+  // próprio: alíquota nula na regra cai na base nacional (interna/interestadual por UF).
+  const aliquotaIcms = icmsRule?.aliquota != null ? num(icmsRule.aliquota) : aliquotaIcmsVendaSafe(ctx.ufOrigem, ctx.ufDestino, origem);
   const reducao = num(icmsRule?.reducaoBase) / 100;
   const baseIcms = round2(base * (1 - reducao));
   const valorIcms = round2(baseIcms * (aliquotaIcms / 100));
@@ -329,7 +360,11 @@ export function computeItemTaxes(
   const interna = Boolean(ctx.ufOrigem && ctx.ufDestino && ctx.ufOrigem === ctx.ufDestino);
   const percentualFcp = icmsRule?.fcp != null ? num(icmsRule.fcp) : interna ? fcpInterno(ctx.ufDestino) : 0;
   const valorFcp = round2(baseIcms * (percentualFcp / 100));
-  const st = computeIcmsSt(icmsRule, null, cstIcms, base, valorIpi, valorIcms, ctx.ufDestino);
+  // Regime normal interestadual: MVA AJUSTADA calculada a partir da original (Conv. 142/2018).
+  const st = computeIcmsSt(icmsRule, null, cstIcms, base, valorIpi, valorIcms, ctx.ufDestino, {
+    ajustarMva: !interna,
+    aliquotaInterestadual: aliquotaIcms
+  });
   // Só quando há ST efetivo (valorSt>0) promovemos o CST para 10/70 (substituto que recolhe);
   // sem ST, mantém o CST atual (00/90/40…) e o XML segue idêntico ao de hoje.
   const cstIcmsFinal = st.valorIcmsSt > 0 ? promoteCstStNormal(cstIcms) : cstIcms;
