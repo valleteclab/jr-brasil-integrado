@@ -12,7 +12,13 @@
 import forge from "node-forge";
 import { execFileSync } from "node:child_process";
 
-export type PfxPem = { privateKeyPem: string; certPem: string };
+export type PfxPem = {
+  privateKeyPem: string;
+  /** Certificado FOLHA (o do titular) — é o usado na ASSINATURA (X509Certificate do KeyInfo). */
+  certPem: string;
+  /** Cadeia (ACs intermediárias) presente no PFX — enviada no mTLS junto com a folha. */
+  chainPem: string[];
+};
 
 /** Caminho rápido: node-forge (cobre PFX no esquema legado). */
 function viaForge(pfx: Buffer, senha: string): PfxPem {
@@ -20,11 +26,22 @@ function viaForge(pfx: Buffer, senha: string): PfxPem {
   const keyBag =
     p12.getBags({ bagType: forge.pki.oids.pkcs8ShroudedKeyBag })[forge.pki.oids.pkcs8ShroudedKeyBag]?.[0] ??
     p12.getBags({ bagType: forge.pki.oids.keyBag })[forge.pki.oids.keyBag]?.[0];
-  const certBag = p12.getBags({ bagType: forge.pki.oids.certBag })[forge.pki.oids.certBag]?.[0];
-  if (!keyBag?.key || !certBag?.cert) throw new Error("Certificado A1 sem chave privada ou certificado.");
+  const certBags = p12.getBags({ bagType: forge.pki.oids.certBag })[forge.pki.oids.certBag] ?? [];
+  if (!keyBag?.key || !certBags[0]?.cert) throw new Error("Certificado A1 sem chave privada ou certificado.");
+  // FOLHA = certificado cujo módulo RSA bate com a chave privada; os demais são a cadeia (ACs).
+  const key = keyBag.key as forge.pki.rsa.PrivateKey;
+  const leafBag =
+    certBags.find((b) => {
+      const pub = b.cert?.publicKey as forge.pki.rsa.PublicKey | undefined;
+      return pub?.n && key.n && pub.n.compareTo(key.n) === 0;
+    }) ?? certBags[0];
+  const chain = certBags
+    .filter((b) => b !== leafBag && b.cert)
+    .map((b) => forge.pki.certificateToPem(b.cert as forge.pki.Certificate));
   return {
     privateKeyPem: forge.pki.privateKeyToPem(keyBag.key),
-    certPem: forge.pki.certificateToPem(certBag.cert)
+    certPem: forge.pki.certificateToPem(leafBag.cert as forge.pki.Certificate),
+    chainPem: chain
   };
 }
 
@@ -34,21 +51,26 @@ function viaForge(pfx: Buffer, senha: string): PfxPem {
  * (não aparece na linha de comando). Tenta o formato moderno e, se falhar, o legado (-legacy).
  */
 function viaOpenssl(pfx: Buffer, senha: string): PfxPem {
-  const base = ["pkcs12", "-in", "/dev/stdin", "-nodes", "-clcerts", "-passin", "env:__PFX_PASS"];
+  const base = ["pkcs12", "-in", "/dev/stdin", "-nodes", "-passin", "env:__PFX_PASS"];
   const env = { ...process.env, __PFX_PASS: senha };
   const run = (extra: string[]) =>
     execFileSync("openssl", [...base, ...extra], { input: pfx, env, maxBuffer: 16 * 1024 * 1024 }).toString("utf8");
-  let out: string;
+  // -clcerts = folha + chave; -cacerts -nokeys = cadeia (ACs). Fallback -legacy p/ PFX RC2 antigo.
+  let leafOut: string;
+  let chainOut = "";
   try {
-    out = run([]);
+    leafOut = run(["-clcerts"]);
+    try { chainOut = run(["-cacerts", "-nokeys"]); } catch { /* PFX sem cadeia */ }
   } catch {
-    out = run(["-legacy"]);
+    leafOut = run(["-clcerts", "-legacy"]);
+    try { chainOut = run(["-cacerts", "-nokeys", "-legacy"]); } catch { /* PFX sem cadeia */ }
   }
   const privateKeyPem =
-    out.match(/-----BEGIN (?:RSA |EC |ENCRYPTED )?PRIVATE KEY-----[\s\S]+?-----END (?:RSA |EC |ENCRYPTED )?PRIVATE KEY-----/)?.[0] ?? null;
-  const certPem = out.match(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/)?.[0] ?? null;
+    leafOut.match(/-----BEGIN (?:RSA |EC |ENCRYPTED )?PRIVATE KEY-----[\s\S]+?-----END (?:RSA |EC |ENCRYPTED )?PRIVATE KEY-----/)?.[0] ?? null;
+  const certPem = leafOut.match(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/)?.[0] ?? null;
+  const chainPem = chainOut.match(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g) ?? [];
   if (!privateKeyPem || !certPem) throw new Error("OpenSSL não extraiu chave/certificado do PFX.");
-  return { privateKeyPem, certPem };
+  return { privateKeyPem, certPem, chainPem };
 }
 
 /** Lê o A1 .pfx → PEM. Tenta o forge e, se ele falhar (PFX moderno), cai para o OpenSSL do sistema. */
@@ -73,6 +95,8 @@ export function pfxToPem(pfx: Buffer, senha: string): PfxPem {
  * Por isso convertemos o PFX aqui e passamos key/cert nas requisições https dos provedores diretos.
  */
 export function pfxTlsOptions(cert: { pfx: Buffer; senha: string }): { key: string; cert: string } {
-  const { privateKeyPem, certPem } = pfxToPem(cert.pfx, cert.senha);
-  return { key: privateKeyPem, cert: certPem };
+  const { privateKeyPem, certPem, chainPem } = pfxToPem(cert.pfx, cert.senha);
+  // mTLS com a CADEIA COMPLETA (folha + ACs intermediárias concatenadas): a SEFAZ tolera só a
+  // folha, mas o webservice da GNRE responde "SSL alert 42 bad certificate" sem as intermediárias.
+  return { key: privateKeyPem, cert: [certPem, ...chainPem].join("\n") };
 }
