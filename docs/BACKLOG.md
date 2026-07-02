@@ -102,6 +102,23 @@ do cadastro); fluxo de deploy = desenvolve local → `git push` → `./deploy/vp
 
 ## 2. Emissão de NF-e (saída)
 
+- [x] 2.a **Auto-marcar PIS/COFINS monofásico na importação do XML de entrada** — FEITO 2026-07-02:
+  além do ICMS-ST (que já era detectado por CST 60/10/30/70, CSOSN 201/202/203/500 e CFOP), a
+  entrada agora marca ProdutoFiscal.pisCofinsMonofasico quando o item do fornecedor vem com CST de
+  PIS 04/05 OU o NCM está nas listas de lei — alimenta a segregação do Simples sem trabalho manual.
+- [ ] 2.b **Venda interestadual de produto ST (remetente = substituto) + GNRE/DIFAL** — fluxo real
+  pesquisado 2026-07-02: venda interestadual p/ CONTRIBUINTE com protocolo/convênio (autopeças =
+  Protocolo 41/2008): a nota NÃO sai CSOSN 500 — sai CSOSN 201/202 (CST 10) + CFOP 6403/6404 com
+  grupo ICMSST: BC-ST = preço × (1 + MVA ORIGINAL do destino — Simples não usa ajustada, Conv.
+  142/2018), ST = BC-ST × alíq. interna destino − ICMS interestadual; recolhe por GNRE ANTES da
+  saída (nº da guia informado na nota). Venda interestadual a consumidor final: DIFAL (EC 87)
+  também por GNRE. HOJE o sistema mantém 500/6404 sem novo ST (correto SÓ quando não há protocolo
+  com a UF destino) e não tem nada de GNRE/DIFAL. Plano: (1) RegraTributaria por NCM+ufDestino com
+  MVA cadastrada = protocolo aplicável → tax-engine troca CSOSN p/ 201/202 e calcula o grupo ICMSST;
+  (2) tabela GuiaRecolhimento (nota, tipo GNRE-ST/GNRE-DIFAL, UF favorecida, valor, status) + tela
+  "Guias a recolher" com aviso na emissão; (3) fase 2: emissão da guia pelo webservice GNRE Online
+  (lote XML + certificado). ⚠ Mexer no XML exige o runbook de leiaute fiscal (XSD + gates + testes).
+
 - [x] 2.0 **Frete não sai na nota fiscal (BUG)** — CORRIGIDO 2026-07-02: o frete chegava ao XML só no
   ICMSTot, sem rateio nos itens (`det/prod/vFrete`), violando a regra da SEFAZ "ICMSTot.vFrete = Σ itens"
   (rejeição 610). Agora o `buildDocumentFromPedido` rateia o frete pelos itens (resíduo no último) e o

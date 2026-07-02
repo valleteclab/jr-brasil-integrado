@@ -8,6 +8,7 @@ import { parseNfeXml } from "@/domains/products/xml/nfe-server-parser";
 import type { ParsedNfeItem } from "@/domains/products/xml/nfe-server-parser";
 import { callOpenRouter } from "@/domains/ai/openrouter-service";
 import { cfopIndicaSt, isSubstituicaoTributaria } from "@/domains/fiscal/cfop";
+import { grupoMonofasicoDoNcm } from "@/domains/fiscal/simples/monofasico-ncm";
 import { cfopVendaPadrao, creditoPorFinalidade, finalidadeEhInsumo, finalidadeMovimentaEstoque, isFinalidadeEntrada, notaEhDevolucao, resolveCfopEntrada } from "@/domains/fiscal/finalidade-entrada";
 import { loadFinalidadeRules, resolveFinalidadeForItem } from "@/domains/fiscal/application/finalidade-regra-use-cases";
 import { sugerirClassificacaoEntrada } from "@/domains/finance/application/classificacao-use-cases";
@@ -288,15 +289,15 @@ async function upsertProductFiscalFromEntryItem(
   tx: Prisma.TransactionClient,
   scope: TenantScope,
   produtoId: string,
-  item: { ncm: string | null; cest: string | null; finalidade?: FinalidadeEntrada | null; st?: boolean }
+  item: { ncm: string | null; cest: string | null; finalidade?: FinalidadeEntrada | null; st?: boolean; monofasico?: boolean }
 ) {
   if (!item.ncm) {
     return;
   }
 
-  // Memoriza a finalidade e a marca de ST no perfil fiscal do produto para que próximas entradas
-  // — e a emissão de venda — herdem a classificação automaticamente (camada de maior confiança).
-  // ST só é marcada (nunca desmarcada aqui): basta uma entrada substituída para o item ser ST.
+  // Memoriza a finalidade e as marcas de ST e de PIS/COFINS MONOFÁSICO no perfil fiscal do produto
+  // para que próximas entradas — e a emissão/apuração — herdem a classificação automaticamente.
+  // ST/monofásico só são marcados (nunca desmarcados aqui): basta uma entrada substituída/monofásica.
   await tx.produtoFiscal.upsert({
     where: { produtoId },
     update: {
@@ -304,7 +305,8 @@ async function upsertProductFiscalFromEntryItem(
       cest: item.cest || null,
       regraTributariaId: undefined,
       ...(item.finalidade ? { finalidadePadrao: item.finalidade } : {}),
-      ...(item.st ? { icmsSt: true } : {})
+      ...(item.st ? { icmsSt: true } : {}),
+      ...(item.monofasico ? { pisCofinsMonofasico: true } : {})
     },
     create: {
       tenantId: scope.tenantId,
@@ -313,7 +315,8 @@ async function upsertProductFiscalFromEntryItem(
       ncm: item.ncm,
       cest: item.cest || null,
       finalidadePadrao: item.finalidade ?? null,
-      icmsSt: item.st ?? false
+      icmsSt: item.st ?? false,
+      pisCofinsMonofasico: item.monofasico ?? false
     }
   });
 }
@@ -957,7 +960,13 @@ export async function processFiscalEntry(
       // ST detectada pelo CST/CSOSN OU pelo CFOP do XML (ex.: 5403/5405 = revenda com ST).
       const itemSt =
         isSubstituicaoTributaria({ cstIcms: icmsItem?.cst ?? null, csosn: icmsItem?.csosn ?? null }) || cfopIndicaSt(item.cfop);
-      const itemFiscal = { ncm: item.ncm, cest: item.cest, finalidade: item.finalidade, st: itemSt };
+      // PIS/COFINS MONOFÁSICO: CST 04 (tributação monofásica) ou 05 (ST de PIS) no XML do
+      // fornecedor, OU NCM nas listas das leis (autopeças/farma/bebidas/combustíveis) — alimenta
+      // a segregação de receitas do Simples sem trabalho manual.
+      const pisItem = item.impostos.find((imp) => imp.tributo === "PIS");
+      const itemMonofasico =
+        ["04", "05"].includes((pisItem?.cst ?? "").padStart(2, "0")) || Boolean(grupoMonofasicoDoNcm(item.ncm));
+      const itemFiscal = { ncm: item.ncm, cest: item.cest, finalidade: item.finalidade, st: itemSt, monofasico: itemMonofasico };
 
       if (!produtoId) {
         // Uso/consumo e imobilizado sem produto vinculado não viram SKU nem estoque: entram
