@@ -12,7 +12,8 @@ export async function POST(
     await requireModulo("vendas");
     const scope = await getDevelopmentTenantScope();
     const pedido = await cancelSale(scope, params.id);
-    return NextResponse.json({ id: pedido.id, status: pedido.status });
+    // cobrancas: resultado da cascata no banco (boletos baixados no Sicoob / avisos de falha).
+    return NextResponse.json({ id: pedido.id, status: pedido.status, cobrancas: pedido.cobrancas });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro ao cancelar venda.";
     const isValidation =

@@ -117,8 +117,12 @@ export function SalesList({ sales, isAdmin = false }: Props) {
     setError("");
     try {
       const res = await fetch(`/api/erp/vendas/${row.id}/cancelar`, { method: "POST" });
-      const data = (await res.json()) as { error?: string };
+      const data = (await res.json()) as { error?: string; cobrancas?: { boletosCancelados: number; erros: string[] } };
       if (!res.ok) throw new Error(data.error || "Não foi possível cancelar o pedido.");
+      // Cascata no banco: avisa se algum boleto não pôde ser cancelado no Sicoob.
+      if (data.cobrancas?.erros?.length) {
+        setError(`Pedido cancelado, mas boleto(s) não cancelados no banco: ${data.cobrancas.erros.join("; ")} — use "Cancelar boleto" no financeiro.`);
+      }
       updateRow(row.id, {
         status: "CANCELADO",
         statusLabel: "Cancelado",

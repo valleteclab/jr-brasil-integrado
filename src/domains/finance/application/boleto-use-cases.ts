@@ -569,6 +569,43 @@ export async function baixarBoletoNoBanco(scope: TenantScope, contaReceberId: st
 }
 
 /**
+ * CASCATA de cancelamento: pedido de venda cancelado → cancela NO BANCO os boletos registrados
+ * das parcelas (baixa no Sicoob) e marca as cobranças Pix ativas do pedido como removidas (o QR
+ * expira sozinho no banco). Best-effort: falha em um boleto não impede os demais — os erros voltam
+ * para quem chamou avisar o operador (o boleto segue com "Cancelar boleto" manual no financeiro).
+ */
+export async function cancelarCobrancasDoPedido(
+  scope: TenantScope,
+  pedidoVendaId: string,
+  usuarioId?: string
+): Promise<{ boletosCancelados: number; erros: string[] }> {
+  const boletos = await prisma.boletoCobranca.findMany({
+    where: {
+      tenantId: scope.tenantId,
+      empresaId: scope.empresaId,
+      status: "REGISTRADO",
+      contaReceber: { pedidoVendaId }
+    },
+    select: { contaReceberId: true, contaReceber: { select: { descricao: true } } }
+  });
+  let cancelados = 0;
+  const erros: string[] = [];
+  for (const b of boletos) {
+    try {
+      await baixarBoletoNoBanco(scope, b.contaReceberId, usuarioId);
+      cancelados++;
+    } catch (e) {
+      erros.push(`${b.contaReceber.descricao}: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+  await prisma.pixCobranca.updateMany({
+    where: { tenantId: scope.tenantId, empresaId: scope.empresaId, pedidoVendaId, status: "ATIVA" },
+    data: { status: "REMOVIDA" }
+  });
+  return { boletosCancelados: cancelados, erros };
+}
+
+/**
  * PRORROGA o vencimento do boleto no banco e ajusta o vencimento do título/registro no ERP.
  * (Prorrogação só anda para frente: o Sicoob não aceita antecipar a data.)
  */

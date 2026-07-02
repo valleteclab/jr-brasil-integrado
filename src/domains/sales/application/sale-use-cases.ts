@@ -17,7 +17,7 @@ import { gerarParcelas, rotuloParcela } from "@/lib/finance/condicao-pagamento";
 import { validarSenhaAdmin } from "@/lib/auth/admin-credential";
 import { criarComissaoVenda, cancelarComissaoPedido } from "./comissao-use-cases";
 import { classificacaoReceitaPadraoId } from "@/domains/finance/application/classificacao-use-cases";
-import { gerarBoletosDoPedido, parcelasBoletoPorDatas } from "@/domains/finance/application/boleto-use-cases";
+import { cancelarCobrancasDoPedido, gerarBoletosDoPedido, parcelasBoletoPorDatas } from "@/domains/finance/application/boleto-use-cases";
 import { publishRealtime } from "@/lib/realtime/broker";
 
 const TX_OPTIONS = { maxWait: 15000, timeout: 30000 };
@@ -1079,12 +1079,19 @@ export async function cancelSale(scope: TenantScope, id: string) {
     return updated;
   }, TX_OPTIONS);
 
+  // CASCATA no BANCO (fora da tx, best-effort): as contas a receber foram canceladas acima; aqui
+  // os boletos registrados são baixados no Sicoob (deixam de ser pagáveis) e o Pix ativo é
+  // marcado como removido. Falha não desfaz o cancelamento — o financeiro tem "Cancelar boleto".
+  const cobrancas = await cancelarCobrancasDoPedido(scope, id).catch(
+    (e) => ({ boletosCancelados: 0, erros: [e instanceof Error ? e.message : String(e)] })
+  );
+
   // Tempo real: cancelamento reflete no caixa (pré-venda), na expedição (retirada) e nas vendas.
   publishRealtime(scope, "caixa");
   publishRealtime(scope, "expedicao");
   publishRealtime(scope, "vendas");
 
-  return cancelado;
+  return { ...cancelado, cobrancas };
 }
 
 /**

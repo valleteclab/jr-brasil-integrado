@@ -30,6 +30,10 @@ const BANDEIRAS = ["VISA", "MASTERCARD", "ELO", "AMEX", "HIPERCARD", "OUTRA"];
 // Detecta pagamento no cartão pelo nome da forma (cadastro livre): "cartão", "crédito", "débito".
 const formaEhCartao = (f: string) => /cart|cr[eé]d|d[eé]b/i.test(f);
 const formaEhCredito = (f: string) => /cr[eé]d/i.test(f);
+// Boleto ainda cobrável no banco? O status pode ser o nosso ("REGISTRADO") ou o texto devolvido
+// pela consulta ao Sicoob ("EM ABERTO", "Em Aberto"...) — só deixa de estar em aberto quando
+// liquidado/baixado/cancelado.
+const boletoEmAberto = (status: string | null | undefined) => Boolean(status) && !/LIQUID|BAIX|CANCEL/i.test(status as string);
 
 // Lista fixa usada em contas a receber (recebimento) e como fallback quando não há cadastro.
 const FORMAS_FIXAS = [
@@ -612,16 +616,16 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
   }
 
   async function baixarBoletoBanco(r: ReceivableSummary) {
-    if (!window.confirm(`Baixar (cancelar) o boleto de "${r.descricao}" NO BANCO? Ele deixa de ser pagável; o título continua em aberto no ERP.`)) return;
+    if (!window.confirm(`Cancelar o boleto de "${r.descricao}" no banco? Ele deixa de ser pagável (baixa no Sicoob); o título continua em aberto no ERP.`)) return;
     setBusyId(r.id);
     setGlobalError("");
     try {
       const res = await fetch(`/api/erp/financeiro/contas-receber/${r.id}/boleto/baixar`, { method: "POST" });
       const data = (await res.json().catch(() => ({}))) as { status?: string; error?: string };
-      if (!res.ok) throw new Error(data.error || "Não foi possível baixar o boleto no banco.");
+      if (!res.ok) throw new Error(data.error || "Não foi possível cancelar o boleto no banco.");
       setReceivables((prev) => prev.map((x) => (x.id === r.id ? { ...x, boletoStatus: data.status ?? "BAIXADO" } : x)));
     } catch (e) {
-      setGlobalError(e instanceof Error ? e.message : "Falha ao baixar o boleto no banco.");
+      setGlobalError(e instanceof Error ? e.message : "Falha ao cancelar o boleto no banco.");
     } finally {
       setBusyId(null);
     }
@@ -899,7 +903,7 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
                           {busyId === r.id ? "..." : "Consultar pgto"}
                         </button>
                       )}
-                      {r.canSettle && (r as ReceivableSummary).boletoStatus === "REGISTRADO" && (
+                      {r.canSettle && boletoEmAberto((r as ReceivableSummary).boletoStatus) && (
                         <>
                           <button
                             type="button"
@@ -912,18 +916,18 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
                           </button>
                           <button
                             type="button"
-                            className="btn-erp ghost xs"
-                            title="Baixar (cancelar) o boleto no banco — o título continua em aberto no ERP"
+                            className="btn-erp danger xs"
+                            title="Cancelar (baixar) o boleto no banco — deixa de ser pagável; o título continua em aberto no ERP"
                             disabled={busyId === r.id}
                             onClick={() => baixarBoletoBanco(r as ReceivableSummary)}
                           >
-                            {busyId === r.id ? "..." : "Baixar no banco"}
+                            {busyId === r.id ? "..." : "Cancelar boleto"}
                           </button>
                         </>
                       )}
                     </>
                   )}
-                  {aba === "receber" && contasCobranca.length > 0 && r.canSettle && (r as ReceivableSummary).boletoStatus !== "REGISTRADO" && (
+                  {aba === "receber" && contasCobranca.length > 0 && r.canSettle && !boletoEmAberto((r as ReceivableSummary).boletoStatus) && (
                     <button
                       type="button"
                       className="btn-erp ghost xs"
