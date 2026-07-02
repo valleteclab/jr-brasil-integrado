@@ -174,6 +174,29 @@ const pick = (xml: string, tag: string): string | null => {
   return m ? m[1].trim() : null;
 };
 
+/**
+ * CONFIGURAÇÃO da UF (GnreConfigUF, v1.00): devolve, por UF (e opcionalmente receita), as
+ * exigências — produto obrigatório e códigos válidos, tipos de documento de origem, períodos,
+ * campos adicionais. É a fonte oficial para montar a guia de cada UF sem hardcode.
+ */
+export async function consultarConfigUf(
+  auth: GnreAuth,
+  ambiente: GnreAmbiente,
+  uf: string,
+  receita?: string | null
+): Promise<{ statusCode: number; body: string }> {
+  const ns = "http://www.gnre.pe.gov.br/webservice/GnreConfigUF";
+  const consulta =
+    `<TConsultaConfigUf xmlns="http://www.gnre.pe.gov.br">` +
+    `<ambiente>${ambiente === "PRODUCAO" ? "1" : "2"}</ambiente>` +
+    `<uf>${uf.toUpperCase()}</uf>` +
+    (receita ? `<receita>${receita}</receita>` : "") +
+    `</TConsultaConfigUf>`;
+  const body = `<gnreDadosMsg xmlns="${ns}">${consulta}</gnreDadosMsg>`;
+  const url = ENDPOINTS[ambiente].recepcao.replace("GnreLoteRecepcao", "GnreConfigUF");
+  return postSoap(url, auth, soapEnvelope12(ns, body, "1.00"), `${ns}/consultar`, ambiente === "HOMOLOGACAO");
+}
+
 /** Envia o lote e devolve o número do RECIBO (processamento assíncrono). */
 export async function enviarLoteGnre(auth: GnreAuth, ambiente: GnreAmbiente, loteXml: string): Promise<string> {
   const ns = "http://www.gnre.pe.gov.br/webservice/GnreLoteRecepcao";

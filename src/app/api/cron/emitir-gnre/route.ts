@@ -21,13 +21,23 @@ function autorizado(request: Request): boolean {
 export async function POST(request: Request) {
   if (!autorizado(request)) return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
   try {
-    const body = (await request.json()) as { empresa?: string; guiaId?: string; consultarRecibo?: string };
+    const body = (await request.json()) as { empresa?: string; guiaId?: string; consultarRecibo?: string; configUf?: string; receita?: string };
     const cnpj = (body.empresa ?? "").replace(/\D+/g, "");
     const empresa = await prisma.empresa.findFirst({
       where: cnpj.length === 14 ? { cnpj } : { razaoSocial: { contains: body.empresa ?? "", mode: "insensitive" } }
     });
     if (!empresa) throw new GuiaError(`Empresa não encontrada: ${body.empresa}`);
     const scope = { tenantId: empresa.tenantId, empresaId: empresa.id, ambiente: "HOMOLOGACAO" } as TenantScope;
+
+    // Diagnóstico: configuração da UF (exigências/produtos/tipos de documento por receita).
+    if (body.configUf) {
+      const { carregarCertificado } = await import("@/domains/fiscal/application/certificado-use-cases");
+      const { consultarConfigUf } = await import("@/domains/fiscal/providers/gnre/gnre-ws");
+      const cert = await carregarCertificado(scope);
+      if (!cert) throw new GuiaError("Certificado A1 não disponível.");
+      const r = await consultarConfigUf({ pfx: cert.pfx, senha: cert.senha }, "HOMOLOGACAO", body.configUf, body.receita ?? "100048");
+      return NextResponse.json({ http: r.statusCode, brutoSample: r.body.slice(0, 12000) });
+    }
 
     // Diagnóstico: consulta direta de um recibo já enviado, devolvendo um recorte do XML bruto.
     // Aceita o nº do recibo, um guiaId (usa o reciboLote gravado) ou "ULTIMO".
