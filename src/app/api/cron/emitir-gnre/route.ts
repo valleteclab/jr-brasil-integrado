@@ -21,13 +21,28 @@ function autorizado(request: Request): boolean {
 export async function POST(request: Request) {
   if (!autorizado(request)) return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
   try {
-    const body = (await request.json()) as { empresa?: string; guiaId?: string };
+    const body = (await request.json()) as { empresa?: string; guiaId?: string; consultarRecibo?: string };
     const cnpj = (body.empresa ?? "").replace(/\D+/g, "");
     const empresa = await prisma.empresa.findFirst({
       where: cnpj.length === 14 ? { cnpj } : { razaoSocial: { contains: body.empresa ?? "", mode: "insensitive" } }
     });
     if (!empresa) throw new GuiaError(`Empresa não encontrada: ${body.empresa}`);
     const scope = { tenantId: empresa.tenantId, empresaId: empresa.id, ambiente: "HOMOLOGACAO" } as TenantScope;
+
+    // Diagnóstico: consulta direta de um recibo já enviado, devolvendo um recorte do XML bruto.
+    if (body.consultarRecibo) {
+      const { carregarCertificado } = await import("@/domains/fiscal/application/certificado-use-cases");
+      const { consultarResultadoGnre } = await import("@/domains/fiscal/providers/gnre/gnre-ws");
+      const cert = await carregarCertificado(scope);
+      if (!cert) throw new GuiaError("Certificado A1 não disponível.");
+      const r = await consultarResultadoGnre({ pfx: cert.pfx, senha: cert.senha }, "HOMOLOGACAO", body.consultarRecibo);
+      return NextResponse.json({
+        situacao: r.situacao,
+        descricao: r.descricaoSituacao,
+        erros: r.erros,
+        brutoSample: r.bruto.replace(/>[A-Za-z0-9+/=]{400,}</g, ">[BASE64]<").slice(0, 4000)
+      });
+    }
 
     const guia = body.guiaId
       ? await prisma.guiaRecolhimento.findFirst({ where: { id: body.guiaId, ...scopedByTenantCompany(scope) } })
