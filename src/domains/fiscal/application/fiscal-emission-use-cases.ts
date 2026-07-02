@@ -8,7 +8,8 @@ import {
   accumulateTotals,
   computeItemTaxes,
   emptyTotals,
-  loadSalesTaxRules
+  loadSalesTaxRules,
+  pickRule
 } from "../tax-engine";
 import { isSubstituicaoTributaria, resolveCfopDevolucao, resolveCfopVenda } from "../cfop";
 import { reformaBaseline } from "../national-tax-baseline";
@@ -857,9 +858,13 @@ export async function emitFiscalDocument(
     // GUIA GNRE (Conv. 142/2018 cl. 18ª): NF-e interestadual com ICMS-ST retido pelo remetente →
     // registra a guia PENDENTE para a UF de destino (recolher POR OPERAÇÃO, antes da saída).
     if (authorized && modelo === "NFE" && totals.valorIcmsSt > 0 && ufDestSt && config.emitter.uf && ufDestSt !== config.emitter.uf.toUpperCase()) {
+      // Código de PRODUTO da GNRE (exigido por algumas UFs): vem da regra tributária de ICMS do
+      // primeiro item com ST retido (mesma regra do MVA — cadastrada por NCM+UF com o contador).
+      const itemComSt = document.itens.find((i, idx) => (computedItems[idx]?.taxes.valorIcmsSt ?? 0) > 0);
+      const regraSt = itemComSt ? pickRule(rules, "ICMS", itemComSt.ncm, ufDestSt) : null;
       await tx.guiaRecolhimento.upsert({
         where: { notaFiscalId_tipo: { notaFiscalId: nota.id, tipo: "GNRE_ICMS_ST" } },
-        update: { valor: totals.valorIcmsSt, ufFavorecida: ufDestSt, status: "PENDENTE" },
+        update: { valor: totals.valorIcmsSt, ufFavorecida: ufDestSt, status: "PENDENTE", produtoGnre: regraSt?.gnreProduto ?? null },
         create: {
           tenantId: scope.tenantId,
           empresaId: scope.empresaId,
@@ -867,7 +872,8 @@ export async function emitFiscalDocument(
           notaFiscalId: nota.id,
           tipo: "GNRE_ICMS_ST",
           ufFavorecida: ufDestSt,
-          valor: totals.valorIcmsSt
+          valor: totals.valorIcmsSt,
+          produtoGnre: regraSt?.gnreProduto ?? null
         }
       });
     }

@@ -25,6 +25,8 @@ export type SimulacaoStParams = {
   valor?: number;
   ncm?: string;
   provedores?: string[];
+  /** Código de produto GNRE da UF destino (DF: 20 = autopeças). */
+  gnreProduto?: string;
 };
 
 export type SimulacaoStResultado = {
@@ -115,14 +117,15 @@ export async function simularStInterestadual(params: SimulacaoStParams): Promise
     where: { tenantId: scope.tenantId, empresaId: scope.empresaId, nome: nomeRegra }
   });
   if (regraExistente) {
-    await prisma.regraTributaria.update({ where: { id: regraExistente.id }, data: { mva, aliquotaIcmsSt: aliqSt, ativo: true } });
+    await prisma.regraTributaria.update({ where: { id: regraExistente.id }, data: { mva, aliquotaIcmsSt: aliqSt, ativo: true, gnreProduto: params.gnreProduto ?? "20" } });
     log.push(`Regra atualizada: ${nomeRegra}`);
   } else {
     await prisma.regraTributaria.create({
       data: {
         tenantId: scope.tenantId, empresaId: scope.empresaId, nome: nomeRegra,
         tributo: "ICMS", operacao: "VENDA", ncm: NCM, ufDestino: clienteUf,
-        mva, aliquotaIcmsSt: aliqSt, ativo: true, vigenciaInicio: new Date("2020-01-01")
+        mva, aliquotaIcmsSt: aliqSt, ativo: true, vigenciaInicio: new Date("2020-01-01"),
+        gnreProduto: params.gnreProduto ?? "20"
       }
     });
     log.push(`Regra criada: ${nomeRegra}`);

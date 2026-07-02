@@ -76,7 +76,12 @@ const pickXml = (xml: string, tag: string): string | null => {
  * (credenciamento único em gnre.pe.gov.br → Automação; sem ele o serviço responde situação 102).
  * O ambiente segue o da NOTA (homologação → testegnre).
  */
-export async function emitirGuiaGnre(scope: TenantScope, id: string, usuarioId?: string) {
+export async function emitirGuiaGnre(
+  scope: TenantScope,
+  id: string,
+  usuarioId?: string,
+  opts?: { tipoDocOrigem?: string; produto?: string | null }
+) {
   const guia = await prisma.guiaRecolhimento.findFirst({
     where: { id, ...scopedByTenantCompany(scope) },
     include: { notaFiscal: { select: { chaveAcesso: true, xml: true, ambiente: true, status: true } } }
@@ -102,10 +107,13 @@ export async function emitirGuiaGnre(scope: TenantScope, id: string, usuarioId?:
       }
     : null;
 
+  const produto = opts?.produto !== undefined ? opts.produto : guia.produtoGnre;
   const lote = buildLoteGnreXml({
     ufFavorecida: guia.ufFavorecida,
     receita: guia.tipo === "GNRE_DIFAL" ? "100102" : "100048", // ST por operação / DIFAL por operação
     chaveNfe: guia.notaFiscal.chaveAcesso,
+    tipoDocOrigem: opts?.tipoDocOrigem,
+    produto,
     valor: Number(guia.valor),
     dataVencimento: new Date(),
     dataPagamento: new Date(),
@@ -124,7 +132,7 @@ export async function emitirGuiaGnre(scope: TenantScope, id: string, usuarioId?:
 
   const ambienteWs = guia.notaFiscal.ambiente === "PRODUCAO" ? "PRODUCAO" : "HOMOLOGACAO";
   const recibo = await enviarLoteGnre({ pfx: certificado.pfx, senha: certificado.senha }, ambienteWs, lote);
-  await prisma.guiaRecolhimento.update({ where: { id }, data: { reciboLote: recibo, situacaoWs: "ENVIADA" } });
+  await prisma.guiaRecolhimento.update({ where: { id }, data: { reciboLote: recibo, situacaoWs: "ENVIADA", produtoGnre: produto ?? null } });
 
   // Poll do resultado (processamento assíncrono do portal — normalmente segundos).
   let ultimo: Awaited<ReturnType<typeof consultarResultadoGnre>> | null = null;

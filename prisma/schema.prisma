@@ -1623,6 +1623,8 @@ model RegraTributaria {
   cst                   String?
   csosn                 String?
   cClassTrib            String?
+  /// Código de PRODUTO da GNRE da UF de destino (ex.: DF 20 = autopeças) — usado na guia ST.
+  gnreProduto           String?
   codigoBeneficioFiscal String?
   aliquota              Decimal?           @db.Decimal(8, 4)
   reducaoBase           Decimal?           @db.Decimal(8, 4)
@@ -2447,6 +2449,8 @@ model GuiaRecolhimento {
   numeroGuia   String?
   pagoEm       DateTime?
   observacoes  String?
+  /// Código de PRODUTO da GNRE exigido por algumas UFs (tabela da UF via GnreConfigUF).
+  produtoGnre    String?
   /// Emissão pelo webservice GNRE: recibo do lote, linha digitável, código de barras e PDF.
   reciboLote     String?
   linhaDigitavel String?

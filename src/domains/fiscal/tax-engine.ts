@@ -138,7 +138,7 @@ function ruleScore(rule: RegraTributaria, ncm: string | null, ufDestino: string 
   return score;
 }
 
-function pickRule(
+export function pickRule(
   rules: RegraTributaria[],
   tributo: TipoTributo,
   ncm: string | null,

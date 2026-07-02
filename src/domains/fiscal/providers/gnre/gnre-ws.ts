@@ -44,8 +44,12 @@ export type GuiaGnreInput = {
   ufFavorecida: string;
   /** Código da receita (ex.: 100048 = ICMS-ST por operação). */
   receita: string;
-  /** Chave de acesso da NF-e (documento de origem tipo 10). */
+  /** Chave de acesso da NF-e (documento de origem). */
   chaveNfe: string;
+  /** Tipo do documento de origem (tabela do portal; 2 dígitos). */
+  tipoDocOrigem?: string;
+  /** Código de PRODUTO da UF (obrigatório em UFs que exigem, ex.: DF 20 = autopeças). */
+  produto?: string | null;
   valor: number;
   dataVencimento: Date;
   dataPagamento: Date;
@@ -94,7 +98,8 @@ export function buildLoteGnreXml(g: GuiaGnreInput): string {
     `<itensGNRE>` +
     `<item>` +
     `<receita>${g.receita}</receita>` +
-    `<documentoOrigem tipo="10">${dig(g.chaveNfe)}</documentoOrigem>` + // 10 = NF-e (chave de acesso)
+    `<documentoOrigem tipo="${(g.tipoDocOrigem ?? "10").padStart(2, "0")}">${dig(g.chaveNfe)}</documentoOrigem>` +
+    (g.produto ? `<produto>${dig(g.produto)}</produto>` : "") +
     `<referencia><periodo>0</periodo><mes>${String(competencia.getMonth() + 1).padStart(2, "0")}</mes><ano>${competencia.getFullYear()}</ano></referencia>` +
     `<dataVencimento>${iso(g.dataVencimento)}</dataVencimento>` +
     `<valor tipo="11">${g.valor.toFixed(2)}</valor>` + // 11 = valor principal
