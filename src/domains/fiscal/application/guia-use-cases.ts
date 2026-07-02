@@ -80,7 +80,7 @@ export async function emitirGuiaGnre(
   scope: TenantScope,
   id: string,
   usuarioId?: string,
-  opts?: { tipoDocOrigem?: string; produto?: string | null; receita?: string | null }
+  opts?: { tipoDocOrigem?: string; produto?: string | null; receita?: string | null; ieSubstituto?: string | null }
 ) {
   const guia = await prisma.guiaRecolhimento.findFirst({
     where: { id, ...scopedByTenantCompany(scope) },
@@ -127,7 +127,10 @@ export async function emitirGuiaGnre(
     dataPagamento: new Date(),
     emitente: {
       cnpj: config.emitter.cnpj,
-      ie: config.emitter.inscricaoEstadual,
+      // IE do emitente na GNRE = inscrição NA UF FAVORECIDA (IE de substituto tributário na UF
+      // destino — Quadro II cód. 202). A IE da UF de origem NÃO vai aqui: emitente não inscrito
+      // identifica-se só pelo CNPJ. Override via opts p/ empresas com IE de substituto na UF.
+      ie: opts?.ieSubstituto ?? null,
       razaoSocial: config.emitter.razaoSocial,
       endereco: `${config.emitter.logradouro ?? ""} ${config.emitter.numero ?? ""}`.trim() || "SEM ENDERECO",
       codigoMunicipioIbge: config.emitter.codigoMunicipioIbge ?? "",
