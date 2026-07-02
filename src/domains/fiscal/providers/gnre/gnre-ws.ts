@@ -192,13 +192,16 @@ export async function enviarLoteGnre(auth: GnreAuth, ambiente: GnreAmbiente, lot
 }
 
 export type ResultadoGnre = {
-  /** Código da situação do processamento (ex.: 402 = processado, 401 = com pendências). */
+  /** Código da situação do processamento do LOTE (ex.: 402 = processado com sucesso). */
   situacao: string | null;
   descricaoSituacao: string | null;
-  /** Representação numérica (linha digitável) da guia, quando processada. */
+  /** Situação da GUIA dentro do lote (0 = processada com sucesso). */
+  situacaoGuia: string | null;
+  /** Linha digitável da guia (XSD: linhaDigitavel). */
   representacaoNumerica: string | null;
   codigoBarras: string | null;
-  /** PDF da guia em base64, quando o portal devolve. */
+  nossoNumero: string | null;
+  /** PDF da(s) guia(s) em base64 (XSD: pdfGuias). */
   pdfBase64: string | null;
   /** Motivos de rejeição/pendência, quando houver. */
   erros: string[];
@@ -207,12 +210,12 @@ export type ResultadoGnre = {
 
 /** Consulta o resultado do lote (inclui o PDF da guia quando processada). */
 export async function consultarResultadoGnre(auth: GnreAuth, ambiente: GnreAmbiente, recibo: string): Promise<ResultadoGnre> {
+  // XSD oficial (docs/xsd-gnre/lote_gnre_consulta_v1.00.xsd): TConsLote_GNRE tem SOMENTE
+  // ambiente (1|2) e numeroRecibo — campos extras derrubam a consulta com situação 501.
   const consulta =
-    `<TConsLote_GNRE xmlns="http://www.gnre.pe.gov.br" versao="2.00">` +
+    `<TConsLote_GNRE xmlns="http://www.gnre.pe.gov.br">` +
     `<ambiente>${ambiente === "PRODUCAO" ? "1" : "2"}</ambiente>` +
     `<numeroRecibo>${recibo}</numeroRecibo>` +
-    `<incluirPDFGuias>S</incluirPDFGuias>` +
-    `<incluirArquivoPagamento>N</incluirArquivoPagamento>` +
     `</TConsLote_GNRE>`;
   const ns = "http://www.gnre.pe.gov.br/webservice/GnreResultadoLote";
   const body = `<gnreDadosMsg xmlns="${ns}">${consulta}</gnreDadosMsg>`;
@@ -229,12 +232,16 @@ export async function consultarResultadoGnre(auth: GnreAuth, ambiente: GnreAmbie
     const desc = pick(m, "descricao");
     if (desc) erros.push(`${cod ? `${cod}: ` : ""}${desc}`);
   }
+  // situacaoProcess do LOTE: pega o codigo/descricao DENTRO do bloco (evita casar com motivos).
+  const blocoSituacao = xml.match(/<(?:\w+:)?situacaoProcess>[\s\S]*?<\/(?:\w+:)?situacaoProcess>/)?.[0] ?? xml;
   return {
-    situacao: pick(xml, "codigo"),
-    descricaoSituacao: pick(xml, "descricao"),
-    representacaoNumerica: pick(xml, "representacaoNumerica"),
+    situacao: pick(blocoSituacao, "codigo"),
+    descricaoSituacao: pick(blocoSituacao, "descricao"),
+    situacaoGuia: pick(xml, "situacaoGuia"),
+    representacaoNumerica: pick(xml, "linhaDigitavel"),
     codigoBarras: pick(xml, "codigoBarras"),
-    pdfBase64: pick(xml, "pdfGuias") ?? pick(xml, "pdf"),
+    nossoNumero: pick(xml, "nossoNumero"),
+    pdfBase64: pick(xml, "pdfGuias"),
     erros,
     bruto: xml
   };
