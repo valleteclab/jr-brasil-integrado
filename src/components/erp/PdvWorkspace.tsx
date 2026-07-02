@@ -43,6 +43,23 @@ type Pagamento = {
   parcelas?: number;
   /** BOLETO: vencimento escolhido de CADA parcela (ISO date, índice = parcela-1). */
   vencimentos?: string[];
+  /** BOLETO: valor escolhido de CADA parcela (padrão: divisão igual, resto na última). */
+  valoresParcelas?: number[];
+};
+
+// Valor de cada parcela do boleto (padrão: divisão igual, resto na última — como o servidor).
+const dividirIgualBoleto = (valor: number, n: number): number[] => {
+  const base = Math.floor((valor / n) * 100) / 100;
+  let acumulado = 0;
+  return Array.from({ length: n }, (_, i) => {
+    const v = i === n - 1 ? Math.round((valor - acumulado) * 100) / 100 : base;
+    acumulado = Math.round((acumulado + v) * 100) / 100;
+    return v;
+  });
+};
+const valoresBoleto = (l: Pagamento): number[] => {
+  const n = Math.max(1, l.parcelas ?? 1);
+  return l.valoresParcelas?.length === n ? l.valoresParcelas : dividirIgualBoleto(Number(l.valor) || 0, n);
 };
 
 /** Soma meses a uma data ISO (vencimentos sugeridos das parcelas do boleto). */
@@ -366,7 +383,7 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
           const base = lb.vencimentos?.[0] ?? new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
           const n = Math.max(1, lb.parcelas ?? 1);
           const datas = Array.from({ length: n }, (_, i) => lb.vencimentos?.[i] ?? addMesesIso(base, i));
-          return { contaBancariaId: lb.contaBancariaId ?? null, parcelas: n, primeiroVencimento: datas[0], datas };
+          return { contaBancariaId: lb.contaBancariaId ?? null, parcelas: n, primeiroVencimento: datas[0], datas, valores: valoresBoleto(lb) };
         })(),
         descontoGlobal: descontoGlobalVal,
         // Senha de admin (qualquer admin do tenant) — o servidor revalida e exige se desconto > limite.
@@ -943,15 +960,35 @@ function PagamentoModal({ total, loading, clienteSelecionado, contas, maquinas, 
                   <input type="number" min={1} max={24} value={l.parcelas ?? 1} onChange={(e) => set(idx, { parcelas: Math.max(1, Math.min(24, Number(e.target.value) || 1)) })} style={{ width: 60, height: 34, textAlign: "center" }} title="Quantidade de parcelas do boleto" />
                 </label>
                 {datasBoleto(l).map((data, i) => (
-                  <label key={i} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12 }}>
-                    {i + 1}ª venc.
-                    <input type="date" value={data} onChange={(e) => {
-                      const atual = datasBoleto(l);
-                      atual[i] = e.target.value;
-                      set(idx, { vencimentos: atual });
-                    }} style={{ height: 34 }} title={`Vencimento da parcela ${i + 1} (livre - ex.: 28 dias)`} />
-                  </label>
+                  <span key={i} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12 }}>
+                    <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                      {i + 1}ª venc.
+                      <input type="date" value={data} onChange={(e) => {
+                        const atual = [...datasBoleto(l)];
+                        atual[i] = e.target.value;
+                        set(idx, { vencimentos: atual });
+                      }} style={{ height: 34 }} title={`Vencimento da parcela ${i + 1} (livre - ex.: 28 dias)`} />
+                    </label>
+                    <input
+                      type="number" min={0.01} step="0.01" value={valoresBoleto(l)[i]}
+                      onChange={(e) => {
+                        const atual = [...valoresBoleto(l)];
+                        atual[i] = Number(e.target.value) || 0;
+                        set(idx, { valoresParcelas: atual });
+                      }}
+                      style={{ width: 88, height: 34, textAlign: "right" }} title={`Valor da parcela ${i + 1} (R$)`}
+                    />
+                  </span>
                 ))}
+                {(() => {
+                  const soma = Math.round(valoresBoleto(l).reduce((s, v) => s + v, 0) * 100) / 100;
+                  const alvo = Math.round((Number(l.valor) || 0) * 100) / 100;
+                  return Math.abs(soma - alvo) > 0.02 ? (
+                    <span style={{ flex: "1 1 100%", fontSize: 12, color: "#c62828" }}>
+                      ⚠ Soma das parcelas (R$ {soma.toFixed(2)}) difere do valor no boleto (R$ {alvo.toFixed(2)}). Ajuste antes de finalizar.
+                    </span>
+                  ) : null;
+                })()}
               </div>
             )}
             {isCartao(l.forma) && (

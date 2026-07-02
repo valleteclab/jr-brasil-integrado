@@ -45,6 +45,8 @@ type PagamentoLinha = {
   parcelas?: number;
   /** BOLETO: vencimento escolhido de CADA parcela (ISO date, índice = parcela-1). */
   vencimentos?: string[];
+  /** BOLETO: valor escolhido de CADA parcela (padrão: divisão igual, resto na última). */
+  valoresParcelas?: number[];
 };
 const uid = () => Math.random().toString(36).slice(2, 9);
 
@@ -61,6 +63,20 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
     const n = Math.max(1, p.parcelas ?? 1);
     const base = p.vencimentos?.[0] ?? vencPadraoBoleto;
     return Array.from({ length: n }, (_, i) => p.vencimentos?.[i] ?? addMesesIso(base, i));
+  };
+  // Valor de cada parcela do boleto (editável); padrão = divisão igual, como o servidor.
+  const dividirIgualBoleto = (valor: number, n: number): number[] => {
+    const base = Math.floor((valor / n) * 100) / 100;
+    let acumulado = 0;
+    return Array.from({ length: n }, (_, i) => {
+      const v = i === n - 1 ? Math.round((valor - acumulado) * 100) / 100 : base;
+      acumulado = Math.round((acumulado + v) * 100) / 100;
+      return v;
+    });
+  };
+  const valoresBoleto = (p: PagamentoLinha): number[] => {
+    const n = Math.max(1, p.parcelas ?? 1);
+    return p.valoresParcelas?.length === n ? p.valoresParcelas : dividirIgualBoleto(Number(p.valor) || 0, n);
   };
   const lastAutoRefreshRef = useRef(0);
   const [busy, setBusy] = useState(false);
@@ -264,7 +280,7 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
           const lb = pagamentos.find((p) => p.forma === "BOLETO" && Number(p.valor) > 0);
           if (!lb) return undefined;
           const datas = datasBoleto(lb);
-          return { contaBancariaId: lb.contaBancariaId ?? null, parcelas: datas.length, primeiroVencimento: datas[0], datas };
+          return { contaBancariaId: lb.contaBancariaId ?? null, parcelas: datas.length, primeiroVencimento: datas[0], datas, valores: valoresBoleto(lb) };
         })()
       });
       setResultado({ pedidoNumero: r.pedidoNumero, troco: r.troco, notaId: r.nota?.id ?? null, notaStatus: r.nota?.status ?? null, emitErro: r.emitErro ?? null, boleto: r.boleto ?? null, retirada: r.retirada ?? null });
@@ -478,19 +494,39 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
                             />
                           </label>
                           {datasBoleto(p).map((data, i) => (
-                            <label key={i} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "var(--erp-slate)" }}>
-                              {i + 1}ª venc.
+                            <span key={i} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "var(--erp-slate)" }}>
+                              <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                                {i + 1}ª venc.
+                                <input
+                                  type="date" value={data}
+                                  onChange={(e) => {
+                                    const atual = [...datasBoleto(p)];
+                                    atual[i] = e.target.value;
+                                    updPag(p.uid, { vencimentos: atual });
+                                  }}
+                                  style={{ height: 30, fontSize: 12 }} title={`Vencimento da parcela ${i + 1} (livre - ex.: 28 dias)`}
+                                />
+                              </label>
                               <input
-                                type="date" value={data}
+                                type="number" min={0.01} step="0.01" value={valoresBoleto(p)[i]}
                                 onChange={(e) => {
-                                  const atual = datasBoleto(p);
-                                  atual[i] = e.target.value;
-                                  updPag(p.uid, { vencimentos: atual });
+                                  const atual = [...valoresBoleto(p)];
+                                  atual[i] = Number(e.target.value) || 0;
+                                  updPag(p.uid, { valoresParcelas: atual });
                                 }}
-                                style={{ height: 30, fontSize: 12 }} title={`Vencimento da parcela ${i + 1} (livre - ex.: 28 dias)`}
+                                style={{ width: 82, height: 30, fontSize: 12, textAlign: "right" }} title={`Valor da parcela ${i + 1} (R$)`}
                               />
-                            </label>
+                            </span>
                           ))}
+                          {(() => {
+                            const soma = Math.round(valoresBoleto(p).reduce((s, v) => s + v, 0) * 100) / 100;
+                            const alvo = Math.round((Number(p.valor) || 0) * 100) / 100;
+                            return Math.abs(soma - alvo) > 0.02 ? (
+                              <span style={{ flex: "1 1 100%", fontSize: 11, color: "#c62828" }}>
+                                ⚠ Soma das parcelas (R$ {soma.toFixed(2)}) difere do valor no boleto (R$ {alvo.toFixed(2)}). Ajuste antes de receber.
+                              </span>
+                            ) : null;
+                          })()}
                         </div>
                       )}
                       {isCartao(p.forma) && (

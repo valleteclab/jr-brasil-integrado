@@ -476,7 +476,7 @@ export type ReceberPagamentoInput = {
   /** Quando false, fecha só com RECIBO (cupom não fiscal) — exige Empresa.permiteVendaNaoFiscal. */
   emitirFiscal?: boolean;
   /** Opções do BOLETO escolhidas no caixa: conta de cobrança, parcelas e vencimentos (ISO). */
-  boletoOpcoes?: { contaBancariaId?: string | null; parcelas?: number | null; primeiroVencimento?: string | null; datas?: string[] | null } | null;
+  boletoOpcoes?: { contaBancariaId?: string | null; parcelas?: number | null; primeiroVencimento?: string | null; datas?: string[] | null; valores?: number[] | null } | null;
 };
 
 export type ReceberPagamentoResult = {
@@ -628,7 +628,8 @@ export async function receberPagamentoEEmitir(
             primeiroVencimento: input.boletoOpcoes.primeiroVencimento
               ? new Date(`${input.boletoOpcoes.primeiroVencimento}T12:00:00`)
               : null,
-            datas: (input.boletoOpcoes.datas ?? []).filter(Boolean).map((d) => new Date(`${d}T12:00:00`))
+            datas: (input.boletoOpcoes.datas ?? []).filter(Boolean).map((d) => new Date(`${d}T12:00:00`)),
+            valores: input.boletoOpcoes.valores ?? null
           }
         : null
     });

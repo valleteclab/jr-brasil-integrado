@@ -49,14 +49,15 @@ do cadastro); fluxo de deploy = desenvolve local → `git push` → `./deploy/vp
 
 ## 1b. Boleto / fluxo de venda (refinamentos)
 
-- [ ] 1b.1 **Imprimir boletos na tela de VENDAS (fluxo Pedido faturado)** — o endpoint
-  GET /api/erp/vendas/{id}/boletos já existe; falta o botão na lista/detalhe de /erp/vendas
-  (pós-confirmação, os boletos são gerados automaticamente pelo hook do confirmSale).
-- [ ] 1b.2 **Atendimento: ao escolher forma "Boleto" na Venda balcão, sugerir o tipo "Pedido
-  faturado"** (boleto é venda a prazo; o balcão via caixa continua funcionando para "leva agora,
-  paga boleto").
-- [ ] 1b.3 Valores POR PARCELA editáveis no boleto (hoje as datas são editáveis; os valores são
-  divididos igualmente com resíduo na última).
+- [x] 1b.1 **Imprimir boletos na tela de VENDAS** — FEITO 2026-07-01: botão "🖨 Boletos" na lista de
+  /erp/vendas (vendas em boleto pós-confirmação) expande as parcelas com link do PDF, linha
+  digitável no hover e status (paga / registrado sem PDF / sem boleto). Usa
+  GET /api/erp/vendas/{id}/boletos.
+- [x] 1b.2 **Atendimento: ao escolher forma "Boleto" na Venda balcão, sugerir o tipo "Pedido
+  faturado"** — FEITO 2026-07-01 (hint na Venda balcão; o balcão via caixa continua funcionando).
+- [x] 1b.3 **Valores POR PARCELA editáveis no boleto** — FEITO 2026-07-01: input R$ ao lado de cada
+  vencimento nas 3 telas (Caixa, PDV, Atendimento/Pedido faturado); padrão divisão igual (resto na
+  última), aviso quando a soma difere e validação no servidor (tolerância R$ 0,02).
 
 ## 2. Emissão de NF-e (saída)
 

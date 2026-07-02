@@ -44,6 +44,8 @@ export type SaleSummary = {
   notaCanDownload: boolean;
   /** Pedido ainda pode ser editado (estoque/itens). Clique na linha → /editar quando true. */
   editavel: boolean;
+  /** Venda no boleto já confirmada — mostra o atalho "Boletos" (imprimir parcelas) na lista. */
+  temBoleto: boolean;
 };
 
 export type SaleDetail = SaleSummary & {
@@ -193,7 +195,9 @@ export async function listSales(): Promise<SaleSummary[]> {
         notaFiscalId: notaVenda?.id ?? null,
         notaCanDownload: Boolean(notaVenda?.providerRef),
         // Edição reaproveita a regra de "ainda não saiu da casa": sem NF e em status mutável.
-        editavel: !temNota && ["RASCUNHO", "AGUARDANDO_PAGAMENTO", "AGUARDANDO_NOTA", "SEPARACAO"].includes(p.status)
+        editavel: !temNota && ["RASCUNHO", "AGUARDANDO_PAGAMENTO", "AGUARDANDO_NOTA", "SEPARACAO"].includes(p.status),
+        // Boletos só existem após a confirmação (pedido faturado) ou o recebimento (caixa/PDV).
+        temBoleto: /boleto/i.test(p.formaPagamento ?? "") && !["RASCUNHO", "AGUARDANDO_PAGAMENTO", "CANCELADO"].includes(p.status)
       };
     });
   } catch (error) {
@@ -286,6 +290,7 @@ export async function getSaleDetail(id: string): Promise<SaleDetail | null> {
       notaFiscalId: notaVendaPrincipal?.id ?? null,
       notaCanDownload: Boolean(notaVendaPrincipal?.providerRef),
       editavel: !temNota && ["RASCUNHO", "AGUARDANDO_PAGAMENTO", "AGUARDANDO_NOTA", "SEPARACAO"].includes(p.status),
+      temBoleto: /boleto/i.test(p.formaPagamento ?? "") && !["RASCUNHO", "AGUARDANDO_PAGAMENTO", "CANCELADO"].includes(p.status),
       canReturn: temNotaVendaComChave && (p.status === "ENVIADO" || p.status === "ENTREGUE"),
       itens: p.itens.map((item) => {
         // Distribui o devolvido do produto pelas linhas, na ordem (cobre produto repetido).

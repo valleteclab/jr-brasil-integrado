@@ -73,9 +73,24 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO", allow
   const [boletoBanco, setBoletoBanco] = useState(data.contasCobranca[0]?.id ?? "");
   const [boletoParcelas, setBoletoParcelas] = useState(1);
   const [boletoVencimentos, setBoletoVencimentos] = useState<string[]>([]);
+  const [boletoValores, setBoletoValores] = useState<number[]>([]);
   const datasBoleto = (): string[] => {
     const base = boletoVencimentos[0] ?? vencPadraoBoleto;
     return Array.from({ length: Math.max(1, boletoParcelas) }, (_, i) => boletoVencimentos[i] ?? addMesesIso(base, i));
+  };
+  // Valor de cada parcela do boleto (padrão: divisão igual do total, resto na última — como o servidor).
+  const dividirIgualBoleto = (valor: number, n: number): number[] => {
+    const base = Math.floor((valor / n) * 100) / 100;
+    let acumulado = 0;
+    return Array.from({ length: n }, (_, i) => {
+      const v = i === n - 1 ? Math.round((valor - acumulado) * 100) / 100 : base;
+      acumulado = Math.round((acumulado + v) * 100) / 100;
+      return v;
+    });
+  };
+  const valoresBoleto = (totalVenda: number): number[] => {
+    const n = Math.max(1, boletoParcelas);
+    return boletoValores.length === n ? boletoValores : dividirIgualBoleto(totalVenda, n);
   };
   const [descGlobal, setDescGlobal] = useState(0);
   const [frete, setFrete] = useState(0);
@@ -344,7 +359,7 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO", allow
             boletoOpcoes: tipo === "PEDIDO_FATURADO" && pagamentoEhBoleto
               ? (() => {
                   const datas = datasBoleto();
-                  return { contaBancariaId: boletoBanco || null, parcelas: datas.length, primeiroVencimento: datas[0], datas };
+                  return { contaBancariaId: boletoBanco || null, parcelas: datas.length, primeiroVencimento: datas[0], datas, valores: valoresBoleto(total) };
                 })()
               : undefined
           })
@@ -560,16 +575,36 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO", allow
                         <input type="number" min={1} max={24} value={boletoParcelas} onChange={(e) => setBoletoParcelas(Math.max(1, Math.min(24, Number(e.target.value) || 1)))} style={{ width: 56, height: 30, textAlign: "center" }} />
                       </label>
                       {datasBoleto().map((data2, i) => (
-                        <label key={i} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11.5 }}>
-                          {i + 1}ª venc.
-                          <input type="date" value={data2} onChange={(e) => {
-                            const atual = datasBoleto();
-                            atual[i] = e.target.value;
-                            setBoletoVencimentos(atual);
-                          }} style={{ height: 30, fontSize: 12 }} title={`Vencimento da parcela ${i + 1}`} />
-                        </label>
+                        <span key={i} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11.5 }}>
+                          <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                            {i + 1}ª venc.
+                            <input type="date" value={data2} onChange={(e) => {
+                              const atual = [...datasBoleto()];
+                              atual[i] = e.target.value;
+                              setBoletoVencimentos(atual);
+                            }} style={{ height: 30, fontSize: 12 }} title={`Vencimento da parcela ${i + 1}`} />
+                          </label>
+                          <input
+                            type="number" min={0.01} step="0.01" value={valoresBoleto(total)[i]}
+                            onChange={(e) => {
+                              const atual = [...valoresBoleto(total)];
+                              atual[i] = Number(e.target.value) || 0;
+                              setBoletoValores(atual);
+                            }}
+                            style={{ width: 84, height: 30, fontSize: 12, textAlign: "right" }} title={`Valor da parcela ${i + 1} (R$)`}
+                          />
+                        </span>
                       ))}
                     </div>
+                    {(() => {
+                      const soma = Math.round(valoresBoleto(total).reduce((s, v) => s + v, 0) * 100) / 100;
+                      const alvo = Math.round(total * 100) / 100;
+                      return Math.abs(soma - alvo) > 0.02 ? (
+                        <div style={{ fontSize: 11, color: "#c62828" }}>
+                          ⚠ Soma das parcelas (R$ {soma.toFixed(2)}) difere do total da venda (R$ {alvo.toFixed(2)}). Ajuste antes de finalizar.
+                        </div>
+                      ) : null;
+                    })()}
                     <div style={{ fontSize: 10.5, color: "var(--erp-slate)" }}>
                       Ao confirmar o pedido, as parcelas entram no contas a receber com essas datas e os boletos são registrados no banco automaticamente.
                     </div>

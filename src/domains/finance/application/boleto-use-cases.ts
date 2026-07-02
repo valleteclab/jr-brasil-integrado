@@ -396,11 +396,33 @@ function parcelasBoletoCustom(valor: number, quantidade: number, primeiroVencime
   });
 }
 
-/** Parcelas com DATAS escolhidas uma a uma pelo operador (valores iguais, resíduo na última). */
-export function parcelasBoletoPorDatas(valor: number, datas: Date[]): ParcelaGerada[] {
-  const ordenadas = [...datas].sort((a, b) => a.getTime() - b.getTime()).slice(0, 60);
-  const valores = dividirValor(valor, ordenadas.length);
-  return ordenadas.map((vencimento, i) => ({ numero: i + 1, totalParcelas: ordenadas.length, vencimento, valor: valores[i] }));
+/**
+ * Parcelas com DATAS (e opcionalmente VALORES) escolhidos um a um pelo operador. Sem valores,
+ * divide igualmente (resíduo na última); com valores, valida que a soma fecha com o total.
+ */
+export function parcelasBoletoPorDatas(valor: number, datas: Date[], valoresEscolhidos?: number[] | null): ParcelaGerada[] {
+  const limitadas = datas.slice(0, 60);
+  const usarEscolhidos =
+    valoresEscolhidos?.length === limitadas.length && valoresEscolhidos.every((v) => Number(v) > 0);
+  if (usarEscolhidos) {
+    const soma = Math.round(valoresEscolhidos!.reduce((s, v) => s + Number(v), 0) * 100) / 100;
+    if (Math.abs(soma - valor) > 0.02) {
+      throw new BoletoError(
+        `A soma das parcelas do boleto (R$ ${soma.toFixed(2)}) difere do valor da venda no boleto (R$ ${valor.toFixed(2)}). Ajuste os valores.`
+      );
+    }
+  }
+  // Mantém o PAR data↔valor escolhido pelo operador ao ordenar por vencimento.
+  const pares = limitadas
+    .map((vencimento, i) => ({ vencimento, valorEscolhido: usarEscolhidos ? Number(valoresEscolhidos![i]) : null }))
+    .sort((a, b) => a.vencimento.getTime() - b.vencimento.getTime());
+  const padrao = dividirValor(valor, pares.length);
+  return pares.map((p, i) => ({
+    numero: i + 1,
+    totalParcelas: pares.length,
+    vencimento: p.vencimento,
+    valor: p.valorEscolhido ?? padrao[i]
+  }));
 }
 
 /**
@@ -417,8 +439,8 @@ export async function processarVendaBoleto(
     valor: number;
     condicao?: string | null;
     descricaoBase: string;
-    /** Escolhas do operador na venda: conta de cobrança, nº de parcelas, 1º vencimento e/ou datas. */
-    opcoes?: { contaBancariaId?: string | null; parcelas?: number | null; primeiroVencimento?: Date | null; datas?: Date[] | null } | null;
+    /** Escolhas do operador na venda: conta de cobrança, nº de parcelas, datas e valores por parcela. */
+    opcoes?: { contaBancariaId?: string | null; parcelas?: number | null; primeiroVencimento?: Date | null; datas?: Date[] | null; valores?: number[] | null } | null;
   }
 ): Promise<VendaBoletoResultado> {
   // Parcelas, por prioridade: DATAS escolhidas uma a uma > N mensais a partir do 1º vencimento >
@@ -427,7 +449,7 @@ export async function processarVendaBoleto(
   const primeiroVenc = input.opcoes?.primeiroVencimento ?? null;
   const qtdParcelas = input.opcoes?.parcelas ?? null;
   const parcelas = datasEscolhidas.length
-    ? parcelasBoletoPorDatas(input.valor, datasEscolhidas)
+    ? parcelasBoletoPorDatas(input.valor, datasEscolhidas, input.opcoes?.valores)
     : qtdParcelas || primeiroVenc
       ? parcelasBoletoCustom(
           input.valor,
