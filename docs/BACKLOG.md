@@ -124,9 +124,17 @@ do cadastro); fluxo de deploy = desenvolve local → `git push` → `./deploy/vp
     guia GNRE PENDENTE p/ UF de destino + texto no infCpl (DANFE); tela /erp/fiscal/guias
     (alerta "recolher antes da saída", link gnre.pe.gov.br, registrar pagamento c/ nº da guia);
     cancelamento da NF-e cancela a guia pendente.
+  - **Webhook... WEBSERVICE GNRE: FEITO 2026-07-02** — botão "Emitir GNRE" na tela de guias emite
+    a guia pelo webservice oficial (lote XML v2.00, SOAP 1.2 + mTLS com o MESMO A1; a guia
+    referencia a CHAVE da NF-e como documento de origem tipo 10; receita 100048 ST / 100102 DIFAL);
+    resultado traz linha digitável, código de barras e PDF (salvos na guia; rota /pdf). Ambiente
+    segue o da nota (homologação → testegnre.pe.gov.br, cujo certificado de servidor é de
+    *.sefaz.pe.gov.br — hostname relaxado SÓ no teste). Transporte validado ponta a ponta: o portal
+    de testes respondeu **situação 102 "CNPJ não habilitado para uso do serviço"** = XML/SOAP/mTLS
+    corretos. ⚠ PENDENTE OPERACIONAL: habilitar o CNPJ no Portal GNRE (gnre.pe.gov.br → Automação,
+    credenciamento único; vale p/ teste e produção).
   - Fase 2 (pendente): DIFAL EC 87 (grupo ICMSUFDest p/ consumidor final interestadual — hoje não
-    suportado) e emissão da guia via webservice GNRE Online; cadastro assistido de MVAs por
-    protocolo (ex.: Protocolo 41/2008 autopeças).
+    suportado); cadastro assistido de MVAs por protocolo (ex.: Protocolo 41/2008 autopeças).
 
 - [x] 2.0 **Frete não sai na nota fiscal (BUG)** — CORRIGIDO 2026-07-02: o frete chegava ao XML só no
   ICMSTot, sem rateio nos itens (`det/prod/vFrete`), violando a regra da SEFAZ "ICMSTot.vFrete = Σ itens"

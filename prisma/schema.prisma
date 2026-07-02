@@ -2447,6 +2447,12 @@ model GuiaRecolhimento {
   numeroGuia   String?
   pagoEm       DateTime?
   observacoes  String?
+  /// Emissão pelo webservice GNRE: recibo do lote, linha digitável, código de barras e PDF.
+  reciboLote     String?
+  linhaDigitavel String?
+  codigoBarras   String?
+  pdfBase64      String?
+  situacaoWs     String?
   criadoEm     DateTime       @default(now())
   atualizadoEm DateTime       @updatedAt
 

@@ -47,6 +47,23 @@ export function GuiasWorkspace({ guias }: { guias: GuiaResumo[] }) {
     }
   }
 
+  // Emite a guia no webservice GNRE (linha digitável + PDF ficam na guia). Exige o CNPJ
+  // habilitado no Portal GNRE (credenciamento único em gnre.pe.gov.br → Automação).
+  async function emitirGnre(g: GuiaResumo) {
+    setBusyId(g.id);
+    setErro("");
+    try {
+      const res = await fetch(`/api/erp/fiscal/guias/${g.id}/emitir`, { method: "POST" });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(data.error || "Não foi possível emitir a GNRE.");
+      router.refresh();
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Falha ao emitir a GNRE.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function reabrir(g: GuiaResumo) {
     setBusyId(g.id);
     setErro("");
@@ -106,10 +123,23 @@ export function GuiasWorkspace({ guias }: { guias: GuiaResumo[] }) {
                     <span className="dot" />{g.status.toLowerCase()}{g.pagoEm ? ` em ${dataBr(g.pagoEm)}` : ""}
                   </span>
                 </td>
-                <td className="mono">{g.numeroGuia ?? "—"}</td>
+                <td className="mono" style={{ maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis" }} title={g.linhaDigitavel ?? undefined}>
+                  {g.linhaDigitavel ?? g.numeroGuia ?? "—"}
+                  {g.situacaoWs?.startsWith("REJEITADA") && <small className="block-muted" style={{ color: "#c62828" }}>{g.situacaoWs}</small>}
+                </td>
                 <td className="actions">
+                  {g.status === "PENDENTE" && !g.temPdf && (
+                    <button type="button" className="btn-erp primary xs" title="Emitir a guia no webservice GNRE (PDF + linha digitável)" disabled={busyId === g.id} onClick={() => emitirGnre(g)}>
+                      {busyId === g.id ? "Emitindo…" : "Emitir GNRE"}
+                    </button>
+                  )}
+                  {g.temPdf && (
+                    <a className="btn-erp ghost xs" href={`/api/erp/fiscal/guias/${g.id}/pdf`} target="_blank" rel="noopener noreferrer" title="Imprimir a GNRE emitida">
+                      🖨 GNRE
+                    </a>
+                  )}
                   {g.status === "PENDENTE" && (
-                    <button type="button" className="btn-erp primary xs" disabled={busyId === g.id} onClick={() => marcarPaga(g)}>
+                    <button type="button" className="btn-erp ghost xs" disabled={busyId === g.id} onClick={() => marcarPaga(g)}>
                       {busyId === g.id ? "..." : "Registrar pagamento"}
                     </button>
                   )}
