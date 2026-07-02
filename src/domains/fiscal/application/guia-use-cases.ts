@@ -89,6 +89,10 @@ export async function emitirGuiaGnre(
     detalhamento?: string | null;
     /** Campos extras da UF; no valor, {CHAVE} vira a chave da NF-e e {NUMERO} o nº da nota. */
     camposExtras?: { codigo: string; valor: string }[] | null;
+    /** Valor do FECP (valor tipo 12) — UFs que exigem (ex.: MT); soma no valorGNRE. */
+    valorFecp?: number | null;
+    /** true = não envia documento de origem (receitas por apuração que não o usam). */
+    semDocOrigem?: boolean;
   }
 ) {
   const guia = await prisma.guiaRecolhimento.findFirst({
@@ -128,9 +132,10 @@ export async function emitirGuiaGnre(
     // Receita por UF (GnreConfigUF): vem da regra tributária (guia.receitaGnre) — ex.: PR usa
     // 100099 (ST por operação); default 100048 (aceito no DF). DIFAL: 100102 por operação.
     receita: guia.tipo === "GNRE_DIFAL" ? "100102" : (opts?.receita ?? guia.receitaGnre ?? "100048"),
-    chaveNfe: docOrigem,
+    chaveNfe: opts?.semDocOrigem ? "" : docOrigem,
     tipoDocOrigem: opts?.tipoDocOrigem,
     produto,
+    valorFecp: opts?.valorFecp ?? null,
     detalhamento: opts?.detalhamento ?? null,
     camposExtras: opts?.camposExtras?.map((c) => ({
       codigo: c.codigo,

@@ -21,7 +21,7 @@ function autorizado(request: Request): boolean {
 export async function POST(request: Request) {
   if (!autorizado(request)) return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
   try {
-    const body = (await request.json()) as { empresa?: string; guiaId?: string; listarGuias?: boolean; consultarRecibo?: string; incluirPdf?: boolean; incluirNoticias?: boolean; configUf?: string; receita?: string; receitaGuia?: string; versaoDados?: string; tipoDocOrigem?: string; produto?: string; detalhamento?: string; camposExtras?: { codigo: string; valor: string }[] };
+    const body = (await request.json()) as { empresa?: string; guiaId?: string; listarGuias?: boolean; consultarRecibo?: string; incluirPdf?: boolean; incluirNoticias?: boolean; configUf?: string; receita?: string; receitaGuia?: string; versaoDados?: string; tipoDocOrigem?: string; produto?: string; detalhamento?: string; camposExtras?: { codigo: string; valor: string }[]; valorFecp?: number; semDocOrigem?: boolean };
     const cnpj = (body.empresa ?? "").replace(/\D+/g, "");
     const empresa = await prisma.empresa.findFirst({
       where: cnpj.length === 14 ? { cnpj } : { razaoSocial: { contains: body.empresa ?? "", mode: "insensitive" } }
@@ -89,7 +89,7 @@ export async function POST(request: Request) {
         });
     if (!guia) throw new GuiaError("Nenhuma guia pendente encontrada.");
 
-    const r = await emitirGuiaGnre(scope, guia.id, undefined, { tipoDocOrigem: body.tipoDocOrigem, produto: body.produto, receita: body.receitaGuia, detalhamento: body.detalhamento, camposExtras: body.camposExtras });
+    const r = await emitirGuiaGnre(scope, guia.id, undefined, { tipoDocOrigem: body.tipoDocOrigem, produto: body.produto, receita: body.receitaGuia, detalhamento: body.detalhamento, camposExtras: body.camposExtras, valorFecp: body.valorFecp, semDocOrigem: body.semDocOrigem });
     return NextResponse.json({
       guiaId: r.id,
       situacaoWs: r.situacaoWs,

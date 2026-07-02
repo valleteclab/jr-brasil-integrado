@@ -57,6 +57,8 @@ export type GuiaGnreInput = {
   /** Campos extras exigidos pela UF (ex.: TO 106=Observação, 107=Chave da NF-e), na ordem da UF. */
   camposExtras?: { codigo: string; valor: string }[] | null;
   valor: number;
+  /** Valor do FECP/FCP (valor tipo 12) — UFs que exigem (ex.: MT na 100099); soma no valorGNRE. */
+  valorFecp?: number | null;
   dataVencimento: Date;
   dataPagamento: Date;
   emitente: {
@@ -105,18 +107,20 @@ export function buildLoteGnreXml(g: GuiaGnreInput): string {
     `<item>` +
     `<receita>${g.receita}</receita>` +
     (g.detalhamento ? `<detalhamentoReceita>${dig(g.detalhamento).padStart(6, "0")}</detalhamentoReceita>` : "") +
-    `<documentoOrigem tipo="${(g.tipoDocOrigem ?? "10").padStart(2, "0")}">${dig(g.chaveNfe)}</documentoOrigem>` +
+    // chaveNfe vazia = UF que NÃO usa documento de origem na receita (ex.: MT 100048).
+    (dig(g.chaveNfe) ? `<documentoOrigem tipo="${(g.tipoDocOrigem ?? "10").padStart(2, "0")}">${dig(g.chaveNfe)}</documentoOrigem>` : "") +
     (g.produto ? `<produto>${dig(g.produto)}</produto>` : "") +
     `<referencia><periodo>0</periodo><mes>${String(competencia.getMonth() + 1).padStart(2, "0")}</mes><ano>${competencia.getFullYear()}</ano></referencia>` +
     `<dataVencimento>${iso(g.dataVencimento)}</dataVencimento>` +
     `<valor tipo="11">${g.valor.toFixed(2)}</valor>` + // 11 = valor principal
+    (g.valorFecp != null ? `<valor tipo="12">${g.valorFecp.toFixed(2)}</valor>` : "") + // 12 = principal FECP
     dest +
     (g.camposExtras?.length
       ? `<camposExtras>${g.camposExtras.map((c) => `<campoExtra><codigo>${dig(c.codigo)}</codigo><valor>${esc(c.valor.slice(0, 100))}</valor></campoExtra>`).join("")}</camposExtras>`
       : "") +
     `</item>` +
     `</itensGNRE>` +
-    `<valorGNRE>${g.valor.toFixed(2)}</valorGNRE>` +
+    `<valorGNRE>${(g.valor + (g.valorFecp ?? 0)).toFixed(2)}</valorGNRE>` +
     `<dataPagamento>${iso(g.dataPagamento)}</dataPagamento>` +
     `</TDadosGNRE>` +
     `</guias>` +
