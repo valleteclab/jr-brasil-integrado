@@ -17,7 +17,7 @@ import { gerarParcelas, rotuloParcela } from "@/lib/finance/condicao-pagamento";
 import { validarSenhaAdmin } from "@/lib/auth/admin-credential";
 import { criarComissaoVenda, cancelarComissaoPedido } from "./comissao-use-cases";
 import { classificacaoReceitaPadraoId } from "@/domains/finance/application/classificacao-use-cases";
-import { gerarBoletosDoPedido } from "@/domains/finance/application/boleto-use-cases";
+import { gerarBoletosDoPedido, parcelasBoletoPorDatas } from "@/domains/finance/application/boleto-use-cases";
 import { publishRealtime } from "@/lib/realtime/broker";
 
 const TX_OPTIONS = { maxWait: 15000, timeout: 30000 };
@@ -34,6 +34,8 @@ export type CreateSaleInput = {
   vendedorId?: string | null;
   condicaoPagamento?: string;
   formaPagamento?: string;
+  /** Venda no BOLETO: opções do atendimento (conta de cobrança, parcelas e datas ISO) — usadas na confirmação. */
+  boletoOpcoes?: { contaBancariaId?: string | null; parcelas?: number | null; primeiroVencimento?: string | null; datas?: string[] | null } | null;
   observacoes?: string;
   observacoesInternas?: string;
   desconto?: number;
@@ -136,6 +138,7 @@ export async function createSale(scope: TenantScope, input: CreateSaleInput) {
         vendedorId: input.vendedorId ?? null,
         condicaoPagamento: input.condicaoPagamento ?? null,
         formaPagamento: input.formaPagamento ?? null,
+        boletoOpcoes: input.boletoOpcoes ?? undefined,
         observacoes: input.observacoes ?? null,
         observacoesInternas: input.observacoesInternas ?? null,
         desconto: descontoGlobal,
@@ -238,7 +241,15 @@ export async function confirmSale(scope: TenantScope, id: string, options?: Conf
     // Contas a receber conforme a condição de pagamento — apenas quando há cliente
     // identificado (venda anônima de balcão é paga à vista, sem contas a receber).
     if (pedido.clienteId && modoContasReceber === "AUTO") {
-      const parcelas = gerarParcelas(Number(pedido.total), pedido.condicaoPagamento);
+      // Venda no boleto com datas escolhidas no atendimento: as PARCELAS seguem essas datas
+      // (senão vale a condição de pagamento; fallback 1x em 30 dias).
+      const opcoesBoleto = (pedido.boletoOpcoes ?? null) as { contaBancariaId?: string | null; datas?: string[] | null } | null;
+      const datasBoleto = /boleto/i.test(pedido.formaPagamento ?? "")
+        ? (opcoesBoleto?.datas ?? []).filter(Boolean).map((d) => new Date(`${d}T12:00:00`)).filter((d) => !Number.isNaN(d.getTime()))
+        : [];
+      const parcelas = datasBoleto.length
+        ? parcelasBoletoPorDatas(Number(pedido.total), datasBoleto)
+        : gerarParcelas(Number(pedido.total), pedido.condicaoPagamento);
       const classificacaoReceita = await classificacaoReceitaPadraoId(tx, scope, "vendas");
       for (const parcela of parcelas) {
         await tx.contaReceber.create({
@@ -295,7 +306,8 @@ export async function confirmSale(scope: TenantScope, id: string, options?: Conf
   // (venda parcelada = um boleto por parcela). Best-effort FORA da transação: falha em boleto não
   // desfaz a venda — as parcelas ficam no financeiro com o botão "Gerar boleto" para retentar.
   if (/boleto/i.test(confirmado.formaPagamento ?? "")) {
-    await gerarBoletosDoPedido(scope, id).catch(() => undefined);
+    const opcoesBoleto = (confirmado.boletoOpcoes ?? null) as { contaBancariaId?: string | null } | null;
+    await gerarBoletosDoPedido(scope, id, { contaBancariaId: opcoesBoleto?.contaBancariaId ?? null }).catch(() => undefined);
   }
 
   return confirmado;

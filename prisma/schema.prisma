@@ -1135,6 +1135,9 @@ model PedidoVenda {
   total               Decimal             @default(0) @db.Decimal(14, 2)
   condicaoPagamento   String?
   formaPagamento      String?
+  /// Venda no BOLETO: opções escolhidas no atendimento (contaBancariaId, parcelas, datas[]) —
+  /// consumidas na confirmação para gerar as parcelas e registrar os boletos no banco certo.
+  boletoOpcoes        Json?
   observacoes         String?
   observacoesInternas String?
   confirmadoEm        DateTime?

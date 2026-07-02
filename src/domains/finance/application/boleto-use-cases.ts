@@ -290,10 +290,12 @@ export async function sincronizarBoleto(scope: TenantScope, contaReceberId: stri
 export async function gerarBoletosDoPedido(
   scope: TenantScope,
   pedidoVendaId: string,
-  usuarioId?: string
+  opts?: { contaBancariaId?: string | null; usuarioId?: string }
 ): Promise<{ gerados: number; erros: string[] }> {
   const contas = await listContasComCobranca(scope);
   if (!contas.length) return { gerados: 0, erros: ["Nenhuma conta bancária com cobrança Sicoob configurada."] };
+  // Conta escolhida na venda (quando houver); senão a primeira com cobrança ativa.
+  const conta = (opts?.contaBancariaId && contas.find((c) => c.id === opts.contaBancariaId)) || contas[0];
   const titulos = await prisma.contaReceber.findMany({
     where: {
       ...scopedByTenantCompany(scope),
@@ -308,7 +310,7 @@ export async function gerarBoletosDoPedido(
   const erros: string[] = [];
   for (const t of titulos) {
     try {
-      await gerarBoletoParaRecebivel(scope, t.id, { contaBancariaId: contas[0].id }, usuarioId);
+      await gerarBoletoParaRecebivel(scope, t.id, { contaBancariaId: conta.id }, opts?.usuarioId);
       gerados++;
     } catch (e) {
       erros.push(`${t.descricao}: ${e instanceof Error ? e.message : String(e)}`);
@@ -395,7 +397,7 @@ function parcelasBoletoCustom(valor: number, quantidade: number, primeiroVencime
 }
 
 /** Parcelas com DATAS escolhidas uma a uma pelo operador (valores iguais, resíduo na última). */
-function parcelasBoletoPorDatas(valor: number, datas: Date[]): ParcelaGerada[] {
+export function parcelasBoletoPorDatas(valor: number, datas: Date[]): ParcelaGerada[] {
   const ordenadas = [...datas].sort((a, b) => a.getTime() - b.getTime()).slice(0, 60);
   const valores = dividirValor(valor, ordenadas.length);
   return ordenadas.map((vencimento, i) => ({ numero: i + 1, totalParcelas: ordenadas.length, vencimento, valor: valores[i] }));

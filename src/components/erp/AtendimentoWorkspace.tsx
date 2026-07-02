@@ -61,6 +61,22 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO", allow
   // Formas de pagamento da empresa (cadastradas) — o que aparece na venda. Fallback fixo se vazio.
   const PAGAMENTOS = data.formas.length ? data.formas.map((f) => ({ id: f.nome, s: "" })) : PAGAMENTOS_FALLBACK;
   const [pagamento, setPagamento] = useState(data.formas[0]?.nome ?? PAGAMENTOS_FALLBACK[0].id);
+  // Venda no BOLETO (pedido faturado): banco emissor, parcelas e vencimentos escolhidos aqui;
+  // consumidos na confirmação do pedido (parcelas + registro no Sicoob).
+  const pagamentoEhBoleto = /boleto/i.test(pagamento);
+  const vencPadraoBoleto = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+  const addMesesIso = (iso: string, meses: number) => {
+    const d = new Date(`${iso}T12:00:00`);
+    d.setMonth(d.getMonth() + meses);
+    return d.toISOString().slice(0, 10);
+  };
+  const [boletoBanco, setBoletoBanco] = useState(data.contasCobranca[0]?.id ?? "");
+  const [boletoParcelas, setBoletoParcelas] = useState(1);
+  const [boletoVencimentos, setBoletoVencimentos] = useState<string[]>([]);
+  const datasBoleto = (): string[] => {
+    const base = boletoVencimentos[0] ?? vencPadraoBoleto;
+    return Array.from({ length: Math.max(1, boletoParcelas) }, (_, i) => boletoVencimentos[i] ?? addMesesIso(base, i));
+  };
   const [descGlobal, setDescGlobal] = useState(0);
   const [frete, setFrete] = useState(0);
   const [obs, setObs] = useState("");
@@ -314,7 +330,24 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO", allow
       } else {
         const res = await fetch("/api/erp/vendas", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ clienteId: cliente.id, canal: tipo === "VENDA_BALCAO" ? "BALCAO" : "FATURADO", itens: itensPayload, desconto: descontoVal, frete: Number(frete) || 0, formaPagamento: pagamento, condicaoPagamento: condicao, observacoes: obs, senhaAdmin: senhaAdmin || undefined })
+          body: JSON.stringify({
+            clienteId: cliente.id,
+            canal: tipo === "VENDA_BALCAO" ? "BALCAO" : "FATURADO",
+            itens: itensPayload,
+            desconto: descontoVal,
+            frete: Number(frete) || 0,
+            formaPagamento: pagamento,
+            condicaoPagamento: condicao,
+            observacoes: obs,
+            senhaAdmin: senhaAdmin || undefined,
+            // Boleto no pedido faturado: as escolhas viajam com o pedido e valem na confirmação.
+            boletoOpcoes: tipo === "PEDIDO_FATURADO" && pagamentoEhBoleto
+              ? (() => {
+                  const datas = datasBoleto();
+                  return { contaBancariaId: boletoBanco || null, parcelas: datas.length, primeiroVencimento: datas[0], datas };
+                })()
+              : undefined
+          })
         });
         const p = await res.json();
         if (!res.ok) throw new Error(p.error || "Falha ao concluir a venda.");
@@ -514,6 +547,39 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO", allow
                     <div style={{ flex: 1 }}><div style={{ fontSize: 12.5, fontWeight: 600 }}>{pg.id}</div><div style={{ fontSize: 10.5, color: "var(--erp-slate)" }}>{pg.s}</div></div>
                   </label>
                 ))}
+                {pagamentoEhBoleto && tipo === "PEDIDO_FATURADO" && (
+                  <div style={{ border: "1px dashed var(--erp-line)", borderRadius: 5, padding: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+                    <div style={{ fontSize: 11.5, fontWeight: 600, color: "var(--erp-slate)" }}>Boleto — banco, parcelas e vencimentos</div>
+                    <select value={boletoBanco} onChange={(e) => setBoletoBanco(e.target.value)} style={{ height: 32, fontSize: 12 }} title="Banco/conta que emite o boleto">
+                      <option value="">{data.contasCobranca.length ? "Banco do boleto…" : "Nenhuma conta com cobrança configurada (Configurações → Contas financeiras)"}</option>
+                      {data.contasCobranca.map((c) => <option key={c.id} value={c.id}>Boleto — {c.nome}</option>)}
+                    </select>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                      <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11.5 }}>
+                        Parcelas
+                        <input type="number" min={1} max={24} value={boletoParcelas} onChange={(e) => setBoletoParcelas(Math.max(1, Math.min(24, Number(e.target.value) || 1)))} style={{ width: 56, height: 30, textAlign: "center" }} />
+                      </label>
+                      {datasBoleto().map((data2, i) => (
+                        <label key={i} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11.5 }}>
+                          {i + 1}ª venc.
+                          <input type="date" value={data2} onChange={(e) => {
+                            const atual = datasBoleto();
+                            atual[i] = e.target.value;
+                            setBoletoVencimentos(atual);
+                          }} style={{ height: 30, fontSize: 12 }} title={`Vencimento da parcela ${i + 1}`} />
+                        </label>
+                      ))}
+                    </div>
+                    <div style={{ fontSize: 10.5, color: "var(--erp-slate)" }}>
+                      Ao confirmar o pedido, as parcelas entram no contas a receber com essas datas e os boletos são registrados no banco automaticamente.
+                    </div>
+                  </div>
+                )}
+                {pagamentoEhBoleto && tipo === "VENDA_BALCAO" && (
+                  <div style={{ fontSize: 11, color: "var(--erp-slate)", padding: "2px 4px" }}>
+                    💡 Boleto é venda a prazo: o banco, as parcelas e os vencimentos serão escolhidos no caixa ao receber — ou use o tipo <strong>Pedido faturado</strong> para definir tudo agora.
+                  </div>
+                )}
               </div>
             </div>
           )}

@@ -1,3 +1,4 @@
+import { listContasComCobranca } from "@/domains/finance/application/boleto-use-cases";
 import { getDevelopmentTenantScope, scopedByTenantCompany, scopedByTenantCompanyAmbiente } from "@/lib/auth/dev-session";
 import { prisma } from "@/lib/db/prisma";
 import { formatBrl } from "@/lib/formatters/currency";
@@ -110,6 +111,8 @@ export type SaleFormData = {
   permiteVendaNaoFiscal: boolean;
   /** % de desconto que o vendedor pode aplicar sem senha de admin (0 = sempre exige). */
   descontoSemAutorizacaoPct: number;
+  /** Contas com cobrança de boleto ativa (escolha do banco na venda em boleto). */
+  contasCobranca: Array<{ id: string; nome: string }>;
 };
 
 function statusLabel(status: StatusPedido): string {
@@ -435,7 +438,8 @@ export async function listSaleFormData(): Promise<SaleFormData> {
       permiteVendaDiretaBalcao: Boolean(empresa?.permiteVendaDiretaBalcao),
       permiteVendaSemEstoque: Boolean(empresa?.permiteVendaSemEstoque),
       permiteVendaNaoFiscal: Boolean(empresa?.permiteVendaNaoFiscal),
-      descontoSemAutorizacaoPct: Number(empresa?.descontoSemAutorizacaoPct ?? 0)
+      descontoSemAutorizacaoPct: Number(empresa?.descontoSemAutorizacaoPct ?? 0),
+      contasCobranca: await listContasComCobranca(scope)
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : "erro desconhecido";

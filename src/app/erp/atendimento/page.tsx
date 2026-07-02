@@ -29,7 +29,7 @@ export default async function AtendimentoPage({ searchParams }: { searchParams: 
   const pedido = searchParams.tipo as TipoVenda | undefined;
   const defaultTipo = pedido && allowedTipos.includes(pedido) ? pedido : allowedTipos[0];
 
-  let data: SaleFormData = { clientes: [], produtos: [], vendedores: [], formas: [], vendedorLogadoId: null, vendedorLogadoNome: null, permiteVendaDiretaBalcao: false, permiteVendaSemEstoque: false, permiteVendaNaoFiscal: false, descontoSemAutorizacaoPct: 0 };
+  let data: SaleFormData = { clientes: [], produtos: [], vendedores: [], formas: [], vendedorLogadoId: null, vendedorLogadoNome: null, permiteVendaDiretaBalcao: false, permiteVendaSemEstoque: false, permiteVendaNaoFiscal: false, descontoSemAutorizacaoPct: 0, contasCobranca: [] };
   let loadError = "";
 
   try {
