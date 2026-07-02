@@ -36,7 +36,7 @@ export async function POST(request: Request) {
       const cert = await carregarCertificado(scope);
       if (!cert) throw new GuiaError("Certificado A1 não disponível.");
       const r = await consultarConfigUf({ pfx: cert.pfx, senha: cert.senha }, "HOMOLOGACAO", body.configUf, body.receita ?? "100048", body.versaoDados ?? "2.00");
-      return NextResponse.json({ http: r.statusCode, brutoSample: r.body.slice(0, 12000) });
+      return NextResponse.json({ http: r.statusCode, tamanho: r.body.length, brutoSample: r.body.slice(0, 120000) });
     }
 
     // Diagnóstico: consulta direta de um recibo já enviado, devolvendo um recorte do XML bruto.
