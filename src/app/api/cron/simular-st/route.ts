@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { simularStInterestadual, type SimulacaoStParams } from "@/domains/fiscal/st-simulacao";
 
 /**
- * SIMULAÇÃO administrativa do ST interestadual (mesmo motor do script CLI) — protegida pelo
+ * SIMULAÇÃO (rota de operação, fora do middleware de sessão como os crons) do ST interestadual (mesmo motor do script CLI) — protegida pelo
  * CRON_SECRET, como os crons. Só emite em HOMOLOGAÇÃO (a trava está no motor). Cria produto
  * TESTE-ST + regra de MVA + NF-e de teste pelos dois provedores e devolve o relatório.
  */
