@@ -84,7 +84,7 @@ export async function emitirGuiaGnre(
 ) {
   const guia = await prisma.guiaRecolhimento.findFirst({
     where: { id, ...scopedByTenantCompany(scope) },
-    include: { notaFiscal: { select: { chaveAcesso: true, xml: true, ambiente: true, status: true } } }
+    include: { notaFiscal: { select: { chaveAcesso: true, numero: true, xml: true, ambiente: true, status: true } } }
   });
   if (!guia) throw new GuiaError("Guia não encontrada.");
   if (guia.status !== "PENDENTE") throw new GuiaError(`A guia não está pendente (${guia.status}).`);
@@ -108,10 +108,16 @@ export async function emitirGuiaGnre(
     : null;
 
   const produto = opts?.produto !== undefined ? opts.produto : guia.produtoGnre;
+  // Documento de origem: tipo 10 = Nota Fiscal, com o NÚMERO da NF-e (não a chave) — é o formato
+  // aceito pelas UFs na receita 100048 (testado no portal de testes; os tipos de "chave" 22/24
+  // existem no domínio mas as UFs não os habilitam para esta receita).
+  const docOrigem = opts?.tipoDocOrigem && opts.tipoDocOrigem !== "10"
+    ? guia.notaFiscal.chaveAcesso
+    : (guia.notaFiscal.numero ?? "").replace(/\D+/g, "") || guia.notaFiscal.chaveAcesso;
   const lote = buildLoteGnreXml({
     ufFavorecida: guia.ufFavorecida,
     receita: guia.tipo === "GNRE_DIFAL" ? "100102" : "100048", // ST por operação / DIFAL por operação
-    chaveNfe: guia.notaFiscal.chaveAcesso,
+    chaveNfe: docOrigem,
     tipoDocOrigem: opts?.tipoDocOrigem,
     produto,
     valor: Number(guia.valor),
