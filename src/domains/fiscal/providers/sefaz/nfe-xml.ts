@@ -81,6 +81,7 @@ function mapTpPag(forma: string | null | undefined): string {
   if (f.includes("credito") || f.includes("crédito") || f.includes("credit")) return "03";
   if (f.includes("debito") || f.includes("débito") || f.includes("debit")) return "04";
   if (f.includes("boleto") || f.includes("billet")) return "15";
+  if (f.includes("cheque")) return "02";
   if (f.includes("dinheiro") || f.includes("cash") || f.includes("especie") || f.includes("espécie")) return "01";
   if (f.includes("transfer")) return "18";
   return "99";
@@ -489,11 +490,13 @@ export function buildNfeXml(input: EmitInput): BuildNfeResult {
   if (tpPagFallback === "90") {
     pagInner = `<detPag><tPag>90</tPag><vPag>0.00</vPag></detPag>`;
   } else if (lista.length) {
+    // Ordem do schema (detPag): tPag → xPag (só quando tPag=99) → vPag → card. xPag depois de vPag
+    // rejeita com cStat 215 ("invalid child element xPag").
     const detPag = lista.map((p) => {
       const tPag = mapTpPag(p.forma);
       const card = (tPag === "03" || tPag === "04" || tPag === "17") ? `<card><tpIntegra>2</tpIntegra></card>` : "";
       const xPag = tPag === "99" ? tag("xPag", esc(sanitize(p.forma) || "Outros")) : "";
-      return `<detPag><tPag>${tPag}</tPag><vPag>${fmt(Number(p.valor))}</vPag>${card}${xPag}</detPag>`;
+      return `<detPag><tPag>${tPag}</tPag>${xPag}<vPag>${fmt(Number(p.valor))}</vPag>${card}</detPag>`;
     }).join("");
     const recebido = round2(lista.reduce((s, p) => s + Number(p.valor), 0));
     const troco = round2(Math.max(recebido - input.total, 0));
@@ -501,7 +504,7 @@ export function buildNfeXml(input: EmitInput): BuildNfeResult {
   } else {
     const card = (tpPagFallback === "03" || tpPagFallback === "04" || tpPagFallback === "17") ? `<card><tpIntegra>2</tpIntegra></card>` : "";
     const xPag = tpPagFallback === "99" ? tag("xPag", esc(sanitize(doc.formaPagamento) || "Outros")) : "";
-    pagInner = `<detPag><tPag>${tpPagFallback}</tPag><vPag>${fmt(input.total)}</vPag>${card}${xPag}</detPag>`;
+    pagInner = `<detPag><tPag>${tpPagFallback}</tPag>${xPag}<vPag>${fmt(input.total)}</vPag>${card}</detPag>`;
   }
   const pag = `<pag>${pagInner}</pag>`;
 
