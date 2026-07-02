@@ -183,7 +183,8 @@ export async function consultarConfigUf(
   auth: GnreAuth,
   ambiente: GnreAmbiente,
   uf: string,
-  receita?: string | null
+  receita?: string | null,
+  versaoDados = "2.00"
 ): Promise<{ statusCode: number; body: string }> {
   const ns = "http://www.gnre.pe.gov.br/webservice/GnreConfigUF";
   const consulta =
@@ -194,7 +195,7 @@ export async function consultarConfigUf(
     `</TConsultaConfigUf>`;
   const body = `<gnreDadosMsg xmlns="${ns}">${consulta}</gnreDadosMsg>`;
   const url = ENDPOINTS[ambiente].recepcao.replace("GnreLoteRecepcao", "GnreConfigUF");
-  return postSoap(url, auth, soapEnvelope12(ns, body, "1.00"), `${ns}/consultar`, ambiente === "HOMOLOGACAO");
+  return postSoap(url, auth, soapEnvelope12(ns, body, versaoDados), `${ns}/consultar`, ambiente === "HOMOLOGACAO");
 }
 
 /** Envia o lote e devolve o número do RECIBO (processamento assíncrono). */

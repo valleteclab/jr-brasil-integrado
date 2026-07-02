@@ -21,7 +21,7 @@ function autorizado(request: Request): boolean {
 export async function POST(request: Request) {
   if (!autorizado(request)) return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
   try {
-    const body = (await request.json()) as { empresa?: string; guiaId?: string; consultarRecibo?: string; configUf?: string; receita?: string };
+    const body = (await request.json()) as { empresa?: string; guiaId?: string; consultarRecibo?: string; configUf?: string; receita?: string; versaoDados?: string };
     const cnpj = (body.empresa ?? "").replace(/\D+/g, "");
     const empresa = await prisma.empresa.findFirst({
       where: cnpj.length === 14 ? { cnpj } : { razaoSocial: { contains: body.empresa ?? "", mode: "insensitive" } }
@@ -35,7 +35,7 @@ export async function POST(request: Request) {
       const { consultarConfigUf } = await import("@/domains/fiscal/providers/gnre/gnre-ws");
       const cert = await carregarCertificado(scope);
       if (!cert) throw new GuiaError("Certificado A1 não disponível.");
-      const r = await consultarConfigUf({ pfx: cert.pfx, senha: cert.senha }, "HOMOLOGACAO", body.configUf, body.receita ?? "100048");
+      const r = await consultarConfigUf({ pfx: cert.pfx, senha: cert.senha }, "HOMOLOGACAO", body.configUf, body.receita ?? "100048", body.versaoDados ?? "2.00");
       return NextResponse.json({ http: r.statusCode, brutoSample: r.body.slice(0, 12000) });
     }
 
