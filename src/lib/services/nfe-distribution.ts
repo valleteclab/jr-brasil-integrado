@@ -24,6 +24,13 @@ const ACBR_SCOPES = "empresa nfe nfce nfse conta distribuicao-nfe";
 
 type AcbrEnv = "producao" | "homologacao";
 
+/**
+ * A distribuição DF-e traz as notas REAIS emitidas contra o CNPJ da empresa — elas só existem no
+ * Ambiente Nacional de PRODUÇÃO. O ambiente de emissão da empresa (homologação nos pilotos) NÃO
+ * se aplica aqui: consultar o AN de homologação com NSU de produção rejeita com cStat 589.
+ */
+const AMBIENTE_DISTRIBUICAO: AmbienteFiscal = "PRODUCAO";
+
 type AcbrDistributionDocument = {
   id: string;
   nsu?: number | string | null;
@@ -361,7 +368,7 @@ async function upsertSefazDocument(scope: TenantScope, runtime: Runtime, doc: Di
       empresaId: scope.empresaId,
       acbrDocumentoId: doc.nsu,
       acbrDistribuicaoId: null,
-      ambiente: runtime.ambiente,
+      ambiente: AMBIENTE_DISTRIBUICAO,
       nsu: doc.nsu,
       schema: doc.schema ?? null,
       tipoDocumento: doc.schema ?? null,
@@ -421,7 +428,7 @@ async function syncSefazDistribution(scope: TenantScope, runtime: Runtime, optio
     const result = await consultarDistribuicaoDFe({
       cnpj,
       cUFAutor,
-      ambiente: runtime.ambiente,
+      ambiente: AMBIENTE_DISTRIBUICAO,
       ultNSU: ultNSU.toString(),
       cert
     });
@@ -524,22 +531,32 @@ function hasFullXmlAvailable(doc: { payload: Prisma.JsonValue | null; xmlImporta
 export async function listNfeDistributionDocuments(scope: TenantScope): Promise<NfeDistributionSummary[]> {
   const runtime = await getFiscalRuntimeConfig(scope).catch(() => null);
   const isSefaz = runtime?.provider === "SEFAZ";
-  const docs = await prisma.distribuicaoNfeDocumento.findMany({
-    where: { tenantId: scope.tenantId, empresaId: scope.empresaId },
-    orderBy: [{ dataEmissao: "desc" }, { criadoEm: "desc" }],
-    take: 300
-  });
   // EVENTOS distribuídos (manifestações/cancelamentos, resEvento/procEventoNFe) NÃO são notas:
-  // ficam fora da lista — senão "roubam" a linha da NF-e no agrupamento por chave (sem emitente/
-  // data/valor). Cancelamentos (110111/110112) viram um marcador na linha da própria nota.
+  // ficam fora já da CONSULTA — além de "roubarem" a linha da NF-e no agrupamento por chave, eles
+  // são muitos (centenas) e ocupariam o `take` inteiro, deixando a lista vazia.
+  const docs = await prisma.distribuicaoNfeDocumento.findMany({
+    where: {
+      tenantId: scope.tenantId,
+      empresaId: scope.empresaId,
+      status: { not: "EVENTO" },
+      OR: [{ tipoEvento: null }, { tipoEvento: "" }]
+    },
+    orderBy: [{ dataEmissao: "desc" }, { criadoEm: "desc" }],
+    take: 800
+  });
+  // Cancelamentos (110111/110112) distribuídos viram um marcador na linha da própria nota.
+  const eventosCancelamento = await prisma.distribuicaoNfeDocumento.findMany({
+    where: {
+      tenantId: scope.tenantId,
+      empresaId: scope.empresaId,
+      tipoEvento: { in: ["110111", "110112"] },
+      chaveAcesso: { not: null }
+    },
+    select: { chaveAcesso: true }
+  });
+  const canceladas = new Set(eventosCancelamento.map((item) => item.chaveAcesso as string));
   const isEvento = (item: typeof docs[number]) =>
     item.status === "EVENTO" || Boolean(item.tipoEvento) || (item.schema ?? "").toLowerCase().includes("evento");
-  const canceladas = new Set(
-    docs
-      .filter((item) => item.tipoEvento === "110111" || item.tipoEvento === "110112")
-      .map((item) => item.chaveAcesso)
-      .filter((chave): chave is string => Boolean(chave))
-  );
   const byKey = new Map<string, typeof docs[number]>();
   for (const doc of docs) {
     if (isEvento(doc)) continue;
@@ -878,7 +895,7 @@ async function importDistributedNfeSefaz(
       if (!doc.manifestacaoEvento) {
         const pem = pfxToPem(cert.pfx, cert.senha);
         const result = await enviarManifestacao({
-          ambiente: runtime.ambiente,
+          ambiente: AMBIENTE_DISTRIBUICAO, // manifestação de nota REAL vai para produção
           cnpj,
           chNFe: chave,
           tipoEvento: "210210",
@@ -1032,7 +1049,7 @@ export async function processarDistribuicaoEmpresa(
     for (const doc of pendentes) {
       const chave = onlyDigits(doc.chaveAcesso as string);
       try {
-        const man = await enviarManifestacao({ ambiente: runtime.ambiente, cnpj, chNFe: chave, tipoEvento: "210210", cert, pem });
+        const man = await enviarManifestacao({ ambiente: AMBIENTE_DISTRIBUICAO, cnpj, chNFe: chave, tipoEvento: "210210", cert, pem });
         await prisma.distribuicaoNfeDocumento.update({
           where: { id: doc.id },
           data: { manifestacaoEvento: "210210", manifestacaoStatus: man.status, manifestadoEm: new Date() }
