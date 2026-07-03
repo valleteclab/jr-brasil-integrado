@@ -8,7 +8,9 @@ import { type SicoobAuth, SicoobError, parseErroSicoob, sicoobApi } from "./sico
 const CONTA = {
   prodBase: "https://api.sicoob.com.br/conta-corrente/v4",
   sandboxBase: "https://sandbox.sicoob.com.br/sicoob/sandbox/conta-corrente/v4",
-  scopes: "openid cco_consulta cco_extrato cco_saldo"
+  // Escopos OFICIAIS da Conta Corrente v4: openid + cco_extrato + cco_saldo ("cco_consulta" NÃO
+  // existe — derruba o token de produção com invalid_scope).
+  scopes: "openid cco_extrato cco_saldo"
 };
 
 export type SaldoConta = {
