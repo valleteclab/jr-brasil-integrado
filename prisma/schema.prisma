@@ -325,6 +325,7 @@ model Tenant {
   chavesApiAgente          ChaveApiAgente[]
   telefonesAgente          AgenteTelefone[]
   configWhatsapp           ConfiguracaoWhatsapp[]
+  configEmail              ConfiguracaoEmail[]
   criadoEm                 DateTime                 @default(now())
   atualizadoEm             DateTime                 @updatedAt
 }
@@ -387,6 +388,7 @@ model Empresa {
   chavesApiAgente           ChaveApiAgente[]
   telefonesAgente           AgenteTelefone[]
   configWhatsapp            ConfiguracaoWhatsapp[]
+  configEmail               ConfiguracaoEmail[]
   enderecoLogradouro        String?
   enderecoNumero            String?
   enderecoComplemento       String?
@@ -423,6 +425,10 @@ model Empresa {
   // % de desconto que QUALQUER vendedor pode aplicar sem pedir senha de admin. Acima disso
   // (item OU global), a UI exige autorização. 0 (padrão) = todo desconto exige senha.
   descontoSemAutorizacaoPct Decimal                    @default(0) @db.Decimal(5, 2)
+  // Margens (%) PADRÃO sobre o custo para sugerir os preços à vista e a prazo no cadastro de
+  // produto e na importação de XML (NF-e). null = não sugerir preço automaticamente.
+  margemPadraoVistaPct      Decimal?                   @db.Decimal(8, 4)
+  margemPadraoPrazoPct      Decimal?                   @db.Decimal(8, 4)
   criadoEm                  DateTime                   @default(now())
   atualizadoEm              DateTime                   @updatedAt
 
@@ -854,9 +860,16 @@ model Produto {
   precoCusto               Decimal                 @default(0) @db.Decimal(14, 2)
   ultimoCusto              Decimal                 @default(0) @db.Decimal(14, 2)
   custoMedio               Decimal                 @default(0) @db.Decimal(14, 4)
+  // precoVenda é o preço À VISTA (usado por PDV/vendas). precoVendaPrazo é o preço A PRAZO
+  // (crediário/parcelado); 0 = sem preço a prazo definido (vale o à vista).
   precoVenda               Decimal                 @default(0) @db.Decimal(14, 2)
+  precoVendaPrazo          Decimal                 @default(0) @db.Decimal(14, 2)
   precoMinimo              Decimal                 @default(0) @db.Decimal(14, 2)
   margemAlvoPercentual     Decimal?                @db.Decimal(8, 4)
+  // Margens (%) sobre o custo para formação automática dos preços: preço = custo × (1 + margem/100).
+  // Memorizadas no produto para recalcular os preços quando o custo mudar (nova compra).
+  margemVistaPercentual    Decimal?                @db.Decimal(8, 4)
+  margemPrazoPercentual    Decimal?                @db.Decimal(8, 4)
   quantidadeMinima         Int                     @default(1)
   controlaLote             Boolean                 @default(false)
   controlaSerie            Boolean                 @default(false)
@@ -1180,6 +1193,9 @@ model PedidoVendaItem {
   produto       Produto     @relation(fields: [produtoId], references: [id])
   quantidade    Decimal     @db.Decimal(14, 4)
   precoUnitario Decimal     @db.Decimal(14, 2)
+  // Origem do preço aplicado pelo vendedor: VISTA (tabela à vista), PRAZO (tabela a prazo)
+  // ou MANUAL (digitado na venda) — auditoria da formação de preço. null = legado (à vista).
+  tipoPreco     String?
   custoUnitario Decimal     @default(0) @db.Decimal(14, 4)
   desconto      Decimal     @default(0) @db.Decimal(14, 2)
   total         Decimal     @db.Decimal(14, 2)
@@ -1561,6 +1577,8 @@ model EntradaFiscalItem {
   fatorConversao                  Decimal                    @default(1) @db.Decimal(14, 6)
   unidadeVenda                    String?
   precoVendaDefinido              Decimal?                   @db.Decimal(14, 2)
+  // Preço A PRAZO definido na conferência para o novo SKU (precoVendaDefinido é o À VISTA).
+  precoVendaPrazoDefinido         Decimal?                   @db.Decimal(14, 2)
   precoMinimoDefinido             Decimal?                   @db.Decimal(14, 2)
   marcaDefinida                   String?
   produtoVinculadoAutomaticamente Boolean                    @default(false)
@@ -2860,6 +2878,29 @@ model ConfiguracaoWhatsapp {
   atenderClientes   Boolean          @default(true)
   criadoEm          DateTime         @default(now())
   atualizadoEm      DateTime         @updatedAt
+
+  @@index([tenantId, empresaId])
+}
+
+/// Configuração de E-MAIL (SMTP) por empresa — envio de orçamentos, boletos e notas fiscais ao
+/// cliente final. Senha criptografada (secret-crypto), mesmo padrão da ConfiguracaoWhatsapp.
+model ConfiguracaoEmail {
+  id             String   @id @default(cuid())
+  tenantId       String
+  empresaId      String   @unique
+  tenant         Tenant   @relation(fields: [tenantId], references: [id])
+  empresa        Empresa  @relation(fields: [empresaId], references: [id])
+  ativo          Boolean  @default(false)
+  host           String?
+  porta          Int      @default(587)
+  /// true = SSL/TLS direto (465); false = STARTTLS (587).
+  seguro         Boolean  @default(false)
+  usuario        String?
+  senhaCripto    String?
+  remetenteNome  String?
+  remetenteEmail String?
+  criadoEm       DateTime @default(now())
+  atualizadoEm   DateTime @updatedAt
 
   @@index([tenantId, empresaId])
 }

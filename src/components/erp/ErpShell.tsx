@@ -105,7 +105,8 @@ const groups: ErpNavGroup[] = [
       { label: "Emissão fiscal", href: "/erp/configuracoes/fiscal", icon: "⚙" },
       { label: "Catálogo Cosmos", href: "/erp/configuracoes/cosmos", icon: "🔎" },
       { label: "IA do ERP", href: "/erp/configuracoes/ia", icon: "✦" },
-      { label: "WhatsApp", href: "/erp/configuracoes/whatsapp", icon: "💬" }
+      { label: "WhatsApp", href: "/erp/configuracoes/whatsapp", icon: "💬" },
+      { label: "E-mail (envio)", href: "/erp/configuracoes/email", icon: "✉" }
     ]
   }
 ];

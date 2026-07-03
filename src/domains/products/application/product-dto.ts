@@ -23,8 +23,17 @@ export type ValidatedProductInput = {
   taxRuleId?: string;
   costValue: number;
   lastCost: number;
+  /** Preço de venda À VISTA (Produto.precoVenda). */
   salePrice: number;
+  /** Preço de venda A PRAZO (crediário/parcelado); 0 = vale o à vista. */
+  termPrice: number;
+  /** Margens (%) sobre o custo para formação automática dos preços; null = digitado manualmente. */
+  cashMarginPercent: number | null;
+  termMarginPercent: number | null;
   minimumPrice: number;
+  /** Fornecedor principal (nome) + código do produto NO fornecedor — vira vínculo ProdutoFornecedor. */
+  supplierName?: string;
+  supplierCode?: string;
   availableStock: number;
   minimumStock: number;
   maxStock: number;
@@ -67,6 +76,13 @@ export function numeric(value: unknown) {
   return Number(value.replace(/[^\d,.-]/g, "").replace(/\./g, "").replace(",", ".")) || 0;
 }
 
+/** numeric() para campos opcionais: vazio/ausente vira null (0 digitado continua 0). */
+export function numericOrNull(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "string" && !value.trim()) return null;
+  return numeric(value);
+}
+
 function productType(value: string): ValidatedProductInput["type"] {
   if (value === "Serviço" || value === "SERVICO") {
     return "SERVICO";
@@ -94,6 +110,9 @@ export function validateProductPayload(payload: ProductPayload): ValidatedProduc
   const cest = onlyDigits(text(payload, "cest"));
   const barcode = onlyDigits(text(payload, "barcode"));
   const salePrice = numeric(payload.priceValue ?? payload.price);
+  const termPrice = numeric(payload.termPrice ?? payload.priceTerm);
+  const cashMarginPercent = numericOrNull(payload.cashMarginPercent);
+  const termMarginPercent = numericOrNull(payload.termMarginPercent);
   const costValue = numeric(payload.costValue);
   const availableStock = numeric(payload.availableStock);
   const minimumStock = numeric(payload.minimumStock);
@@ -118,8 +137,12 @@ export function validateProductPayload(payload: ProductPayload): ValidatedProduc
     throw new ProductValidationError("GTIN/EAN deve conter 8, 12, 13 ou 14 dígitos.");
   }
 
-  if (salePrice < 0 || costValue < 0 || availableStock < 0 || minimumStock < 0) {
+  if (salePrice < 0 || termPrice < 0 || costValue < 0 || availableStock < 0 || minimumStock < 0) {
     throw new ProductValidationError("Valores e quantidades não podem ser negativos.");
+  }
+
+  if ((cashMarginPercent ?? 0) < 0 || (termMarginPercent ?? 0) < 0) {
+    throw new ProductValidationError("Margens (%) não podem ser negativas.");
   }
 
   return {
@@ -148,7 +171,12 @@ export function validateProductPayload(payload: ProductPayload): ValidatedProduc
     costValue,
     lastCost: numeric(payload.lastCost) || costValue,
     salePrice,
+    termPrice,
+    cashMarginPercent,
+    termMarginPercent,
     minimumPrice: numeric(payload.minimumPrice),
+    supplierName: text(payload, "supplier") || undefined,
+    supplierCode: text(payload, "supplierCode") || undefined,
     availableStock,
     minimumStock,
     maxStock: numeric(payload.maxStock),

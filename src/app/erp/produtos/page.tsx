@@ -6,6 +6,7 @@ import { listDepositos } from "@/lib/services/stock";
 import { getEmpresaPerfil } from "@/domains/company/application/company-use-cases";
 import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
 import { listCodigosFiscaisMany } from "@/lib/services/fiscal-codes";
+import { getCompanySettings } from "@/lib/services/company-settings";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +31,7 @@ export default async function ErpProductsPage({ searchParams }: { searchParams?:
   let units: string[] = [];
   let segmento = "GERAL";
   let fiscalCodes: Awaited<ReturnType<typeof listCodigosFiscaisMany>> = {};
+  let margensPadrao: { vista: number | null; prazo: number | null } = { vista: null, prazo: null };
   let loadError = "";
 
   try {
@@ -40,6 +42,8 @@ export default async function ErpProductsPage({ searchParams }: { searchParams?:
     units = (await listUnidades()).map((u) => u.codigo);
     segmento = (await getEmpresaPerfil(await getDevelopmentTenantScope())).segmento;
     fiscalCodes = await listCodigosFiscaisMany(["ORIGEM", "CST_ICMS", "CSOSN", "CFOP"]);
+    const companySettings = await getCompanySettings(await getDevelopmentTenantScope());
+    margensPadrao = { vista: companySettings.margemPadraoVistaPct, prazo: companySettings.margemPadraoPrazoPct };
   } catch (error) {
     loadError = error instanceof Error ? error.message : "Não foi possível carregar produtos.";
   }
@@ -60,7 +64,7 @@ export default async function ErpProductsPage({ searchParams }: { searchParams?:
           <span>{loadError}</span>
         </div>
       )}
-      <ProductCrud initialProducts={products} taxRules={taxRules} warehouses={warehouses} categoryOptions={categories} unitOptions={units} fiscalCodes={fiscalCodes} segmento={segmento} autoNew={autoNew} prefillName={prefillName} />
+      <ProductCrud initialProducts={products} taxRules={taxRules} warehouses={warehouses} categoryOptions={categories} unitOptions={units} fiscalCodes={fiscalCodes} segmento={segmento} autoNew={autoNew} prefillName={prefillName} margensPadrao={margensPadrao} />
     </>
   );
 }

@@ -18,6 +18,7 @@ export async function PUT(request: Request, context: RouteContext) {
       produtoId?: string | null;
       criarNovoSku?: boolean;
       precoVenda?: number | null;
+      precoVendaPrazo?: number | null;
       precoMinimo?: number | null;
       marca?: string | null;
       finalidade?: string | null;
@@ -28,6 +29,7 @@ export async function PUT(request: Request, context: RouteContext) {
       produtoId: body.produtoId,
       criarNovoSku: Boolean(body.criarNovoSku),
       precoVenda: body.precoVenda,
+      precoVendaPrazo: body.precoVendaPrazo,
       precoMinimo: body.precoMinimo,
       marca: body.marca,
       finalidade: isFinalidadeEntrada(body.finalidade) ? body.finalidade : null,

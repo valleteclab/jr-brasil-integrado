@@ -14,6 +14,7 @@ export async function PUT(request: Request) {
         produtoId?: string | null;
         criarNovoSku?: boolean;
         precoVenda?: number | null;
+        precoVendaPrazo?: number | null;
         precoMinimo?: number | null;
         marca?: string | null;
         finalidade?: string | null;
@@ -28,6 +29,7 @@ export async function PUT(request: Request) {
       produtoId: link.produtoId,
       criarNovoSku: Boolean(link.criarNovoSku),
       precoVenda: link.precoVenda,
+      precoVendaPrazo: link.precoVendaPrazo,
       precoMinimo: link.precoMinimo,
       marca: link.marca,
       finalidade: isFinalidadeEntrada(link.finalidade) ? link.finalidade : null,

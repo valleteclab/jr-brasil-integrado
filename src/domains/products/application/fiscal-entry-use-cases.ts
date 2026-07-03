@@ -13,6 +13,7 @@ import { cfopVendaPadrao, creditoPorFinalidade, finalidadeEhInsumo, finalidadeMo
 import { loadFinalidadeRules, resolveFinalidadeForItem } from "@/domains/fiscal/application/finalidade-regra-use-cases";
 import { sugerirClassificacaoEntrada } from "@/domains/finance/application/classificacao-use-cases";
 import { sugerirCategoriasEntrada } from "./ai-enrichment-use-cases";
+import { criarGeradorSkuAutomatico } from "./product-use-cases";
 
 const FISCAL_TRANSACTION_OPTIONS = {
   maxWait: 10000,
@@ -91,6 +92,7 @@ type FiscalEntryDraftSource = {
     fatorConversao: Prisma.Decimal;
     unidadeVenda: string | null;
     precoVendaDefinido: Prisma.Decimal | null;
+    precoVendaPrazoDefinido: Prisma.Decimal | null;
     precoMinimoDefinido: Prisma.Decimal | null;
     marcaDefinida: string | null;
     confiancaVinculo: Prisma.Decimal | null;
@@ -227,6 +229,7 @@ function buildFiscalEntryDraft(entrada: FiscalEntryDraftSource) {
       fatorConversao: Number(item.fatorConversao ?? 1),
       unidadeVenda: item.unidadeVenda ?? item.unidade,
       salePrice: item.precoVendaDefinido ? String(Number(item.precoVendaDefinido)).replace(".", ",") : "",
+      salePriceTerm: item.precoVendaPrazoDefinido ? String(Number(item.precoVendaPrazoDefinido)).replace(".", ",") : "",
       minimumPrice: item.precoMinimoDefinido ? String(Number(item.precoMinimoDefinido)).replace(".", ",") : "",
       brand: item.marcaDefinida ?? "",
       finalidade: item.finalidade ?? undefined,
@@ -943,6 +946,9 @@ export async function processFiscalEntry(
     }
     let created = 0;
     let updated = 0;
+    // Gerador de SKUs internos (PRD-NNNNNN) para os produtos novos desta nota — criado sob demanda,
+    // com UMA varredura do maior número já usado (mesmo com vários itens novos na mesma transação).
+    let proximoSkuAutomatico: (() => Promise<string>) | null = null;
 
     for (const item of entrada.itens) {
       const movimentaEstoque = item.movimentaEstoque;
@@ -983,15 +989,34 @@ export async function processFiscalEntry(
           throw new Error(`Informe o preço de venda do novo SKU ${item.codigoFornecedor} antes de lançar a entrada fiscal.`);
         }
 
+        // Reuso ANTES de criar (evita duplicar produto), na ordem:
+        // 1) memória fornecedor + código do fornecedor (ProdutoFornecedor) — outra nota deste
+        //    fornecedor já criou/vinculou este código;
+        // 2) legado: produto cujo SKU é o próprio código do fornecedor (padrão antigo de criação).
         const skuUpper = item.codigoFornecedor.toUpperCase();
-        const produtoExistente = await tx.produto.findFirst({
-          where: { tenantId: scope.tenantId, empresaId: scope.empresaId, sku: skuUpper },
-          select: { id: true, ativo: true }
-        });
+        const vinculoFornecedor = entrada.fornecedorId
+          ? await tx.produtoFornecedor.findUnique({
+              where: {
+                tenantId_empresaId_fornecedorId_codigoFornecedor: {
+                  tenantId: scope.tenantId,
+                  empresaId: scope.empresaId,
+                  fornecedorId: entrada.fornecedorId,
+                  codigoFornecedor: item.codigoFornecedor
+                }
+              },
+              select: { produtoId: true, produto: { select: { ativo: true } } }
+            })
+          : null;
+        const produtoExistente = vinculoFornecedor
+          ? { id: vinculoFornecedor.produtoId, ativo: vinculoFornecedor.produto.ativo }
+          : await tx.produto.findFirst({
+              where: { tenantId: scope.tenantId, empresaId: scope.empresaId, sku: skuUpper },
+              select: { id: true, ativo: true }
+            });
 
         if (produtoExistente) {
-          // SKU já cadastrado (produto antes excluído/inativado, ou recriado por outra nota deste
-          // lote): REUSA em vez de falhar no unique. Reativa se estava inativo; o custo/estoque é
+          // Produto já cadastrado (antes excluído/inativado, ou recriado por outra nota deste
+          // lote): REUSA em vez de duplicar. Reativa se estava inativo; o custo/estoque é
           // atualizado adiante pelo fluxo de movimentação.
           if (!produtoExistente.ativo) {
             await tx.produto.update({ where: { id: produtoExistente.id }, data: { ativo: true } });
@@ -1016,11 +1041,17 @@ export async function processFiscalEntry(
               })
             : null;
 
+          // SKU INTERNO gerado pelo sistema (PRD-NNNNNN) — o código do fornecedor (cProd) NÃO vira
+          // mais SKU: fica em codigoOriginal e no vínculo ProdutoFornecedor (gravado adiante), que
+          // é o que vincula automaticamente as próximas importações de XML deste fornecedor.
+          if (!proximoSkuAutomatico) {
+            proximoSkuAutomatico = await criarGeradorSkuAutomatico(tx, scope);
+          }
           const product = await tx.produto.create({
             data: {
               tenantId: scope.tenantId,
               empresaId: scope.empresaId,
-              sku: skuUpper,
+              sku: await proximoSkuAutomatico(),
               nome: item.descricaoFornecedor,
               descricao: `Criado pela entrada fiscal ${entrada.numero || entrada.id}.`,
               tipo: ehInsumo ? "INSUMO" : "PRODUTO",
@@ -1041,6 +1072,8 @@ export async function processFiscalEntry(
               custoMedio: custoUnitConv,
               // Insumo sem preço de venda informado entra com 0 (não é vendido diretamente).
               precoVenda: item.precoVendaDefinido ?? 0,
+              // Sem preço a prazo definido na conferência, vale o preço à vista.
+              precoVendaPrazo: item.precoVendaPrazoDefinido ?? item.precoVendaDefinido ?? 0,
               precoMinimo: item.precoMinimoDefinido ?? item.precoVendaDefinido ?? 0,
               visivelEcommerce: false
             }
@@ -1634,7 +1667,10 @@ export async function deleteFiscalEntry(scope: TenantScope, entradaFiscalId: str
 type FiscalEntryItemLinkInput = {
   produtoId?: string | null;
   criarNovoSku: boolean;
+  /** Preço de venda À VISTA do novo SKU. */
   precoVenda?: number | null;
+  /** Preço de venda A PRAZO do novo SKU (opcional; sem ele vale o à vista). */
+  precoVendaPrazo?: number | null;
   precoMinimo?: number | null;
   marca?: string | null;
   finalidade?: FinalidadeEntrada | null;
@@ -1783,6 +1819,7 @@ async function updateFiscalEntryItemLinkInTransaction(
           data: {
             produtoId,
             precoVendaDefinido: null,
+            precoVendaPrazoDefinido: null,
             precoMinimoDefinido: null,
             marcaDefinida: null,
             produtoVinculadoAutomaticamente: false,
@@ -1810,6 +1847,7 @@ async function updateFiscalEntryItemLinkInTransaction(
         data: {
           produtoId: null,
           precoVendaDefinido: input.precoVenda,
+          precoVendaPrazoDefinido: input.precoVendaPrazo && input.precoVendaPrazo > 0 ? input.precoVendaPrazo : null,
           precoMinimoDefinido: input.precoMinimo && input.precoMinimo > 0 ? input.precoMinimo : input.precoVenda,
           marcaDefinida: input.marca?.trim() || null,
           fatorConversao: fatorNorm,
@@ -1853,6 +1891,7 @@ async function updateFiscalEntryItemLinkInTransaction(
       data: {
         produtoId: product.id,
         precoVendaDefinido: null,
+        precoVendaPrazoDefinido: null,
         precoMinimoDefinido: null,
         marcaDefinida: null,
         fatorConversao: fatorNorm,

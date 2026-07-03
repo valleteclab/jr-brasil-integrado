@@ -60,6 +60,11 @@ type ProductRecord = ErpProductSummary & {
   cofinsRate: string;
   costValue: string;
   lastCost: string;
+  /** Preço de venda A PRAZO (price/priceValue é o À VISTA). */
+  priceTerm: string;
+  /** Margens (%) sobre o custo para formação automática dos preços. */
+  cashMarginPercent: string;
+  termMarginPercent: string;
   minimumPrice: string;
   maxDiscount: string;
   warehouse: string;
@@ -110,6 +115,8 @@ type ProductCrudProps = {
   autoNew?: boolean;
   /** Nome pré-preenchido ao abrir via atalho (o termo buscado no seletor de produtos). */
   prefillName?: string;
+  /** Margens (%) padrão da empresa para sugerir os preços à vista/a prazo em produto novo. */
+  margensPadrao?: { vista: number | null; prazo: number | null };
 };
 
 type BadgeTone = "success" | "warn" | "danger" | "info" | "violet" | "mute";
@@ -175,6 +182,9 @@ const emptyForm: ProductFormState = {
   cofinsRate: "",
   costValue: "",
   lastCost: "",
+  priceTerm: "",
+  cashMarginPercent: "",
+  termMarginPercent: "",
   minimumPrice: "",
   maxDiscount: "",
   warehouse: "",
@@ -265,6 +275,9 @@ function enrichProduct(product: ErpProductSummary): ProductRecord {
     cofinsRate: "",
     costValue: product.costValue ?? "",
     lastCost: product.lastCost ?? "",
+    priceTerm: product.priceTerm ?? "",
+    cashMarginPercent: product.cashMarginPercent ?? "",
+    termMarginPercent: product.termMarginPercent ?? "",
     minimumPrice: product.minimumPrice ?? "",
     maxDiscount: "",
     warehouse: product.warehouse ?? "",
@@ -324,7 +337,7 @@ function toProduct(form: ProductFormState): ProductRecord {
   };
 }
 
-export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOptions = [], unitOptions = [], fiscalCodes = {}, segmento, autoNew = false, prefillName = "" }: ProductCrudProps) {
+export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOptions = [], unitOptions = [], fiscalCodes = {}, segmento, autoNew = false, prefillName = "", margensPadrao }: ProductCrudProps) {
   const isAutopecas = segmento === "AUTOPECAS";
   const defaultWarehouse = warehouses[0] ?? "";
   const initialRecords = useMemo(() => initialProducts.map(enrichProduct), [initialProducts]);
@@ -491,6 +504,43 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
 
   function updateField<Key extends keyof ProductFormState>(key: Key, value: ProductFormState[Key]) {
     setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  // Formação de preço por margem: preço = custo × (1 + margem/100). Base = custo médio (ou, sem
+  // ele, o último custo). Digitar a margem recalcula o preço; digitar o preço direto não mexe na margem.
+  function custoBase(state: ProductFormState) {
+    return currencyToNumber(state.costValue) || currencyToNumber(state.lastCost);
+  }
+
+  function precoPorMargem(custo: number, margem: number) {
+    return (Math.round((custo * (1 + margem / 100) + Number.EPSILON) * 100) / 100).toFixed(2).replace(".", ",");
+  }
+
+  function updateMargem(tipo: "vista" | "prazo", valor: string) {
+    setForm((current) => {
+      const custo = custoBase(current);
+      const margem = currencyToNumber(valor);
+      const preco = custo > 0 && margem > 0 ? precoPorMargem(custo, margem) : null;
+      if (tipo === "vista") {
+        return { ...current, cashMarginPercent: valor, ...(preco ? { priceValue: preco } : {}) };
+      }
+      return { ...current, termMarginPercent: valor, ...(preco ? { priceTerm: preco } : {}) };
+    });
+  }
+
+  // Custo alterado: recalcula os preços cujas margens estão definidas (mantém a formação em dia).
+  function updateCusto(key: "costValue" | "lastCost", valor: string) {
+    setForm((current) => {
+      const next = { ...current, [key]: valor };
+      const custo = custoBase(next);
+      if (custo > 0) {
+        const margemVista = currencyToNumber(next.cashMarginPercent);
+        const margemPrazo = currencyToNumber(next.termMarginPercent);
+        if (margemVista > 0) next.priceValue = precoPorMargem(custo, margemVista);
+        if (margemPrazo > 0) next.priceTerm = precoPorMargem(custo, margemPrazo);
+      }
+      return next;
+    });
   }
 
   // Sobe uma imagem do computador: converte em dataURL (base64) e usa como imagem do produto.
@@ -682,7 +732,15 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
   }
 
   function openNewProduct(nomeInicial = "") {
-    setForm({ ...emptyForm, warehouse: defaultWarehouse, name: nomeInicial });
+    setForm({
+      ...emptyForm,
+      warehouse: defaultWarehouse,
+      name: nomeInicial,
+      // Produto novo já nasce com as margens padrão da empresa: ao digitar o custo,
+      // os preços à vista/a prazo são sugeridos automaticamente.
+      cashMarginPercent: margensPadrao?.vista ? String(margensPadrao.vista).replace(".", ",") : "",
+      termMarginPercent: margensPadrao?.prazo ? String(margensPadrao.prazo).replace(".", ",") : ""
+    });
     setError("");
     setActiveTab("geral");
     setDrawerOpen(true);
@@ -1121,19 +1179,34 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
     }
 
     if (activeTab === "precos") {
+      const custoAtual = custoBase(form);
       return (
         <div className="erp-form">
           <label>
             Custo médio
-            <input value={form.costValue} onChange={(event) => updateField("costValue", event.target.value)} />
+            <input value={form.costValue} onChange={(event) => updateCusto("costValue", event.target.value)} />
           </label>
           <label>
             Último custo
-            <input value={form.lastCost} onChange={(event) => updateField("lastCost", event.target.value)} />
+            <input value={form.lastCost} onChange={(event) => updateCusto("lastCost", event.target.value)} />
           </label>
           <label>
-            Preço de venda
+            Margem à vista %
+            <input inputMode="decimal" placeholder="Ex.: 50" value={form.cashMarginPercent} onChange={(event) => updateMargem("vista", event.target.value)} />
+            <small className="field-hint">Calcula o preço à vista: custo × (1 + margem/100){custoAtual > 0 ? ` — custo atual ${formatBrl(custoAtual)}` : ""}.</small>
+          </label>
+          <label>
+            Preço de venda à vista
             <input value={form.priceValue} onChange={(event) => updateField("priceValue", event.target.value)} />
+          </label>
+          <label>
+            Margem a prazo %
+            <input inputMode="decimal" placeholder="Ex.: 65" value={form.termMarginPercent} onChange={(event) => updateMargem("prazo", event.target.value)} />
+            <small className="field-hint">Calcula o preço a prazo (crediário/parcelado) a partir do custo.</small>
+          </label>
+          <label>
+            Preço de venda a prazo
+            <input placeholder="Opcional (vale o à vista)" value={form.priceTerm} onChange={(event) => updateField("priceTerm", event.target.value)} />
           </label>
           <label>
             Preço mínimo

@@ -246,6 +246,36 @@ export function CompanySettingsForm({ initialSettings }: Props) {
               </span>
             </label>
 
+            <label>
+              Margem padrão à vista (%)
+              <input
+                type="number"
+                min={0}
+                step="0.01"
+                value={form.margemPadraoVistaPct ?? ""}
+                onChange={(event) => update("margemPadraoVistaPct", event.target.value === "" ? null : Math.max(0, Number(event.target.value) || 0))}
+                style={{ maxWidth: 140 }}
+              />
+              <span className="field-hint" style={{ color: "var(--muted)", fontSize: 12 }}>
+                Sugere o preço à vista automaticamente: custo × (1 + margem/100), no cadastro de produto e na importação de XML. Vazio = não sugerir.
+              </span>
+            </label>
+
+            <label>
+              Margem padrão a prazo (%)
+              <input
+                type="number"
+                min={0}
+                step="0.01"
+                value={form.margemPadraoPrazoPct ?? ""}
+                onChange={(event) => update("margemPadraoPrazoPct", event.target.value === "" ? null : Math.max(0, Number(event.target.value) || 0))}
+                style={{ maxWidth: 140 }}
+              />
+              <span className="field-hint" style={{ color: "var(--muted)", fontSize: 12 }}>
+                Sugere o preço a prazo (crediário/parcelado) automaticamente a partir do custo. Vazio = não sugerir.
+              </span>
+            </label>
+
             <p className="span-2 field-hint" style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
               <strong>PDV recomendado:</strong> {PDV_RECOMENDADO[form.tipoNegocio] ?? PDV_RECOMENDADO.AMBOS}
               {form.tipoNegocio === "SERVICO" && " O menu oculta compras, estoque e notas de entrada."}

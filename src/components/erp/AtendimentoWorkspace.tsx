@@ -11,7 +11,15 @@ import { AdminPasswordModal } from "./AdminPasswordModal";
 type Tipo = "VENDA_BALCAO" | "PEDIDO_FATURADO" | "ORCAMENTO" | "OS";
 type Produto = SaleFormData["produtos"][number];
 type Cliente = SaleFormData["clientes"][number];
-type ItemLinha = { produto: Produto; quantidade: number; preco: number; desconto: number };
+/** Origem do preço da linha: tabela à vista (padrão), tabela a prazo ou digitado (manual). */
+type TipoPreco = "VISTA" | "PRAZO" | "MANUAL";
+type ItemLinha = { produto: Produto; quantidade: number; preco: number; tipoPreco: TipoPreco; desconto: number };
+
+/** Preço de tabela escolhido para a linha (referência para medir desconto implícito). */
+function precoReferencia(it: ItemLinha): number {
+  const tabela = it.tipoPreco === "PRAZO" && it.produto.precoPrazo > 0 ? it.produto.precoPrazo : it.produto.preco;
+  return tabela > 0 ? tabela : it.preco;
+}
 type Servico = { descricao: string; horas: number; valorHora: number };
 
 type SuccessState = {
@@ -112,6 +120,8 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO", allow
   // Texto sendo digitado em cada input de quantidade — permite "0,5" ou "0.5" sem o campo
   // zerar no meio. Commit no blur via updItem. Limpo quando o item sai da venda.
   const [qtdInputs, setQtdInputs] = useState<Record<string, string>>({});
+  // Idem para o preço unitário (edição manual): commit no blur; digitar marca a linha como MANUAL.
+  const [precoInputs, setPrecoInputs] = useState<Record<string, string>>({});
 
   // Tempo real: atualiza o estoque disponível dos produtos enquanto o vendedor monta a venda
   // (outra venda/caixa baixou ou reservou saldo). router.refresh() só re-busca os dados do
@@ -134,18 +144,24 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO", allow
   const descontoVal = subtotal * (descGlobal / 100);
   const total = Math.max(subtotal - descontoVal + (isVendaPedido ? Number(frete) || 0 : 0), 0);
 
-  // Desconto % efetivo sobre o bruto (itens × qtd × preço + serviços), sem descontar nada.
-  // Se passa do limite da empresa, exige senha de admin antes de finalizar.
-  const subtotalBruto = items.reduce((s, it) => s + it.quantidade * it.preco, 0) + subtotalServ;
-  const descontoPctEfetivo = subtotalBruto > 0 ? ((subtotalBruto - (subtotal - descontoVal)) / subtotalBruto) * 100 : 0;
+  // Desconto % efetivo sobre a REFERÊNCIA de tabela (mesma conta do servidor): desconto de linha
+  // + global + implícito (preço manual abaixo da tabela escolhida). Preço abaixo do MÍNIMO do
+  // produto sempre exige senha. Se passa do limite da empresa, exige senha de admin ao finalizar.
+  const subtotalReferencia = items.reduce((s, it) => s + it.quantidade * precoReferencia(it), 0) + subtotalServ;
+  const descontoImplicitoPreco = items.reduce((s, it) => s + Math.max(0, precoReferencia(it) - it.preco) * it.quantidade, 0);
+  const descontoExplicito = items.reduce((s, it) => s + it.quantidade * it.preco * (it.desconto / 100), 0) + descontoVal;
+  const descontoPctEfetivo = subtotalReferencia > 0 ? ((descontoExplicito + descontoImplicitoPreco) / subtotalReferencia) * 100 : 0;
+  const itensAbaixoMinimo = items.filter((it) => it.produto.precoMinimo > 0 && it.preco < it.produto.precoMinimo - 0.005);
   const limiteDescSemAuth = Number(data.descontoSemAutorizacaoPct ?? 0);
-  const precisaAdmin = descontoPctEfetivo > limiteDescSemAuth + 0.01;
+  const precisaAdmin = descontoPctEfetivo > limiteDescSemAuth + 0.01 || itensAbaixoMinimo.length > 0;
 
-  /** Roda a ação se desconto está dentro do limite; senão abre o modal de admin antes. */
+  /** Roda a ação se preço/desconto estão dentro do limite; senão abre o modal de admin antes. */
   function comAdmin(action: () => void) {
     if (!precisaAdmin || senhaAdmin) { action(); return; }
     setAdminModal({
-      motivo: `Desconto de ${descontoPctEfetivo.toFixed(2)}% acima do limite (${limiteDescSemAuth.toFixed(2)}%). Informe a senha de um administrador.`,
+      motivo: itensAbaixoMinimo.length
+        ? `Preço abaixo do mínimo do produto (${itensAbaixoMinimo.map((it) => it.produto.sku).join(", ")}). Informe a senha de um administrador.`
+        : `Desconto de ${descontoPctEfetivo.toFixed(2)}% acima do limite (${limiteDescSemAuth.toFixed(2)}%). Informe a senha de um administrador.`,
       onOk: (s) => { setSenhaAdmin(s); setAdminModal(null); action(); }
     });
   }
@@ -157,12 +173,34 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO", allow
     setItems((cur) => {
       const ex = cur.find((it) => it.produto.id === p.id);
       if (ex) return cur.map((it) => (it.produto.id === p.id ? { ...it, quantidade: it.quantidade + q } : it));
-      return [...cur, { produto: p, quantidade: q, preco: p.preco, desconto: 0 }];
+      return [...cur, { produto: p, quantidade: q, preco: p.preco, tipoPreco: "VISTA", desconto: 0 }];
     });
   }
   const updItem = (id: string, patch: Partial<ItemLinha>) =>
     setItems((cur) => cur.map((it) => (it.produto.id === id ? { ...it, ...patch } : it)));
   const rmItem = (id: string) => setItems((cur) => cur.filter((it) => it.produto.id !== id));
+
+  /** Troca o preço da linha entre tabela à vista / a prazo (manual é definido digitando o preço). */
+  function trocarTipoPreco(it: ItemLinha, tipoNovo: "VISTA" | "PRAZO") {
+    setSenhaAdmin("");
+    const preco = tipoNovo === "PRAZO" && it.produto.precoPrazo > 0 ? it.produto.precoPrazo : it.produto.preco;
+    updItem(it.produto.id, { tipoPreco: tipoNovo, preco });
+  }
+
+  // Sugestão para venda a prazo (boleto/faturado/crediário): itens no preço à vista que TÊM preço
+  // a prazo cadastrado diferente. O vendedor decide — nada troca sozinho.
+  const pagamentoEhAPrazo = /boleto|faturad|prazo|credi/i.test(pagamento);
+  const itensComPrazoDisponivel = items.filter(
+    (it) => it.tipoPreco === "VISTA" && it.produto.precoPrazo > 0 && it.produto.precoPrazo !== it.produto.preco
+  );
+  function aplicarPrecoPrazoATodos() {
+    setSenhaAdmin("");
+    setItems((cur) => cur.map((it) =>
+      it.tipoPreco === "VISTA" && it.produto.precoPrazo > 0
+        ? { ...it, tipoPreco: "PRAZO" as const, preco: it.produto.precoPrazo }
+        : it
+    ));
+  }
 
   // Cliente recém-cadastrado pelo drawer: entra na lista local e já fica selecionado.
   function onClienteCriado(novo: Cliente) {
@@ -192,6 +230,7 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO", allow
       produtoId: it.produto.id,
       quantidade: it.quantidade,
       precoUnitario: it.preco,
+      tipoPreco: it.tipoPreco,
       desconto: Math.round(it.quantidade * it.preco * (it.desconto / 100) * 100) / 100
     }));
     const res = await fetch("/api/erp/vendas", {
@@ -265,6 +304,7 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO", allow
         produtoId: it.produto.id,
         quantidade: it.quantidade,
         precoUnitario: it.preco,
+        tipoPreco: it.tipoPreco,
         desconto: Math.round(it.quantidade * it.preco * (it.desconto / 100) * 100) / 100
       }));
       const res = await fetch("/api/erp/vendas/checkout", {
@@ -317,6 +357,7 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO", allow
         produtoId: it.produto.id,
         quantidade: it.quantidade,
         precoUnitario: it.preco,
+        tipoPreco: it.tipoPreco,
         desconto: Math.round(it.quantidade * it.preco * (it.desconto / 100) * 100) / 100
       }));
 
@@ -505,10 +546,50 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO", allow
                               style={cellNum}
                             />
                           </td>
-                          <td className="num bold">{brl(it.preco)}</td>
+                          <td className="num">
+                            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3 }}>
+                              <input
+                                inputMode="decimal"
+                                value={precoInputs[it.produto.id] ?? String(it.preco.toFixed(2)).replace(".", ",")}
+                                onChange={(e) => setPrecoInputs((s) => ({ ...s, [it.produto.id]: e.target.value }))}
+                                onBlur={(e) => {
+                                  const v = Math.max(0, numBr(e.target.value));
+                                  setPrecoInputs((s) => { const n = { ...s }; delete n[it.produto.id]; return n; });
+                                  if (v === it.preco) return;
+                                  setSenhaAdmin("");
+                                  // Preço digitado: MANUAL, a menos que coincida com uma tabela.
+                                  const tipo: TipoPreco = v === it.produto.preco ? "VISTA" : v === it.produto.precoPrazo && v > 0 ? "PRAZO" : "MANUAL";
+                                  updItem(it.produto.id, { preco: v, tipoPreco: tipo });
+                                }}
+                                onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                                style={{ ...cellNum, width: 90, fontWeight: 700 }}
+                                title="Preço unitário — digite para negociar (preço manual)"
+                              />
+                              {it.produto.precoPrazo > 0 && it.produto.precoPrazo !== it.produto.preco ? (
+                                <select
+                                  value={it.tipoPreco === "MANUAL" ? "MANUAL" : it.tipoPreco}
+                                  onChange={(e) => {
+                                    const v = e.target.value;
+                                    if (v === "VISTA" || v === "PRAZO") trocarTipoPreco(it, v);
+                                  }}
+                                  style={{ height: 24, fontSize: 10.5, maxWidth: 130 }}
+                                  title="Preço de tabela aplicado na linha"
+                                >
+                                  <option value="VISTA">À vista · {brl(it.produto.preco)}</option>
+                                  <option value="PRAZO">A prazo · {brl(it.produto.precoPrazo)}</option>
+                                  {it.tipoPreco === "MANUAL" && <option value="MANUAL">Manual · {brl(it.preco)}</option>}
+                                </select>
+                              ) : it.tipoPreco === "MANUAL" ? (
+                                <span className="sublabel" style={{ fontSize: 10 }}>manual (tabela {brl(it.produto.preco)})</span>
+                              ) : null}
+                              {it.produto.precoMinimo > 0 && it.preco < it.produto.precoMinimo - 0.005 && (
+                                <span style={{ fontSize: 10, color: "#c62828", fontWeight: 600 }}>abaixo do mínimo {brl(it.produto.precoMinimo)}</span>
+                              )}
+                            </div>
+                          </td>
                           <td className="num"><input type="number" min={0} max={100} value={it.desconto} onChange={(e) => { setSenhaAdmin(""); updItem(it.produto.id, { desconto: Math.min(100, Math.max(0, Number(e.target.value) || 0)) }); }} style={cellNum} /></td>
                           <td className="num bold">{brl(sub)}</td>
-                          <td className="actions"><button type="button" className="btn-erp ghost xs icon-only" onClick={() => { setQtdInputs((s) => { const n = { ...s }; delete n[it.produto.id]; return n; }); rmItem(it.produto.id); }}>✕</button></td>
+                          <td className="actions"><button type="button" className="btn-erp ghost xs icon-only" onClick={() => { setQtdInputs((s) => { const n = { ...s }; delete n[it.produto.id]; return n; }); setPrecoInputs((s) => { const n = { ...s }; delete n[it.produto.id]; return n; }); rmItem(it.produto.id); }}>✕</button></td>
                         </tr>
                       );
                     })}
@@ -562,6 +643,16 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO", allow
                     <div style={{ flex: 1 }}><div style={{ fontSize: 12.5, fontWeight: 600 }}>{pg.id}</div><div style={{ fontSize: 10.5, color: "var(--erp-slate)" }}>{pg.s}</div></div>
                   </label>
                 ))}
+                {pagamentoEhAPrazo && itensComPrazoDisponivel.length > 0 && (
+                  <div style={{ border: "1px dashed var(--erp-yellow-dk)", background: "rgba(255,193,7,.08)", borderRadius: 5, padding: "8px 10px", display: "flex", flexDirection: "column", gap: 6 }}>
+                    <div style={{ fontSize: 11.5, color: "var(--erp-slate)" }}>
+                      💡 Venda a prazo: {itensComPrazoDisponivel.length} item(ns) estão no <strong>preço à vista</strong> e têm preço a prazo cadastrado.
+                    </div>
+                    <button type="button" className="btn-erp ghost xs" onClick={aplicarPrecoPrazoATodos}>
+                      Aplicar preço a prazo aos itens
+                    </button>
+                  </div>
+                )}
                 {pagamentoEhBoleto && tipo === "PEDIDO_FATURADO" && (
                   <div style={{ border: "1px dashed var(--erp-line)", borderRadius: 5, padding: 10, display: "flex", flexDirection: "column", gap: 8 }}>
                     <div style={{ fontSize: 11.5, fontWeight: 600, color: "var(--erp-slate)" }}>Boleto — banco, parcelas e vencimentos</div>
@@ -887,6 +978,8 @@ function ProdutoPickerMulti({ produtos, items, permiteVendaSemEstoque, onAdd, on
         nome: data.nome ?? rNome.trim(),
         descricao: null, descricaoComercial: null, gtin: null, codigoOriginal: null, codigoFabricante: null,
         preco: numBr(rPreco),
+        precoPrazo: 0,
+        precoMinimo: 0,
         disponivel: numBr(rEstoque),
         unidade: rUnidade
       };

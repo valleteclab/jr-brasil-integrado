@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { Button } from "@/components/shared/Button";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import type { QuoteSummary } from "@/lib/services/sales-quote";
+import { EnviarDocumentoModal } from "./EnviarDocumentoModal";
 
 type Props = {
   quotes: QuoteSummary[];
@@ -17,6 +18,8 @@ export function QuotesList({ quotes, isAdmin = false }: Props) {
   const [query, setQuery] = useState("");
   const [error, setError] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
+  // Orçamento sendo enviado ao cliente (e-mail/WhatsApp) pelo modal compartilhado.
+  const [enviando, setEnviando] = useState<QuoteSummary | null>(null);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -178,6 +181,14 @@ export function QuotesList({ quotes, isAdmin = false }: Props) {
                   >
                     🖨 PDF
                   </a>
+                  <button
+                    type="button"
+                    className="btn-erp ghost xs"
+                    title="Enviar ao cliente por e-mail/WhatsApp"
+                    onClick={() => setEnviando(orc)}
+                  >
+                    📤 Enviar
+                  </button>
                   {orc.canAprovar && (
                     <Button
                       variant="light"
@@ -237,6 +248,14 @@ export function QuotesList({ quotes, isAdmin = false }: Props) {
           </tbody>
         </table>
       </div>
+      {enviando && (
+        <EnviarDocumentoModal
+          titulo={`Enviar orçamento ${enviando.numero}`}
+          descricao={`Cliente: ${enviando.cliente}. No WhatsApp o orçamento vai como mensagem com itens e total; no e-mail, com a tabela completa.`}
+          endpoint={`/api/erp/orcamentos/${enviando.id}/enviar`}
+          onClose={() => setEnviando(null)}
+        />
+      )}
     </section>
   );
 }

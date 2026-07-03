@@ -6,12 +6,21 @@ import type { PdvData, PdvProduto, PdvServico, PdvCliente, PdvContaRecebedora, P
 import { correspondeBusca } from "@/lib/search/normalize";
 import { AdminPasswordModal } from "./AdminPasswordModal";
 
+/** Origem do preço da linha: tabela à vista (padrão), tabela a prazo ou digitado (manual). */
+type TipoPreco = "VISTA" | "PRAZO" | "MANUAL";
+
 type CartItem = {
   key: string;
   kind: "produto" | "servico";
   refId: string;
   nome: string;
   preco: number;
+  /** Origem do preço aplicado (produto). Serviço é sempre VISTA. */
+  tipoPreco: TipoPreco;
+  /** Preços de tabela do produto (para alternar à vista/a prazo e medir desconto implícito). */
+  precoVista?: number;
+  precoPrazo?: number;
+  precoMinimo?: number;
   qtd: number;
   /** Unidade de medida do produto (UN/KG/M/L…) — só p/ exibir na linha. */
   unidade?: string;
@@ -22,6 +31,12 @@ type CartItem = {
   codigoServicoLc116?: string | null;
   codigoNbs?: string | null;
 };
+
+/** Preço de tabela escolhido para a linha (referência para medir desconto implícito). */
+function precoReferenciaPdv(i: CartItem): number {
+  const tabela = i.tipoPreco === "PRAZO" && (i.precoPrazo ?? 0) > 0 ? (i.precoPrazo ?? 0) : (i.precoVista ?? i.preco);
+  return tabela > 0 ? tabela : i.preco;
+}
 
 type NotaResultado = {
   tipo: "PRODUTOS" | "SERVICOS";
@@ -166,6 +181,20 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
   const [descGlobalPct, setDescGlobalPct] = useState(0);
   /** Modal "Aplicar desconto no item" (X) ou modal de senha admin (objeto). */
   const [descontoItem, setDescontoItem] = useState<CartItem | null>(null);
+  const [precoItem, setPrecoItem] = useState<CartItem | null>(null);
+
+  // Sugestão para venda a prazo: itens de produto no preço à vista que têm preço a prazo diferente.
+  const itensComPrazoDisponivel = cart.filter(
+    (i) => i.kind === "produto" && i.tipoPreco === "VISTA" && (i.precoPrazo ?? 0) > 0 && i.precoPrazo !== i.precoVista
+  );
+  function aplicarPrecoPrazoATodos() {
+    setSenhaAdmin("");
+    setCart((cur) => cur.map((i) =>
+      i.kind === "produto" && i.tipoPreco === "VISTA" && (i.precoPrazo ?? 0) > 0
+        ? { ...i, tipoPreco: "PRAZO" as const, preco: i.precoPrazo ?? i.preco }
+        : i
+    ));
+  }
   const [adminModal, setAdminModal] = useState<{ motivo: string; onOk: (senha: string) => void } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -236,7 +265,7 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
     setCart((cur) => {
       const ex = cur.find((i) => i.kind === "produto" && i.refId === p.id);
       if (ex) return cur.map((i) => (i === ex ? { ...i, qtd: i.qtd + 1 } : i));
-      return [...cur, { key: `p-${p.id}`, kind: "produto", refId: p.id, nome: p.nome, preco: p.preco, qtd: 1, descontoPct: 0, disponivel: p.disponivel, unidade: p.unidade }];
+      return [...cur, { key: `p-${p.id}`, kind: "produto", refId: p.id, nome: p.nome, preco: p.preco, tipoPreco: "VISTA" as const, precoVista: p.preco, precoPrazo: p.precoPrazo, precoMinimo: p.precoMinimo, qtd: 1, descontoPct: 0, disponivel: p.disponivel, unidade: p.unidade }];
     });
     setBusca("");
     buscaRef.current?.focus();
@@ -246,7 +275,7 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
     setCart((cur) => {
       const ex = cur.find((i) => i.kind === "servico" && i.refId === s.id);
       if (ex) return cur.map((i) => (i === ex ? { ...i, qtd: i.qtd + 1 } : i));
-      return [...cur, { key: `s-${s.id}`, kind: "servico", refId: s.id, nome: s.nome, preco: s.preco, qtd: 1, descontoPct: 0, codigoServicoLc116: s.codigoServicoLc116, codigoNbs: s.codigoNbs }];
+      return [...cur, { key: `s-${s.id}`, kind: "servico", refId: s.id, nome: s.nome, preco: s.preco, tipoPreco: "VISTA" as const, qtd: 1, descontoPct: 0, codigoServicoLc116: s.codigoServicoLc116, codigoNbs: s.codigoNbs }];
     });
     setBusca("");
     buscaRef.current?.focus();
@@ -327,12 +356,16 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
     setPagamentoAberto(false);
   }
 
-  // Desconto efetivo % = (subtotal bruto − total) / subtotal bruto × 100. Compara com o limite
+  // Desconto efetivo % sobre a REFERÊNCIA de tabela (mesma conta do servidor): desconto de
+  // linha + global + implícito (preço manual abaixo da tabela escolhida). Compara com o limite
   // da empresa (data.descontoSemAutorizacaoPct). Acima disso, abre modal de senha antes do pagto.
   function calcularDescontoPctEfetivo(): number {
+    const base = cart.reduce((s, i) => s + precoReferenciaPdv(i) * i.qtd, 0);
+    if (base <= 0) return 0;
+    const implicito = cart.reduce((s, i) => s + Math.max(0, precoReferenciaPdv(i) - i.preco) * i.qtd, 0);
     const bruto = cart.reduce((s, i) => s + i.preco * i.qtd, 0);
-    if (bruto <= 0) return 0;
-    return ((bruto - total) / bruto) * 100;
+    const explicito = bruto - total;
+    return ((explicito + implicito) / base) * 100;
   }
 
   function abrirPagamento() {
@@ -346,9 +379,12 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
     setResultado(null);
     const pctEfetivo = calcularDescontoPctEfetivo();
     const limite = Number(data.descontoSemAutorizacaoPct ?? 0);
-    if (pctEfetivo > limite + 0.01 && !senhaAdmin) {
+    const abaixoMinimo = cart.filter((i) => (i.precoMinimo ?? 0) > 0 && i.preco < (i.precoMinimo ?? 0) - 0.005);
+    if ((pctEfetivo > limite + 0.01 || abaixoMinimo.length > 0) && !senhaAdmin) {
       setAdminModal({
-        motivo: `Desconto de ${pctEfetivo.toFixed(2)}% acima do limite (${limite.toFixed(2)}%). Informe a senha de um administrador para liberar.`,
+        motivo: abaixoMinimo.length
+          ? `Preço abaixo do mínimo do produto (${abaixoMinimo.map((i) => i.nome).join(", ")}). Informe a senha de um administrador para liberar.`
+          : `Desconto de ${pctEfetivo.toFixed(2)}% acima do limite (${limite.toFixed(2)}%). Informe a senha de um administrador para liberar.`,
         onOk: (s) => { setSenhaAdmin(s); setAdminModal(null); setPagamentoAberto(true); }
       });
       return;
@@ -372,6 +408,7 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
           produtoId: i.refId,
           quantidade: i.qtd,
           precoUnitario: i.preco,
+          tipoPreco: i.tipoPreco,
           desconto: round2(i.preco * i.qtd * ((i.descontoPct ?? 0) / 100))
         })),
         servicos: cart.filter((i) => i.kind === "servico").map((i) => ({ descricao: i.nome, valor: i.preco * i.qtd, codigoServicoLc116: i.codigoServicoLc116, codigoNbs: i.codigoNbs })),
@@ -566,7 +603,15 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
                     <button onClick={() => { setQtdInputs((s) => { const n = { ...s }; delete n[i.key]; return n; }); mudarQtd(i.key, 1); }}>+</button>
                     {i.unidade && <span style={{ fontSize: 11, color: "var(--erp-mute)", marginLeft: 4 }}>{i.unidade}</span>}
                   </div>
-                  <span className="pdv-item-unit">× {brl(i.preco)}{(i.descontoPct ?? 0) > 0 ? ` − ${i.descontoPct.toFixed(2)}% desc.` : ""}</span>
+                  <span className="pdv-item-unit">
+                    × {brl(i.preco)}
+                    {i.kind === "produto" && i.tipoPreco === "PRAZO" ? " (a prazo)" : ""}
+                    {i.kind === "produto" && i.tipoPreco === "MANUAL" ? " (manual)" : ""}
+                    {(i.descontoPct ?? 0) > 0 ? ` − ${i.descontoPct.toFixed(2)}% desc.` : ""}
+                  </span>
+                  {i.kind === "produto" && (
+                    <button className="pdv-item-pct" title="Alterar preço da linha (à vista / a prazo / manual)" onClick={() => setPrecoItem(i)}>R$</button>
+                  )}
                   {i.kind === "produto" && (
                     <button className="pdv-item-pct" title="Desconto no item (%)" onClick={() => setDescontoItem(i)}>%</button>
                   )}
@@ -577,6 +622,14 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
           </div>
 
           <div className="pdv-fechamento">
+            {itensComPrazoDisponivel.length > 0 && (
+              <div style={{ border: "1px dashed var(--erp-yellow-dk, #b8860b)", background: "rgba(255,193,7,.08)", borderRadius: 5, padding: "6px 8px", display: "flex", alignItems: "center", gap: 8, fontSize: 11.5 }}>
+                <span style={{ flex: 1 }}>💡 Venda a prazo (boleto/crediário)? {itensComPrazoDisponivel.length} item(ns) têm preço a prazo cadastrado.</span>
+                <button type="button" className="pdv-item-pct" style={{ width: "auto", padding: "0 8px" }} onClick={aplicarPrecoPrazoATodos}>
+                  Aplicar preço a prazo
+                </button>
+              </div>
+            )}
             <div className="pdv-cliente">
               <span>Cliente {precisaCliente ? <span className="req">(obrigatório)</span> : "(opcional)"}</span>
               <button type="button" className="pdv-cliente-btn" onClick={() => setClienteModalAberto(true)}>
@@ -702,6 +755,18 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
             // Mudou desconto → senha anterior pode não bastar mais; invalida pra revalidar no checkout.
             setSenhaAdmin("");
             setDescontoItem(null);
+          }}
+        />
+      )}
+      {precoItem && (
+        <PrecoItemModal
+          item={precoItem}
+          onClose={() => setPrecoItem(null)}
+          onAplicar={(key, preco, tipoPreco) => {
+            setCart((cur) => cur.map((i) => (i.key === key ? { ...i, preco, tipoPreco } : i)));
+            // Mudou o preço → senha anterior pode não bastar mais; invalida pra revalidar no checkout.
+            setSenhaAdmin("");
+            setPrecoItem(null);
           }}
         />
       )}
@@ -852,6 +917,74 @@ function NovoClientePdvModal({ onCriado, onClose }: { onCriado: (c: PdvCliente) 
         <div className="pdv-acoes">
           <button className="pdv-limpar" onClick={onClose} disabled={loading}>Cancelar</button>
           <button className="pdv-finalizar" onClick={salvar} disabled={loading}>{loading ? "Salvando…" : "Cadastrar e usar"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Modal de preço da linha: tabela à vista / a prazo / manual. ──────────────────────────
+// Preço manual abaixo da tabela vira desconto implícito (autorização de admin no fechamento);
+// abaixo do preço mínimo sempre exige senha. Acima da tabela é livre.
+
+function PrecoItemModal({
+  item,
+  onClose,
+  onAplicar
+}: {
+  item: CartItem;
+  onClose: () => void;
+  onAplicar: (key: string, preco: number, tipoPreco: TipoPreco) => void;
+}) {
+  const precoVista = item.precoVista ?? item.preco;
+  const precoPrazo = item.precoPrazo ?? 0;
+  const temPrazo = precoPrazo > 0 && precoPrazo !== precoVista;
+  const [tipo, setTipo] = useState<TipoPreco>(item.tipoPreco);
+  const [valor, setValor] = useState(item.preco.toFixed(2).replace(".", ","));
+  const precoManual = round2(Number(valor.replace(/[^\d,.-]/g, "").replace(/\./g, "").replace(",", ".")) || 0);
+  const precoFinal = tipo === "VISTA" ? precoVista : tipo === "PRAZO" ? precoPrazo : precoManual;
+  const invalido = precoFinal <= 0;
+  const abaixoMinimo = (item.precoMinimo ?? 0) > 0 && precoFinal < (item.precoMinimo ?? 0) - 0.005;
+
+  return (
+    <div className="pdv-modal-bg" onClick={onClose}>
+      <div className="pdv-modal" onClick={(e) => e.stopPropagation()}>
+        <h2>Preço — {item.nome}</h2>
+        <p className="block-muted">Escolha o preço de tabela ou digite um preço negociado para esta venda.</p>
+        <label className="pdv-cliente" style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <input type="radio" checked={tipo === "VISTA"} onChange={() => setTipo("VISTA")} style={{ width: "auto" }} />
+          <span>À vista · <strong>{brl(precoVista)}</strong></span>
+        </label>
+        {temPrazo && (
+          <label className="pdv-cliente" style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <input type="radio" checked={tipo === "PRAZO"} onChange={() => setTipo("PRAZO")} style={{ width: "auto" }} />
+            <span>A prazo · <strong>{brl(precoPrazo)}</strong></span>
+          </label>
+        )}
+        <label className="pdv-cliente" style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <input type="radio" checked={tipo === "MANUAL"} onChange={() => setTipo("MANUAL")} style={{ width: "auto" }} />
+          <span>Manual (negociado)</span>
+          <input
+            inputMode="decimal"
+            value={valor}
+            onChange={(e) => { setTipo("MANUAL"); setValor(e.target.value); }}
+            onFocus={() => setTipo("MANUAL")}
+            placeholder="0,00"
+            style={{ width: 110, textAlign: "right" }}
+          />
+        </label>
+        {invalido && <div className="alert danger">Informe um preço maior que zero.</div>}
+        {!invalido && abaixoMinimo && (
+          <div className="alert danger">Abaixo do preço mínimo ({brl(item.precoMinimo ?? 0)}) — exigirá senha de administrador.</div>
+        )}
+        {!invalido && !abaixoMinimo && tipo === "MANUAL" && precoManual < precoReferenciaPdv({ ...item, tipoPreco: tipo, preco: precoManual }) && (
+          <div className="alert info">Abaixo da tabela: a diferença conta como desconto e pode exigir senha de administrador.</div>
+        )}
+        <div className="pdv-acoes">
+          <button className="pdv-limpar" onClick={onClose}>Cancelar</button>
+          <button className="pdv-finalizar" onClick={() => { if (!invalido) onAplicar(item.key, round2(precoFinal), tipo); }} disabled={invalido}>
+            Aplicar {brl(precoFinal)}
+          </button>
         </div>
       </div>
     </div>

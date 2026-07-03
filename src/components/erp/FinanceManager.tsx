@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { PayableSummary, ReceivableSummary, BankAccountSummary, ClienteOption, MaquinaCartaoOption } from "@/lib/services/finance";
+import { EnviarDocumentoModal } from "./EnviarDocumentoModal";
 
 type FormaPagamentoOption = { id: string; nome: string };
 
@@ -494,6 +495,8 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
   const [showNewForm, setShowNewForm] = useState(false);
   const [globalError, setGlobalError] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
+  // Boleto sendo enviado ao cliente (e-mail/WhatsApp) pelo modal compartilhado.
+  const [enviandoBoleto, setEnviandoBoleto] = useState<{ id: string; descricao: string } | null>(null);
   // Cobrança Pix dinâmica de um título (drawer com QR + verificação de pagamento).
   const [pixPanel, setPixPanel] = useState<{
     contaReceberId: string; descricao: string; id: string; qrDataUrl: string | null;
@@ -892,6 +895,14 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
                       >
                         Boleto ({(r as ReceivableSummary).boletoStatus?.toLowerCase()})
                       </a>
+                      <button
+                        type="button"
+                        className="btn-erp ghost xs"
+                        title="Enviar o boleto ao cliente por e-mail/WhatsApp"
+                        onClick={() => setEnviandoBoleto({ id: r.id, descricao: r.descricao })}
+                      >
+                        📤 Enviar
+                      </button>
                       {r.canSettle && (
                         <button
                           type="button"
@@ -1056,6 +1067,16 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
           classificacoes={classificacoes}
           onSuccess={handleNewSuccess}
           onClose={() => setShowNewForm(false)}
+        />
+      )}
+
+      {/* Modal de envio do boleto ao cliente (e-mail/WhatsApp) */}
+      {enviandoBoleto && (
+        <EnviarDocumentoModal
+          titulo="Enviar boleto ao cliente"
+          descricao={`${enviandoBoleto.descricao}. O PDF do boleto e a linha digitável (copia e cola) vão na mensagem.`}
+          endpoint={`/api/erp/financeiro/contas-receber/${enviandoBoleto.id}/boleto/enviar`}
+          onClose={() => setEnviandoBoleto(null)}
         />
       )}
     </>
