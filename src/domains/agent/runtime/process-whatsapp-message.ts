@@ -3,7 +3,7 @@ import type { TenantScope } from "@/lib/auth/dev-session";
 import type { AgentRole } from "../types";
 import { runAgentTurn } from "./run-agent-turn";
 import type { ToolChatMessage } from "@/domains/ai/openrouter-service";
-import { getWhatsappRuntime, sendWhatsappText } from "@/lib/whatsapp/zapi-client";
+import { getWhatsappRuntime, sendWhatsappText } from "@/lib/whatsapp/whatsapp-service";
 
 /**
  * Processa uma mensagem recebida do WhatsApp (Z-API):

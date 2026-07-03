@@ -4,7 +4,7 @@ import { useState } from "react";
 
 type Resultado = {
   email?: { ok: boolean; error?: string; destinatario?: string };
-  whatsapp?: { ok: boolean; error?: string; destinatario?: string };
+  whatsapp?: { ok: boolean; error?: string; aviso?: string; destinatario?: string };
   error?: string;
 };
 
@@ -94,6 +94,9 @@ export function EnviarDocumentoModal({
                   {resultado.whatsapp.ok
                     ? `✅ WhatsApp enviado para ${resultado.whatsapp.destinatario}.`
                     : `❌ WhatsApp: ${resultado.whatsapp.error}`}
+                  {resultado.whatsapp.ok && resultado.whatsapp.aviso && (
+                    <div style={{ marginTop: 4 }}>⚠ {resultado.whatsapp.aviso}</div>
+                  )}
                 </div>
               )}
               {resultado.email && (

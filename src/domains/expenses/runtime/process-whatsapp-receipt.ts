@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db/prisma";
-import { getWhatsappRuntime, sendWhatsappText } from "@/lib/whatsapp/zapi-client";
+import { getWhatsappRuntime, sendWhatsappText } from "@/lib/whatsapp/whatsapp-service";
 import { criarGastoDeCupom } from "@/domains/expenses/application/gasto-use-cases";
 
 /** Baixa a mídia do WhatsApp (Z-API) e converte em data URL base64 (cap 6MB). */

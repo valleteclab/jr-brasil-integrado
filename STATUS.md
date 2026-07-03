@@ -480,3 +480,12 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - ROTAS: POST /api/erp/orcamentos/[id]/enviar, /api/erp/financeiro/contas-receber/[id]/boleto/enviar, /api/erp/fiscal/[id]/enviar.
 - UI: modal compartilhado `EnviarDocumentoModal` (escolha de canais, override de destinatario, resultado por canal) + botoes "Enviar" em QuotesList, FinanceManager (aba receber, boleto emitido) e NotaFiscalRowActions (usado tambem no detalhe da venda).
 - Validacao: `prisma generate`, `tsc --noEmit` e `next lint` ok.
+
+## Atualizacao operacional - 2026-07-03 - provedor Zernio (API oficial Meta/WABA) no WhatsApp
+
+- PROVEDOR PLUGAVEL: ConfiguracaoWhatsapp.provedor agora aceita ZAPI (nao oficial, atual) ou ZERNIO (camada sobre a API OFICIAL da Meta/WABA — docs.zernio.com). Escolha na tela Configuracoes -> WhatsApp; campos condicionais por provedor. Migration `20260703230000_whatsapp_provedor_zernio` (PENDENTE) adiciona o valor do enum + zernioAccountId/zernioTemplateNome/zernioTemplateIdioma (a API key sk_... reusa tokenCripto).
+- ARQUITETURA: novo `src/lib/whatsapp/whatsapp-service.ts` (getWhatsappRuntime/saveWhatsappConfig/sendWhatsappText/sendWhatsappDocument — dispatcher por provedor); `zapi-client.ts` virou transporte puro Z-API (sendZapiText/sendZapiDocument); novo `zernio-client.ts` (abrir conversa com TEMPLATE via POST /inbox/conversations, mensagem livre/PDF multipart via POST /inbox/conversations/{id}/messages, listagem de contas e templates). Call sites (agente, gastos, envio de documentos, rota de config) importam do service.
+- REGRA DA META (respeitada, nao burlada): conversa iniciada pela empresa exige TEMPLATE aprovado — o texto do ERP vai como parametro {{1}} do template (sanitizado: sem quebras de linha, limite de tamanho); o PDF e tentado na conversa em seguida e, fora da janela de 24h, o envio retorna `aviso` (o cliente recebeu as informacoes; o PDF pode ser reenviado quando ele responder). O modal de envio exibe o aviso.
+- SETUP: rota GET /api/erp/configuracoes/whatsapp/zernio lista contas WhatsApp conectadas e templates aprovados da WABA (usa a key salva) — a tela preenche selects sem digitacao manual.
+- LIMITES v1: o AGENTE de atendimento (webhook de recebimento) continua funcionando apenas com Z-API; webhook de recebimento da Zernio e evolucao futura. Requisitos para usar ZERNIO: conta Zernio + WABA conectada + template UTILITY aprovado com corpo {{1}}.
+- Validacao: `prisma generate`, `tsc --noEmit` e `next lint` ok.

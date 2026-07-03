@@ -283,6 +283,9 @@ enum MensagemPapel {
 
 enum ProvedorWhatsapp {
   ZAPI
+  /// Zernio (camada sobre a API OFICIAL da Meta / WABA): conversa iniciada pela empresa exige
+  /// template aprovado; mensagem livre e PDF só na janela de 24h após resposta do cliente.
+  ZERNIO
 }
 
 model Tenant {
@@ -2871,11 +2874,18 @@ model ConfiguracaoWhatsapp {
   empresa           Empresa          @relation(fields: [empresaId], references: [id])
   provedor          ProvedorWhatsapp @default(ZAPI)
   ativo             Boolean          @default(false)
+  // Z-API: instanceId + tokenCripto + clientTokenCripto.
+  // ZERNIO: tokenCripto guarda a API key (sk_...); os campos zernio* completam a config.
   instanceId        String?
   tokenCripto       String?
   clientTokenCripto String?
   webhookSecret     String?
   atenderClientes   Boolean          @default(true)
+  /// Zernio: ID da conta WhatsApp (WABA) conectada na Zernio (accounts._id).
+  zernioAccountId      String?
+  /// Zernio: template APROVADO na Meta usado para iniciar conversa (corpo com {{1}} = mensagem).
+  zernioTemplateNome   String?
+  zernioTemplateIdioma String?
   criadoEm          DateTime         @default(now())
   atualizadoEm      DateTime         @updatedAt
 
