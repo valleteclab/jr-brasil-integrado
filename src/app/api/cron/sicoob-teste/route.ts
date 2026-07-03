@@ -23,7 +23,7 @@ function autorizado(request: Request): boolean {
 export async function POST(request: Request) {
   if (!autorizado(request)) return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
   try {
-    const body = (await request.json()) as { empresa?: string; conta?: string; contaCorrente?: string; testarEscopos?: string[] };
+    const body = (await request.json()) as { empresa?: string; conta?: string; contaCorrente?: string; testarEscopos?: string[]; consultarBoleto?: string };
     const cnpj = (body.empresa ?? "").replace(/\D+/g, "");
     const empresa = await prisma.empresa.findFirst({
       where: cnpj.length === 14 ? { cnpj } : { razaoSocial: { contains: body.empresa ?? "", mode: "insensitive" } }
@@ -46,6 +46,17 @@ export async function POST(request: Request) {
     if (!numeroConta) throw new BoletoError("Informe contaCorrente no body ou preencha o campo na conta.");
 
     const auth = await authDaConta(scope, conta);
+
+    // Reproduz a consulta do "Consultar pgto": GET do boleto pelo nosso número (resposta bruta).
+    if (body.consultarBoleto) {
+      const { consultarBoleto } = await import("@/domains/finance/providers/sicoob-cobranca");
+      const r = await consultarBoleto(auth, {
+        numeroCliente: conta.sicoobNumeroCliente as number,
+        codigoModalidade: conta.sicoobModalidade,
+        nossoNumero: body.consultarBoleto
+      });
+      return NextResponse.json({ situacao: r.situacao, valorPago: r.valorPago, dataPagamento: r.dataPagamento, bruto: r.bruto });
+    }
 
     // BISSECÇÃO de escopos: testa cada conjunto informado e devolve quais o credenciamento aceita.
     if (body.testarEscopos?.length) {
