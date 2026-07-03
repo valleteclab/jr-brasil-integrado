@@ -159,7 +159,7 @@ export async function listFormasPagamentoAtivas(scope: TenantScope) {
   return prisma.formaPagamento.findMany({
     where: { tenantId: scope.tenantId, empresaId: scope.empresaId, ativo: true },
     orderBy: [{ ordem: "asc" }, { nome: "asc" }],
-    select: { id: true, nome: true, tipo: true }
+    select: { id: true, nome: true, tipo: true, contaBancariaId: true }
   });
 }
 

@@ -119,6 +119,8 @@ type FiscalEntryInstallmentInput = {
   dueDate?: string | null;
   value?: number;
   paymentMethod?: string | null;
+  /** Conta financeira do cadastro (banco/caixa/cartão) por onde a parcela será paga. */
+  contaBancariaId?: string | null;
 };
 
 function buildFiscalEntryDraft(entrada: FiscalEntryDraftSource) {
@@ -259,6 +261,7 @@ function normalizeInstallments(input: FiscalEntryInstallmentInput[] | undefined,
       dueDate: installment.dueDate ? new Date(`${installment.dueDate.slice(0, 10)}T12:00:00.000Z`) : null,
       value: Number(installment.value ?? 0),
       paymentMethod: installment.paymentMethod?.trim() || null,
+      contaBancariaId: installment.contaBancariaId?.trim() || null,
       origin: installment.paymentMethod === "Conforme XML" ? "XML" : "MANUAL"
     }))
     .filter((installment) => installment.value > 0);
@@ -284,6 +287,7 @@ function normalizeInstallments(input: FiscalEntryInstallmentInput[] | undefined,
     dueDate: installment.dueDate as Date,
     value: installment.value,
     paymentMethod: installment.paymentMethod,
+    contaBancariaId: installment.contaBancariaId,
     origin: installment.origin
   }));
 }
@@ -882,9 +886,24 @@ export async function processFiscalEntry(
           number: parcela.numero,
           dueDate: parcela.vencimento.toISOString(),
           value: Number(parcela.valor),
-          paymentMethod: parcela.formaPagamento
+          paymentMethod: parcela.formaPagamento,
+          contaBancariaId: parcela.contaBancariaId
         }));
     const normalizedInstallments = normalizeInstallments(installmentInput, Number(entrada.totalNota));
+
+    // Valida as contas financeiras informadas (multi-tenant: só contas da própria empresa).
+    const contasInformadas = Array.from(new Set(normalizedInstallments.map((i) => i.contaBancariaId).filter((id): id is string => Boolean(id))));
+    if (contasInformadas.length) {
+      const contasValidas = await tx.contaBancaria.findMany({
+        where: { tenantId: scope.tenantId, empresaId: scope.empresaId, id: { in: contasInformadas } },
+        select: { id: true }
+      });
+      const validas = new Set(contasValidas.map((c) => c.id));
+      const invalida = contasInformadas.find((id) => !validas.has(id));
+      if (invalida) {
+        throw new Error("Conta financeira informada em uma das parcelas não pertence a esta empresa.");
+      }
+    }
 
     await tx.entradaFiscalParcela.deleteMany({
       where: {
@@ -906,6 +925,7 @@ export async function processFiscalEntry(
           vencimento: installment.dueDate,
           valor: installment.value,
           formaPagamento: installment.paymentMethod,
+          contaBancariaId: installment.contaBancariaId,
           origem: installment.origin
         }
       });
@@ -1255,6 +1275,7 @@ export async function processFiscalEntry(
           descricao: `NF-e ${entrada.numero || entrada.chaveAcesso || entrada.id} - parcela ${parcela.numero}`,
           numeroDocumento: entrada.numero,
           formaPagamento: parcela.formaPagamento,
+          contaBancariaId: parcela.contaBancariaId,
           origem: "ENTRADA_FISCAL",
           vencimento: parcela.vencimento,
           valor: parcela.valor,

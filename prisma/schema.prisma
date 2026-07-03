@@ -1544,6 +1544,8 @@ model EntradaFiscalParcela {
   vencimento      DateTime
   valor           Decimal       @db.Decimal(14, 2)
   formaPagamento  String?
+  /// Conta financeira do cadastro (banco/caixa/cartão) escolhida no lançamento — vai p/ ContaPagar.
+  contaBancariaId String?
   origem          String        @default("XML")
   criadoEm        DateTime      @default(now())
   atualizadoEm    DateTime      @updatedAt

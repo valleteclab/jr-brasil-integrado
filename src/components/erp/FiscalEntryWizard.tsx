@@ -168,13 +168,18 @@ type Installment = {
   dueDate: string;
   amount: number;
   paymentMethod: string;
+  /** Conta financeira do cadastro (banco/caixa/cartão) por onde a parcela será paga. */
+  contaBancariaId: string;
 };
 
-type FormaPagamentoOption = { id: string; nome: string };
+type FormaPagamentoOption = { id: string; nome: string; tipo?: string; contaBancariaId?: string | null };
+type ContaFinanceiraOption = { id: string; nome: string; tipo: string; banco?: string | null };
 
 type FiscalEntryWizardProps = {
   products: ProductPickerOption[];
   formasPagamento?: FormaPagamentoOption[];
+  /** Contas financeiras do cadastro (CAIXA/CORRENTE/POUPANCA/CARTAO) para o pagamento das parcelas. */
+  contas?: ContaFinanceiraOption[];
   cfopsEntrada?: { codigo: string; descricao: string }[];
   initialDraft?: FiscalDraft | null;
   /** Margens (%) padrão da empresa para sugerir preços à vista/a prazo dos novos SKUs. */
@@ -300,7 +305,8 @@ function installmentsFromDraft(draft: FiscalDraft): Installment[] {
       label: installment.number || String(index + 1),
       dueDate: installment.dueDate?.slice(0, 10) || today,
       amount: installment.value,
-      paymentMethod: "Conforme XML"
+      paymentMethod: "Conforme XML",
+      contaBancariaId: ""
     }));
   }
 
@@ -309,11 +315,105 @@ function installmentsFromDraft(draft: FiscalDraft): Installment[] {
     label: "1/1",
     dueDate: today,
     amount: draft.totals?.invoice ?? 0,
-    paymentMethod: "Informar"
+    paymentMethod: "Informar",
+    contaBancariaId: ""
   }];
 }
 
-export function FiscalEntryWizard({ initialDraft = null, products, formasPagamento = [], cfopsEntrada = [], margensPadrao }: FiscalEntryWizardProps) {
+/** Normaliza texto para busca: minúsculas e sem acentos. */
+function normalizarBusca(texto: string) {
+  return texto.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+}
+
+/**
+ * Seletor de produto com BUSCA (código/SKU, nome — qualquer termo, sem acento): substitui o
+ * select simples do vínculo, inviável com centenas de produtos.
+ */
+function ProductSearchSelect({
+  products,
+  value,
+  onChange
+}: {
+  products: ProductPickerOption[];
+  value: string;
+  onChange: (productId: string) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const selecionado = useMemo(() => products.find((p) => p.id === value) ?? null, [products, value]);
+
+  const resultados = useMemo(() => {
+    const q = normalizarBusca(query.trim());
+    if (!q) return products.slice(0, 30);
+    const termos = q.split(/\s+/);
+    return products
+      .filter((p) => {
+        const alvo = normalizarBusca(`${p.sku} ${p.name}`);
+        return termos.every((t) => alvo.includes(t));
+      })
+      .slice(0, 30);
+  }, [products, query]);
+
+  return (
+    <div style={{ position: "relative" }}>
+      <input
+        placeholder={selecionado ? `${selecionado.sku} · ${selecionado.name}` : "Buscar por código ou nome..."}
+        value={open ? query : selecionado ? `${selecionado.sku} · ${selecionado.name}` : ""}
+        onFocus={() => {
+          setQuery("");
+          setOpen(true);
+        }}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        onChange={(event) => setQuery(event.target.value)}
+      />
+      {open && (
+        <div
+          style={{
+            position: "absolute",
+            zIndex: 30,
+            top: "100%",
+            left: 0,
+            right: 0,
+            maxHeight: 240,
+            overflowY: "auto",
+            background: "#fff",
+            border: "1px solid #d0d5dd",
+            borderRadius: 8,
+            boxShadow: "0 8px 24px rgba(16,24,40,.12)"
+          }}
+        >
+          {resultados.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              onMouseDown={(event) => {
+                event.preventDefault();
+                onChange(p.id);
+                setOpen(false);
+              }}
+              style={{
+                display: "block",
+                width: "100%",
+                textAlign: "left",
+                padding: "8px 10px",
+                background: p.id === value ? "#f2f6ff" : "transparent",
+                border: "none",
+                borderBottom: "1px solid #f1f3f5",
+                cursor: "pointer",
+                fontSize: 13
+              }}
+            >
+              <strong style={{ fontFamily: "monospace" }}>{p.sku}</strong> · {p.name}
+            </button>
+          ))}
+          {!resultados.length && <div style={{ padding: "10px 12px", fontSize: 13, color: "#667085" }}>Nenhum produto encontrado.</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function FiscalEntryWizard({ initialDraft = null, products, formasPagamento = [], contas = [], cfopsEntrada = [], margensPadrao }: FiscalEntryWizardProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [step, setStep] = useState<WizardStep>(1);
   const [draft, setDraft] = useState<FiscalDraft | null>(initialDraft ? aplicarMargensPadraoAoDraft(initialDraft, margensPadrao) : null);
@@ -703,7 +803,8 @@ export function FiscalEntryWizard({ initialDraft = null, products, formasPagamen
             number: installment.label,
             dueDate: installment.dueDate,
             value: installment.amount,
-            paymentMethod: installment.paymentMethod
+            paymentMethod: installment.paymentMethod,
+            contaBancariaId: installment.contaBancariaId || null
           }))
         }),
         headers: { "Content-Type": "application/json" },
@@ -949,15 +1050,11 @@ export function FiscalEntryWizard({ initialDraft = null, products, formasPagamen
                         </button>
                       </div>
                       {item.action === "update" ? (
-                        <select
+                        <ProductSearchSelect
+                          products={products}
                           value={item.matchedProductId ?? ""}
-                          onChange={(event) => updateItem(item.id, { matchedProductId: event.target.value, review: false })}
-                        >
-                          <option value="">Selecione um produto</option>
-                          {products.map((product) => (
-                            <option key={product.id} value={product.id}>{product.sku} · {product.name}</option>
-                          ))}
-                        </select>
+                          onChange={(productId) => updateItem(item.id, { matchedProductId: productId, review: false })}
+                        />
                       ) : item.movimentaEstoque === false ? (
                         <div className="new-sku-box">
                           {item.finalidade === "IMOBILIZADO" ? "Bem do ativo imobilizado" : "Material de uso e consumo"}: lançado
@@ -1113,15 +1210,31 @@ export function FiscalEntryWizard({ initialDraft = null, products, formasPagamen
           </div>
           <h3>Parcelas / duplicatas</h3>
           <table className="erp-table fiscal-installments">
-            <thead><tr><th>Nº</th><th>Vencimento</th><th className="num">Valor</th><th>Forma de pagamento</th></tr></thead>
+            <thead><tr><th>Nº</th><th>Vencimento</th><th className="num">Valor</th><th>Forma de pagamento</th><th>Conta / cartão</th></tr></thead>
             <tbody>
-              {installments.map((installment) => (
+              {installments.map((installment) => {
+                const formaSelecionada = formasPagamento.find((f) => f.nome === installment.paymentMethod) ?? null;
+                // CARTÃO DE CRÉDITO paga pela fatura de um cartão do cadastro (conta tipo CARTAO);
+                // as demais formas movimentam caixa/banco (CAIXA/CORRENTE/POUPANCA).
+                const ehCartaoCredito = formaSelecionada?.tipo === "CARTAO_CREDITO";
+                const contasDaForma = contas.filter((c) => (ehCartaoCredito ? c.tipo === "CARTAO" : c.tipo !== "CARTAO"));
+                return (
                 <tr key={installment.id}>
                   <td>{installment.label}</td>
                   <td><input type="date" value={installment.dueDate} onChange={(event) => setInstallments((current) => current.map((row) => row.id === installment.id ? { ...row, dueDate: event.target.value } : row))} /></td>
                   <td className="num"><input value={installment.amount.toFixed(2)} onChange={(event) => setInstallments((current) => current.map((row) => row.id === installment.id ? { ...row, amount: Number(event.target.value.replace(",", ".")) || 0 } : row))} /></td>
                   <td>
-                    <select value={installment.paymentMethod} onChange={(event) => setInstallments((current) => current.map((row) => row.id === installment.id ? { ...row, paymentMethod: event.target.value } : row))}>
+                    <select
+                      value={installment.paymentMethod}
+                      onChange={(event) => {
+                        const nome = event.target.value;
+                        // Forma escolhida pré-seleciona a conta padrão vinculada no cadastro.
+                        const forma = formasPagamento.find((f) => f.nome === nome) ?? null;
+                        setInstallments((current) => current.map((row) => row.id === installment.id
+                          ? { ...row, paymentMethod: nome, contaBancariaId: forma?.contaBancariaId ?? "" }
+                          : row));
+                      }}
+                    >
                       <option value="Conforme XML">Conforme XML</option>
                       {formasPagamento.map((forma) => (
                         <option key={forma.id} value={forma.nome}>{forma.nome}</option>
@@ -1132,8 +1245,32 @@ export function FiscalEntryWizard({ initialDraft = null, products, formasPagamen
                       )}
                     </select>
                   </td>
+                  <td>
+                    {formaSelecionada ? (
+                      contasDaForma.length ? (
+                        <select
+                          value={installment.contaBancariaId}
+                          onChange={(event) => setInstallments((current) => current.map((row) => row.id === installment.id ? { ...row, contaBancariaId: event.target.value } : row))}
+                        >
+                          <option value="">{ehCartaoCredito ? "Qual cartão?" : "Qual conta?"}</option>
+                          {contasDaForma.map((conta) => (
+                            <option key={conta.id} value={conta.id}>{conta.nome}{conta.banco ? ` · ${conta.banco}` : ""}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <small className="block-muted">
+                          {ehCartaoCredito
+                            ? "Nenhum cartão cadastrado (Financeiro → Configurações → Contas, tipo Cartão)."
+                            : "Nenhuma conta cadastrada (Financeiro → Configurações → Contas)."}
+                        </small>
+                      )
+                    ) : (
+                      <small className="block-muted">—</small>
+                    )}
+                  </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -1154,7 +1291,7 @@ export function FiscalEntryWizard({ initialDraft = null, products, formasPagamen
           </div>
           <h3>Impacto no estoque</h3>
           <table className="erp-table">
-            <thead><tr><th>SKU</th><th>Operação</th><th className="num">Qtd.</th><th className="num">Custo</th></tr></thead>
+            <thead><tr><th>SKU</th><th>Produto</th><th>Operação</th><th className="num">Qtd.</th><th className="num">Custo</th></tr></thead>
             <tbody>
               {draft.items.map((item) => {
                 const fator = item.fatorConversao && item.fatorConversao > 0 ? item.fatorConversao : 1;
@@ -1162,9 +1299,16 @@ export function FiscalEntryWizard({ initialDraft = null, products, formasPagamen
                 const unVenda = item.unidadeVenda?.trim() || (fator > 1 ? "UN" : item.importedProduct.unit);
                 const qtdVenda = item.importedProduct.availableStock * fator;
                 const custoUn = currencyToNumber(item.importedProduct.costValue) / fator;
+                const produtoVinculado = item.action === "update" ? productsById.get(item.matchedProductId || "") : null;
                 return (
                 <tr key={item.id}>
-                  <td className="mono bold">{item.action === "create" ? item.importedProduct.sku : productsById.get(item.matchedProductId || "")?.sku ?? item.importedProduct.sku}</td>
+                  <td className="mono bold">{item.action === "create" ? item.importedProduct.sku : produtoVinculado?.sku ?? item.importedProduct.sku}</td>
+                  <td>
+                    {produtoVinculado?.name ?? item.importedProduct.name}
+                    {produtoVinculado && produtoVinculado.name !== item.importedProduct.name && (
+                      <small className="block-muted">NF: {item.importedProduct.name}</small>
+                    )}
+                  </td>
                   <td><span className={item.action === "create" ? "status-badge warn" : "status-badge success"}>{item.action === "create" ? "Novo SKU + Entrada" : "Entrada"}</span></td>
                   <td className="num">
                     {movimenta ? `+${formatQty(qtdVenda)} ${unVenda}` : "—"}
