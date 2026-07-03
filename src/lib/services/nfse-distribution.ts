@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import type { AmbienteFiscal, Prisma } from "@prisma/client";
 import { carregarCertificado } from "@/domains/fiscal/application/certificado-use-cases";
+import { createAuditLog } from "@/lib/audit/audit-service";
 import { getFiscalRuntimeConfig } from "@/domains/fiscal/application/fiscal-config-use-cases";
 import { buildDanfse } from "@/domains/fiscal/providers/nacional/danfse";
 import { pfxTlsOptions } from "@/domains/fiscal/providers/pfx-utils";
@@ -187,7 +188,7 @@ export async function listNfseDistributionDocuments(scope: TenantScope, papel?: 
     select: {
       id: true, nsu: true, chaveAcesso: true, nNFSe: true, papel: true,
       emitenteNome: true, emitenteDocumento: true, tomadorNome: true, tomadorDocumento: true,
-      valor: true, dataEmissao: true, status: true, notaFiscalId: true
+      valor: true, dataEmissao: true, status: true, notaFiscalId: true, contaPagarId: true
     }
   });
   return docs.map((d) => ({
@@ -195,6 +196,100 @@ export async function listNfseDistributionDocuments(scope: TenantScope, papel?: 
     valor: Number(d.valor ?? 0),
     dataEmissao: d.dataEmissao?.toISOString() ?? null
   }));
+}
+
+export type ImportarNfseDespesaInput = {
+  vencimento?: string | null;
+  formaPagamento?: string | null;
+  contaBancariaId?: string | null;
+  classificacaoId?: string | null;
+  descricao?: string | null;
+};
+
+/**
+ * Importa uma NFS-e RECEBIDA (tomador) como DESPESA: gera a ContaPagar com forma de pagamento,
+ * conta/cartão do cadastro e classificação financeira (plano gerencial) escolhidos na tela.
+ * Vincula ao fornecedor pelo CNPJ do prestador quando já cadastrado. Idempotente por documento.
+ */
+export async function importarNfseComoDespesa(scope: TenantScope, docId: string, input: ImportarNfseDespesaInput) {
+  const doc = await prisma.distribuicaoNfseDocumento.findFirst({
+    where: { id: docId, tenantId: scope.tenantId, empresaId: scope.empresaId }
+  });
+  if (!doc) throw new Error("NFS-e não encontrada na distribuição.");
+  if (doc.papel !== "TOMADOR") throw new Error("Só NFS-e RECEBIDAS (tomador) viram despesa — esta foi emitida pela própria empresa.");
+  if (doc.contaPagarId) {
+    return { contaPagarId: doc.contaPagarId, alreadyImported: true };
+  }
+  const valor = Number(doc.valor ?? 0);
+  if (valor <= 0) throw new Error("NFS-e sem valor — não é possível lançar a despesa.");
+
+  const vencimento = input.vencimento
+    ? new Date(`${input.vencimento.slice(0, 10)}T12:00:00.000Z`)
+    : doc.dataEmissao ?? new Date();
+  if (Number.isNaN(vencimento.getTime())) throw new Error("Informe um vencimento válido.");
+
+  // Valida vínculos multi-tenant (conta financeira e classificação da própria empresa).
+  const contaBancariaId = input.contaBancariaId?.trim() || null;
+  if (contaBancariaId) {
+    const conta = await prisma.contaBancaria.findFirst({
+      where: { id: contaBancariaId, tenantId: scope.tenantId, empresaId: scope.empresaId },
+      select: { id: true }
+    });
+    if (!conta) throw new Error("Conta financeira informada não pertence a esta empresa.");
+  }
+  const classificacaoId = input.classificacaoId?.trim() || null;
+  if (classificacaoId) {
+    const classificacao = await prisma.classificacaoFinanceira.findFirst({
+      where: { id: classificacaoId, tenantId: scope.tenantId, empresaId: scope.empresaId },
+      select: { id: true }
+    });
+    if (!classificacao) throw new Error("Classificação financeira informada não pertence a esta empresa.");
+  }
+
+  // Fornecedor pelo CNPJ/CPF do prestador — vincula se já cadastrado (não cria automaticamente).
+  const prestadorDoc = onlyDigits(doc.emitenteDocumento);
+  const fornecedor = prestadorDoc
+    ? await prisma.fornecedor.findFirst({
+        where: { tenantId: scope.tenantId, empresaId: scope.empresaId, documento: prestadorDoc },
+        select: { id: true }
+      })
+    : null;
+
+  const descricao =
+    input.descricao?.trim() ||
+    `NFS-e ${doc.nNFSe || onlyDigits(doc.chaveAcesso) || doc.nsu} - ${doc.emitenteNome || "prestador não informado"}`;
+
+  return prisma.$transaction(async (tx) => {
+    const contaPagar = await tx.contaPagar.create({
+      data: {
+        tenantId: scope.tenantId,
+        empresaId: scope.empresaId,
+        ambiente: scope.ambiente ?? "HOMOLOGACAO",
+        fornecedorId: fornecedor?.id ?? null,
+        descricao,
+        numeroDocumento: doc.nNFSe || null,
+        formaPagamento: input.formaPagamento?.trim() || null,
+        contaBancariaId,
+        classificacaoId,
+        origem: "NFSE",
+        vencimento,
+        valor,
+        status: "ABERTO"
+      }
+    });
+    await tx.distribuicaoNfseDocumento.update({
+      where: { id: doc.id },
+      data: { contaPagarId: contaPagar.id, status: "IMPORTADO" }
+    });
+    await createAuditLog(tx, {
+      scope,
+      entidade: "DistribuicaoNfseDocumento",
+      entidadeId: doc.id,
+      acao: "NFSE_IMPORTADA_DESPESA",
+      payload: { contaPagarId: contaPagar.id, valor, prestador: doc.emitenteNome, classificacaoId }
+    });
+    return { contaPagarId: contaPagar.id, alreadyImported: false };
+  });
 }
 
 /**

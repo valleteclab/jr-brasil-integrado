@@ -6,6 +6,8 @@ import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
 import { listNfeDistributionDocuments } from "@/lib/services/nfe-distribution";
 import type { NfeDistributionSummary } from "@/lib/services/nfe-distribution";
 import { listNfseDistributionDocuments } from "@/lib/services/nfse-distribution";
+import { listContasFinanceiras, listFormasPagamentoAtivas } from "@/domains/finance/application/payment-config-use-cases";
+import { listClassificacoes } from "@/domains/finance/application/classificacao-use-cases";
 import { prisma } from "@/lib/db/prisma";
 
 export const dynamic = "force-dynamic";
@@ -17,21 +19,30 @@ export default async function FiscalEntriesPage({ searchParams }: { searchParams
   let nfseRecebidas: Awaited<ReturnType<typeof listNfseDistributionDocuments>> = [];
   let ultimaSync: string | null = null;
   let nfseSync: string | null = null;
+  let formasPagamento: { id: string; nome: string; tipo?: string; contaBancariaId?: string | null }[] = [];
+  let contas: { id: string; nome: string; tipo: string; banco?: string | null }[] = [];
+  let classificacoes: { id: string; nome: string; grupo: string }[] = [];
   let loadError = "";
 
   try {
     const scope = await getDevelopmentTenantScope();
-    const [e, r, nfse, cfg] = await Promise.all([
+    const [e, r, nfse, cfg, formas, contasFin, classifs] = await Promise.all([
       listFiscalEntrySummaries(),
       listNfeDistributionDocuments(scope),
       listNfseDistributionDocuments(scope, "TOMADOR"),
-      prisma.configuracaoFiscal.findUnique({ where: { empresaId: scope.empresaId }, select: { distribuicaoSyncEm: true, nfseDistSyncEm: true } })
+      prisma.configuracaoFiscal.findUnique({ where: { empresaId: scope.empresaId }, select: { distribuicaoSyncEm: true, nfseDistSyncEm: true } }),
+      listFormasPagamentoAtivas(scope),
+      listContasFinanceiras(scope),
+      listClassificacoes(scope)
     ]);
     entries = e;
     receivedDocuments = r;
     nfseRecebidas = nfse;
     ultimaSync = cfg?.distribuicaoSyncEm?.toISOString() ?? null;
     nfseSync = cfg?.nfseDistSyncEm?.toISOString() ?? null;
+    formasPagamento = formas;
+    contas = contasFin.filter((c) => c.ativo).map((c) => ({ id: c.id, nome: c.nome, tipo: c.tipo, banco: c.banco }));
+    classificacoes = classifs.filter((c) => c.ativo).map((c) => ({ id: c.id, nome: c.nome, grupo: c.grupo }));
   } catch (error) {
     loadError = error instanceof Error ? error.message : "Não foi possível carregar notas fiscais de entrada.";
   }
@@ -54,6 +65,9 @@ export default async function FiscalEntriesPage({ searchParams }: { searchParams
         nfseRecebidas={nfseRecebidas}
         nfseSync={nfseSync}
         lancada={lancada}
+        formasPagamento={formasPagamento}
+        contas={contas}
+        classificacoes={classificacoes}
       />
     </>
   );

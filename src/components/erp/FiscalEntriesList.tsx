@@ -5,6 +5,12 @@ import { Button } from "@/components/shared/Button";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import type { FiscalEntrySummary } from "@/lib/services/fiscal-entries";
 import type { NfeDistributionSummary } from "@/lib/services/nfe-distribution";
+import {
+  NfseDespesaModal,
+  type ClassificacaoOpt,
+  type ContaFinanceiraOpt,
+  type FormaPagamentoOpt
+} from "@/components/erp/NfseDespesaModal";
 
 type NfseRecebidaDoc = {
   id: string;
@@ -14,6 +20,7 @@ type NfseRecebidaDoc = {
   emitenteDocumento: string | null;
   valor: number;
   dataEmissao: string | null;
+  contaPagarId?: string | null;
 };
 
 type FiscalEntriesListProps = {
@@ -23,6 +30,9 @@ type FiscalEntriesListProps = {
   nfseRecebidas?: NfseRecebidaDoc[];
   nfseSync?: string | null;
   lancada?: string | null;
+  formasPagamento?: FormaPagamentoOpt[];
+  contas?: ContaFinanceiraOpt[];
+  classificacoes?: ClassificacaoOpt[];
 };
 
 type Tab = "compra" | "recebidas" | "nfse";
@@ -93,8 +103,10 @@ const IMPORT_STEPS = [
   "Abrindo a tela de lançamento…"
 ];
 
-export function FiscalEntriesList({ entries, receivedDocuments, ultimaSync, nfseRecebidas = [], nfseSync, lancada }: FiscalEntriesListProps) {
+export function FiscalEntriesList({ entries, receivedDocuments, ultimaSync, nfseRecebidas = [], nfseSync, lancada, formasPagamento = [], contas = [], classificacoes = [] }: FiscalEntriesListProps) {
   const [rows, setRows] = useState(entries);
+  const [nfseRows, setNfseRows] = useState(nfseRecebidas);
+  const [despesaAlvo, setDespesaAlvo] = useState<NfseRecebidaDoc | null>(null);
   const [avisoLancada, setAvisoLancada] = useState<string | null>(lancada ?? null);
   const [syncEm, setSyncEm] = useState<string | null>(ultimaSync ?? null);
   const [receivedRows, setReceivedRows] = useState(receivedDocuments);
@@ -196,7 +208,7 @@ export function FiscalEntriesList({ entries, receivedDocuments, ultimaSync, nfse
 
   const filteredNfse = useMemo(() => {
     const { de, ate } = intervaloPeriodo(periodo, dataDe, dataAte);
-    return nfseRecebidas
+    return nfseRows
       .filter((d) => {
         if (de === null && ate === null) return true;
         const t = d.dataEmissao ? new Date(d.dataEmissao).getTime() : null;
@@ -210,7 +222,7 @@ export function FiscalEntriesList({ entries, receivedDocuments, ultimaSync, nfse
         const tb = b.dataEmissao ? new Date(b.dataEmissao).getTime() : 0;
         return tb - ta;
       });
-  }, [nfseRecebidas, periodo, dataDe, dataAte]);
+  }, [nfseRows, periodo, dataDe, dataAte]);
 
   const registeredCount = rows.filter((entry) => entry.status === "Registrada").length;
   const filteredIds = filteredEntries.map((entry) => entry.id);
@@ -762,6 +774,9 @@ export function FiscalEntriesList({ entries, receivedDocuments, ultimaSync, nfse
                   <td className="actions">
                     <a className="btn-erp ghost xs" href={`/api/erp/nfse-recebidas/${d.id}/pdf`} target="_blank" rel="noopener noreferrer">DANFSE</a>
                     <a className="btn-erp ghost xs" href={`/api/erp/nfse-recebidas/${d.id}/xml`}>XML</a>
+                    {d.contaPagarId
+                      ? <span className="status-badge success" style={{ fontSize: 11 }}>Despesa lançada</span>
+                      : <button type="button" className="btn-erp primary xs" onClick={() => setDespesaAlvo(d)}>Lançar despesa</button>}
                   </td>
                 </tr>
               ))}
@@ -900,6 +915,21 @@ export function FiscalEntriesList({ entries, receivedDocuments, ultimaSync, nfse
         </div>
           </div>
         </>
+      )}
+
+      {despesaAlvo && (
+        <NfseDespesaModal
+          doc={despesaAlvo}
+          formasPagamento={formasPagamento}
+          contas={contas}
+          classificacoes={classificacoes}
+          onClose={() => setDespesaAlvo(null)}
+          onDone={(docId, contaPagarId) => {
+            setNfseRows((current) => current.map((row) => (row.id === docId ? { ...row, contaPagarId } : row)));
+            setDespesaAlvo(null);
+            setMessage("Despesa da NFS-e lançada no contas a pagar.");
+          }}
+        />
       )}
     </section>
   );

@@ -2,6 +2,12 @@
 
 import { useMemo, useState } from "react";
 import { Button } from "@/components/shared/Button";
+import {
+  NfseDespesaModal,
+  type ClassificacaoOpt,
+  type ContaFinanceiraOpt,
+  type FormaPagamentoOpt
+} from "@/components/erp/NfseDespesaModal";
 
 type NfseDoc = {
   id: string;
@@ -17,9 +23,16 @@ type NfseDoc = {
   dataEmissao: string | null;
   status: string;
   notaFiscalId: string | null;
+  contaPagarId?: string | null;
 };
 
-type Props = { documents: NfseDoc[]; ultimaSync?: string | null };
+type Props = {
+  documents: NfseDoc[];
+  ultimaSync?: string | null;
+  formasPagamento?: FormaPagamentoOpt[];
+  contas?: ContaFinanceiraOpt[];
+  classificacoes?: ClassificacaoOpt[];
+};
 
 const PAPEIS = [
   { valor: "TODAS", label: "Todas" },
@@ -29,13 +42,14 @@ const PAPEIS = [
 
 const brl = (v: number) => new Intl.NumberFormat("pt-BR", { currency: "BRL", style: "currency" }).format(v);
 
-export function NfseDistribuicaoList({ documents, ultimaSync }: Props) {
+export function NfseDistribuicaoList({ documents, ultimaSync, formasPagamento = [], contas = [], classificacoes = [] }: Props) {
   const [rows, setRows] = useState(documents);
   const [syncEm, setSyncEm] = useState<string | null>(ultimaSync ?? null);
   const [papel, setPapel] = useState<(typeof PAPEIS)[number]["valor"]>("PRESTADOR");
   const [syncing, setSyncing] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [despesaAlvo, setDespesaAlvo] = useState<NfseDoc | null>(null);
 
   const filtered = useMemo(
     () => (papel === "TODAS" ? rows : rows.filter((d) => d.papel === papel)),
@@ -127,6 +141,10 @@ export function NfseDistribuicaoList({ documents, ultimaSync }: Props) {
                 <td className="actions">
                   <a className="btn-erp ghost xs" href={`/api/erp/nfse-recebidas/${d.id}/pdf`} target="_blank" rel="noopener noreferrer">DANFSE</a>
                   <a className="btn-erp ghost xs" href={`/api/erp/nfse-recebidas/${d.id}/xml`}>XML</a>
+                  {d.papel === "TOMADOR" && (d.contaPagarId
+                    ? <span className="status-badge success" style={{ fontSize: 11 }}>Despesa lançada</span>
+                    : <button type="button" className="btn-erp primary xs" onClick={() => setDespesaAlvo(d)}>Lançar despesa</button>
+                  )}
                 </td>
               </tr>
             ))}
@@ -144,6 +162,21 @@ export function NfseDistribuicaoList({ documents, ultimaSync }: Props) {
           <strong>Total: {brl(filtered.reduce((t, d) => t + d.valor, 0))}</strong>
         </div>
       </div>
+
+      {despesaAlvo && (
+        <NfseDespesaModal
+          doc={despesaAlvo}
+          formasPagamento={formasPagamento}
+          contas={contas}
+          classificacoes={classificacoes}
+          onClose={() => setDespesaAlvo(null)}
+          onDone={(docId, contaPagarId) => {
+            setRows((current) => current.map((row) => (row.id === docId ? { ...row, contaPagarId, status: "IMPORTADO" } : row)));
+            setDespesaAlvo(null);
+            setMessage("Despesa lançada no contas a pagar.");
+          }}
+        />
+      )}
     </div>
   );
 }

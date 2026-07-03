@@ -1523,6 +1523,8 @@ model DistribuicaoNfseDocumento {
   valor             Decimal?       @db.Decimal(14, 2)
   dataEmissao       DateTime?
   notaFiscalId      String?
+  /// NFS-e recebida importada como despesa: id da ContaPagar gerada (idempotência do import).
+  contaPagarId      String?
   status            String         @default("RECEBIDO")
   payload           Json?
   criadoEm          DateTime       @default(now())
