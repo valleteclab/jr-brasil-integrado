@@ -23,7 +23,8 @@ export async function POST(request: Request) {
       descricao: body.descricao,
       fornecedorId: body.fornecedorId,
       valor: Number(body.valor),
-      vencimento: new Date(body.vencimento),
+      // Vencimento é DATA PURA: fixa ao meio-dia UTC para não voltar um dia em fusos negativos.
+      vencimento: new Date(`${String(body.vencimento).slice(0, 10)}T12:00:00.000Z`),
       formaPagamento: body.formaPagamento,
       numeroDocumento: body.numeroDocumento,
       observacoes: body.observacoes,

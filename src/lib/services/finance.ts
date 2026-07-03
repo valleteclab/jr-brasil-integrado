@@ -111,9 +111,18 @@ export type CashFlowData = {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const DATE_FMT = new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo" });
+// Campos de DATA PURA (vencimento): o dia salvo é o dia — formatar em UTC evita "voltar um dia"
+// para registros gravados à meia-noite UTC (ex.: vence 06 aparecia 05 no fuso de Brasília).
+const DATE_ONLY_FMT = new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" });
 
+/** Timestamps reais (movimentos, pagamentos "agora"): exibidos no fuso de Brasília. */
 function fmtDate(d: Date): string {
   return DATE_FMT.format(new Date(d));
+}
+
+/** Datas puras (vencimento): exibem o dia gravado, sem deslocamento de fuso. */
+function fmtDateOnly(d: Date): string {
+  return DATE_ONLY_FMT.format(new Date(d));
 }
 
 function round2(v: number): number {
@@ -209,7 +218,7 @@ export async function listPayables(filtroStatus?: string): Promise<PayableSummar
         ? (c.fornecedor.nomeFantasia ?? c.fornecedor.razaoSocial)
         : "—",
       numeroDocumento: c.numeroDocumento ?? "—",
-      vencimento: fmtDate(c.vencimento),
+      vencimento: fmtDateOnly(c.vencimento),
       vencimentoRaw: c.vencimento.toISOString(),
       valor: formatBrl(valor),
       valorPago: formatBrl(valorPago),
@@ -285,7 +294,7 @@ export async function listReceivables(filtroStatus?: string): Promise<Receivable
       descricao: c.descricao,
       parte: c.cliente.nomeFantasia ?? c.cliente.razaoSocial,
       numeroDocumento: c.numeroDocumento ?? "—",
-      vencimento: fmtDate(c.vencimento),
+      vencimento: fmtDateOnly(c.vencimento),
       vencimentoRaw: c.vencimento.toISOString(),
       valor: formatBrl(valor),
       valorPago: formatBrl(valorPago),
