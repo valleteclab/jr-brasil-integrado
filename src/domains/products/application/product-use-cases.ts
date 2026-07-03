@@ -70,17 +70,32 @@ async function skuExiste(
 }
 
 /**
+ * Gerador incremental de SKUs automáticos (PRD-NNNNNN) para criar VÁRIOS produtos na mesma
+ * transação (ex.: importação de NF-e) sem repetir a varredura do maior número a cada item.
+ */
+export async function criarGeradorSkuAutomatico(
+  tx: Prisma.TransactionClient,
+  scope: TenantScope
+): Promise<() => Promise<string>> {
+  let proximo = (await maiorNumeroAutoSku(tx, scope)) + 1;
+  return async () => {
+    let candidato = formatAutoSku(proximo);
+    while (await skuExiste(tx, scope, candidato)) {
+      proximo += 1;
+      candidato = formatAutoSku(proximo);
+    }
+    proximo += 1;
+    return candidato;
+  };
+}
+
+/**
  * Gera um SKU único no formato PRD-000001 dentro de uma transação.
  * Garante unicidade incrementando até achar um livre.
  */
 async function gerarSkuUnico(tx: Prisma.TransactionClient, scope: TenantScope): Promise<string> {
-  let proximo = (await maiorNumeroAutoSku(tx, scope)) + 1;
-  let candidato = formatAutoSku(proximo);
-  while (await skuExiste(tx, scope, candidato)) {
-    proximo += 1;
-    candidato = formatAutoSku(proximo);
-  }
-  return candidato;
+  const proximoSku = await criarGeradorSkuAutomatico(tx, scope);
+  return proximoSku();
 }
 
 /**
@@ -236,7 +251,10 @@ function productData(input: ValidatedProductInput, categoriaId: string, marcaId:
     ultimoCusto: input.lastCost,
     custoMedio: input.costValue,
     precoVenda: input.salePrice,
+    precoVendaPrazo: input.termPrice,
     precoMinimo: input.minimumPrice,
+    margemVistaPercentual: input.cashMarginPercent,
+    margemPrazoPercentual: input.termMarginPercent,
     permiteEstoqueNegativo: input.allowNegativeStock,
     permiteVendaSobEncomenda: input.allowBackorder,
     ativoCompra: true,
@@ -396,6 +414,59 @@ async function replaceProductAplicacoes(
   }
 }
 
+/**
+ * Memoriza o código do produto NO fornecedor (ProdutoFornecedor) a partir do cadastro.
+ * O fornecedor é localizado pelo nome (razão social ou fantasia) entre os já cadastrados —
+ * o cadastro de produto não cria fornecedor (não há CNPJ ali). Com o vínculo gravado, a
+ * importação de XML passa a vincular o item automaticamente pelo código do fornecedor.
+ */
+async function upsertProdutoFornecedorDoCadastro(
+  tx: Prisma.TransactionClient,
+  scope: TenantScope,
+  productId: string,
+  input: ValidatedProductInput
+) {
+  const nome = input.supplierName?.trim();
+  const codigo = input.supplierCode?.trim();
+  if (!nome || !codigo) return;
+
+  const fornecedor = await tx.fornecedor.findFirst({
+    where: {
+      ...scopedByTenantCompany(scope),
+      OR: [
+        { razaoSocial: { equals: nome, mode: "insensitive" } },
+        { nomeFantasia: { equals: nome, mode: "insensitive" } }
+      ]
+    },
+    select: { id: true }
+  });
+  if (!fornecedor) return;
+
+  await tx.produtoFornecedor.upsert({
+    where: {
+      tenantId_empresaId_fornecedorId_codigoFornecedor: {
+        tenantId: scope.tenantId,
+        empresaId: scope.empresaId,
+        fornecedorId: fornecedor.id,
+        codigoFornecedor: codigo
+      }
+    },
+    update: { produtoId: productId, ativo: true },
+    create: {
+      tenantId: scope.tenantId,
+      empresaId: scope.empresaId,
+      produtoId: productId,
+      fornecedorId: fornecedor.id,
+      codigoFornecedor: codigo,
+      descricaoFornecedor: input.name,
+      gtinFornecedor: input.barcode ?? null,
+      unidadeCompra: input.purchaseUnit,
+      fatorConversao: input.purchaseConversion,
+      principal: true
+    }
+  });
+}
+
 // Garante a imagem principal do produto (ex.: vinda do catálogo Cosmos) sem duplicar nem apagar
 // as imagens já existentes da galeria. Se a URL já está cadastrada, não faz nada.
 async function ensureProductImagem(
@@ -460,6 +531,7 @@ export async function createProduct(scope: TenantScope, payload: ProductPayload)
     await upsertInitialStock(tx, scope, product.id, deposito.id, input, { isCreate: true });
     await replaceProductAplicacoes(tx, scope, product.id, input.aplicacoes, { isCreate: true });
     await ensureProductImagem(tx, scope, product.id, input.imageUrl, { isCreate: true });
+    await upsertProdutoFornecedorDoCadastro(tx, scope, product.id, input);
     await createAuditLog(tx, {
       scope,
       entidade: "Produto",
@@ -510,6 +582,7 @@ export async function updateProduct(scope: TenantScope, productId: string, paylo
     await upsertInitialStock(tx, scope, product.id, deposito.id, input);
     await replaceProductAplicacoes(tx, scope, product.id, input.aplicacoes);
     await ensureProductImagem(tx, scope, product.id, input.imageUrl);
+    await upsertProdutoFornecedorDoCadastro(tx, scope, product.id, input);
     await createAuditLog(tx, {
       scope,
       entidade: "Produto",

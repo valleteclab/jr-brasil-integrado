@@ -23,7 +23,13 @@ type FiscalDraftItem = {
   action: "create" | "update";
   confidence: number;
   review: boolean;
+  /** Preço de venda À VISTA do novo SKU. */
   salePrice?: string;
+  /** Preço de venda A PRAZO do novo SKU (opcional; sem ele vale o à vista). */
+  salePriceTerm?: string;
+  /** Margens (%) sobre o custo digitadas na conferência — só para calcular os preços na tela. */
+  marginCash?: string;
+  marginTerm?: string;
   minimumPrice?: string;
   brand?: string;
   /** Conversão de embalagem: unidades de venda por unidade de compra (1 CX = 12 UN ⇒ 12). */
@@ -171,6 +177,8 @@ type FiscalEntryWizardProps = {
   formasPagamento?: FormaPagamentoOption[];
   cfopsEntrada?: { codigo: string; descricao: string }[];
   initialDraft?: FiscalDraft | null;
+  /** Margens (%) padrão da empresa para sugerir preços à vista/a prazo dos novos SKUs. */
+  margensPadrao?: { vista: number | null; prazo: number | null };
 };
 
 const today = new Date().toISOString().slice(0, 10);
@@ -236,6 +244,55 @@ function decimalInputToNumber(value?: string) {
   return Number(value.replace(/[^\d,.-]/g, "").replace(/\./g, "").replace(",", ".")) || 0;
 }
 
+/** Custo unitário do item na unidade de VENDA (valor do XML ÷ fator de conversão de embalagem). */
+function custoUnitarioVenda(item: FiscalDraftItem) {
+  const fator = item.fatorConversao && item.fatorConversao > 0 ? item.fatorConversao : 1;
+  return currencyToNumber(item.importedProduct.costValue) / fator;
+}
+
+/** Preço formado por margem sobre o custo: custo × (1 + margem/100), arredondado a centavos. */
+function precoPorMargem(custo: number, margemPct: number) {
+  return Math.round((custo * (1 + margemPct / 100) + Number.EPSILON) * 100) / 100;
+}
+
+function numberToDecimalInput(value: number) {
+  return value.toFixed(2).replace(".", ",");
+}
+
+type MargensPadrao = { vista: number | null; prazo: number | null };
+
+/**
+ * Sugestão de preços do novo SKU pelas margens padrão da empresa (custo × (1 + margem/100)).
+ * Só preenche o que está vazio — nunca sobrescreve preço já digitado/salvo na conferência.
+ */
+function comPrecosSugeridos(item: FiscalDraftItem, margensPadrao?: MargensPadrao): Partial<FiscalDraftItem> {
+  const custo = custoUnitarioVenda(item);
+  const changes: Partial<FiscalDraftItem> = {};
+  if (custo <= 0 || item.movimentaEstoque === false) {
+    return changes;
+  }
+  if (margensPadrao?.vista && decimalInputToNumber(item.salePrice) <= 0) {
+    changes.marginCash = numberToDecimalInput(margensPadrao.vista);
+    changes.salePrice = numberToDecimalInput(precoPorMargem(custo, margensPadrao.vista));
+  }
+  if (margensPadrao?.prazo && decimalInputToNumber(item.salePriceTerm) <= 0) {
+    changes.marginTerm = numberToDecimalInput(margensPadrao.prazo);
+    changes.salePriceTerm = numberToDecimalInput(precoPorMargem(custo, margensPadrao.prazo));
+  }
+  return changes;
+}
+
+/** Preenche os preços sugeridos nos itens que JÁ chegam marcados para criar novo SKU. */
+function aplicarMargensPadraoAoDraft(draft: FiscalDraft, margensPadrao?: MargensPadrao): FiscalDraft {
+  if (!margensPadrao?.vista && !margensPadrao?.prazo) {
+    return draft;
+  }
+  return {
+    ...draft,
+    items: draft.items.map((item) => (item.action === "create" ? { ...item, ...comPrecosSugeridos(item, margensPadrao) } : item))
+  };
+}
+
 function installmentsFromDraft(draft: FiscalDraft): Installment[] {
   if (draft.installments?.length) {
     return draft.installments.map((installment, index) => ({
@@ -256,10 +313,10 @@ function installmentsFromDraft(draft: FiscalDraft): Installment[] {
   }];
 }
 
-export function FiscalEntryWizard({ initialDraft = null, products, formasPagamento = [], cfopsEntrada = [] }: FiscalEntryWizardProps) {
+export function FiscalEntryWizard({ initialDraft = null, products, formasPagamento = [], cfopsEntrada = [], margensPadrao }: FiscalEntryWizardProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [step, setStep] = useState<WizardStep>(1);
-  const [draft, setDraft] = useState<FiscalDraft | null>(initialDraft);
+  const [draft, setDraft] = useState<FiscalDraft | null>(initialDraft ? aplicarMargensPadraoAoDraft(initialDraft, margensPadrao) : null);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
@@ -309,7 +366,7 @@ export function FiscalEntryWizard({ initialDraft = null, products, formasPagamen
         throw new Error(data.error || "Não foi possível importar o XML.");
       }
 
-      setDraft(data);
+      setDraft(aplicarMargensPadraoAoDraft(data, margensPadrao));
       setInstallments(installmentsFromDraft(data));
       setMessage(`XML validado com sucesso. ${data.items.length} itens lidos.`);
     } catch (importError) {
@@ -341,6 +398,16 @@ export function FiscalEntryWizard({ initialDraft = null, products, formasPagamen
         items: current.items.map((item) => item.id === itemId ? { ...item, ...changes } : item)
       };
     });
+  }
+
+  // Margem (%) digitada no item: recalcula o preço correspondente a partir do custo convertido.
+  function updateMargem(item: FiscalDraftItem, tipo: "vista" | "prazo", valor: string) {
+    const margem = decimalInputToNumber(valor);
+    const custo = custoUnitarioVenda(item);
+    const preco = margem > 0 && custo > 0 ? numberToDecimalInput(precoPorMargem(custo, margem)) : undefined;
+    updateItem(item.id, tipo === "vista"
+      ? { marginCash: valor, ...(preco ? { salePrice: preco } : {}) }
+      : { marginTerm: valor, ...(preco ? { salePriceTerm: preco } : {}) });
   }
 
   // Aplica uma finalidade a TODOS os itens de uma vez (notas homogêneas — ex.: tudo uso e consumo).
@@ -386,7 +453,7 @@ export function FiscalEntryWizard({ initialDraft = null, products, formasPagamen
             return item;
           }
           marcados++;
-          return { ...item, action: "create" as const, matchedProductId: undefined };
+          return { ...item, action: "create" as const, matchedProductId: undefined, ...comPrecosSugeridos(item, margensPadrao) };
         })
       };
     });
@@ -411,7 +478,7 @@ export function FiscalEntryWizard({ initialDraft = null, products, formasPagamen
     );
 
     if (missingPrice) {
-      setError(`Informe o preço de venda do novo SKU ${missingPrice.importedProduct.sku}.`);
+      setError(`Informe o preço de venda à vista do novo item ${missingPrice.importedProduct.sku} (cód. do fornecedor).`);
       return;
     }
 
@@ -426,6 +493,7 @@ export function FiscalEntryWizard({ initialDraft = null, products, formasPagamen
             produtoId: item.action === "update" ? item.matchedProductId : null,
             criarNovoSku: item.action === "create",
             precoVenda: item.action === "create" ? decimalInputToNumber(item.salePrice) : null,
+            precoVendaPrazo: item.action === "create" ? (decimalInputToNumber(item.salePriceTerm) || null) : null,
             precoMinimo: item.action === "create" ? decimalInputToNumber(item.minimumPrice) : null,
             marca: item.action === "create" ? item.brand?.trim() || null : null,
             finalidade: item.finalidade ?? null,
@@ -876,7 +944,7 @@ export function FiscalEntryWizard({ initialDraft = null, products, formasPagamen
                         <button className={item.action === "update" ? "active" : ""} type="button" onClick={() => updateItem(item.id, { action: "update" })}>
                           Vincular existente
                         </button>
-                        <button className={item.action === "create" ? "active" : ""} type="button" onClick={() => updateItem(item.id, { action: "create", matchedProductId: undefined })}>
+                        <button className={item.action === "create" ? "active" : ""} type="button" onClick={() => updateItem(item.id, { action: "create", matchedProductId: undefined, ...comPrecosSugeridos(item, margensPadrao) })}>
                           Criar novo SKU
                         </button>
                       </div>
@@ -897,7 +965,7 @@ export function FiscalEntryWizard({ initialDraft = null, products, formasPagamen
                         </div>
                       ) : (
                         <div className="new-sku-box">
-                          Novo SKU será criado: <strong>{item.importedProduct.sku}</strong>
+                          Novo SKU (código interno gerado no lançamento) · Cód. fornecedor <strong>{item.importedProduct.sku}</strong>
                           <label>
                             Marca
                             <input
@@ -907,12 +975,39 @@ export function FiscalEntryWizard({ initialDraft = null, products, formasPagamen
                             />
                           </label>
                           <label>
-                            Preço de venda
+                            Margem à vista %
+                            <input
+                              inputMode="decimal"
+                              placeholder="Ex.: 50"
+                              value={item.marginCash ?? ""}
+                              onChange={(event) => updateMargem(item, "vista", event.target.value)}
+                            />
+                          </label>
+                          <label>
+                            Preço à vista
                             <input
                               inputMode="decimal"
                               placeholder="0,00"
                               value={item.salePrice ?? ""}
                               onChange={(event) => updateItem(item.id, { salePrice: event.target.value })}
+                            />
+                          </label>
+                          <label>
+                            Margem a prazo %
+                            <input
+                              inputMode="decimal"
+                              placeholder="Ex.: 65"
+                              value={item.marginTerm ?? ""}
+                              onChange={(event) => updateMargem(item, "prazo", event.target.value)}
+                            />
+                          </label>
+                          <label>
+                            Preço a prazo
+                            <input
+                              inputMode="decimal"
+                              placeholder="Opcional (vale o à vista)"
+                              value={item.salePriceTerm ?? ""}
+                              onChange={(event) => updateItem(item.id, { salePriceTerm: event.target.value })}
                             />
                           </label>
                           <label>
@@ -924,6 +1019,9 @@ export function FiscalEntryWizard({ initialDraft = null, products, formasPagamen
                               onChange={(event) => updateItem(item.id, { minimumPrice: event.target.value })}
                             />
                           </label>
+                          <small className="block-muted">
+                            Digite a margem (%) para calcular o preço a partir do custo{custoUnitarioVenda(item) > 0 ? ` (${formatBrl(custoUnitarioVenda(item))})` : ""}, ou informe o preço direto.
+                          </small>
                         </div>
                       )}
                     </td>

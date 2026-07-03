@@ -33,6 +33,9 @@ export type CompanySettings = {
   permiteVendaDiretaBalcao: boolean;
   permiteVendaNaoFiscal: boolean;
   descontoSemAutorizacaoPct: number;
+  /** Margens (%) padrão sobre o custo para sugerir preços à vista/a prazo (cadastro e importação XML). null = não sugerir. */
+  margemPadraoVistaPct: number | null;
+  margemPadraoPrazoPct: number | null;
   enderecoLogradouro: string;
   enderecoNumero: string;
   enderecoComplemento: string;
@@ -78,6 +81,15 @@ function normalizeUf(value: unknown): string | null {
   return uf;
 }
 
+/** Margem (%) padrão: aceita > 100 (markup alto), rejeita negativa; vazio/0 vira null (desligado). */
+function normalizeMargem(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const numero = Number(value);
+  if (!Number.isFinite(numero) || numero <= 0) return null;
+  if (numero > 9999) throw new CompanySettingsError("Margem (%) padrão inválida.");
+  return numero;
+}
+
 function normalizeRegime(value: unknown): RegimeTributario {
   const regime = clean(value) as RegimeTributario;
   if (!REGIMES_TRIBUTARIOS.includes(regime)) {
@@ -116,6 +128,8 @@ function toSettings(empresa: Awaited<ReturnType<typeof prisma.empresa.findUnique
     permiteVendaDiretaBalcao: empresa.permiteVendaDiretaBalcao,
     permiteVendaNaoFiscal: empresa.permiteVendaNaoFiscal,
     descontoSemAutorizacaoPct: Number(empresa.descontoSemAutorizacaoPct ?? 0),
+    margemPadraoVistaPct: empresa.margemPadraoVistaPct != null ? Number(empresa.margemPadraoVistaPct) : null,
+    margemPadraoPrazoPct: empresa.margemPadraoPrazoPct != null ? Number(empresa.margemPadraoPrazoPct) : null,
     enderecoLogradouro: empresa.enderecoLogradouro ?? "",
     enderecoNumero: empresa.enderecoNumero ?? "",
     enderecoComplemento: empresa.enderecoComplemento ?? "",
@@ -173,6 +187,8 @@ export async function saveCompanySettings(
         permiteVendaDiretaBalcao: Boolean(input.permiteVendaDiretaBalcao),
         permiteVendaNaoFiscal: Boolean(input.permiteVendaNaoFiscal),
         descontoSemAutorizacaoPct: Math.max(0, Math.min(100, Number(input.descontoSemAutorizacaoPct) || 0)),
+        margemPadraoVistaPct: normalizeMargem(input.margemPadraoVistaPct),
+        margemPadraoPrazoPct: normalizeMargem(input.margemPadraoPrazoPct),
         enderecoLogradouro: optional(input.enderecoLogradouro),
         enderecoNumero: optional(input.enderecoNumero),
         enderecoComplemento: optional(input.enderecoComplemento),

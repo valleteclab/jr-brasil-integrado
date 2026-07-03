@@ -45,6 +45,11 @@ export type ErpProductSummary = {
   costValue?: string;
   lastCost?: string;
   averageCost?: string;
+  /** Preço de venda A PRAZO formatado (price é o À VISTA). */
+  priceTerm?: string;
+  /** Margens (%) sobre o custo memorizadas para formação automática dos preços. */
+  cashMarginPercent?: string;
+  termMarginPercent?: string;
   minimumPrice?: string;
   warehouse?: string;
   reservedStock?: string;
@@ -365,6 +370,9 @@ export async function listErpProductSummaries(): Promise<ErpProductSummary[]> {
         costValue: formatBrl(Number(product.custoMedio)),
         averageCost: formatBrl(Number(product.custoMedio)),
         lastCost: formatBrl(Number(product.ultimoCusto)),
+        priceTerm: Number(product.precoVendaPrazo) > 0 ? formatBrl(Number(product.precoVendaPrazo)) : "",
+        cashMarginPercent: product.margemVistaPercentual != null ? String(Number(product.margemVistaPercentual)).replace(".", ",") : "",
+        termMarginPercent: product.margemPrazoPercentual != null ? String(Number(product.margemPrazoPercentual)).replace(".", ",") : "",
         minimumPrice: formatBrl(Number(product.precoMinimo)),
         warehouse: mainBalance?.deposito.nome ?? "",
         reservedStock: String(reservedStock),
