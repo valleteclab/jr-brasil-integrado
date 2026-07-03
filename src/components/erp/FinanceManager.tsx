@@ -676,6 +676,22 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
     }
   }
 
+  async function excluirReceber(id: string, descricao: string) {
+    if (!window.confirm(`Excluir a conta a receber "${descricao}"? Esta ação não pode ser desfeita.`)) return;
+    setBusyId(id);
+    setGlobalError("");
+    try {
+      const res = await fetch(`/api/erp/financeiro/contas-receber/${id}`, { method: "DELETE" });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(data.error || "Não foi possível excluir a conta.");
+      setReceivables((prev) => prev.filter((r) => r.id !== id));
+    } catch (e) {
+      setGlobalError(e instanceof Error ? e.message : "Falha ao excluir conta a receber.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function estornarBaixa(id: string, descricao: string) {
     if (!window.confirm(`Estornar a baixa de "${descricao}"? Isso desfaz o pagamento e ajusta o saldo bancário.`)) return;
     setBusyId(id);
@@ -967,6 +983,17 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
                       title="Excluir conta a pagar (admin)"
                       disabled={busyId === r.id}
                       onClick={() => excluirPagar(r.id, r.descricao)}
+                    >
+                      {busyId === r.id ? "..." : "Excluir"}
+                    </button>
+                  )}
+                  {isAdmin && aba === "receber" && (r as ReceivableSummary).canDelete && (
+                    <button
+                      type="button"
+                      className="btn-erp danger xs"
+                      title="Excluir conta a receber (admin) — sem recebimento e sem boleto ativo no banco"
+                      disabled={busyId === r.id}
+                      onClick={() => excluirReceber(r.id, r.descricao)}
                     >
                       {busyId === r.id ? "..." : "Excluir"}
                     </button>

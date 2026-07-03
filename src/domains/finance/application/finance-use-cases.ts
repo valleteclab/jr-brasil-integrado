@@ -458,6 +458,47 @@ export async function deletePayable(scope: TenantScope, id: string) {
   });
 }
 
+/**
+ * EXCLUI uma conta a RECEBER (admin): só sem recebimento registrado, sem antecipação e sem boleto
+ * ATIVO no banco (boleto EMITIDO/REGISTRADO deve ser cancelado antes; LIQUIDADO implica baixa).
+ * Registros de boleto já baixado/erro e o Pix QR do título são removidos junto.
+ */
+export async function deleteReceivable(scope: TenantScope, id: string) {
+  const conta = await prisma.contaReceber.findFirst({
+    where: { id, ...scopedByTenantCompany(scope) },
+    select: {
+      id: true, descricao: true, status: true, valorPago: true, antecipacaoId: true,
+      boleto: { select: { id: true, status: true } },
+      pixCobranca: { select: { id: true } }
+    }
+  });
+  if (!conta) throw new Error("Conta a receber não encontrada.");
+  if (Number(conta.valorPago) > 0 || conta.status === "PAGO" || conta.status === "PARCIAL") {
+    throw new Error("Não é possível excluir uma conta a receber com recebimento registrado. Estorne a baixa antes.");
+  }
+  if (conta.antecipacaoId) {
+    throw new Error("Não é possível excluir: o título está vinculado a uma operação de antecipação de recebíveis.");
+  }
+  if (conta.boleto && !["BAIXADO", "ERRO"].includes(conta.boleto.status)) {
+    throw new Error(`Não é possível excluir: há um boleto ${conta.boleto.status} no banco. Cancele o boleto (botão "Cancelar boleto") antes de excluir.`);
+  }
+
+  return prisma.$transaction(async (tx) => {
+    await tx.movimentoFinanceiro.updateMany({ where: { contaReceberId: id }, data: { contaReceberId: null } });
+    if (conta.boleto) await tx.boletoCobranca.delete({ where: { id: conta.boleto.id } });
+    if (conta.pixCobranca) await tx.pixCobranca.delete({ where: { id: conta.pixCobranca.id } });
+    const removido = await tx.contaReceber.delete({ where: { id } });
+    await createAuditLog(tx, {
+      scope,
+      entidade: "ContaReceber",
+      entidadeId: id,
+      acao: "DELETE",
+      payload: { descricao: conta.descricao, status: conta.status, tinhaBoleto: Boolean(conta.boleto) }
+    });
+    return removido;
+  });
+}
+
 // ─── Estorno de Baixa de Conta a Pagar ────────────────────────────────────────
 
 /**

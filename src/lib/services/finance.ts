@@ -51,6 +51,8 @@ export type ReceivableSummary = {
   boletoStatus?: string | null;
   boletoLinhaDigitavel?: string | null;
   canSettle: boolean;
+  /** Pode ser excluída (admin): sem recebimento, sem antecipação e sem boleto ativo no banco. */
+  canDelete?: boolean;
   /** Tem baixa estornável: valorPago > 0 e status PAGO/PARCIAL. Opcional para não quebrar objetos otimistas. */
   canEstornar?: boolean;
 };
@@ -297,6 +299,9 @@ export async function listReceivables(filtroStatus?: string): Promise<Receivable
       boletoStatus: c.boleto?.status ?? null,
       boletoLinhaDigitavel: c.boleto?.linhaDigitavel ?? null,
       canSettle,
+      // Excluir (admin): sem recebimento, sem antecipação e sem boleto ATIVO no banco
+      // (EMITIDO/REGISTRADO/LIQUIDADO exigem cancelar/estornar antes).
+      canDelete: valorPago === 0 && !c.antecipacaoId && (!c.boleto || ["BAIXADO", "ERRO"].includes(c.boleto.status)),
       // Estornar baixa: há recebimento registrado e a conta está quitada/parcial.
       canEstornar: valorPago > 0 && (c.status === "PAGO" || c.status === "PARCIAL")
     };
