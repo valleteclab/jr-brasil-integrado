@@ -15,7 +15,7 @@ export default async function SimplesPage() {
   const scope = await getDevelopmentTenantScope();
   const empresa = await prisma.empresa.findFirst({
     where: { id: scope.empresaId },
-    select: { regimeTributario: true, simplesAnexo: true, simplesFolhaMensal: true }
+    select: { regimeTributario: true, simplesAnexo: true, simplesAnexoServicos: true, simplesFolhaMensal: true }
   });
 
   const regime = empresa?.regimeTributario ?? "SIMPLES_NACIONAL";
@@ -49,6 +49,7 @@ export default async function SimplesPage() {
         <SimplesWorkspace
           inicial={inicial}
           anexoSalvo={empresa?.simplesAnexo ?? null}
+          anexoServicosSalvo={empresa?.simplesAnexoServicos ?? null}
           folhaSalva={empresa?.simplesFolhaMensal != null ? Number(empresa.simplesFolhaMensal) : null}
         />
       )}

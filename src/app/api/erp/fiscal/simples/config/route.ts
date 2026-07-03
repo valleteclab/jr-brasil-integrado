@@ -10,9 +10,10 @@ export async function POST(request: Request) {
     await requireModulo("fiscal");
     const scope = await getDevelopmentTenantScope();
     const session = await getSession();
-    const body = (await request.json()) as { anexo?: number | null; folhaMensal?: number | null };
+    const body = (await request.json()) as { anexo?: number | null; anexoServicos?: number | null; folhaMensal?: number | null };
     const r = await salvarConfigSimples(scope, {
       anexo: body.anexo != null ? Number(body.anexo) : null,
+      anexoServicos: body.anexoServicos != null ? Number(body.anexoServicos) : null,
       folhaMensal: body.folhaMensal != null && body.folhaMensal !== 0 ? Number(body.folhaMensal) : null
     }, session?.usuarioId);
     return NextResponse.json(r);

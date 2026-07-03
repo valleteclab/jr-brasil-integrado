@@ -35,6 +35,9 @@ export type ApuracaoSimples = {
   regime: string;
   anexo: number | null;
   anexoNome: string | null;
+  /// Anexo aplicado à receita de SERVIÇOS (empresa mista) — null quando não há serviços no mês.
+  anexoServicos: number | null;
+  aliquotaEfetivaServicos: number | null;
   competencia: string;
   // Receitas
   receitaMes: number;
@@ -96,7 +99,7 @@ async function receitaDoMes(scope: TenantScope, inicio: Date, fim: Date): Promis
 export async function apuracaoSimples(scope: TenantScope, params: { mes: number; ano: number }): Promise<ApuracaoSimples> {
   const empresa = await prisma.empresa.findFirst({
     where: { id: scope.empresaId },
-    select: { regimeTributario: true, simplesAnexo: true, simplesFolhaMensal: true, tipoNegocio: true }
+    select: { regimeTributario: true, simplesAnexo: true, simplesAnexoServicos: true, simplesFolhaMensal: true, tipoNegocio: true }
   });
   if (!empresa) throw new SimplesError("Empresa não encontrada.");
 
@@ -143,6 +146,8 @@ export async function apuracaoSimples(scope: TenantScope, params: { mes: number;
       regime: "MEI",
       anexo: null,
       anexoNome: null,
+      anexoServicos: null,
+      aliquotaEfetivaServicos: null,
       competencia,
       receitaMes,
       receitaMonofasica: 0,
@@ -227,20 +232,44 @@ export async function apuracaoSimples(scope: TenantScope, params: { mes: number;
   const { efetiva, nominal, indiceFaixa } = aliquotaEfetiva(anexo, rbt12);
   const { faixa } = faixaDoAnexo(anexo, rbt12);
 
-  const segmentos: SegmentoReceita[] = [
+  // Receita de SERVIÇOS (NFS-e) tem anexo PRÓPRIO na empresa mista: revenda no I/II, serviços no
+  // III/IV/V — com ISS na partilha em vez de ICMS. RBT12 é o TOTAL da empresa (LC 123, art. 18 §3º).
+  const anexoServicos = receitaServicos > 0
+    ? (empresa.simplesAnexoServicos ?? (anexo >= 3 ? anexo : 3))
+    : null;
+  if (anexoServicos && !ANEXOS[anexoServicos]) throw new SimplesError("Anexo dos serviços inválido (3, 4 ou 5).");
+  if (receitaServicos > 0 && !empresa.simplesAnexoServicos && anexo < 3) {
+    alertas.push(`Receita de serviços tributada pelo ANEXO ${anexoServicos} (sugerido) — configure o "Anexo dos serviços" na tela e confirme o enquadramento com o contador.`);
+  }
+  const servico = anexoServicos ? aliquotaEfetiva(anexoServicos, rbt12) : null;
+  const servicoFaixa = anexoServicos ? faixaDoAnexo(anexoServicos, rbt12).faixa : null;
+
+  const segmentosMercadorias: SegmentoReceita[] = [
     { rotulo: "Revenda comum", valor: receitaNormal, tributosExcluidos: [] },
     { rotulo: "Monofásico (PIS/COFINS zerados)", valor: receitaMonofasica, tributosExcluidos: ["PIS", "COFINS"] },
     { rotulo: "ICMS-ST (ICMS zerado)", valor: receitaSt, tributosExcluidos: ["ICMS"] },
-    { rotulo: "Monofásico + ST", valor: receitaMonofasicaSt, tributosExcluidos: ["PIS", "COFINS", "ICMS"] },
-    { rotulo: "Serviços", valor: receitaServicos, tributosExcluidos: [] }
+    { rotulo: "Monofásico + ST", valor: receitaMonofasicaSt, tributosExcluidos: ["PIS", "COFINS", "ICMS"] }
+  ];
+  const segmentos: SegmentoReceita[] = [
+    ...segmentosMercadorias,
+    { rotulo: anexoServicos ? `Serviços (Anexo ${anexoServicos})` : "Serviços", valor: receitaServicos, tributosExcluidos: [] }
   ];
 
-  const tributos = Object.keys(faixa.partilha) as TributoSimples[];
+  const tributos = Array.from(new Set([
+    ...(Object.keys(faixa.partilha) as TributoSimples[]),
+    ...((servicoFaixa ? Object.keys(servicoFaixa.partilha) : []) as TributoSimples[])
+  ]));
   const partilha = tributos.map((tributo) => {
     const percentual = faixa.partilha[tributo] ?? 0;
     const aliqTributo = (efetiva * percentual) / 100;
+    // Serviços com a alíquota efetiva e a partilha do ANEXO DE SERVIÇOS.
+    const aliqTributoServ = servico && servicoFaixa ? (servico.efetiva * (servicoFaixa.partilha[tributo] ?? 0)) / 100 : 0;
+    // Baseline "sem segregação": tudo tributado como revenda no anexo principal (o erro comum).
     const valorSem = round2((receitaMes * aliqTributo) / 100);
-    const valorCom = round2(segmentos.reduce((s, seg) => s + (seg.tributosExcluidos.includes(tributo) ? 0 : (seg.valor * aliqTributo) / 100), 0));
+    const valorCom = round2(
+      segmentosMercadorias.reduce((s, seg) => s + (seg.tributosExcluidos.includes(tributo) ? 0 : (seg.valor * aliqTributo) / 100), 0) +
+      (receitaServicos * aliqTributoServ) / 100
+    );
     return { tributo, percentual, aliquotaEfetiva: Math.round(aliqTributo * 10000) / 10000, valorSemSegregacao: valorSem, valorComSegregacao: valorCom };
   });
 
@@ -252,11 +281,11 @@ export async function apuracaoSimples(scope: TenantScope, params: { mes: number;
   const folhaMensal = empresa.simplesFolhaMensal != null ? Number(empresa.simplesFolhaMensal) : null;
   const fatorR = folhaMensal != null && rbt12 > 0 ? Math.round(((folhaMensal * 12) / rbt12) * 10000) / 100 : null;
   const fatorRAtingido = fatorR != null ? fatorR >= 28 : null;
-  if (anexo === 5 && fatorRAtingido) {
-    alertas.push(`Fator R de ${fatorR}% (≥ 28%): a empresa pode apurar pelo ANEXO III (alíquotas bem menores que o V). Confirme com o contador.`);
+  if ((anexo === 5 || anexoServicos === 5) && fatorRAtingido) {
+    alertas.push(`Fator R de ${fatorR}% (≥ 28%): a empresa pode apurar os serviços pelo ANEXO III (alíquotas bem menores que o V). Confirme com o contador.`);
   }
-  if (anexo === 3 && fatorR != null && !fatorRAtingido && folhaMensal != null) {
-    alertas.push(`Fator R de ${fatorR}% (< 28%): se a atividade for sujeita ao Fator R, a apuração pode cair no ANEXO V. Confirme o enquadramento da atividade.`);
+  if ((anexo === 3 || anexoServicos === 3) && fatorR != null && !fatorRAtingido && folhaMensal != null) {
+    alertas.push(`Fator R de ${fatorR}% (< 28%): se a atividade for sujeita ao Fator R, a apuração dos serviços pode cair no ANEXO V. Confirme o enquadramento da atividade.`);
   }
 
   // ── Limites ──
@@ -273,6 +302,8 @@ export async function apuracaoSimples(scope: TenantScope, params: { mes: number;
     regime: empresa.regimeTributario,
     anexo,
     anexoNome: ANEXOS[anexo].nome,
+    anexoServicos,
+    aliquotaEfetivaServicos: servico?.efetiva ?? null,
     competencia,
     receitaMes,
     receitaMonofasica,
@@ -327,18 +358,24 @@ export async function detectarMonofasicosPorNcm(scope: TenantScope, usuarioId?: 
 }
 
 /** Config do Simples na empresa (anexo + folha p/ Fator R) — editada na própria tela de apuração. */
-export async function salvarConfigSimples(scope: TenantScope, input: { anexo?: number | null; folhaMensal?: number | null }, usuarioId?: string) {
+export async function salvarConfigSimples(scope: TenantScope, input: { anexo?: number | null; anexoServicos?: number | null; folhaMensal?: number | null }, usuarioId?: string) {
   if (input.anexo != null && !ANEXOS[input.anexo]) throw new SimplesError("Anexo inválido (1 a 5).");
+  if (input.anexoServicos != null && ![3, 4, 5].includes(input.anexoServicos)) throw new SimplesError("Anexo dos serviços inválido (3, 4 ou 5).");
   const empresa = await prisma.empresa.update({
     where: { id: scope.empresaId },
     data: {
       ...(input.anexo !== undefined ? { simplesAnexo: input.anexo } : {}),
+      ...(input.anexoServicos !== undefined ? { simplesAnexoServicos: input.anexoServicos } : {}),
       ...(input.folhaMensal !== undefined ? { simplesFolhaMensal: input.folhaMensal != null ? round2(input.folhaMensal) : null } : {})
     }
   });
   await prisma.$transaction(async (tx) => createAuditLog(tx, {
     scope, usuarioId, entidade: "Empresa", entidadeId: scope.empresaId, acao: "CONFIG_SIMPLES",
-    payload: { anexo: input.anexo ?? null, folhaMensal: input.folhaMensal ?? null }
+    payload: { anexo: input.anexo ?? null, anexoServicos: input.anexoServicos ?? null, folhaMensal: input.folhaMensal ?? null }
   }));
-  return { anexo: empresa.simplesAnexo, folhaMensal: empresa.simplesFolhaMensal != null ? Number(empresa.simplesFolhaMensal) : null };
+  return {
+    anexo: empresa.simplesAnexo,
+    anexoServicos: empresa.simplesAnexoServicos,
+    folhaMensal: empresa.simplesFolhaMensal != null ? Number(empresa.simplesFolhaMensal) : null
+  };
 }

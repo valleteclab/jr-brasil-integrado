@@ -19,7 +19,7 @@ const ANEXOS_OPCOES = [
   { value: 5, label: "Anexo V — Serviços intelectuais (sujeito ao Fator R)" }
 ];
 
-export function SimplesWorkspace({ inicial, anexoSalvo, folhaSalva }: { inicial: ApuracaoSimples | null; anexoSalvo: number | null; folhaSalva: number | null }) {
+export function SimplesWorkspace({ inicial, anexoSalvo, anexoServicosSalvo = null, folhaSalva }: { inicial: ApuracaoSimples | null; anexoSalvo: number | null; anexoServicosSalvo?: number | null; folhaSalva: number | null }) {
   const hoje = new Date();
   const [mes, setMes] = useState(hoje.getMonth() + 1);
   const [ano, setAno] = useState(hoje.getFullYear());
@@ -28,6 +28,7 @@ export function SimplesWorkspace({ inicial, anexoSalvo, folhaSalva }: { inicial:
   const [erro, setErro] = useState("");
   const [ok, setOk] = useState("");
   const [anexo, setAnexo] = useState<string>(anexoSalvo ? String(anexoSalvo) : "");
+  const [anexoServicos, setAnexoServicos] = useState<string>(anexoServicosSalvo ? String(anexoServicosSalvo) : "");
   const [folha, setFolha] = useState<string>(folhaSalva ? String(folhaSalva) : "");
 
   async function carregar(m = mes, a = ano) {
@@ -58,7 +59,7 @@ export function SimplesWorkspace({ inicial, anexoSalvo, folhaSalva }: { inicial:
       const res = await fetch("/api/erp/fiscal/simples/config", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ anexo: anexo ? Number(anexo) : null, folhaMensal: folha ? Number(folha) : null })
+        body: JSON.stringify({ anexo: anexo ? Number(anexo) : null, anexoServicos: anexoServicos ? Number(anexoServicos) : null, folhaMensal: folha ? Number(folha) : null })
       });
       const data = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) throw new Error(data.error || "Não foi possível salvar.");
@@ -119,11 +120,19 @@ export function SimplesWorkspace({ inicial, anexoSalvo, folhaSalva }: { inicial:
           <div className="erp-card-head"><h3>Enquadramento (confirme com o contador)</h3></div>
           <div className="erp-form">
             <label className="full">
-              Anexo do Simples
+              Anexo do Simples (revenda/indústria)
               <select value={anexo} onChange={(e) => setAnexo(e.target.value)}>
                 <option value="">— usar sugestão pelo tipo do negócio —</option>
                 {ANEXOS_OPCOES.map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
               </select>
+            </label>
+            <label className="full">
+              Anexo dos SERVIÇOS (NFS-e) — empresa mista
+              <select value={anexoServicos} onChange={(e) => setAnexoServicos(e.target.value)}>
+                <option value="">— sugerir Anexo III quando houver serviços —</option>
+                {ANEXOS_OPCOES.filter((a) => a.value >= 3).map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
+              </select>
+              <small className="field-hint">Ex.: autopeças com oficina — revenda no Anexo I e mão de obra no Anexo III (com ISS na partilha).</small>
             </label>
             <label>
               Folha mensal média (R$) — Fator R
@@ -190,7 +199,7 @@ export function SimplesWorkspace({ inicial, anexoSalvo, folhaSalva }: { inicial:
                         <td className="num"><strong>{brl(dados.receitaMonofasicaSt)}</strong></td>
                         <td>PIS, COFINS e ICMS <strong>excluídos</strong></td>
                       </tr>
-                      <tr><td>Serviços</td><td className="num">{brl(dados.receitaServicos)}</td><td>Conforme anexo de serviços</td></tr>
+                      <tr><td>Serviços{dados.anexoServicos ? ` (Anexo ${dados.anexoServicos})` : ""}</td><td className="num">{brl(dados.receitaServicos)}</td><td>{dados.anexoServicos ? `Tributados pelo Anexo ${dados.anexoServicos} — alíq. efetiva ${(dados.aliquotaEfetivaServicos ?? 0).toFixed(2)}% (com ISS na partilha)` : "Sem receita de serviços no mês"}</td></tr>
                     </tbody>
                   </table>
                 </div>

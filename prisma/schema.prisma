@@ -405,6 +405,8 @@ model Empresa {
   regimeTributario          RegimeTributario           @default(SIMPLES_NACIONAL)
   /// Anexo do Simples Nacional (1=Comércio, 2=Indústria, 3/4/5=Serviços) — apuração do DAS.
   simplesAnexo              Int?
+  /// Anexo da receita de SERVIÇOS (empresa mista: revenda no Anexo I/II + serviços no III/IV/V).
+  simplesAnexoServicos      Int?
   /// Folha de salários MENSAL média (pró-labore + salários + encargos) — Fator R (folha 12m/RBT12
   /// >= 28% leva serviços do Anexo V para o III). Informativo, preenchido com o contador.
   simplesFolhaMensal        Decimal?                   @db.Decimal(14, 2)
