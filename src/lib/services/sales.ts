@@ -72,6 +72,8 @@ export type SaleDetail = SaleSummary & {
     /** Quantidade já devolvida (NF-e de devolução autorizada/processando). */
     devolvido: number;
     precoUnitario: number;
+    /** Origem do preço aplicado (VISTA/PRAZO/MANUAL). null = legado (à vista). */
+    tipoPreco: string | null;
     custoUnitario: number;
     desconto: number;
     total: number;
@@ -100,7 +102,7 @@ export type SaleDetail = SaleSummary & {
 
 export type SaleFormData = {
   clientes: Array<{ id: string; label: string; documento: string | null }>;
-  produtos: Array<{ id: string; sku: string; nome: string; descricao: string | null; descricaoComercial: string | null; gtin: string | null; codigoOriginal: string | null; codigoFabricante: string | null; preco: number; disponivel: number; unidade: string }>;
+  produtos: Array<{ id: string; sku: string; nome: string; descricao: string | null; descricaoComercial: string | null; gtin: string | null; codigoOriginal: string | null; codigoFabricante: string | null; preco: number; precoPrazo: number; precoMinimo: number; disponivel: number; unidade: string }>;
   vendedores: Array<{ id: string; nome: string }>;
   formas: Array<{ id: string; nome: string; tipo: string }>;
   /** Vendedor vinculado ao usuário logado (pelo nome). Criado on-the-fly se não existia. */
@@ -310,6 +312,7 @@ export async function getSaleDetail(id: string): Promise<SaleDetail | null> {
           quantidade: qtd,
           devolvido,
           precoUnitario: Number(item.precoUnitario),
+          tipoPreco: item.tipoPreco ?? null,
           custoUnitario: Number(item.custoUnitario),
           desconto: Number(item.desconto),
           total: Number(item.total)
@@ -376,6 +379,8 @@ export async function listSaleFormData(): Promise<SaleFormData> {
           codigoOriginal: true,
           codigoFabricante: true,
           precoVenda: true,
+          precoVendaPrazo: true,
+          precoMinimo: true,
           unidade: true,
           saldosEstoque: {
             select: { quantidade: true, reservado: true }
@@ -436,6 +441,8 @@ export async function listSaleFormData(): Promise<SaleFormData> {
           codigoOriginal: p.codigoOriginal,
           codigoFabricante: p.codigoFabricante,
           preco: Number(p.precoVenda),
+          precoPrazo: Number(p.precoVendaPrazo),
+          precoMinimo: Number(p.precoMinimo),
           disponivel,
           unidade: p.unidade
         };

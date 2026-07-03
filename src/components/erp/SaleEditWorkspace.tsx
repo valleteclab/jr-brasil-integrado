@@ -19,6 +19,9 @@ type Linha = {
   unidade: string;
   quantidade: number;
   precoUnitario: number;
+  /** Origem do preço da linha (VISTA/PRAZO/MANUAL) — preservada no save para a reautorização
+   *  do servidor medir o desconto implícito contra a tabela certa. */
+  tipoPreco: "VISTA" | "PRAZO" | "MANUAL";
   /** Desconto em PERCENTUAL (0–100). Convertido pra R$ no save (qtd×preço×pct/100). */
   descontoPct: number;
 };
@@ -51,6 +54,7 @@ export function SaleEditWorkspace({ venda, form }: { venda: SaleDetail; form: Sa
         unidade: prod?.unidade ?? "UN",
         quantidade: i.quantidade,
         precoUnitario: i.precoUnitario,
+        tipoPreco: (i.tipoPreco === "PRAZO" || i.tipoPreco === "MANUAL" ? i.tipoPreco : "VISTA") as Linha["tipoPreco"],
         descontoPct: Math.min(100, Math.max(0, pct))
       };
     })
@@ -131,7 +135,7 @@ export function SaleEditWorkspace({ venda, form }: { venda: SaleDetail; form: Sa
       if (existente) return cur.map((l) => (l.produtoId === produtoId ? { ...l, quantidade: l.quantidade + 1 } : l));
       return [...cur, {
         produtoId, sku: p.sku, nome: p.nome, unidade: p.unidade,
-        quantidade: 1, precoUnitario: p.preco, descontoPct: 0
+        quantidade: 1, precoUnitario: p.preco, tipoPreco: "VISTA" as const, descontoPct: 0
       }];
     });
   }
@@ -175,6 +179,7 @@ export function SaleEditWorkspace({ venda, form }: { venda: SaleDetail; form: Sa
         produtoId: l.produtoId,
         quantidade: l.quantidade,
         precoUnitario: l.precoUnitario,
+        tipoPreco: l.tipoPreco,
         desconto: round2(l.quantidade * l.precoUnitario * (l.descontoPct / 100))
       }));
       const res = await fetch(`/api/erp/vendas/${venda.id}`, {

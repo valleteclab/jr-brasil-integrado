@@ -3,7 +3,7 @@ import type { TenantScope } from "@/lib/auth/dev-session";
 import { scopedByTenantCompany, scopedByTenantCompanyAmbiente } from "@/lib/auth/dev-session";
 import { createAuditLog } from "@/lib/audit/audit-service";
 import { gerarParcelas, rotuloParcela } from "@/lib/finance/condicao-pagamento";
-import { validarSenhaAdmin } from "@/lib/auth/admin-credential";
+import { autorizarPrecosVenda, type TipoPrecoVenda } from "./price-guard";
 import { checkoutSale } from "./sale-use-cases";
 import { criarRetiradaExpedicao } from "./expedicao-use-cases";
 import { emitServiceInvoiceAvulsa } from "@/domains/fiscal/application/standalone-emission-use-cases";
@@ -25,7 +25,7 @@ export type PdvCheckoutInput = {
   /** Quando false, fecha a venda só com RECIBO (cupom não fiscal) — exige Empresa.permiteVendaNaoFiscal. */
   emitirFiscal?: boolean;
   /** desconto: valor em R$ da LINHA (quantidade × preço − desconto). Exige autorização de admin. */
-  produtos: Array<{ produtoId: string; quantidade: number; precoUnitario: number; desconto?: number }>;
+  produtos: Array<{ produtoId: string; quantidade: number; precoUnitario: number; desconto?: number; tipoPreco?: TipoPrecoVenda | null }>;
   servicos: Array<{ descricao: string; valor: number; codigoServicoLc116?: string | null; codigoNbs?: string | null }>;
   /** Formas de pagamento recebidas (o troco sai do dinheiro). Exigidas — o PDV opera com caixa. */
   pagamentos: PagamentoDetalhado[];
@@ -117,7 +117,8 @@ export async function pdvCheckout(scope: TenantScope, input: PdvCheckoutInput): 
     throw new Error("A NFS-e dos serviços exige um cliente identificado.");
   }
 
-  // Desconto: % efetivo (item + global) versus limite da empresa.
+  // Preço/desconto: % efetivo (item + global + implícito por preço manual abaixo da tabela)
+  // versus limite da empresa; preço abaixo do mínimo do produto sempre exige autorização.
   // Acima do limite, exige senha de um admin (validada AQUI no servidor — UI pré-valida pra UX).
   for (const p of input.produtos) {
     const desconto = Math.max(0, Number(p.desconto) || 0);
@@ -125,24 +126,14 @@ export async function pdvCheckout(scope: TenantScope, input: PdvCheckoutInput): 
       throw new Error("Desconto de um item não pode ser maior que o valor do item.");
     }
   }
-  const descontoItens = round2(input.produtos.reduce((s, p) => s + Math.max(0, Number(p.desconto) || 0), 0));
   const descontoGlobal = round2(Math.max(0, Number(input.descontoGlobal) || 0));
-  const subtotalBruto = round2(input.produtos.reduce((s, p) => s + p.precoUnitario * p.quantidade, 0)
-    + input.servicos.reduce((s, v) => s + v.valor, 0));
-  const descontoTotal = round2(descontoItens + descontoGlobal);
-  const descontoPctEfetivo = subtotalBruto > 0 ? (descontoTotal / subtotalBruto) * 100 : 0;
-  const empresaCfg = await prisma.empresa.findUnique({
-    where: { id: scope.empresaId },
-    select: { descontoSemAutorizacaoPct: true }
+  const autorizacaoPdv = await autorizarPrecosVenda(scope, {
+    itens: input.produtos,
+    descontoGlobal,
+    outrosValores: input.servicos.reduce((s, v) => s + v.valor, 0),
+    senhaAdmin: input.senhaAdmin
   });
-  const limiteSemAuth = Number(empresaCfg?.descontoSemAutorizacaoPct ?? 0);
-  let autorizadoPor: { usuarioId: string; nome: string } | null = null;
-  if (descontoPctEfetivo > limiteSemAuth + 0.01) {
-    if (!input.senhaAdmin?.trim()) {
-      throw new Error(`Desconto de ${descontoPctEfetivo.toFixed(2)}% acima do limite (${limiteSemAuth.toFixed(2)}%). Exige senha de administrador.`);
-    }
-    autorizadoPor = await validarSenhaAdmin(scope, input.senhaAdmin);
-  }
+  const autorizadoPor = autorizacaoPdv.autorizadoPor;
 
   // Total que o cliente paga = soma dos produtos (líquidos de desconto de linha) + serviços − desconto global.
   const totalProdutos = input.produtos.reduce(
@@ -218,11 +209,14 @@ export async function pdvCheckout(scope: TenantScope, input: PdvCheckoutInput): 
           formaPagamento: formaResumo || undefined,
           condicaoPagamento: valorAPrazo > 0 ? (input.condicaoCrediario ?? "30") : undefined,
           desconto: descontoGlobal,
+          // Autorização já validada acima; segue junto porque createSale re-executa o guard.
+          senhaAdmin: input.senhaAdmin,
           itens: input.produtos.map((p) => ({
             produtoId: p.produtoId,
             quantidade: p.quantidade,
             precoUnitario: p.precoUnitario,
-            desconto: Math.max(0, Number(p.desconto) || 0)
+            desconto: Math.max(0, Number(p.desconto) || 0),
+            tipoPreco: p.tipoPreco ?? null
           }))
         },
         // O PDV recebe à vista no caixa e trata o crediário aqui — a confirmação da venda
@@ -232,7 +226,7 @@ export async function pdvCheckout(scope: TenantScope, input: PdvCheckoutInput): 
       );
       // Auditoria do desconto autorizado (vinculada ao pedido criado).
       const admin = autorizadoPor;
-      if (admin && descontoTotal > 0) {
+      if (admin && autorizacaoPdv.descontoTotal > 0) {
         await prisma.$transaction(async (tx) => {
           await createAuditLog(tx, {
             scope,
@@ -242,11 +236,13 @@ export async function pdvCheckout(scope: TenantScope, input: PdvCheckoutInput): 
             usuarioId: admin.usuarioId,
             payload: {
               autorizadoPor: admin.nome,
-              descontoTotal,
-              descontoItens,
+              descontoTotal: autorizacaoPdv.descontoTotal,
+              descontoItens: autorizacaoPdv.descontoItens,
+              descontoImplicitoPreco: autorizacaoPdv.descontoImplicitoPreco,
               descontoGlobal,
-              descontoPctEfetivo: Number(descontoPctEfetivo.toFixed(2)),
-              limiteSemAuth,
+              descontoPctEfetivo: Number(autorizacaoPdv.descontoPctEfetivo.toFixed(2)),
+              limiteSemAuth: autorizacaoPdv.limitePct,
+              itensAbaixoMinimo: autorizacaoPdv.itensAbaixoMinimo,
               itens: input.produtos
                 .filter((p) => (Number(p.desconto) || 0) > 0)
                 .map((p) => ({ produtoId: p.produtoId, desconto: Number(p.desconto) }))

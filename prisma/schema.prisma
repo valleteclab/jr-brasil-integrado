@@ -1191,6 +1191,9 @@ model PedidoVendaItem {
   produto       Produto     @relation(fields: [produtoId], references: [id])
   quantidade    Decimal     @db.Decimal(14, 4)
   precoUnitario Decimal     @db.Decimal(14, 2)
+  // Origem do preço aplicado pelo vendedor: VISTA (tabela à vista), PRAZO (tabela a prazo)
+  // ou MANUAL (digitado na venda) — auditoria da formação de preço. null = legado (à vista).
+  tipoPreco     String?
   custoUnitario Decimal     @default(0) @db.Decimal(14, 4)
   desconto      Decimal     @default(0) @db.Decimal(14, 2)
   total         Decimal     @db.Decimal(14, 2)
