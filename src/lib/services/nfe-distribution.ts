@@ -529,8 +529,20 @@ export async function listNfeDistributionDocuments(scope: TenantScope): Promise<
     orderBy: [{ dataEmissao: "desc" }, { criadoEm: "desc" }],
     take: 300
   });
+  // EVENTOS distribuídos (manifestações/cancelamentos, resEvento/procEventoNFe) NÃO são notas:
+  // ficam fora da lista — senão "roubam" a linha da NF-e no agrupamento por chave (sem emitente/
+  // data/valor). Cancelamentos (110111/110112) viram um marcador na linha da própria nota.
+  const isEvento = (item: typeof docs[number]) =>
+    item.status === "EVENTO" || Boolean(item.tipoEvento) || (item.schema ?? "").toLowerCase().includes("evento");
+  const canceladas = new Set(
+    docs
+      .filter((item) => item.tipoEvento === "110111" || item.tipoEvento === "110112")
+      .map((item) => item.chaveAcesso)
+      .filter((chave): chave is string => Boolean(chave))
+  );
   const byKey = new Map<string, typeof docs[number]>();
   for (const doc of docs) {
+    if (isEvento(doc)) continue;
     const key = doc.chaveAcesso || doc.acbrDocumentoId;
     const current = byKey.get(key);
     if (!current) {
@@ -571,8 +583,12 @@ export async function listNfeDistributionDocuments(scope: TenantScope): Promise<
     valor: Number(doc.valorNfe ?? 0),
     dataEmissao: (doc.dataEmissao ?? (doc.entradaFiscalId ? emitidaPorEntrada.get(doc.entradaFiscalId) : null))?.toISOString() ?? null,
     status: doc.status,
-    statusLabel: statusLabel(doc.status, doc.entradaFiscalId, doc.manifestacaoStatus),
-    statusTone: statusTone(doc.status, doc.entradaFiscalId),
+    statusLabel: doc.chaveAcesso && canceladas.has(doc.chaveAcesso) && !doc.entradaFiscalId
+      ? "Cancelada pelo emitente"
+      : statusLabel(doc.status, doc.entradaFiscalId, doc.manifestacaoStatus),
+    statusTone: doc.chaveAcesso && canceladas.has(doc.chaveAcesso) && !doc.entradaFiscalId
+      ? "danger"
+      : statusTone(doc.status, doc.entradaFiscalId),
     manifestacaoStatus: doc.manifestacaoStatus,
     resumo: doc.resumo,
     entradaFiscalId: doc.entradaFiscalId,
@@ -893,9 +909,17 @@ async function importDistributedNfeSefaz(
 
       // O XML completo (procNFe) é disponibilizado num NSU novo após a ciência. Puxa pelo sync por
       // NSU (distNSU) — a consulta por chave (consChNFe) foi descontinuada no distDFeInt (cStat 215).
+      // O filtro por schema procNFe é essencial: a mesma chave também recebe EVENTOS (resEvento/
+      // procEventoNFe, resumo=false) cujo payload NÃO é a nota.
       await syncSefazDistribution(scope, runtime).catch(() => undefined);
       const completo = await prisma.distribuicaoNfeDocumento.findFirst({
-        where: { tenantId: scope.tenantId, empresaId: scope.empresaId, chaveAcesso: chave, resumo: false },
+        where: {
+          tenantId: scope.tenantId,
+          empresaId: scope.empresaId,
+          chaveAcesso: chave,
+          resumo: false,
+          schema: { startsWith: "procNFe" }
+        },
         orderBy: { criadoEm: "desc" }
       });
       const completoXml = (completo?.payload as { xml?: unknown } | null)?.xml;
