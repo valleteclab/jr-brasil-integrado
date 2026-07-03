@@ -41,9 +41,25 @@ type Props = {
 
 // ─── Aba Vendas ───────────────────────────────────────────────────────────────
 
+/** Link do relatório em PDF (com o logotipo da empresa) gerado no servidor. */
+function pdfHref(tipo: string, params?: { mes?: number; ano?: number; dias?: number }): string {
+  const qs = new URLSearchParams({ tipo });
+  if (params?.mes) qs.set("mes", String(params.mes));
+  if (params?.ano) qs.set("ano", String(params.ano));
+  if (params?.dias) qs.set("dias", String(params.dias));
+  return `/api/erp/relatorios/pdf?${qs.toString()}`;
+}
+
+function PdfLink({ tipo, params, label = "📄 PDF" }: { tipo: string; params?: { mes?: number; ano?: number; dias?: number }; label?: string }) {
+  return <a className="btn light" href={pdfHref(tipo, params)} target="_blank" rel="noreferrer">{label}</a>;
+}
+
 function AbaVendas({ data }: { data: SalesReport }) {
   return (
     <div>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "0.75rem" }}>
+        <PdfLink tipo="vendas" params={{ dias: data.periodoDias }} label="📄 Relatório em PDF" />
+      </div>
       <div className="kpi-row">
         <KpiCard label="Total do período" value={data.totalGeral} tone="success" />
         <KpiCard label="Pedidos" value={String(data.contagem)} tone="info" />
@@ -118,6 +134,9 @@ function AbaVendas({ data }: { data: SalesReport }) {
 function AbaEstoque({ data }: { data: StockReport }) {
   return (
     <div>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "0.75rem" }}>
+        <PdfLink tipo="estoque" label="📄 Relatório em PDF" />
+      </div>
       <div className="kpi-row">
         <KpiCard label="Valor em estoque (custo)" value={data.valorTotalEstoque} tone="info" />
         <KpiCard label="Total de SKUs" value={String(data.totalSkus)} tone="default" />
@@ -262,6 +281,10 @@ function AbaFinanceiro({ data, cashFlow, ranking, previstoRealizado, params }: {
         <button className="btn" type="submit">Filtrar</button>
         <a className="btn light" href={financeiroCsvHref(params)}>Exportar CSV</a>
         <a className="btn light" href="/erp/fluxo-caixa">Fluxo de caixa completo</a>
+        <PdfLink tipo="financeiro" label="📄 Aging PDF" />
+        <PdfLink tipo="fluxo-caixa" label="📄 Fluxo PDF" />
+        <PdfLink tipo="ranking" label="📄 Ranking PDF" />
+        <PdfLink tipo="previsto" params={params} label="📄 Previsto×Real PDF" />
       </form>
 
       {/* Fluxo de caixa projetado (contas em aberto por vencimento, a partir do saldo atual) */}
@@ -517,6 +540,9 @@ function statusNotaTone(s: string): "success" | "warn" | "danger" | "info" | "mu
 function AbaFiscal({ data }: { data: FiscalReport }) {
   return (
     <div>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "0.75rem" }}>
+        <PdfLink tipo="fiscal" label="📄 Relatório em PDF" />
+      </div>
       <div className="kpi-row">
         <KpiCard label={`Notas em ${data.mes}`} value={String(data.totalNotas)} tone="info" />
         <KpiCard label="Valor total" value={data.totalValor} tone="success" />
@@ -566,6 +592,9 @@ function AbaDre({ data }: { data: DreSimplificado }) {
 
   return (
     <div>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "0.75rem" }}>
+        <PdfLink tipo="dre" params={{ dias: data.periodoDias }} label="📄 Relatório em PDF" />
+      </div>
       <div className="alert warn" style={{ marginBottom: "1rem" }}>
         <strong>DRE gerencial simplificado — {data.periodoDias} dias.</strong>{" "}
         Regime de caixa e competência lado a lado. Não substitui demonstrativo contábil formal.
@@ -787,6 +816,7 @@ function AbaFechamento({ data, params }: { data: FechamentoMensalReport; params:
         <label>Ano<br /><input name="ano" type="number" min="2000" max="2100" defaultValue={params.ano ?? new Date().getFullYear()} /></label>
         <button className="btn" type="submit">Filtrar</button>
         <a className="btn light" href={fechamentoHref(params)}>Exportar CSV</a>
+        <PdfLink tipo="fechamento" params={params} label="📄 PDF" />
         <a className="btn light" href="/erp/financeiro/classificacoes">Plano / metas</a>
       </form>
 
