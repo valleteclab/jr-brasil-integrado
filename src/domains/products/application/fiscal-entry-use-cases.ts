@@ -121,6 +121,10 @@ type FiscalEntryInstallmentInput = {
   paymentMethod?: string | null;
   /** Conta financeira do cadastro (banco/caixa/cartão) por onde a parcela será paga. */
   contaBancariaId?: string | null;
+  /** Parcela JÁ PAGA antes do lançamento (boleto quitado etc.): entra baixada no contas a pagar. */
+  pago?: boolean;
+  /** Data do pagamento quando pago=true (default: hoje). */
+  pagoEm?: string | null;
 };
 
 function buildFiscalEntryDraft(entrada: FiscalEntryDraftSource) {
@@ -262,6 +266,10 @@ function normalizeInstallments(input: FiscalEntryInstallmentInput[] | undefined,
       value: Number(installment.value ?? 0),
       paymentMethod: installment.paymentMethod?.trim() || null,
       contaBancariaId: installment.contaBancariaId?.trim() || null,
+      pago: installment.pago === true,
+      pagoEm: installment.pago === true
+        ? (installment.pagoEm ? new Date(`${installment.pagoEm.slice(0, 10)}T12:00:00.000Z`) : new Date())
+        : null,
       origin: installment.paymentMethod === "Conforme XML" ? "XML" : "MANUAL"
     }))
     .filter((installment) => installment.value > 0);
@@ -282,12 +290,19 @@ function normalizeInstallments(input: FiscalEntryInstallmentInput[] | undefined,
     throw new Error(`O total das parcelas (${formatCurrency(totalInstallments)}) deve fechar com o total da NF-e (${formatCurrency(totalNota)}).`);
   }
 
+  const pagamentoInvalido = installments.find((i) => i.pago && i.pagoEm && Number.isNaN(i.pagoEm.getTime()));
+  if (pagamentoInvalido) {
+    throw new Error(`Informe uma data de pagamento válida para a parcela ${pagamentoInvalido.number}.`);
+  }
+
   return installments.map((installment) => ({
     number: installment.number,
     dueDate: installment.dueDate as Date,
     value: installment.value,
     paymentMethod: installment.paymentMethod,
     contaBancariaId: installment.contaBancariaId,
+    pago: installment.pago,
+    pagoEm: installment.pagoEm,
     origin: installment.origin
   }));
 }
@@ -913,7 +928,7 @@ export async function processFiscalEntry(
       }
     });
 
-    const parcelas = [];
+    const parcelas: Array<{ registro: { id: string; numero: string; vencimento: Date; valor: Prisma.Decimal | number; formaPagamento: string | null; contaBancariaId: string | null }; pago: boolean; pagoEm: Date | null }> = [];
 
     for (const installment of normalizedInstallments) {
       const parcela = await tx.entradaFiscalParcela.create({
@@ -929,7 +944,7 @@ export async function processFiscalEntry(
           origem: installment.origin
         }
       });
-      parcelas.push(parcela);
+      parcelas.push({ registro: parcela, pago: installment.pago, pagoEm: installment.pagoEm });
     }
 
     const deposito = await tx.deposito.upsert({
@@ -1263,8 +1278,8 @@ export async function processFiscalEntry(
       itens: entrada.itens.map((i) => ({ finalidade: i.finalidade, valorTotal: i.valorTotal }))
     });
 
-    for (const parcela of parcelas) {
-      await tx.contaPagar.create({
+    for (const { registro: parcela, pago, pagoEm } of parcelas) {
+      const contaPagar = await tx.contaPagar.create({
         data: {
           tenantId: scope.tenantId,
           empresaId: scope.empresaId,
@@ -1280,9 +1295,45 @@ export async function processFiscalEntry(
           vencimento: parcela.vencimento,
           valor: parcela.valor,
           classificacaoId: classificacaoSugerida,
-          status: "ABERTO"
+          // Parcela informada como JÁ PAGA no lançamento entra quitada (não vira cobrança em aberto).
+          status: pago ? "PAGO" : "ABERTO",
+          ...(pago ? { valorPago: parcela.valor, pagoEm: pagoEm ?? new Date() } : {})
         }
       });
+
+      // Baixa da parcela já paga: movimento financeiro de DÉBITO (mesmo formato da baixa manual);
+      // com conta bancária informada, ajusta o saldo — sem conta, só registra o histórico.
+      if (pago) {
+        let saldoAnterior: number | null = null;
+        let saldoPosterior: number | null = null;
+        if (parcela.contaBancariaId) {
+          const contaBancaria = await tx.contaBancaria.findFirst({
+            where: { id: parcela.contaBancariaId, tenantId: scope.tenantId, empresaId: scope.empresaId }
+          });
+          if (contaBancaria) {
+            saldoAnterior = Number(contaBancaria.saldoAtual);
+            saldoPosterior = Math.round((saldoAnterior - Number(parcela.valor)) * 100) / 100;
+            await tx.contaBancaria.update({ where: { id: contaBancaria.id }, data: { saldoAtual: saldoPosterior } });
+          }
+        }
+        await tx.movimentoFinanceiro.create({
+          data: {
+            tenantId: scope.tenantId,
+            empresaId: scope.empresaId,
+            ambiente: scope.ambiente ?? "HOMOLOGACAO",
+            contaBancariaId: parcela.contaBancariaId,
+            contaPagarId: contaPagar.id,
+            tipo: "DEBITO",
+            origem: "CONTA_PAGAR",
+            descricao: `Baixa de conta a pagar: ${contaPagar.descricao} (pagamento informado no lançamento da NF-e)`,
+            valor: parcela.valor,
+            formaPagamento: parcela.formaPagamento,
+            saldoAnterior,
+            saldoPosterior,
+            dataMovimento: pagoEm ?? new Date()
+          }
+        });
+      }
     }
 
     // CIAP (bloco G do SPED): itens IMOBILIZADOS viram bem do ativo com o crédito de ICMS

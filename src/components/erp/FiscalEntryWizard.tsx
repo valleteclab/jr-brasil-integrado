@@ -170,6 +170,9 @@ type Installment = {
   paymentMethod: string;
   /** Conta financeira do cadastro (banco/caixa/cartão) por onde a parcela será paga. */
   contaBancariaId: string;
+  /** Parcela JÁ PAGA antes do lançamento — entra baixada no contas a pagar. */
+  pago: boolean;
+  pagoEm: string;
 };
 
 type FormaPagamentoOption = { id: string; nome: string; tipo?: string; contaBancariaId?: string | null };
@@ -306,7 +309,9 @@ function installmentsFromDraft(draft: FiscalDraft): Installment[] {
       dueDate: installment.dueDate?.slice(0, 10) || today,
       amount: installment.value,
       paymentMethod: "Conforme XML",
-      contaBancariaId: ""
+      contaBancariaId: "",
+      pago: false,
+      pagoEm: today
     }));
   }
 
@@ -316,7 +321,9 @@ function installmentsFromDraft(draft: FiscalDraft): Installment[] {
     dueDate: today,
     amount: draft.totals?.invoice ?? 0,
     paymentMethod: "Informar",
-    contaBancariaId: ""
+    contaBancariaId: "",
+    pago: false,
+    pagoEm: today
   }];
 }
 
@@ -804,7 +811,9 @@ export function FiscalEntryWizard({ initialDraft = null, products, formasPagamen
             dueDate: installment.dueDate,
             value: installment.amount,
             paymentMethod: installment.paymentMethod,
-            contaBancariaId: installment.contaBancariaId || null
+            contaBancariaId: installment.contaBancariaId || null,
+            pago: installment.pago,
+            pagoEm: installment.pago ? installment.pagoEm : null
           }))
         }),
         headers: { "Content-Type": "application/json" },
@@ -1210,7 +1219,7 @@ export function FiscalEntryWizard({ initialDraft = null, products, formasPagamen
           </div>
           <h3>Parcelas / duplicatas</h3>
           <table className="erp-table fiscal-installments">
-            <thead><tr><th>Nº</th><th>Vencimento</th><th className="num">Valor</th><th>Forma de pagamento</th><th>Conta / cartão</th></tr></thead>
+            <thead><tr><th>Nº</th><th>Vencimento</th><th className="num">Valor</th><th>Forma de pagamento</th><th>Conta / cartão</th><th>Já paga?</th></tr></thead>
             <tbody>
               {installments.map((installment) => {
                 const formaSelecionada = formasPagamento.find((f) => f.nome === installment.paymentMethod) ?? null;
@@ -1268,11 +1277,38 @@ export function FiscalEntryWizard({ initialDraft = null, products, formasPagamen
                       <small className="block-muted">—</small>
                     )}
                   </td>
+                  <td>
+                    <label className="check-row" style={{ whiteSpace: "nowrap" }}>
+                      <input
+                        type="checkbox"
+                        checked={installment.pago}
+                        onChange={(event) => setInstallments((current) => current.map((row) => row.id === installment.id ? { ...row, pago: event.target.checked } : row))}
+                      /> Já paga
+                    </label>
+                    {installment.pago && (
+                      <input
+                        type="date"
+                        title="Data do pagamento"
+                        value={installment.pagoEm}
+                        max={today}
+                        onChange={(event) => setInstallments((current) => current.map((row) => row.id === installment.id ? { ...row, pagoEm: event.target.value } : row))}
+                      />
+                    )}
+                  </td>
                 </tr>
                 );
               })}
             </tbody>
           </table>
+          {installments.some((i) => i.pago) && (
+            <div className="alert info" style={{ marginTop: 8 }}>
+              <strong>Parcela já paga</strong>
+              <span>
+                Entra <strong>quitada</strong> no contas a pagar (não vira cobrança em aberto), com a data e a forma
+                informadas. Se escolher a conta/cartão, o pagamento também é lançado no movimento e ajusta o saldo.
+              </span>
+            </div>
+          )}
         </div>
       )}
 
