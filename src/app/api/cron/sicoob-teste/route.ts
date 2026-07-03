@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import { authDaConta, contaTemCobranca, BoletoError } from "@/domains/finance/application/boleto-use-cases";
 import { consultarSaldo } from "@/domains/finance/providers/sicoob-conta";
+import { testarTokenSicoob } from "@/domains/finance/providers/sicoob-http";
 
 /**
  * Rota de DIAGNÓSTICO (CRON_SECRET, como os crons): testa a autenticação Sicoob de PRODUÇÃO
@@ -22,7 +23,7 @@ function autorizado(request: Request): boolean {
 export async function POST(request: Request) {
   if (!autorizado(request)) return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
   try {
-    const body = (await request.json()) as { empresa?: string; conta?: string; contaCorrente?: string };
+    const body = (await request.json()) as { empresa?: string; conta?: string; contaCorrente?: string; testarEscopos?: string[] };
     const cnpj = (body.empresa ?? "").replace(/\D+/g, "");
     const empresa = await prisma.empresa.findFirst({
       where: cnpj.length === 14 ? { cnpj } : { razaoSocial: { contains: body.empresa ?? "", mode: "insensitive" } }
@@ -45,6 +46,16 @@ export async function POST(request: Request) {
     if (!numeroConta) throw new BoletoError("Informe contaCorrente no body ou preencha o campo na conta.");
 
     const auth = await authDaConta(scope, conta);
+
+    // BISSECÇÃO de escopos: testa cada conjunto informado e devolve quais o credenciamento aceita.
+    if (body.testarEscopos?.length) {
+      const resultados: Record<string, string> = {};
+      for (const s of body.testarEscopos.slice(0, 12)) {
+        const r = await testarTokenSicoob(auth, s);
+        resultados[s] = r.ok ? "OK" : (r.erro ?? "erro").slice(0, 160);
+      }
+      return NextResponse.json({ conta: conta.nome, escopos: resultados });
+    }
     const saldo = await consultarSaldo(auth, numeroConta);
     return NextResponse.json({
       conta: conta.nome,

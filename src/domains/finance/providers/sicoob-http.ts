@@ -88,6 +88,16 @@ async function getAccessToken(auth: SicoobAuth, scopes: string): Promise<{ token
   return { token, tls };
 }
 
+/** Diagnóstico: tenta obter o token com um conjunto de escopos e devolve ok/erro (sem lançar). */
+export async function testarTokenSicoob(auth: SicoobAuth, scopes: string): Promise<{ ok: boolean; erro?: string }> {
+  try {
+    await getAccessToken(auth, scopes);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, erro: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 /** Chamada autenticada a uma API Sicoob. `bases` define as URLs de produção e sandbox da API. */
 export async function sicoobApi(
   auth: SicoobAuth,
