@@ -471,3 +471,12 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - AUDITORIA: `PedidoVendaItem.tipoPreco` (VISTA/PRAZO/MANUAL) gravado por item — migration `20260703200000_pedido_item_tipo_preco` (PENDENTE de aplicar). Logs DESCONTO_AUTORIZADO/PDV_DESCONTO_AUTORIZADO agora incluem desconto implicito e itens abaixo do minimo. Edicao de venda confirmada preserva o tipoPreco.
 - Conversao de orcamento aprovado em pedido nao passa pelo guard (preco negociado do orcamento e mantido). Loja virtual usa preco do servidor (sem impacto).
 - Validacao: `prisma generate`, `tsc --noEmit` e `next lint` ok.
+
+## Atualizacao operacional - 2026-07-03 - envio de orcamentos, boletos e notas fiscais ao cliente (e-mail + WhatsApp)
+
+- WHATSAPP: reaproveitada a integracao Z-API existente (ConfiguracaoWhatsapp). Novo `sendWhatsappDocument` no zapi-client (send-document/{ext} com PDF em base64 — sem URL publica). Decisao registrada: Z-API e provedor NAO OFICIAL (risco de banimento em alta em 2026); a arquitetura isola o provedor (enum ProvedorWhatsapp) para futura migracao a Meta Cloud API se o volume crescer.
+- E-MAIL: infraestrutura criada do zero — model `ConfiguracaoEmail` (SMTP por empresa, senha criptografada via secret-crypto; migration `20260703220000_configuracao_email`, PENDENTE de aplicar), lib `nodemailer` (nova dependencia), cliente `src/lib/email/smtp-client.ts` (getEmailRuntime/saveEmailConfig/sendEmail), tela Configuracoes -> E-mail (EmailSettings + rota /api/erp/configuracoes/email, POST restrito a admin) e item no menu.
+- ENVIO: `src/domains/comms/application/document-send-use-cases.ts` — enviarOrcamento (WhatsApp: mensagem formatada com itens/total/validade; e-mail: HTML com tabela), enviarBoleto (PDF do Sicoob anexado + linha digitavel copia-e-cola; tolera sandbox sem PDF) e enviarNotaFiscal (DANFE PDF + XML anexados; so notas AUTORIZADAS; destinatario cai para destinatarioEmail da NF). Destinatario padrao = contato PRINCIPAL do cliente (ClienteContato), sobreponivel na tela. Cada envio auditado (acao ENVIO_CLIENTE) com resultado por canal.
+- ROTAS: POST /api/erp/orcamentos/[id]/enviar, /api/erp/financeiro/contas-receber/[id]/boleto/enviar, /api/erp/fiscal/[id]/enviar.
+- UI: modal compartilhado `EnviarDocumentoModal` (escolha de canais, override de destinatario, resultado por canal) + botoes "Enviar" em QuotesList, FinanceManager (aba receber, boleto emitido) e NotaFiscalRowActions (usado tambem no detalhe da venda).
+- Validacao: `prisma generate`, `tsc --noEmit` e `next lint` ok.

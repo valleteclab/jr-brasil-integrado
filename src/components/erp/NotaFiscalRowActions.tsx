@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { EnviarDocumentoModal } from "./EnviarDocumentoModal";
 
 export type NotaAcoes = {
   id: string;
@@ -24,6 +25,7 @@ export function NotaFiscalRowActions({ nota }: { nota: NotaAcoes }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [enviando, setEnviando] = useState(false);
 
   async function cancelar() {
     const justificativa = window.prompt(
@@ -78,6 +80,14 @@ export function NotaFiscalRowActions({ nota }: { nota: NotaAcoes }) {
         <>
           <a className="btn-erp ghost xs" href={`/api/erp/fiscal/${nota.id}/pdf`} target="_blank" rel="noopener noreferrer">PDF</a>
           <a className="btn-erp ghost xs" href={`/api/erp/fiscal/${nota.id}/xml`}>XML</a>
+          <button
+            type="button"
+            className="btn-erp ghost xs"
+            title="Enviar a nota (PDF + XML) ao cliente por e-mail/WhatsApp"
+            onClick={() => setEnviando(true)}
+          >
+            📤 Enviar
+          </button>
         </>
       )}
       {nota.canClone && <Link className="btn-erp ghost xs" href={`/erp/fiscal/emitir?clonar=${nota.id}`}>Clonar</Link>}
@@ -91,6 +101,14 @@ export function NotaFiscalRowActions({ nota }: { nota: NotaAcoes }) {
         </button>
       )}
       {error && <span className="alert danger" style={{ width: "100%", marginTop: 4 }}>{error}</span>}
+      {enviando && (
+        <EnviarDocumentoModal
+          titulo={`Enviar ${nota.modeloLabel} ${nota.numero ?? ""}`}
+          descricao="O PDF (e o XML, quando disponível) vai anexado no e-mail; no WhatsApp o PDF segue como documento."
+          endpoint={`/api/erp/fiscal/${nota.id}/enviar`}
+          onClose={() => setEnviando(false)}
+        />
+      )}
     </div>
   );
 }

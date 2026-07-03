@@ -325,6 +325,7 @@ model Tenant {
   chavesApiAgente          ChaveApiAgente[]
   telefonesAgente          AgenteTelefone[]
   configWhatsapp           ConfiguracaoWhatsapp[]
+  configEmail              ConfiguracaoEmail[]
   criadoEm                 DateTime                 @default(now())
   atualizadoEm             DateTime                 @updatedAt
 }
@@ -387,6 +388,7 @@ model Empresa {
   chavesApiAgente           ChaveApiAgente[]
   telefonesAgente           AgenteTelefone[]
   configWhatsapp            ConfiguracaoWhatsapp[]
+  configEmail               ConfiguracaoEmail[]
   enderecoLogradouro        String?
   enderecoNumero            String?
   enderecoComplemento       String?
@@ -2876,6 +2878,29 @@ model ConfiguracaoWhatsapp {
   atenderClientes   Boolean          @default(true)
   criadoEm          DateTime         @default(now())
   atualizadoEm      DateTime         @updatedAt
+
+  @@index([tenantId, empresaId])
+}
+
+/// Configuração de E-MAIL (SMTP) por empresa — envio de orçamentos, boletos e notas fiscais ao
+/// cliente final. Senha criptografada (secret-crypto), mesmo padrão da ConfiguracaoWhatsapp.
+model ConfiguracaoEmail {
+  id             String   @id @default(cuid())
+  tenantId       String
+  empresaId      String   @unique
+  tenant         Tenant   @relation(fields: [tenantId], references: [id])
+  empresa        Empresa  @relation(fields: [empresaId], references: [id])
+  ativo          Boolean  @default(false)
+  host           String?
+  porta          Int      @default(587)
+  /// true = SSL/TLS direto (465); false = STARTTLS (587).
+  seguro         Boolean  @default(false)
+  usuario        String?
+  senhaCripto    String?
+  remetenteNome  String?
+  remetenteEmail String?
+  criadoEm       DateTime @default(now())
+  atualizadoEm   DateTime @updatedAt
 
   @@index([tenantId, empresaId])
 }
