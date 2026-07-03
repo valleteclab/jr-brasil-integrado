@@ -2,13 +2,29 @@
 
 import { useEffect, useState } from "react";
 
-type Cfg = { ativo: boolean; instanceId: string; temToken: boolean; temClientToken: boolean; atenderClientes: boolean };
+type Cfg = {
+  ativo: boolean;
+  provedor: "ZAPI" | "ZERNIO";
+  instanceId: string;
+  temToken: boolean;
+  temClientToken: boolean;
+  atenderClientes: boolean;
+  zernioAccountId: string;
+  zernioTemplateNome: string;
+  zernioTemplateIdioma: string;
+};
+type ZernioConta = { id: string; platform: string; nome: string };
+type ZernioTemplate = { nome: string; idioma: string; status: string; categoria: string };
 type Telefone = { id: string; telefone: string; nome: string | null; role: "GESTOR" | "VENDEDOR" | "CLIENTE"; ativo: boolean; criadoEm: string };
 
 export function WhatsappSettings() {
-  const [cfg, setCfg] = useState<Cfg>({ ativo: false, instanceId: "", temToken: false, temClientToken: false, atenderClientes: true });
+  const [cfg, setCfg] = useState<Cfg>({ ativo: false, provedor: "ZAPI", instanceId: "", temToken: false, temClientToken: false, atenderClientes: true, zernioAccountId: "", zernioTemplateNome: "", zernioTemplateIdioma: "pt_BR" });
   const [token, setToken] = useState("");
   const [clientToken, setClientToken] = useState("");
+  const [zernioApiKey, setZernioApiKey] = useState("");
+  const [zernioContas, setZernioContas] = useState<ZernioConta[]>([]);
+  const [zernioTemplates, setZernioTemplates] = useState<ZernioTemplate[]>([]);
+  const [zernioBuscando, setZernioBuscando] = useState(false);
   const [telefones, setTelefones] = useState<Telefone[]>([]);
   const [novoTel, setNovoTel] = useState("");
   const [novoNome, setNovoNome] = useState("");
@@ -37,20 +53,42 @@ export function WhatsappSettings() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ativo: cfg.ativo,
+          provedor: cfg.provedor,
           instanceId: cfg.instanceId,
           token: token || undefined,
           clientToken: clientToken || undefined,
-          atenderClientes: cfg.atenderClientes
+          atenderClientes: cfg.atenderClientes,
+          zernioApiKey: zernioApiKey || undefined,
+          zernioAccountId: cfg.zernioAccountId,
+          zernioTemplateNome: cfg.zernioTemplateNome,
+          zernioTemplateIdioma: cfg.zernioTemplateIdioma
         })
       });
       const data = (await res.json()) as { error?: string };
       if (!res.ok) throw new Error(data.error || "Não foi possível salvar.");
       setMsg("Configuração do WhatsApp salva.");
-      setToken(""); setClientToken("");
+      setToken(""); setClientToken(""); setZernioApiKey("");
       await carregar();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Não foi possível salvar.");
     } finally { setBusy(false); }
+  }
+
+  // Descoberta Zernio: lista contas WhatsApp conectadas e templates aprovados da WABA
+  // (usa a API key JÁ SALVA — salve a key antes de buscar).
+  async function buscarZernio(accountId?: string) {
+    setZernioBuscando(true); setError(""); setMsg("");
+    try {
+      const qs = accountId ? `?accountId=${encodeURIComponent(accountId)}` : "";
+      const res = await fetch(`/api/erp/configuracoes/whatsapp/zernio${qs}`);
+      const data = (await res.json()) as { error?: string; contas?: ZernioConta[]; templates?: ZernioTemplate[] };
+      if (!res.ok) throw new Error(data.error || "Não foi possível consultar a Zernio.");
+      setZernioContas(data.contas ?? []);
+      setZernioTemplates(data.templates ?? []);
+      if (!data.contas?.length) setMsg("Nenhuma conta WhatsApp conectada na Zernio — conecte a WABA no painel da Zernio primeiro.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Não foi possível consultar a Zernio.");
+    } finally { setZernioBuscando(false); }
   }
 
   async function addTelefone() {
@@ -104,15 +142,74 @@ export function WhatsappSettings() {
               <input type="checkbox" checked={cfg.atenderClientes} onChange={(e) => setCfg({ ...cfg, atenderClientes: e.target.checked })} />
               Atender clientes finais (autoatendimento dos próprios pedidos)
             </label>
-            <label>Instance ID
-              <input value={cfg.instanceId} onChange={(e) => setCfg({ ...cfg, instanceId: e.target.value })} placeholder="ID da instância Z-API" />
+            <label>Provedor
+              <select value={cfg.provedor} onChange={(e) => setCfg({ ...cfg, provedor: e.target.value === "ZERNIO" ? "ZERNIO" : "ZAPI" })}>
+                <option value="ZAPI">Z-API (não oficial — conexão WhatsApp Web)</option>
+                <option value="ZERNIO">Zernio (API OFICIAL da Meta / WABA)</option>
+              </select>
+              <small className="field-hint">
+                Zernio usa a API oficial: iniciar conversa exige template aprovado na Meta; PDF só entra na janela de 24h após o cliente responder. O agente de atendimento (webhook) segue na Z-API.
+              </small>
             </label>
-            <label>Token{cfg.temToken ? " (já salvo)" : ""}
-              <input value={token} onChange={(e) => setToken(e.target.value)} placeholder={cfg.temToken ? "Manter token atual" : "Token da instância"} />
-            </label>
-            <label>Client-Token{cfg.temClientToken ? " (já salvo)" : ""}
-              <input value={clientToken} onChange={(e) => setClientToken(e.target.value)} placeholder={cfg.temClientToken ? "Manter atual" : "Client-Token da conta (segurança)"} />
-            </label>
+            {cfg.provedor === "ZAPI" && (
+              <>
+                <label>Instance ID
+                  <input value={cfg.instanceId} onChange={(e) => setCfg({ ...cfg, instanceId: e.target.value })} placeholder="ID da instância Z-API" />
+                </label>
+                <label>Token{cfg.temToken ? " (já salvo)" : ""}
+                  <input value={token} onChange={(e) => setToken(e.target.value)} placeholder={cfg.temToken ? "Manter token atual" : "Token da instância"} />
+                </label>
+                <label>Client-Token{cfg.temClientToken ? " (já salvo)" : ""}
+                  <input value={clientToken} onChange={(e) => setClientToken(e.target.value)} placeholder={cfg.temClientToken ? "Manter atual" : "Client-Token da conta (segurança)"} />
+                </label>
+              </>
+            )}
+            {cfg.provedor === "ZERNIO" && (
+              <>
+                <label>API key da Zernio{cfg.temToken ? " (já salva)" : ""}
+                  <input type="password" value={zernioApiKey} onChange={(e) => setZernioApiKey(e.target.value)} placeholder={cfg.temToken ? "Manter atual" : "sk_..."} />
+                  <small className="field-hint">Crie em zernio.com → Settings → API Keys. Salve primeiro a key para poder buscar contas/templates.</small>
+                </label>
+                <label>Conta WhatsApp conectada (WABA)
+                  <div style={{ display: "flex", gap: 6 }}>
+                    {zernioContas.length ? (
+                      <select style={{ flex: 1 }} value={cfg.zernioAccountId} onChange={(e) => { setCfg({ ...cfg, zernioAccountId: e.target.value }); void buscarZernio(e.target.value); }}>
+                        <option value="">Selecione a conta…</option>
+                        {zernioContas.map((c) => <option key={c.id} value={c.id}>{c.nome} ({c.id})</option>)}
+                      </select>
+                    ) : (
+                      <input style={{ flex: 1 }} value={cfg.zernioAccountId} onChange={(e) => setCfg({ ...cfg, zernioAccountId: e.target.value })} placeholder="acc_... (ou use Buscar)" />
+                    )}
+                    <button type="button" className="btn-erp ghost sm" disabled={zernioBuscando} onClick={() => buscarZernio(cfg.zernioAccountId || undefined)}>
+                      {zernioBuscando ? "..." : "🔎 Buscar"}
+                    </button>
+                  </div>
+                </label>
+                <label>Template aprovado (inicia a conversa)
+                  {zernioTemplates.length ? (
+                    <select value={cfg.zernioTemplateNome} onChange={(e) => {
+                      const t = zernioTemplates.find((x) => x.nome === e.target.value);
+                      setCfg({ ...cfg, zernioTemplateNome: e.target.value, zernioTemplateIdioma: t?.idioma || cfg.zernioTemplateIdioma });
+                    }}>
+                      <option value="">Selecione o template…</option>
+                      {zernioTemplates.map((t) => (
+                        <option key={`${t.nome}-${t.idioma}`} value={t.nome} disabled={t.status !== "APPROVED"}>
+                          {t.nome} · {t.idioma} · {t.status}{t.categoria ? ` · ${t.categoria}` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input value={cfg.zernioTemplateNome} onChange={(e) => setCfg({ ...cfg, zernioTemplateNome: e.target.value })} placeholder="Ex.: documentos_erp" />
+                  )}
+                  <small className="field-hint">
+                    Crie na Meta (categoria UTILITY) um template com o corpo <span className="mono">{"{{1}}"}</span> — a mensagem do ERP (orçamento, linha digitável do boleto, chave da NF) entra nessa variável.
+                  </small>
+                </label>
+                <label>Idioma do template
+                  <input value={cfg.zernioTemplateIdioma} onChange={(e) => setCfg({ ...cfg, zernioTemplateIdioma: e.target.value })} placeholder="pt_BR" />
+                </label>
+              </>
+            )}
           </div>
           <div className="erp-toolbar" style={{ borderBottom: "none", paddingBottom: 0, marginTop: 8 }}>
             <div className="grow" />

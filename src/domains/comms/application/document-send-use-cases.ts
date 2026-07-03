@@ -3,7 +3,7 @@ import type { TenantScope } from "@/lib/auth/dev-session";
 import { scopedByTenantCompany } from "@/lib/auth/dev-session";
 import { createAuditLog } from "@/lib/audit/audit-service";
 import { getEmailRuntime, sendEmail, type EmailAttachment } from "@/lib/email/smtp-client";
-import { getWhatsappRuntime, sendWhatsappDocument, sendWhatsappText } from "@/lib/whatsapp/zapi-client";
+import { getWhatsappRuntime, sendWhatsappDocument, sendWhatsappText } from "@/lib/whatsapp/whatsapp-service";
 import { getOrcamentoParaImpressao } from "@/domains/sales-quote/application/quote-use-cases";
 import { pdfDoBoleto } from "@/domains/finance/application/boleto-use-cases";
 import { downloadNotaFiscalDocumento } from "@/domains/fiscal/application/fiscal-emission-use-cases";
@@ -12,8 +12,9 @@ import { downloadNotaFiscalDocumento } from "@/domains/fiscal/application/fiscal
  * ENVIO DE DOCUMENTOS AO CLIENTE FINAL (orçamento, boleto, nota fiscal) por E-MAIL e WHATSAPP.
  *
  * - E-mail: SMTP da empresa (ConfiguracaoEmail); PDF vai como anexo.
- * - WhatsApp: Z-API da empresa (ConfiguracaoWhatsapp); PDF vai como documento (base64) +
- *   mensagem de texto com o resumo. Orçamento vai como mensagem formatada (não há PDF).
+ * - WhatsApp: provedor configurado na empresa (Z-API ou Zernio/API oficial, via
+ *   whatsapp-service); PDF vai como documento com o resumo na legenda. Orçamento vai como
+ *   mensagem formatada (não há PDF). Na Zernio, fora da janela de 24h o PDF volta com `aviso`.
  * - Destinatário padrão: contato PRINCIPAL do cliente (ClienteContato); a tela pode sobrepor.
  * - Cada envio é auditado; falha em um canal não impede o outro (resultado por canal).
  */
@@ -31,7 +32,7 @@ export type EnvioInput = {
 
 export type EnvioResultado = {
   email?: { ok: boolean; error?: string; destinatario?: string };
-  whatsapp?: { ok: boolean; error?: string; destinatario?: string };
+  whatsapp?: { ok: boolean; error?: string; aviso?: string; destinatario?: string };
 };
 
 const brl = (v: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
@@ -111,16 +112,18 @@ async function despachar(
     } else {
       const cfg = await getWhatsappRuntime(scope);
       if (!cfg || !cfg.ativo) {
-        resultado.whatsapp = { ok: false, error: "WhatsApp (Z-API) não configurado/ativo." };
+        resultado.whatsapp = { ok: false, error: "WhatsApp não configurado/ativo (Configurações → WhatsApp)." };
       } else {
-        let r = await sendWhatsappText(cfg, destinatario, params.textoWhatsapp);
-        if (r.ok && params.docWhatsapp) {
-          r = await sendWhatsappDocument(cfg, destinatario, {
-            base64: params.docWhatsapp.base64,
-            fileName: params.docWhatsapp.fileName,
-            caption: params.docWhatsapp.caption
-          });
-        }
+        // UMA chamada por envio: com documento, o texto vai como legenda — na Z-API sai
+        // documento+legenda; na Zernio (API oficial) o texto vira o template e o PDF segue
+        // na conversa (fora da janela de 24h, volta `aviso` em vez de falhar).
+        const r = params.docWhatsapp
+          ? await sendWhatsappDocument(cfg, destinatario, {
+              base64: params.docWhatsapp.base64,
+              fileName: params.docWhatsapp.fileName,
+              caption: params.textoWhatsapp
+            })
+          : await sendWhatsappText(cfg, destinatario, params.textoWhatsapp);
         resultado.whatsapp = { ...r, destinatario };
       }
     }
@@ -136,7 +139,7 @@ async function despachar(
       payload: {
         canais: [...canais],
         email: resultado.email ? { ok: resultado.email.ok, destinatario: resultado.email.destinatario, error: resultado.email.error } : undefined,
-        whatsapp: resultado.whatsapp ? { ok: resultado.whatsapp.ok, destinatario: resultado.whatsapp.destinatario, error: resultado.whatsapp.error } : undefined
+        whatsapp: resultado.whatsapp ? { ok: resultado.whatsapp.ok, destinatario: resultado.whatsapp.destinatario, error: resultado.whatsapp.error, aviso: resultado.whatsapp.aviso } : undefined
       }
     });
   });
