@@ -1148,7 +1148,7 @@ function ProductPicker({ produtos, itens, onAdd, onRemoveProduto, onClose }: {
   const qtyById = new Map(itens.filter((it) => it.produtoId).map((it) => [it.produtoId as string, it.quantidade]));
   const totalCatalogo = itens.filter((it) => it.produtoId).reduce((s, it) => s + it.quantidade, 0);
   const list = produtos
-    .filter((p) => correspondeBusca(q, p.sku, p.nome, p.gtin, p.codigoOriginal, p.codigoFabricante))
+    .filter((p) => correspondeBusca(q, p.sku, p.nome, p.descricao, p.descricaoComercial, p.gtin, p.codigoOriginal, p.codigoFabricante))
     .slice(0, 50);
   return (
     <>

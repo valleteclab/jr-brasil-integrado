@@ -108,7 +108,7 @@ export function SaleEditWorkspace({ venda, form }: { venda: SaleDetail; form: Sa
     if (!termo) return [];
     return form.produtos
       .filter((p) => {
-        const alvo = `${p.sku} ${p.nome} ${p.gtin ?? ""} ${p.codigoOriginal ?? ""} ${p.codigoFabricante ?? ""}`.toLowerCase();
+        const alvo = `${p.sku} ${p.nome} ${p.descricao ?? ""} ${p.descricaoComercial ?? ""} ${p.gtin ?? ""} ${p.codigoOriginal ?? ""} ${p.codigoFabricante ?? ""}`.toLowerCase();
         return alvo.includes(termo);
       })
       .slice(0, 8);
