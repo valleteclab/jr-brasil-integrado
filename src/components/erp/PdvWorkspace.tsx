@@ -162,6 +162,8 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
   const [aba, setAba] = useState<"produtos" | "servicos">(mostraProdutos ? "produtos" : "servicos");
   const [busca, setBusca] = useState("");
   const [cart, setCart] = useState<CartItem[]>([]);
+  // No celular o carrinho vira um painel deslizante; esta flag controla a exibição.
+  const [carrinhoAberto, setCarrinhoAberto] = useState(false);
   // Texto sendo digitado em cada input de quantidade — permite "0,5" sem o campo zerar
   // no meio da digitação. Quando o input perde foco, é convertido para number e commit
   // via definirQtd. Limpo automaticamente quando o item sai do carrinho.
@@ -574,8 +576,16 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
           <div className="pdv-atalhos">F2 busca · F4 pagar · F6 cliente · F8 sangria · Esc limpar · Enter = código de barras</div>
         </section>
 
-        <aside className="pdv-carrinho">
-          <h2>Carrinho</h2>
+        {/* Barra inferior no celular: mostra total e abre o carrinho deslizante. */}
+        <button type="button" className="pdv-cart-bar" onClick={() => setCarrinhoAberto(true)}>
+          <span>🛒 {cart.reduce((n, i) => n + i.qtd, 0)} {cart.length === 1 ? "item" : "itens"}</span>
+          <strong>{brl(total)}</strong>
+          <span className="pdv-cart-bar-cta">Ver carrinho ›</span>
+        </button>
+        {carrinhoAberto && <div className="pdv-cart-bd" onClick={() => setCarrinhoAberto(false)} aria-hidden="true" />}
+
+        <aside className={`pdv-carrinho${carrinhoAberto ? " pdv-carrinho--aberto" : ""}`}>
+          <h2>Carrinho <button type="button" className="pdv-cart-fechar" onClick={() => setCarrinhoAberto(false)} aria-label="Fechar carrinho">✕</button></h2>
           <div className="pdv-itens">
             {cart.length === 0 && <p className="pdv-vazio">Clique ou escaneie itens para adicionar.</p>}
             {cart.map((i) => (
