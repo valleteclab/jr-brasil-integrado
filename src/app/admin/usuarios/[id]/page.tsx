@@ -63,6 +63,7 @@ export default async function AdminUsuarioDetalhePage({ params }: { params: { id
           email={usuario.email}
           status={usuario.status}
           plataformaAdmin={usuario.plataformaAdmin}
+          whatsapp={usuario.whatsapp}
         />
       </Card>
 

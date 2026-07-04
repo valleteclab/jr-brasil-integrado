@@ -197,6 +197,7 @@ export type ClienteDetail = {
     statusLabel: string;
     statusTone: "success" | "warn" | "danger" | "mute";
     matriz: boolean;
+    exigir2fa: boolean;
     cidade: string | null;
     uf: string | null;
   }[];
@@ -286,6 +287,7 @@ export async function getClienteDetail(tenantId: string): Promise<ClienteDetail 
       statusLabel: empresaStatusLabel(e.status),
       statusTone: empresaStatusTone(e.status),
       matriz: e.matriz,
+      exigir2fa: e.exigir2fa,
       cidade: e.enderecoCidade,
       uf: e.enderecoUf
     })),
@@ -515,6 +517,27 @@ export async function setEmpresaStatus(empresaId: string, status: "ATIVA" | "INA
   });
 
   return { id: atualizada.id, status: atualizada.status };
+}
+
+/** Liga/desliga a exigência de 2FA (código WhatsApp) no login dos usuários da empresa. */
+export async function setEmpresaExigir2fa(empresaId: string, exigir: boolean) {
+  const admin = await requirePlatformAdmin();
+  assertDb();
+
+  const empresa = await prisma.empresa.findUnique({ where: { id: empresaId } });
+  if (!empresa) throw new PlatformAdminError("Empresa não encontrada.");
+
+  const atualizada = await prisma.empresa.update({ where: { id: empresaId }, data: { exigir2fa: exigir } });
+  await audit({
+    tenantId: empresa.tenantId,
+    empresaId,
+    usuarioId: admin.usuarioId,
+    entidade: "Empresa",
+    entidadeId: empresaId,
+    acao: "plataforma.alterar_2fa_empresa",
+    payload: { exigir2fa: exigir }
+  });
+  return { id: atualizada.id, exigir2fa: atualizada.exigir2fa };
 }
 
 // ---------------------------------------------------------------------------
@@ -915,6 +938,7 @@ export type CriarUsuarioInput = {
   tenantId?: string;
   empresaId?: string;
   perfilId?: string;
+  whatsapp?: string;
 };
 
 export type CriarUsuarioResult = {
@@ -939,10 +963,15 @@ export async function criarUsuario(input: CriarUsuarioInput): Promise<CriarUsuar
   const senha = input.senha?.trim() || gerarSenhaTemporaria();
   if (senha.length < 8) throw new PlatformAdminError("A senha deve ter ao menos 8 caracteres.");
 
+  const whatsapp = (input.whatsapp ?? "").replace(/\D+/g, "") || null;
+  if (whatsapp && (whatsapp.length < 10 || whatsapp.length > 13)) {
+    throw new PlatformAdminError("WhatsApp inválido — informe DDD + número (10 a 13 dígitos).");
+  }
+
   // Dono da plataforma: conta separada, sem vínculo a cliente.
   if (input.tipo === "PLATAFORMA") {
     const usuario = await prisma.usuario.create({
-      data: { nome, email, senhaHash: hashPassword(senha), status: "ATIVO", plataformaAdmin: true }
+      data: { nome, email, senhaHash: hashPassword(senha), status: "ATIVO", plataformaAdmin: true, whatsapp }
     });
     return { usuarioId: usuario.id, email, senha, plataformaAdmin: true };
   }
@@ -961,7 +990,7 @@ export async function criarUsuario(input: CriarUsuarioInput): Promise<CriarUsuar
 
   const usuario = await prisma.$transaction(async (tx) => {
     const u = await tx.usuario.create({
-      data: { nome, email, senhaHash: hashPassword(senha), status: "ATIVO", plataformaAdmin: false }
+      data: { nome, email, senhaHash: hashPassword(senha), status: "ATIVO", plataformaAdmin: false, whatsapp }
     });
     await tx.usuarioVinculo.create({
       data: { tenantId, empresaId, usuarioId: u.id, perfilId, ativo: true }
@@ -988,6 +1017,8 @@ export type AtualizarUsuarioInput = {
   email?: string;
   status?: "ATIVO" | "INATIVO";
   plataformaAdmin?: boolean;
+  /** WhatsApp para 2FA (só dígitos com DDD; string vazia limpa). */
+  whatsapp?: string;
 };
 
 export async function atualizarUsuario(usuarioId: string, input: AtualizarUsuarioInput) {
@@ -997,7 +1028,15 @@ export async function atualizarUsuario(usuarioId: string, input: AtualizarUsuari
   const usuario = await prisma.usuario.findUnique({ where: { id: usuarioId } });
   if (!usuario) throw new PlatformAdminError("Usuário não encontrado.");
 
-  const data: { nome?: string; email?: string; status?: "ATIVO" | "INATIVO"; plataformaAdmin?: boolean } = {};
+  const data: { nome?: string; email?: string; status?: "ATIVO" | "INATIVO"; plataformaAdmin?: boolean; whatsapp?: string | null } = {};
+
+  if (input.whatsapp !== undefined) {
+    const digs = input.whatsapp.replace(/\D+/g, "");
+    if (digs && (digs.length < 10 || digs.length > 13)) {
+      throw new PlatformAdminError("WhatsApp inválido — informe DDD + número (10 a 13 dígitos).");
+    }
+    data.whatsapp = digs || null;
+  }
 
   if (input.nome !== undefined) {
     const nome = input.nome.trim();
@@ -1077,6 +1116,7 @@ export type UsuarioDetail = {
   email: string;
   status: "ATIVO" | "INATIVO";
   plataformaAdmin: boolean;
+  whatsapp: string | null;
   ultimoAcessoEm: string | null;
   criadoEm: string;
   vinculos: UsuarioVinculoRow[];
@@ -1107,6 +1147,7 @@ export async function getUsuarioDetail(usuarioId: string): Promise<UsuarioDetail
     email: u.email,
     status: u.status,
     plataformaAdmin: u.plataformaAdmin,
+    whatsapp: u.whatsapp ?? null,
     ultimoAcessoEm: u.ultimoAcessoEm?.toISOString() ?? null,
     criadoEm: u.criadoEm.toISOString(),
     vinculos: u.vinculos.map((v) => ({

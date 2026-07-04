@@ -10,14 +10,16 @@ type Props = {
   email: string;
   status: "ATIVO" | "INATIVO";
   plataformaAdmin: boolean;
+  whatsapp?: string | null;
 };
 
-export function UsuarioDadosForm({ usuarioId, nome: nomeInicial, email: emailInicial, status: statusInicial, plataformaAdmin: paInicial }: Props) {
+export function UsuarioDadosForm({ usuarioId, nome: nomeInicial, email: emailInicial, status: statusInicial, plataformaAdmin: paInicial, whatsapp: whatsInicial }: Props) {
   const router = useRouter();
   const [nome, setNome] = useState(nomeInicial);
   const [email, setEmail] = useState(emailInicial);
   const [status, setStatus] = useState<"ATIVO" | "INATIVO">(statusInicial);
   const [plataformaAdmin, setPlataformaAdmin] = useState(paInicial);
+  const [whatsapp, setWhatsapp] = useState(whatsInicial ?? "");
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState("");
   const [ok, setOk] = useState(false);
@@ -31,7 +33,7 @@ export function UsuarioDadosForm({ usuarioId, nome: nomeInicial, email: emailIni
       const res = await fetch(`/api/admin/usuarios/${usuarioId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nome, email, status, plataformaAdmin })
+        body: JSON.stringify({ nome, email, status, plataformaAdmin, whatsapp })
       });
       const data = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) throw new Error(data.error || "Não foi possível salvar.");
@@ -57,6 +59,11 @@ export function UsuarioDadosForm({ usuarioId, nome: nomeInicial, email: emailIni
         <label>
           E-mail
           <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+        </label>
+        <label>
+          WhatsApp (2FA)
+          <input inputMode="numeric" placeholder="DDD + número (ex.: 77999998888)" value={whatsapp} onChange={(e) => setWhatsapp(e.target.value.replace(/\D/g, "").slice(0, 13))} />
+          <small style={{ color: "var(--erp-slate, #64748b)", fontSize: 11 }}>Recebe o código de verificação quando a empresa exige 2FA.</small>
         </label>
         <label>
           Status

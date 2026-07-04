@@ -343,6 +343,8 @@ model Empresa {
   inscricaoEstadual         String?
   inscricaoMunicipal        String?
   status                    StatusEmpresa              @default(ATIVA)
+  /// Exigir código 2FA (WhatsApp) no login dos usuários desta empresa — controlado no /admin.
+  exigir2fa                 Boolean                    @default(false)
   matriz                    Boolean                    @default(false)
   vinculos                  UsuarioVinculo[]
   clientes                  Cliente[]
@@ -608,12 +610,32 @@ model Usuario {
   senhaHash       String
   status          StatusUsuario    @default(ATIVO)
   plataformaAdmin Boolean          @default(false)
+  /// WhatsApp (só dígitos, com DDD) — recebe o código 2FA quando a empresa exigir.
+  whatsapp        String?
+  /// Proteção contra força bruta: tentativas falhas seguidas e bloqueio temporário.
+  loginFalhas     Int              @default(0)
+  bloqueadoAte    DateTime?
   vinculos        UsuarioVinculo[]
   auditorias      Auditoria[]
   sessoes         Sessao[]
+  desafios2fa     Desafio2fa[]
   ultimoAcessoEm  DateTime?
   criadoEm        DateTime         @default(now())
   atualizadoEm    DateTime         @updatedAt
+}
+
+/// Desafio 2FA pendente: código de 6 dígitos (hash) enviado por WhatsApp, validade curta.
+model Desafio2fa {
+  id         String    @id @default(cuid())
+  usuarioId  String
+  usuario    Usuario   @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  codigoHash String
+  expiraEm   DateTime
+  tentativas Int       @default(0)
+  usadoEm    DateTime?
+  criadoEm   DateTime  @default(now())
+
+  @@index([usuarioId])
 }
 
 model Sessao {

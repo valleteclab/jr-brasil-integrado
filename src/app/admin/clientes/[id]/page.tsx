@@ -162,7 +162,7 @@ export default async function AdminClienteDetalhePage({ params }: { params: { id
                   <td className="actions">
                     <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
                       <Link href={`/admin/clientes/${cliente.id}/empresas/${e.id}/fiscal`} className="btn-erp primary xs">⚙️ Configurar fiscal</Link>
-                      <EmpresaStatusActions empresaId={e.id} status={e.status} />
+                      <EmpresaStatusActions empresaId={e.id} status={e.status} exigir2fa={e.exigir2fa} />
                     </div>
                   </td>
                 </tr>
