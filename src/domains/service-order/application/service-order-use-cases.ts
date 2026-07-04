@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import { scopedByTenantCompany, scopedByTenantCompanyAmbiente } from "@/lib/auth/dev-session";
 import { createAuditLog } from "@/lib/audit/audit-service";
+import { publishRealtime } from "@/lib/realtime/broker";
 import { nextDocumentNumber } from "@/lib/numbering";
 import {
   exitStock,
@@ -69,7 +70,10 @@ export async function createOrdemServico(scope: TenantScope, input: CreateOrdemS
     });
 
     return os;
-  }, TX_OPTIONS);
+  }, TX_OPTIONS).then((os) => {
+    publishRealtime(scope, "oficina"); // painel da oficina: nova OS na tela
+    return os;
+  });
 }
 
 export type AddServicoInput = {
@@ -325,7 +329,10 @@ export async function updateStatus(scope: TenantScope, osId: string, status: Sta
     });
 
     return updated;
-  }, TX_OPTIONS);
+  }, TX_OPTIONS).then((updated) => {
+    publishRealtime(scope, "oficina"); // painel da oficina: OS mudou de coluna
+    return updated;
+  });
 }
 
 export type FaturarOsInput = {
@@ -461,6 +468,8 @@ export async function faturarOrdemServico(scope: TenantScope, id: string, input:
 
     return { contaReceber: cr };
   }, TX_OPTIONS);
+
+  publishRealtime(scope, "oficina"); // painel da oficina: OS faturada sai do quadro
 
   // Emissão de NFS-e fora da transação (I/O externo)
   if (input.emitirNfse && os.servicos.length > 0) {

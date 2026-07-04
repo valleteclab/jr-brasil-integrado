@@ -13,7 +13,7 @@ import type { TenantScope } from "@/lib/auth/dev-session";
  * publicação/assinatura por Postgres LISTEN/NOTIFY (ou Redis pub/sub) mantendo esta interface.
  */
 
-export type RealtimeCanal = "caixa" | "expedicao" | "vendas" | "fiscal";
+export type RealtimeCanal = "caixa" | "expedicao" | "vendas" | "fiscal" | "oficina";
 
 export type RealtimeEvent = {
   canal: RealtimeCanal;

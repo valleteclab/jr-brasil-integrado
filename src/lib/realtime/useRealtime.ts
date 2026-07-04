@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 
-export type RealtimeCanal = "caixa" | "expedicao" | "vendas" | "fiscal";
+export type RealtimeCanal = "caixa" | "expedicao" | "vendas" | "fiscal" | "oficina";
 
 type RealtimeEvent = { canal: RealtimeCanal; ts: number };
 

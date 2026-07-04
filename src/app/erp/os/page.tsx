@@ -32,7 +32,12 @@ export default async function OrdensServicoPage() {
       <PageHeader
         eyebrow="Serviços"
         title="Ordens de Serviço"
-        action={<Button href="/erp/os/nova" variant="primary">+ Nova OS</Button>}
+        action={
+          <div style={{ display: "flex", gap: 8 }}>
+            <a className="btn-erp light" href="/oficina" target="_blank" rel="noopener noreferrer" title="Abre o painel de acompanhamento em nova aba (para a TV da oficina)">📺 Painel da oficina</a>
+            <Button href="/erp/os/nova" variant="primary">+ Nova OS</Button>
+          </div>
+        }
       >
         <p>
           {total} OS · {abertas} abertas · {emAndamento} em andamento · {finalizadas} aguardando faturamento · {faturadas} faturadas
