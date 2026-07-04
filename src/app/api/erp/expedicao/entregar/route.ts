@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
+import { getSession } from "@/lib/auth/session";
 import { confirmarEntregaRetirada, ExpedicaoError } from "@/domains/sales/application/expedicao-use-cases";
 
 // Baixa da retirada na expedição: confere o código e confirma a entrega (total ou
@@ -13,8 +14,12 @@ export async function POST(request: Request) {
       observacoes?: string;
       itens?: Array<{ produtoId: string; quantidade: number }>;
     };
+    // Conferente é o usuário autenticado — não se digita nome (evita registrar a entrega
+    // em nome de terceiros). Cai para o body só se, excepcionalmente, não houver sessão.
+    const session = await getSession();
+    const conferente = session?.nome?.trim() || body.conferente || "";
     const { retirada, completo } = await confirmarEntregaRetirada(scope, body.codigo ?? "", {
-      conferente: body.conferente ?? "",
+      conferente,
       observacoes: body.observacoes,
       itens: body.itens
     });

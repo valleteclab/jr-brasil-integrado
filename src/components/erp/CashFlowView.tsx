@@ -151,15 +151,18 @@ export function CashFlowView({ data }: Props) {
             </tr>
           </thead>
           <tbody>
-            {diasFiltrados.map((d, i) => (
-              <tr key={i}>
-                <td>{d.data}</td>
+            {diasFiltrados.map((d, i) => {
+              const atrasado = d.data.startsWith("Vencido");
+              return (
+              <tr key={i} style={atrasado ? { background: "var(--erp-danger-bg, #fdecec)" } : undefined}>
+                <td style={atrasado ? { color: "var(--erp-danger)", fontWeight: 600 } : undefined}>{atrasado ? `⚠ ${d.data}` : d.data}</td>
                 <td className="num" style={{ color: d.entradas > 0 ? "var(--erp-success)" : undefined }}>{d.entradas > 0 ? formatBrl(d.entradas) : "—"}</td>
                 <td className="num" style={{ color: d.saidas > 0 ? "var(--erp-danger)" : undefined }}>{d.saidas > 0 ? formatBrl(d.saidas) : "—"}</td>
                 <SaldoCell value={d.saldoDia} />
                 <SaldoCell value={d.saldoAcumulado} />
               </tr>
-            ))}
+              );
+            })}
             {!diasFiltrados.length && (
               <tr>
                 <td colSpan={5}>

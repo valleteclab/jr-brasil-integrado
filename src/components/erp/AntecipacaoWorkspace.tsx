@@ -70,6 +70,30 @@ export function AntecipacaoWorkspace({ titulos, historico, contas }: Props) {
     });
   }
 
+  const [desfazendoId, setDesfazendoId] = useState<string | null>(null);
+
+  async function desfazer(a: AntecipacaoResumo) {
+    if (!window.confirm(
+      `Desfazer a antecipação de ${a.data}?\n\n` +
+      `Os ${a.titulos} título(s) voltam a ABERTO, a taxa (${a.valorTaxa}) é removida e o ` +
+      `líquido (${a.valorLiquido}) sai do saldo da conta ${a.contaBancaria}.`
+    )) return;
+    setDesfazendoId(a.id);
+    setErro("");
+    setSucesso("");
+    try {
+      const res = await fetch(`/api/erp/financeiro/antecipacoes/${a.id}`, { method: "DELETE" });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(data.error ?? "Não foi possível desfazer a antecipação.");
+      setSucesso("Antecipação desfeita — títulos reabertos e saldo devolvido.");
+      router.refresh();
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Erro ao desfazer.");
+    } finally {
+      setDesfazendoId(null);
+    }
+  }
+
   async function confirmar() {
     setErro("");
     setSucesso("");
@@ -238,6 +262,7 @@ export function AntecipacaoWorkspace({ titulos, historico, contas }: Props) {
                   <th className="num">Bruto</th>
                   <th className="num">Taxa</th>
                   <th className="num">Líquido</th>
+                  <th className="actions"></th>
                 </tr>
               </thead>
               <tbody>
@@ -250,6 +275,17 @@ export function AntecipacaoWorkspace({ titulos, historico, contas }: Props) {
                     <td className="num">{a.valorBruto}</td>
                     <td className="num">{a.valorTaxa}</td>
                     <td className="num"><strong>{a.valorLiquido}</strong></td>
+                    <td className="actions">
+                      <button
+                        type="button"
+                        className="btn-erp ghost sm"
+                        onClick={() => desfazer(a)}
+                        disabled={desfazendoId === a.id}
+                        title="Reabre os títulos, remove a taxa e devolve o saldo"
+                      >
+                        {desfazendoId === a.id ? "Desfazendo…" : "Desfazer"}
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>

@@ -14,6 +14,16 @@ export type RetiradaPendente = {
   criadoEm: string;
 };
 
+export type RetiradaEntregueHoje = {
+  id: string;
+  codigo: string;
+  status: string;
+  pedidoNumero: string;
+  clienteNome: string;
+  conferente: string;
+  entregueEm: string;
+};
+
 type RetiradaItem = {
   produtoId: string;
   produtoNome: string;
@@ -48,11 +58,20 @@ const brl = (v: number) => new Intl.NumberFormat("pt-BR", { style: "currency", c
  * entrega — total ou parcial (informando a quantidade de cada item que está saindo).
  * Recibo de outra loja, já entregue por completo ou de venda cancelada é recusado na hora.
  */
-export function ExpedicaoWorkspace({ pendentes }: { pendentes: RetiradaPendente[] }) {
+export function ExpedicaoWorkspace({
+  pendentes,
+  entreguesHoje = [],
+  conferenteNome = ""
+}: {
+  pendentes: RetiradaPendente[];
+  entreguesHoje?: RetiradaEntregueHoje[];
+  conferenteNome?: string;
+}) {
   const router = useRouter();
   const codigoRef = useRef<HTMLInputElement>(null);
   const [codigo, setCodigo] = useState("");
-  const [conferente, setConferente] = useState("");
+  // Conferente é o usuário logado (o servidor grava por ele); aqui é só exibido.
+  const conferente = conferenteNome;
   const [retirada, setRetirada] = useState<RetiradaConsulta | null>(null);
   const [entregarAgora, setEntregarAgora] = useState<Record<string, number>>({});
   const [busy, setBusy] = useState(false);
@@ -95,7 +114,6 @@ export function ExpedicaoWorkspace({ pendentes }: { pendentes: RetiradaPendente[
 
   async function entregar() {
     if (!retirada) return;
-    if (!conferente.trim()) { setError("Informe o nome de quem está entregando (conferente)."); return; }
     const itens = retirada.pedido.itens
       .map((i) => ({ produtoId: i.produtoId, quantidade: entregarAgora[i.produtoId] ?? 0 }))
       .filter((i) => i.quantidade > 0);
@@ -114,7 +132,7 @@ export function ExpedicaoWorkspace({ pendentes }: { pendentes: RetiradaPendente[
       const res = await fetch("/api/erp/expedicao/entregar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ codigo: retirada.codigo, conferente: conferente.trim(), itens })
+        body: JSON.stringify({ codigo: retirada.codigo, conferente, itens })
       });
       const data = (await res.json().catch(() => ({}))) as { completo?: boolean; error?: string };
       if (!res.ok) throw new Error(data.error || "Não foi possível confirmar a entrega.");
@@ -158,13 +176,13 @@ export function ExpedicaoWorkspace({ pendentes }: { pendentes: RetiradaPendente[
               value={codigo}
               onChange={(e) => setCodigo(e.target.value.toUpperCase())}
               onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); consultar(); } }}
-              placeholder="Ex.: 7KQ2MD"
+              placeholder="Ex.: 7KQ2MD5H"
               style={{ fontFamily: "monospace", fontSize: 18, letterSpacing: 3, textTransform: "uppercase" }}
             />
           </label>
           <label>
             <span>Conferente (quem entrega)</span>
-            <input value={conferente} onChange={(e) => setConferente(e.target.value)} placeholder="Seu nome" />
+            <input value={conferente || "—"} readOnly disabled title="A entrega é registrada no seu usuário autenticado" />
           </label>
           <div style={{ display: "flex", alignItems: "flex-end" }}>
             <button type="button" className="btn-erp primary" onClick={() => consultar()} disabled={busy}>
@@ -178,8 +196,8 @@ export function ExpedicaoWorkspace({ pendentes }: { pendentes: RetiradaPendente[
         <div className="erp-card">
           <div className="erp-card-head">
             <div>
-              <h3>Recibo {retirada.codigo} · Pedido {retirada.pedido.numero}</h3>
-              <span>{retirada.pedido.clienteNome} · {brl(retirada.pedido.total)}{retirada.pedido.notas.length > 0 ? ` · ${retirada.pedido.notas.join(", ")}` : ""}</span>
+              <h3 style={{ fontSize: 18 }}>👤 {retirada.pedido.clienteNome}</h3>
+              <span>Recibo <strong className="mono">{retirada.codigo}</strong> · Pedido {retirada.pedido.numero} · {brl(retirada.pedido.total)}{retirada.pedido.notas.length > 0 ? ` · ${retirada.pedido.notas.join(", ")}` : ""}</span>
             </div>
             {statusBadge}
           </div>
@@ -253,7 +271,7 @@ export function ExpedicaoWorkspace({ pendentes }: { pendentes: RetiradaPendente[
                 <tr key={p.id}>
                   <td className="mono"><strong>{p.codigo}</strong></td>
                   <td className="mono">{p.pedidoNumero}</td>
-                  <td>{p.clienteNome}</td>
+                  <td><strong>{p.clienteNome}</strong></td>
                   <td className="num">{p.qtdItens}</td>
                   <td>{p.status === "PARCIAL" ? "Parcial — há saldo" : "Pendente"}</td>
                   <td>{p.criadoEm}</td>
@@ -267,6 +285,34 @@ export function ExpedicaoWorkspace({ pendentes }: { pendentes: RetiradaPendente[
           </table>
         </div>
       </div>
+
+      {entreguesHoje.length > 0 && (
+        <div className="erp-card">
+          <div className="erp-card-head"><h3>Entregues hoje ({entreguesHoje.length})</h3></div>
+          <div className="erp-table-wrap">
+            <table className="erp-table">
+              <thead><tr><th>Hora</th><th>Código</th><th>Pedido</th><th>Cliente</th><th>Conferente</th><th>Situação</th><th className="actions"></th></tr></thead>
+              <tbody>
+                {entreguesHoje.map((e) => (
+                  <tr key={e.id}>
+                    <td>{e.entregueEm}</td>
+                    <td className="mono">{e.codigo}</td>
+                    <td className="mono">{e.pedidoNumero}</td>
+                    <td><strong>{e.clienteNome}</strong></td>
+                    <td>{e.conferente}</td>
+                    <td>{e.status === "ENTREGUE"
+                      ? <span className="status-badge success">Completa</span>
+                      : <span className="status-badge info">Parcial</span>}</td>
+                    <td className="actions">
+                      <button type="button" className="btn-erp ghost sm" onClick={() => consultar(e.codigo)} disabled={busy}>Ver</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </>
   );
 }

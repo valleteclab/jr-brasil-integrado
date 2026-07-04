@@ -21,16 +21,38 @@ export class ExpedicaoError extends Error {}
 
 // Sem 0/O/1/I/L para o conferente não errar na digitação.
 const ALFABETO_CODIGO = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
-const TAMANHO_CODIGO = 6;
+// 7 caracteres sorteados + 1 dígito verificador = 8. O DV pega erro de digitação
+// (troca/transposição) ANTES de bater no banco, dando uma mensagem clara ao conferente.
+const TAMANHO_BASE = 7;
+
+/** Dígito verificador: soma ponderada dos índices dos caracteres, módulo do alfabeto. */
+function digitoVerificador(base: string): string {
+  let soma = 0;
+  for (let i = 0; i < base.length; i++) {
+    const idx = ALFABETO_CODIGO.indexOf(base[i]);
+    soma += (idx + 1) * (i + 2); // peso crescente pega transposição de vizinhos
+  }
+  return ALFABETO_CODIGO[soma % ALFABETO_CODIGO.length];
+}
 
 function gerarCodigo(): string {
-  let codigo = "";
-  for (let i = 0; i < TAMANHO_CODIGO; i++) codigo += ALFABETO_CODIGO[randomInt(ALFABETO_CODIGO.length)];
-  return codigo;
+  let base = "";
+  for (let i = 0; i < TAMANHO_BASE; i++) base += ALFABETO_CODIGO[randomInt(ALFABETO_CODIGO.length)];
+  return base + digitoVerificador(base);
 }
 
 function normalizarCodigo(codigo: string): string {
   return (codigo ?? "").trim().toUpperCase().replace(/[^0-9A-Z]/g, "");
+}
+
+/**
+ * Valida o dígito verificador dos códigos novos (8 caracteres). Códigos antigos (6) não
+ * têm DV: passam direto (a checagem real é o match exato no banco).
+ */
+function digitoVerificadorConfere(codigo: string): boolean {
+  if (codigo.length !== TAMANHO_BASE + 1) return true;
+  const base = codigo.slice(0, TAMANHO_BASE);
+  return digitoVerificador(base) === codigo[TAMANHO_BASE];
 }
 
 export async function expedicaoHabilitada(scope: TenantScope): Promise<boolean> {
@@ -155,6 +177,9 @@ export async function consultarRetirada(scope: TenantScope, codigoInformado: str
   await assertExpedicaoHabilitada(scope);
   const codigo = normalizarCodigo(codigoInformado);
   if (!codigo) throw new ExpedicaoError("Informe o código do recibo.");
+  if (!digitoVerificadorConfere(codigo)) {
+    throw new ExpedicaoError("Código digitado errado (dígito verificador não confere). Confira e digite de novo.");
+  }
 
   const retirada = await prisma.expedicaoRetirada.findFirst({
     where: { ...scopedByTenantCompany(scope), codigo },
@@ -285,6 +310,28 @@ export async function listRetiradasPendentes(scope: TenantScope) {
       }
     },
     orderBy: { criadoEm: "asc" }
+  });
+}
+
+/** Entregas concluídas HOJE (histórico do turno na expedição). */
+export async function listRetiradasEntreguesHoje(scope: TenantScope) {
+  const inicioDoDia = new Date();
+  inicioDoDia.setHours(0, 0, 0, 0);
+  return prisma.expedicaoRetirada.findMany({
+    where: {
+      ...scopedByTenantCompany(scope),
+      status: { in: ["ENTREGUE", "PARCIAL"] },
+      entregueEm: { gte: inicioDoDia }
+    },
+    include: {
+      pedidoVenda: {
+        select: {
+          numero: true,
+          cliente: { select: { razaoSocial: true, nomeFantasia: true } }
+        }
+      }
+    },
+    orderBy: { entregueEm: "desc" }
   });
 }
 

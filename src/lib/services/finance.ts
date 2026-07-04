@@ -468,10 +468,12 @@ export async function getCashFlow(): Promise<CashFlowData> {
 
   const [pagarProjetado, receberProjetado, movimentosRealizados, bancos] = await Promise.all([
     prisma.contaPagar.findMany({
+      // Sem piso de data: contas ABERTAS já vencidas (atrasadas) também entram — antes
+      // sumiam do fluxo por estarem antes de hoje. CANCELADA fica de fora (status filter).
       where: {
         ...scopedByTenantCompanyAmbiente(scope),
         status: { in: ["ABERTO", "PARCIAL"] },
-        vencimento: { gte: hoje, lte: fim90 }
+        vencimento: { lte: fim90 }
       },
       select: { vencimento: true, valor: true, valorPago: true, juros: true, multa: true, descontoBaixa: true }
     }),
@@ -479,7 +481,7 @@ export async function getCashFlow(): Promise<CashFlowData> {
       where: {
         ...scopedByTenantCompanyAmbiente(scope),
         status: { in: ["ABERTO", "PARCIAL"] },
-        vencimento: { gte: hoje, lte: fim90 }
+        vencimento: { lte: fim90 }
       },
       select: { vencimento: true, valor: true, valorPago: true, juros: true, multa: true, descontoBaixa: true }
     }),
@@ -506,14 +508,21 @@ export async function getCashFlow(): Promise<CashFlowData> {
     else totalDebitos += Number(m.valor);
   }
 
-  // Agrupa projetado por dia
+  // Agrupa projetado por dia. Vencimentos anteriores a hoje caem num único balde
+  // "ATRASADO" (chave que ordena antes de qualquer data ISO) exibido no topo.
+  const hojeKey = hoje.toISOString().substring(0, 10);
+  const KEY_ATRASADO = "0000-00-00";
   const mapDias = new Map<string, { entradas: number; saidas: number }>();
+  const bucketKey = (venc: Date) => {
+    const k = venc.toISOString().substring(0, 10);
+    return k < hojeKey ? KEY_ATRASADO : k;
+  };
 
   for (const c of receberProjetado) {
     const saldo = round2(
       Number(c.valor) + Number(c.juros) + Number(c.multa) - Number(c.descontoBaixa) - Number(c.valorPago)
     );
-    const key = c.vencimento.toISOString().substring(0, 10);
+    const key = bucketKey(c.vencimento);
     const d = mapDias.get(key) ?? { entradas: 0, saidas: 0 };
     d.entradas += saldo;
     mapDias.set(key, d);
@@ -523,13 +532,13 @@ export async function getCashFlow(): Promise<CashFlowData> {
     const saldo = round2(
       Number(c.valor) + Number(c.juros) + Number(c.multa) - Number(c.descontoBaixa) - Number(c.valorPago)
     );
-    const key = c.vencimento.toISOString().substring(0, 10);
+    const key = bucketKey(c.vencimento);
     const d = mapDias.get(key) ?? { entradas: 0, saidas: 0 };
     d.saidas += saldo;
     mapDias.set(key, d);
   }
 
-  // Gera array de dias ordenado
+  // Gera array de dias ordenado (ATRASADO primeiro pela chave 0000-00-00)
   const keysOrdenadas = Array.from(mapDias.keys()).sort();
   let saldoAcumulado = saldoAtualContas;
   const dias: CashFlowDay[] = keysOrdenadas.map((key) => {
@@ -537,7 +546,7 @@ export async function getCashFlow(): Promise<CashFlowData> {
     const saldoDia = round2(d.entradas - d.saidas);
     saldoAcumulado = round2(saldoAcumulado + saldoDia);
     return {
-      data: DATE_FMT.format(new Date(key + "T12:00:00")),
+      data: key === KEY_ATRASADO ? "Vencido (atrasado)" : DATE_FMT.format(new Date(key + "T12:00:00")),
       entradas: round2(d.entradas),
       saidas: round2(d.saidas),
       saldoDia,

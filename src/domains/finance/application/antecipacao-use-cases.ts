@@ -199,6 +199,101 @@ export async function criarAntecipacao(scope: TenantScope, input: CriarAntecipac
   }, TX_OPTIONS);
 }
 
+/**
+ * DESFAZER uma antecipação: reverte os três efeitos — reabre os títulos (volta a ABERTO/VENCIDO,
+ * removendo o pagamento por antecipação), apaga a taxa (ContaPagar) e devolve o saldo bancário ao
+ * estado anterior (retira o líquido creditado). Usado para corrigir um lançamento errado.
+ */
+export async function desfazerAntecipacao(scope: TenantScope, antecipacaoId: string, usuarioId?: string) {
+  const hoje = new Date();
+  hoje.setHours(0, 0, 0, 0);
+
+  return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    const ant = await tx.antecipacaoRecebivel.findFirst({
+      where: { id: antecipacaoId, ...scopedByTenantCompany(scope) },
+      include: { recebiveis: true }
+    });
+    if (!ant) throw new AntecipacaoError("Antecipação não encontrada.");
+
+    const conta = await tx.contaBancaria.findFirst({
+      where: { id: ant.contaBancariaId, ...scopedByTenantCompany(scope) }
+    });
+    if (!conta) throw new AntecipacaoError("Conta bancária da antecipação não foi encontrada.");
+
+    const recebivelIds = ant.recebiveis.map((r) => r.id);
+
+    // Movimentos desta operação: créditos dos títulos + débito da taxa.
+    const movs = await tx.movimentoFinanceiro.findMany({
+      where: {
+        ...scopedByTenantCompany(scope),
+        origem: "ANTECIPACAO",
+        OR: [
+          recebivelIds.length ? { contaReceberId: { in: recebivelIds } } : { id: "__none__" },
+          ant.contaPagarTaxaId ? { contaPagarId: ant.contaPagarTaxaId } : { id: "__none__" }
+        ]
+      }
+    });
+
+    // 1) Reabre cada título antecipado (só se ainda vinculado a ESTA antecipação e PAGO).
+    for (const r of ant.recebiveis) {
+      if (r.antecipacaoId !== ant.id) {
+        throw new AntecipacaoError(`O título "${r.descricao}" não está mais vinculado a esta antecipação. Desfaça manualmente.`);
+      }
+      const credito = movs.find((m) => m.contaReceberId === r.id && m.tipo === "CREDITO");
+      const valorRevertido = credito ? Number(credito.valor) : round2(Number(r.valorPago));
+      const novoPago = round2(Math.max(0, Number(r.valorPago) - valorRevertido));
+      const vencido = r.vencimento < hoje;
+      await tx.contaReceber.update({
+        where: { id: r.id },
+        data: {
+          valorPago: novoPago,
+          status: novoPago > 0 ? "PARCIAL" : vencido ? "VENCIDO" : "ABERTO",
+          pagoEm: null,
+          formaPagamento: null,
+          antecipacaoId: null
+        }
+      });
+    }
+
+    // 2) Remove a taxa (ContaPagar) gerada, se houver.
+    if (ant.contaPagarTaxaId) {
+      await tx.contaPagar.deleteMany({ where: { id: ant.contaPagarTaxaId, ...scopedByTenantCompany(scope) } });
+    }
+
+    // 3) Devolve o saldo bancário: retira o efeito líquido (créditos − débitos) desta operação.
+    const efeitoLiquido = round2(
+      movs.reduce((s, m) => s + (m.tipo === "CREDITO" ? Number(m.valor) : -Number(m.valor)), 0)
+    );
+    await tx.contaBancaria.update({
+      where: { id: conta.id },
+      data: { saldoAtual: round2(Number(conta.saldoAtual) - efeitoLiquido) }
+    });
+
+    // Apaga os movimentos e a própria antecipação.
+    if (movs.length) {
+      await tx.movimentoFinanceiro.deleteMany({ where: { id: { in: movs.map((m) => m.id) } } });
+    }
+    await tx.antecipacaoRecebivel.delete({ where: { id: ant.id } });
+
+    await createAuditLog(tx, {
+      scope,
+      usuarioId,
+      entidade: "AntecipacaoRecebivel",
+      entidadeId: ant.id,
+      acao: "DESFAZER",
+      payload: {
+        titulos: recebivelIds.length,
+        valorBruto: Number(ant.valorBruto),
+        valorTaxa: Number(ant.valorTaxa),
+        valorLiquido: Number(ant.valorLiquido),
+        efeitoLiquidoRevertido: efeitoLiquido
+      }
+    });
+
+    return { id: ant.id, titulos: recebivelIds.length };
+  }, TX_OPTIONS);
+}
+
 export type AntecipacaoResumo = {
   id: string;
   data: string;
