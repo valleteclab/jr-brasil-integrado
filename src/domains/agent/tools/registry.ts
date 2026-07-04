@@ -8,10 +8,13 @@ import { relatorioEstoque } from "./read/relatorio-estoque";
 import { relatorioFinanceiro } from "./read/relatorio-financeiro";
 import { dashboardTool } from "./read/dashboard";
 import { consultarMeusPedidos } from "./read/consultar-meus-pedidos";
+import { consultarContasReceber } from "./read/consultar-contas-receber";
 import { criarOrcamento } from "./write/criar-orcamento";
 import { criarPreVenda } from "./write/criar-pre-venda";
+import { emitirBoleto } from "./write/emitir-boleto";
+import { cobrarPix } from "./write/cobrar-pix";
 
-/** Fonte única de verdade das ferramentas do agente — usada pelo chat web e (fase 2) pelo MCP. */
+/** Fonte única de verdade das ferramentas do agente — usada pelo chat web e pelo MCP. */
 export const ALL_TOOLS: AgentTool[] = [
   buscarProduto,
   consultarEstoque,
@@ -22,8 +25,11 @@ export const ALL_TOOLS: AgentTool[] = [
   relatorioFinanceiro,
   dashboardTool,
   consultarMeusPedidos,
+  consultarContasReceber,
   criarOrcamento,
-  criarPreVenda
+  criarPreVenda,
+  emitirBoleto,
+  cobrarPix
 ];
 
 export function getToolsForRole(role: AgentRole): AgentTool[] {
