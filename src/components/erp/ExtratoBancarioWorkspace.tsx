@@ -29,6 +29,14 @@ type Resultado = {
   saldoErp: number;
   linhas: Linha[];
   resumo: { conciliadas: number; soBanco: number; soErp: number; antecipacoesDetectadas: number };
+  diferenca?: {
+    saldoBanco: number | null;
+    saldoErp: number;
+    diferenca: number | null;
+    totalSoBanco: number;
+    totalSoErp: number;
+    explicada: boolean;
+  };
 };
 
 const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -124,6 +132,25 @@ export function ExtratoBancarioWorkspace({ contas }: { contas: Array<{ id: strin
               <div className="kpi"><span className="kpi-label">Créditos de antecipação</span><strong>{resultado.resumo.antecipacoesDetectadas}</strong></div>
             )}
           </div>
+
+          {resultado.diferenca && resultado.diferenca.diferenca != null && (
+            <div className={`alert ${resultado.diferenca.explicada ? "success" : "warn"}`} style={{ marginTop: 12, display: "block" }}>
+              <div className="lead" style={{ marginBottom: 6 }}>
+                {resultado.diferenca.explicada
+                  ? "✓ Diferença explicada pelos lançamentos pendentes"
+                  : "⚠ Diferença entre banco e ERP a investigar"}
+              </div>
+              <div style={{ fontSize: 13, lineHeight: 1.7 }}>
+                Saldo banco {brl(resultado.diferenca.saldoBanco ?? 0)} − saldo ERP {brl(resultado.diferenca.saldoErp)} ={" "}
+                <strong>{brl(resultado.diferenca.diferenca)}</strong>.<br />
+                Créditos só no banco: <strong>{brl(resultado.diferenca.totalSoBanco)}</strong> · Lançamentos só no ERP:{" "}
+                <strong>{brl(resultado.diferenca.totalSoErp)}</strong>.
+                {resultado.diferenca.explicada
+                  ? " Os itens pendentes fecham a diferença — concilie-os para zerar."
+                  : " A soma dos pendentes não fecha a diferença: revise datas, valores ou lançamentos faltando."}
+              </div>
+            </div>
+          )}
 
           <div className="erp-table-wrap" style={{ marginTop: 12 }}>
             <table className="erp-table">

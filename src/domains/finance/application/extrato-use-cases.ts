@@ -38,9 +38,45 @@ export type ExtratoConciliado = {
   saldoErp: number;
   linhas: LinhaConciliacao[];
   resumo: { conciliadas: number; soBanco: number; soErp: number; antecipacoesDetectadas: number };
+  /** Checklist da diferença entre o saldo do banco e o do ERP, para fechar a conciliação. */
+  diferenca: {
+    saldoBanco: number | null;
+    saldoErp: number;
+    diferenca: number | null;
+    totalSoBanco: number;
+    totalSoErp: number;
+    /** true quando os itens só-no-banco menos os só-no-ERP explicam a diferença. */
+    explicada: boolean;
+  };
 };
 
 const RE_ANTECIPACAO = /antecip|desc(?:onto)?\.?\s*de?\s*t[ií]tulo|border[ôo]|liquidez\s+cooperativa/i;
+
+// Palavras genéricas de extrato que não ajudam a distinguir uma linha da outra.
+const STOPWORDS_EXTRATO = new Set([
+  "de", "da", "do", "das", "dos", "e", "em", "para", "por", "com", "ref", "referente",
+  "pagamento", "recebimento", "credito", "debito", "transferencia", "ted", "pix", "doc",
+  "conta", "valor", "titulo", "boleto", "cobranca", "tarifa", "banco", "cliente", "sicoob"
+]);
+
+/** Tokens normalizados (sem acento, minúsculo, sem stopword) de uma descrição para comparação fuzzy. */
+function tokensDescricao(texto: string): Set<string> {
+  const limpo = (texto ?? "")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase();
+  const tokens = limpo.split(/[^a-z0-9]+/).filter((t) => t.length >= 3 && !STOPWORDS_EXTRATO.has(t));
+  return new Set(tokens);
+}
+
+/** Similaridade de descrição (Jaccard 0–1) entre a linha do banco e o movimento do ERP. */
+function similaridade(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 0;
+  let inter = 0;
+  for (const t of a) if (b.has(t)) inter++;
+  const uniao = a.size + b.size - inter;
+  return uniao === 0 ? 0 : inter / uniao;
+}
 
 function parseDataExtrato(v: string | null): Date | null {
   if (!v) return null;
@@ -88,6 +124,7 @@ export async function extratoConciliado(
     id: m.id,
     valor: (m.tipo === "DEBITO" ? -1 : 1) * Number(m.valor),
     descricao: m.descricao,
+    tokens: tokensDescricao(m.descricao),
     data: m.dataMovimento,
     usado: false
   }));
@@ -103,18 +140,28 @@ export async function extratoConciliado(
   });
 
   const DOIS_DIAS = 2 * 86400000;
+  const CINCO_DIAS = 5 * 86400000;
   const linhas: LinhaConciliacao[] = [];
   let conciliadas = 0;
   let antecipacoesDetectadas = 0;
 
   for (const t of extrato.transacoes as TransacaoExtrato[]) {
     const dataBanco = parseDataExtrato(t.data);
-    // Casa com o primeiro movimento do ERP não usado, de mesmo valor (±1 centavo) e data até 2 dias.
-    const par = movRestantes.find(
-      (m) => !m.usado &&
-        Math.abs(m.valor - t.valor) <= 0.011 &&
-        (!dataBanco || Math.abs(m.data.getTime() - dataBanco.getTime()) <= DOIS_DIAS)
-    );
+    const tokensBanco = tokensDescricao(`${t.descricao} ${t.informacoesComplementares ?? ""}`);
+    // Casa pelo VALOR (±1 centavo) e, entre os candidatos, escolhe o de melhor pontuação:
+    // data mais próxima + maior semelhança de descrição. Assim, vários lançamentos de mesmo
+    // valor no mês não se emparelham na ordem errada.
+    let par: (typeof movRestantes)[number] | null = null;
+    let melhorPontos = -Infinity;
+    for (const m of movRestantes) {
+      if (m.usado || Math.abs(m.valor - t.valor) > 0.011) continue;
+      const distDias = dataBanco ? Math.abs(m.data.getTime() - dataBanco.getTime()) : 0;
+      // Aceita até 2 dias sempre; até 5 dias só se a descrição tiver alguma semelhança.
+      const sim = similaridade(tokensBanco, m.tokens);
+      if (distDias > DOIS_DIAS && !(distDias <= CINCO_DIAS && sim >= 0.34)) continue;
+      const pontos = sim * 100 - distDias / 86400000; // descrição pesa mais que 1 dia de distância
+      if (pontos > melhorPontos) { melhorPontos = pontos; par = m; }
+    }
     if (par) par.usado = true;
 
     const textoLinha = `${t.descricao} ${t.informacoesComplementares ?? ""}`;
@@ -158,18 +205,28 @@ export async function extratoConciliado(
   }
 
   linhas.sort((a, b) => (a.data ?? "").localeCompare(b.data ?? ""));
+
+  const round2 = (v: number) => Math.round((v + Number.EPSILON) * 100) / 100;
+  const totalSoBanco = round2(linhas.filter((l) => l.situacao === "SO_BANCO").reduce((s, l) => s + l.valor, 0));
+  const totalSoErp = round2(linhas.filter((l) => l.situacao === "SO_ERP").reduce((s, l) => s + l.valor, 0));
+  const saldoErp = Number(conta.saldoAtual);
+  const diferenca = saldo.saldo != null ? round2(saldo.saldo - saldoErp) : null;
+  // Os lançamentos pendentes (só-banco menos só-ERP) devem explicar a diferença de saldo.
+  const explicada = diferenca != null && Math.abs(diferenca - round2(totalSoBanco - totalSoErp)) <= 0.02;
+
   return {
     conta: { id: conta.id, nome: conta.nome },
     periodo: { mes, ano, diaInicial, diaFinal },
     saldoBanco: saldo.saldo,
     saldoLimite: saldo.saldoLimite,
-    saldoErp: Number(conta.saldoAtual),
+    saldoErp,
     linhas,
     resumo: {
       conciliadas,
       soBanco: linhas.filter((l) => l.situacao === "SO_BANCO").length,
       soErp: linhas.filter((l) => l.situacao === "SO_ERP").length,
       antecipacoesDetectadas
-    }
+    },
+    diferenca: { saldoBanco: saldo.saldo, saldoErp, diferenca, totalSoBanco, totalSoErp, explicada }
   };
 }

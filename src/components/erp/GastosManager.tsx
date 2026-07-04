@@ -7,10 +7,13 @@ import { baixarCsv } from "@/lib/export/csv";
 
 const linkBtn: React.CSSProperties = { background: "none", border: 0, padding: 0, color: "#4f46e5", cursor: "pointer", textAlign: "left" };
 
+type ContaOption = { id: string; nome: string; saldoAtual: string };
+
 type Props = {
   initialGastos: GastoRow[];
   resumo: GastosResumo;
   categorias: string[];
+  contas?: ContaOption[];
   isAdmin?: boolean;
 };
 
@@ -82,7 +85,7 @@ function editorVazio(categoria: string): Editor {
   return { id: null, estabelecimento: "", documento: "", categoria, data: new Date().toISOString().slice(0, 10), valorTotal: "", formaPagamento: "", observacoes: "", itens: [], imagemCupom: null };
 }
 
-export function GastosManager({ initialGastos, resumo: resumoInicial, categorias, isAdmin = false }: Props) {
+export function GastosManager({ initialGastos, resumo: resumoInicial, categorias, contas = [], isAdmin = false }: Props) {
   const [rows, setRows] = useState(initialGastos);
   const [resumo, setResumo] = useState(resumoInicial);
   const [filtroCategoria, setFiltroCategoria] = useState("");
@@ -90,6 +93,9 @@ export function GastosManager({ initialGastos, resumo: resumoInicial, categorias
   const [lendo, setLendo] = useState(false);
   const [busy, setBusy] = useState("");
   const [editor, setEditor] = useState<Editor | null>(null);
+  // Modal "lançar no financeiro": escolhe a conta bancária que será debitada.
+  const [lancarAlvo, setLancarAlvo] = useState<{ id: string; estabelecimento: string } | null>(null);
+  const [lancarConta, setLancarConta] = useState(contas[0]?.id ?? "");
   const fotoRef = useRef<HTMLInputElement>(null);
 
   const filtered = useMemo(
@@ -186,13 +192,30 @@ export function GastosManager({ initialGastos, resumo: resumoInicial, categorias
     }
   }
 
-  async function lancar(id: string) {
-    if (!window.confirm("Lançar este gasto no financeiro (cria conta a pagar quitada)?")) return;
+  // Abre o modal de escolha de conta; sem contas cadastradas, tenta lançar direto (o backend avisa).
+  function lancar(id: string, estabelecimento: string) {
+    setErro("");
+    if (contas.length === 0) {
+      if (!window.confirm("Lançar este gasto no financeiro (cria conta a pagar quitada)?")) return;
+      void executarLancar(id, undefined);
+      return;
+    }
+    setLancarConta(contas[0]?.id ?? "");
+    setLancarAlvo({ id, estabelecimento });
+  }
+
+  async function executarLancar(id: string, contaBancariaId: string | undefined) {
     setBusy(id);
     setErro("");
     try {
-      const res = await fetch(`/api/erp/gastos/${id}/lancar`, { method: "POST" });
+      const res = await fetch(`/api/erp/gastos/${id}/lancar`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(contaBancariaId ? { contaBancariaId } : {})
+      });
       if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error || "Falha ao lançar.");
+      setLancarAlvo(null);
+      if (editor?.id === id) setEditor(null);
       await recarregar();
     } catch (err) {
       setErro(err instanceof Error ? err.message : "Falha ao lançar no financeiro.");
@@ -297,7 +320,7 @@ export function GastosManager({ initialGastos, resumo: resumoInicial, categorias
                 <td className="actions">
                   <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", flexWrap: "wrap" }}>
                     <button type="button" className="btn-erp ghost xs" onClick={() => setEditor(rowParaEditor(g))}>Abrir</button>
-                    {!g.lancadoFinanceiro && <button type="button" className="btn-erp ghost xs" disabled={busy === g.id} onClick={() => lancar(g.id)}>Lançar</button>}
+                    {!g.lancadoFinanceiro && <button type="button" className="btn-erp ghost xs" disabled={busy === g.id} onClick={() => lancar(g.id, g.estabelecimento)}>Lançar</button>}
                     {isAdmin && <button type="button" className="btn-erp danger xs" disabled={busy === g.id} onClick={() => excluir(g.id, g.estabelecimento)}>Excluir</button>}
                   </div>
                 </td>
@@ -329,8 +352,21 @@ export function GastosManager({ initialGastos, resumo: resumoInicial, categorias
                 <label>CNPJ<input value={editor.documento} onChange={(e) => setEditor({ ...editor, documento: e.target.value })} placeholder="opcional" /></label>
                 <label>Data<input type="date" value={editor.data} onChange={(e) => setEditor({ ...editor, data: e.target.value })} /></label>
                 <label>Categoria
-                  <input list="cat-gastos" value={editor.categoria} onChange={(e) => setEditor({ ...editor, categoria: e.target.value })} />
-                  <datalist id="cat-gastos">{categorias.map((c) => <option key={c} value={c} />)}</datalist>
+                  <select
+                    value={categorias.includes(editor.categoria) ? editor.categoria : "__outra__"}
+                    onChange={(e) => setEditor({ ...editor, categoria: e.target.value === "__outra__" ? "" : e.target.value })}
+                  >
+                    {categorias.map((c) => <option key={c} value={c}>{c}</option>)}
+                    <option value="__outra__">Outra…</option>
+                  </select>
+                  {!categorias.includes(editor.categoria) && (
+                    <input
+                      style={{ marginTop: 4 }}
+                      value={editor.categoria}
+                      onChange={(e) => setEditor({ ...editor, categoria: e.target.value })}
+                      placeholder="Digite a categoria"
+                    />
+                  )}
                 </label>
                 <label>Valor total (R$)<input value={editor.valorTotal} onChange={(e) => setEditor({ ...editor, valorTotal: e.target.value })} placeholder="0,00" /></label>
                 <label>Forma de pagamento<input value={editor.formaPagamento} onChange={(e) => setEditor({ ...editor, formaPagamento: e.target.value })} placeholder="opcional" /></label>
@@ -357,10 +393,38 @@ export function GastosManager({ initialGastos, resumo: resumoInicial, categorias
               <button type="button" className="btn-erp ghost sm" onClick={() => setEditor(null)} disabled={!!busy}>Fechar</button>
               <button type="button" className="btn-erp light sm" onClick={() => salvarEditor(false)} disabled={!!busy}>{busy === "salvar" ? "Salvando…" : "Salvar"}</button>
               {editor.id && <button type="button" className="btn-erp primary sm" onClick={() => salvarEditor(true)} disabled={!!busy}>Salvar e confirmar</button>}
-              {editor.id && !editor.lancadoFinanceiro && <button type="button" className="btn-erp light sm" onClick={() => lancar(editor.id as string)} disabled={!!busy}>Lançar no financeiro</button>}
+              {editor.id && !editor.lancadoFinanceiro && <button type="button" className="btn-erp light sm" onClick={() => lancar(editor.id as string, editor.estabelecimento)} disabled={!!busy}>Lançar no financeiro</button>}
               {editor.id && isAdmin && <button type="button" className="btn-erp danger sm" onClick={() => excluir(editor.id as string, editor.estabelecimento)} disabled={!!busy}>Excluir</button>}
             </footer>
           </aside>
+        </>
+      )}
+
+      {/* Modal: escolher a conta bancária debitada ao lançar no financeiro */}
+      {lancarAlvo && (
+        <>
+          <div className="drawer-bd" onClick={() => !busy && setLancarAlvo(null)} />
+          <div className="erp-card" style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", width: "min(440px, 92vw)", zIndex: 90 }}>
+            <div className="erp-card-head"><h3>Lançar no financeiro</h3></div>
+            <div className="erp-card-body" style={{ padding: 16 }}>
+              <p style={{ marginTop: 0, fontSize: 13, color: "var(--erp-slate)" }}>
+                Cria uma conta a pagar já quitada para o gasto de <strong>{lancarAlvo.estabelecimento}</strong>.
+                Qual conta bancária é debitada?
+              </p>
+              <label style={{ display: "grid", gap: 4, fontSize: 13 }}>
+                Conta bancária
+                <select value={lancarConta} onChange={(e) => setLancarConta(e.target.value)}>
+                  {contas.map((c) => <option key={c.id} value={c.id}>{c.nome} ({c.saldoAtual})</option>)}
+                </select>
+              </label>
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16 }}>
+                <button type="button" className="btn-erp ghost sm" disabled={!!busy} onClick={() => setLancarAlvo(null)}>Cancelar</button>
+                <button type="button" className="btn-erp primary sm" disabled={!!busy || !lancarConta} onClick={() => executarLancar(lancarAlvo.id, lancarConta)}>
+                  {busy === lancarAlvo.id ? "Lançando…" : "Lançar e debitar"}
+                </button>
+              </div>
+            </div>
+          </div>
         </>
       )}
     </section>

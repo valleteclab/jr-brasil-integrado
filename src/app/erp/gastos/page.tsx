@@ -2,6 +2,7 @@ import { PageHeader } from "@/components/shared/PageHeader";
 import { GastosManager } from "@/components/erp/GastosManager";
 import { listGastos, getGastosResumo } from "@/lib/services/gastos";
 import type { GastoRow, GastosResumo } from "@/lib/services/gastos";
+import { listBankAccounts } from "@/lib/services/finance";
 import { getSession } from "@/lib/auth/session";
 import { isAdminPerfil } from "@/lib/auth/modules";
 import { DESPESA_CATEGORIAS } from "@/domains/expenses/categorias";
@@ -15,10 +16,14 @@ export default async function GastosPage() {
 
   let gastos: GastoRow[] = [];
   let resumo: GastosResumo | null = null;
+  let contas: Array<{ id: string; nome: string; saldoAtual: string }> = [];
   let loadError = "";
 
   try {
-    [gastos, resumo] = await Promise.all([listGastos(), getGastosResumo()]);
+    const [g, r, c] = await Promise.all([listGastos(), getGastosResumo(), listBankAccounts()]);
+    gastos = g;
+    resumo = r;
+    contas = c.map((b) => ({ id: b.id, nome: b.nome, saldoAtual: b.saldoAtual }));
   } catch (error) {
     loadError = error instanceof Error ? error.message : "Não foi possível carregar os gastos.";
   }
@@ -44,6 +49,7 @@ export default async function GastosPage() {
           initialGastos={gastos}
           resumo={resumo}
           categorias={DESPESA_CATEGORIAS}
+          contas={contas}
           isAdmin={isAdmin}
         />
       )}
