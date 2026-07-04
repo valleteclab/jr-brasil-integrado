@@ -165,12 +165,13 @@ export function FinalidadeRulesCrud({ fornecedores }: Props) {
           </select>
         </label>
         <label>
-          Prioridade
-          <input value={form.prioridade} onChange={(e) => setForm({ ...form, prioridade: e.target.value })} inputMode="numeric" />
+          Prioridade <span className="block-muted">(maior número tem precedência)</span>
+          <input value={form.prioridade} onChange={(e) => setForm({ ...form, prioridade: e.target.value })} inputMode="numeric" placeholder="100" title="Maior número = maior prioridade. Em empate, a regra mais específica (fornecedor > CFOP > NCM) vence." />
         </label>
       </div>
       <p className="block-muted" style={{ margin: "0.25rem 0 0.75rem" }}>
-        Defina ao menos um critério (NCM, CFOP de origem ou fornecedor). Regras mais específicas e de maior prioridade vencem.
+        Defina ao menos um critério (NCM, CFOP de origem ou fornecedor). Em conflito, vence primeiro a regra mais específica
+        (fornecedor &gt; CFOP &gt; NCM) e, no empate, a de <strong>maior prioridade</strong>.
       </p>
       <div className="fiscal-step-actions">
         <Button type="button" onClick={save} disabled={loading}>{loading ? "Salvando..." : editingId ? "Salvar alterações" : "Cadastrar regra"}</Button>

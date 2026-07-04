@@ -281,6 +281,45 @@ export default async function SpedDetalhePage({ params }: { params: { id: string
         <TabelaCfop titulo="Entradas por CFOP × CST (registros C190)" linhas={r?.entradasPorCfop ?? []} />
       </div>
 
+      {r && r.registros.length > 0 && (() => {
+        // Log por BLOCO: agrupa os registros (C100, E110…) pelo bloco (1ª letra) com total de linhas.
+        const BLOCO_LABEL: Record<string, string> = {
+          "0": "Abertura, empresa e cadastros", B: "ISS (serviços)", C: "Documentos (NF-e/NFC-e)",
+          D: "Serviços de comunicação/transporte", E: "Apuração ICMS/IPI", G: "CIAP (ativo imobilizado)",
+          H: "Inventário", K: "Produção e estoque", "1": "Outras informações", "9": "Encerramento"
+        };
+        const porBloco = new Map<string, { registros: number; linhas: number }>();
+        for (const reg of r.registros) {
+          const bloco = reg.registro.charAt(0).toUpperCase();
+          const atual = porBloco.get(bloco) ?? { registros: 0, linhas: 0 };
+          atual.registros += 1;
+          atual.linhas += reg.quantidade;
+          porBloco.set(bloco, atual);
+        }
+        const ordem = ["0", "B", "C", "D", "E", "G", "H", "K", "1", "9"];
+        const blocos = [...porBloco.entries()].sort((a, b) => (ordem.indexOf(a[0]) - ordem.indexOf(b[0])));
+        return (
+          <div className="card" style={{ padding: 16, marginBottom: 16 }}>
+            <h3 style={{ marginTop: 0 }}>Log da geração — por bloco</h3>
+            <div className="erp-table-wrap">
+              <table className="erp-table">
+                <thead><tr><th>Bloco</th><th>Conteúdo</th><th style={{ textAlign: "right" }}>Tipos de registro</th><th style={{ textAlign: "right" }}>Linhas</th></tr></thead>
+                <tbody>
+                  {blocos.map(([bloco, v]) => (
+                    <tr key={bloco}>
+                      <td style={{ fontFamily: "var(--font-mono, monospace)", fontWeight: 700 }}>{bloco}</td>
+                      <td>{BLOCO_LABEL[bloco] ?? "—"}</td>
+                      <td style={{ textAlign: "right" }}>{v.registros}</td>
+                      <td style={{ textAlign: "right" }}>{v.linhas}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      })()}
+
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 16, marginBottom: 16 }}>
         {r && (
           <div className="card" style={{ padding: 16 }}>

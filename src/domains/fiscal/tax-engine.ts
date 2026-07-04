@@ -204,6 +204,14 @@ export function computeItemTaxes(
   const origem = item.origem ?? "0";
   // Reforma Tributária (IBS/CBS/IS) — mesma base para todos os ramos (serviço/ST/Simples/normal).
   const reforma = computeReforma(rules, item.ncm, ctx.ufDestino, base);
+  // Rastreabilidade: regra tributária PRINCIPAL que rege o item (ISS p/ serviço, senão ICMS). Quando
+  // não há regra específica, o cálculo cai no padrão nacional por regime/UF — o espelho avisa.
+  const regraPrincipal = pickRule(rules, ctx.servico ? "ISS" : "ICMS", item.ncm, ctx.ufDestino);
+  const regraInfo = {
+    regraId: regraPrincipal?.id ?? null,
+    regraNome: regraPrincipal?.nome ?? null,
+    regraAplicada: Boolean(regraPrincipal)
+  };
 
   if (ctx.servico) {
     const issRule = pickRule(rules, "ISS", item.ncm, ctx.ufDestino);
@@ -233,7 +241,8 @@ export function computeItemTaxes(
       valorIss,
       ...reforma,
       valorTributos: valorIss,
-      cClassTrib: issRule?.cClassTrib ?? null
+      cClassTrib: issRule?.cClassTrib ?? null,
+      ...regraInfo
     };
   }
 
@@ -287,7 +296,8 @@ export function computeItemTaxes(
       valorIss: 0,
       ...reforma,
       valorTributos: somaTributos([valorIpi, valorPis, valorCofins]),
-      cClassTrib: null
+      cClassTrib: null,
+      ...regraInfo
     };
   }
 
@@ -334,7 +344,8 @@ export function computeItemTaxes(
       valorIss: 0,
       ...reforma,
       valorTributos: somaTributos([valorIpi, valorPis, valorCofins, st.valorIcmsSt]),
-      cClassTrib: icmsRuleSimples?.cClassTrib ?? null
+      cClassTrib: icmsRuleSimples?.cClassTrib ?? null,
+      ...regraInfo
     };
   }
 
@@ -393,7 +404,8 @@ export function computeItemTaxes(
     valorIss: 0,
     ...reforma,
     valorTributos: somaTributos([valorIcms, valorFcp, st.valorIcmsSt, valorIpi, valorPis, valorCofins]),
-    cClassTrib: icmsRule?.cClassTrib ?? null
+    cClassTrib: icmsRule?.cClassTrib ?? null,
+    ...regraInfo
   };
 }
 

@@ -896,6 +896,21 @@ export async function criarCiapBem(scope: TenantScope, input: CriarCiapBemInput,
   const parcelas = Number(input.parcelasTotal ?? 48);
   if (!Number.isInteger(parcelas) || parcelas < 1 || parcelas > 48) throw new SpedError("Parcelas: 1 a 48.");
 
+  // Duplicata: mesmo bem (descrição igual) já cadastrado e não baixado → evita crédito de ICMS em
+  // dobro no CIAP. Bloqueia com mensagem clara (o operador confere antes de recadastrar).
+  const jaExiste = await prisma.ciapBem.findFirst({
+    where: {
+      tenantId: scope.tenantId,
+      empresaId: scope.empresaId,
+      baixadoEm: null,
+      descricao: { equals: descricao, mode: "insensitive" }
+    },
+    select: { codigo: true }
+  });
+  if (jaExiste) {
+    throw new SpedError(`Já existe um bem ativo com esta descrição (${jaExiste.codigo}). Confira para não creditar o ICMS em dobro; se for outro bem, diferencie a descrição.`);
+  }
+
   const sufixo = `${imobilizadoEm.getFullYear()}${String(imobilizadoEm.getMonth() + 1).padStart(2, "0")}`;
   let codigo = `BEM-${sufixo}-1`;
   for (let i = 2; await prisma.ciapBem.findUnique({ where: { tenantId_empresaId_codigo: { tenantId: scope.tenantId, empresaId: scope.empresaId, codigo } } }); i++) {

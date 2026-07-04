@@ -150,6 +150,29 @@ function validatePayload(payload: TaxRulePayload) {
 export async function createTaxRule(scope: TenantScope, payload: TaxRulePayload) {
   const input = validatePayload(payload);
 
+  // Duplicata: já existe regra ATIVA com os mesmos critérios de matching (tributo+operação+NCM+UFs+
+  // CFOP+regime)? Bloqueia para não deixar duas regras concorrentes com resultado imprevisível.
+  const duplicada = await prisma.regraTributaria.findFirst({
+    where: {
+      tenantId: scope.tenantId,
+      empresaId: scope.empresaId,
+      ativo: true,
+      tributo: input.tributo,
+      operacao: input.operacao,
+      ncm: input.ncm,
+      ufOrigem: input.ufOrigem,
+      ufDestino: input.ufDestino,
+      cfop: input.cfop,
+      regimeEmpresa: input.regimeEmpresa
+    },
+    select: { nome: true }
+  });
+  if (duplicada) {
+    throw new Error(
+      `Já existe uma regra ativa com os mesmos critérios ("${duplicada.nome}"). Edite a existente ou desative-a antes de criar outra igual.`
+    );
+  }
+
   return prisma.$transaction(async (tx) => {
     const rule = await tx.regraTributaria.create({
       data: {

@@ -1012,6 +1012,11 @@ export function FiscalEntryWizard({ initialDraft = null, products, formasPagamen
                                 ? `entra ${formatQty(qtdVenda)} ${unVenda} a ${formatBrl(custoUn)}/${unVenda}`
                                 : `sem conversão (1 ${item.importedProduct.unit} = 1 ${unVenda})`}
                             </small>
+                            {(fator > 100 || (fator > 0 && fator < 0.01)) && (
+                              <small style={{ color: "var(--erp-warn, #d97706)", display: "block", marginTop: 2 }}>
+                                ⚠ Fator de conversão fora do comum ({String(fator).replace(".", ",")}). Confira a embalagem antes de lançar.
+                              </small>
+                            )}
                           </div>
                         );
                       })()}
@@ -1058,6 +1063,15 @@ export function FiscalEntryWizard({ initialDraft = null, products, formasPagamen
                           Criar novo SKU
                         </button>
                       </div>
+                      {item.action === "update" && typeof item.confidence === "number" && item.confidence > 0 && (
+                        <small
+                          className="block-muted"
+                          style={{ display: "block", marginTop: 2, color: item.confidence >= 90 ? "var(--erp-success, #16a34a)" : item.confidence >= 60 ? "var(--erp-slate, #475569)" : "var(--erp-warn, #d97706)" }}
+                          title="Confiança do vínculo automático: 100 = SKU idêntico, 95 = memória do fornecedor, 92 = código de barras."
+                        >
+                          Vínculo automático · {Math.round(item.confidence)}% de confiança{item.review ? " · revisar" : ""}
+                        </small>
+                      )}
                       {item.action === "update" ? (
                         <ProductSearchSelect
                           products={products}

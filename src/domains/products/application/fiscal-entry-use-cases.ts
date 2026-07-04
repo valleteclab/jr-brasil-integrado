@@ -897,6 +897,21 @@ export async function processFiscalEntry(
       throw new Error(`Entrada fiscal no status ${entrada.status} não pode ser processada.`);
     }
 
+    // Pré-validação item-a-item: reúne TODOS os problemas bloqueantes antes de escrever qualquer
+    // coisa, para o operador corrigir e reprocessar (evita o rollback opaco de "um item quebrou a
+    // nota inteira"). A nota segue atômica (não há entrada meia-processada), mas o erro diz o quê e onde.
+    const problemasItens: string[] = [];
+    for (const item of entrada.itens) {
+      const rotulo = `Item ${item.itemNumero} (${item.descricaoFornecedor})`;
+      if (!(Number(item.quantidade) > 0)) problemasItens.push(`${rotulo}: quantidade inválida (deve ser maior que zero).`);
+      if (Number(item.valorUnitario) < 0) problemasItens.push(`${rotulo}: valor unitário negativo.`);
+      if (Number(item.fatorConversao) <= 0) problemasItens.push(`${rotulo}: fator de conversão inválido (deve ser maior que zero).`);
+      if (item.movimentaEstoque && !item.ncm) problemasItens.push(`${rotulo}: sem NCM — informe o NCM na conferência antes de dar entrada no estoque.`);
+    }
+    if (problemasItens.length) {
+      throw new Error(`Corrija os itens antes de processar:\n- ${problemasItens.join("\n- ")}`);
+    }
+
     const installmentInput = input?.installments?.length
       ? input.installments
       : entrada.parcelas.map((parcela) => ({
@@ -991,7 +1006,12 @@ export async function processFiscalEntry(
     // a chegada dessas peças (fluxo "peça chega na loja").
     const produtosCreditados = new Set<string>();
 
+    // Rastreia o item em processamento para que uma falha de runtime diga QUAL item quebrou (em vez
+    // do rollback opaco). A nota continua atômica — o objetivo é o erro claro para corrigir e reprocessar.
+    let itemEmProcessamento: { numero: number; descricao: string } | null = null;
+    try {
     for (const item of entrada.itens) {
+      itemEmProcessamento = { numero: item.itemNumero, descricao: item.descricaoFornecedor };
       const movimentaEstoque = item.movimentaEstoque;
       let produtoId = item.produtoId;
       // Conversão de embalagem: comprou em fardo/caixa (item.unidade, item.quantidade comercial),
@@ -1276,6 +1296,14 @@ export async function processFiscalEntry(
         }
       });
       produtosCreditados.add(produtoId);
+    }
+    } catch (erroItem) {
+      if (itemEmProcessamento) {
+        throw new Error(
+          `Falha ao processar o Item ${itemEmProcessamento.numero} (${itemEmProcessamento.descricao}): ${erroItem instanceof Error ? erroItem.message : String(erroItem)}. Corrija esse item na conferência e processe novamente.`
+        );
+      }
+      throw erroItem;
     }
 
     // "Peça chega na loja": marca como chegada as peças de OS que aguardavam esses produtos.

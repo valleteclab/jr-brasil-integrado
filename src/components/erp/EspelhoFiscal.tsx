@@ -40,6 +40,10 @@ export type FiscalPreviewItem = {
   aliquotaIs: number;
   valorIs: number;
   valorTributos: number;
+  /** Nome da regra tributária aplicada (null se caiu no padrão nacional). */
+  regraNome?: string | null;
+  /** false = nenhuma regra específica bateu — cálculo pelo padrão nacional (regime/UF). */
+  regraAplicada?: boolean;
 };
 
 export type FiscalPreviewTotais = {
@@ -177,6 +181,13 @@ export function EspelhoFiscalTabela({ preview }: { preview: FiscalPreview }) {
                 <td>
                   <div className="espelho-item-nome">{i.numeroItem}. {i.descricao}</div>
                   <div className="espelho-item-sub">{formatBrl(i.valorTotal)} · qtd {i.quantidade}{i.cClassTrib ? ` · cClassTrib ${i.cClassTrib}` : ""}</div>
+                  <div className="espelho-item-sub" style={{ color: i.regraAplicada === false ? "var(--erp-warn, #d97706)" : "var(--erp-mute, #94a3b8)" }}>
+                    {i.regraAplicada === false
+                      ? "⚠ sem regra específica — cálculo pelo padrão nacional (regime/UF)"
+                      : i.regraNome
+                        ? `Regra: ${i.regraNome}`
+                        : ""}
+                  </div>
                 </td>
                 <td className="mono">{i.ncm || "—"}</td>
                 <td className="mono">{i.cfop || "—"}</td>

@@ -103,6 +103,19 @@ const IMPORT_STEPS = [
   "Abrindo a tela de lançamento…"
 ];
 
+/** "Sincronizado há 3 h" a partir do ISO (relativo, mais acionável que a data absoluta). */
+function syncRelativo(iso: string | null | undefined): string {
+  if (!iso) return "Sincronização automática ativa (a cada hora)";
+  const ms = Date.now() - new Date(iso).getTime();
+  if (!Number.isFinite(ms) || ms < 0) return "Sincronizado agora";
+  const min = Math.floor(ms / 60000);
+  if (min < 1) return "Sincronizado agora";
+  if (min < 60) return `Sincronizado há ${min} min`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `Sincronizado há ${h} h`;
+  return `Sincronizado há ${Math.floor(h / 24)} d`;
+}
+
 export function FiscalEntriesList({ entries, receivedDocuments, ultimaSync, nfseRecebidas = [], nfseSync, lancada, formasPagamento = [], contas = [], classificacoes = [] }: FiscalEntriesListProps) {
   const [rows, setRows] = useState(entries);
   const [nfseRows, setNfseRows] = useState(nfseRecebidas);
@@ -518,10 +531,8 @@ export function FiscalEntriesList({ entries, receivedDocuments, ultimaSync, nfse
         <div className="toolbar-grow" />
         {tab === "recebidas" ? (
           <>
-            <span className="fiscal-list-filter" title="A sincronização roda automaticamente a cada hora; use o botão para atualizar agora.">
-              {syncEm
-                ? `Atualizado em ${new Date(syncEm).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}`
-                : "Sincronização automática ativa"}
+            <span className="fiscal-list-filter" title={syncEm ? `Última sincronização: ${new Date(syncEm).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}. Roda automaticamente a cada hora.` : "A sincronização roda automaticamente a cada hora."}>
+              {syncRelativo(syncEm)}
             </span>
             {selectedReceived.length > 0 && (
               <Button type="button" onClick={importManySelected} disabled={busy}>
@@ -533,10 +544,8 @@ export function FiscalEntriesList({ entries, receivedDocuments, ultimaSync, nfse
             </Button>
           </>
         ) : tab === "nfse" ? (
-          <span className="fiscal-list-filter" title="As NFS-e recebidas (tomador) são sincronizadas automaticamente do Ambiente Nacional a cada hora.">
-            {nfseSync
-              ? `Atualizado em ${new Date(nfseSync).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}`
-              : "Sincronização automática ativa"}
+          <span className="fiscal-list-filter" title={nfseSync ? `Última sincronização do Ambiente Nacional: ${new Date(nfseSync).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}. Roda automaticamente a cada hora.` : "As NFS-e recebidas (tomador) são sincronizadas automaticamente do Ambiente Nacional a cada hora."}>
+            {syncRelativo(nfseSync)}
           </span>
         ) : (
           <>

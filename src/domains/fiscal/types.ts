@@ -41,6 +41,12 @@ export type ItemTaxResult = {
   cClassTrib: string | null;
   /** Reforma: CST do IBS/CBS (3 dígitos) — "000" = tributação integral (NT 2025.002). */
   cstIbsCbs: string | null;
+  /** Rastreabilidade: id da regra tributária principal (ICMS/ISS) aplicada — null se caiu no padrão nacional. */
+  regraId: string | null;
+  /** Nome da regra aplicada (para exibir no espelho). */
+  regraNome: string | null;
+  /** false = nenhuma regra específica bateu; usou o padrão nacional por regime/UF (avisar). */
+  regraAplicada: boolean;
 };
 
 /** Item normalizado de um documento fiscal, pronto para cálculo e emissão. */

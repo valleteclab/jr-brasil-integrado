@@ -42,6 +42,19 @@ const PAPEIS = [
 
 const brl = (v: number) => new Intl.NumberFormat("pt-BR", { currency: "BRL", style: "currency" }).format(v);
 
+/** Tempo relativo desde a última sincronização (mais acionável que a data absoluta). */
+function syncRelativoNfse(iso: string | null): string {
+  if (!iso) return "Sincronização automática ativa (a cada hora)";
+  const ms = Date.now() - new Date(iso).getTime();
+  if (!Number.isFinite(ms) || ms < 0) return "Sincronizado agora";
+  const min = Math.floor(ms / 60000);
+  if (min < 1) return "Sincronizado agora";
+  if (min < 60) return `Sincronizado há ${min} min`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `Sincronizado há ${h} h`;
+  return `Sincronizado há ${Math.floor(h / 24)} d`;
+}
+
 export function NfseDistribuicaoList({ documents, ultimaSync, formasPagamento = [], contas = [], classificacoes = [] }: Props) {
   const [rows, setRows] = useState(documents);
   const [syncEm, setSyncEm] = useState<string | null>(ultimaSync ?? null);
@@ -92,8 +105,8 @@ export function NfseDistribuicaoList({ documents, ultimaSync, formasPagamento = 
           </button>
         ))}
         <div className="toolbar-grow" />
-        <span className="fiscal-list-filter" title="A sincronização também roda automaticamente a cada hora.">
-          {syncEm ? `Atualizado em ${new Date(syncEm).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}` : "Sincronização automática ativa"}
+        <span className="fiscal-list-filter" title={syncEm ? `Última sincronização: ${new Date(syncEm).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}. Roda automaticamente a cada hora.` : "A sincronização também roda automaticamente a cada hora."}>
+          {syncRelativoNfse(syncEm)}
         </span>
         <Button type="button" onClick={sincronizar} disabled={syncing}>
           {syncing ? "Sincronizando..." : "Sincronizar agora"}

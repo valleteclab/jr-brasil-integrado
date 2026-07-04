@@ -99,7 +99,11 @@ function mirrorTaxesFromOriginal(
     valorIs: 0,
     valorTributos: rateia(num(original.valorTributos)),
     cClassTrib: original.cClassTrib,
-    cstIbsCbs: "000"
+    cstIbsCbs: "000",
+    // Devolução espelha a nota original (não passa pelo matching de regras) — sem aviso de padrão.
+    regraId: null,
+    regraNome: null,
+    regraAplicada: true
   };
 }
 
@@ -303,6 +307,10 @@ export type FiscalPreviewItem = {
   aliquotaIs: number;
   valorIs: number;
   valorTributos: number;
+  /** Nome da regra tributária aplicada (null se caiu no padrão nacional por regime/UF). */
+  regraNome: string | null;
+  /** false = nenhuma regra específica bateu para o NCM/UF (o espelho avisa "padrão nacional"). */
+  regraAplicada: boolean;
 };
 
 /** Espelho fiscal: prévia de como a nota será emitida (tributos por item + totais). */
@@ -414,7 +422,9 @@ export async function previewFiscalDocument(
       valorCbs: taxes.valorCbs,
       aliquotaIs: taxes.aliquotaIs,
       valorIs: taxes.valorIs,
-      valorTributos: taxes.valorTributos
+      valorTributos: taxes.valorTributos,
+      regraNome: taxes.regraNome,
+      regraAplicada: taxes.regraAplicada
     };
   });
 

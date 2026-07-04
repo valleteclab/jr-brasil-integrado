@@ -188,6 +188,22 @@ export async function listRegrasFinalidade(scope: TenantScope) {
 
 export async function createRegraFinalidade(scope: TenantScope, payload: RegraFinalidadePayload) {
   const data = validate(payload);
+  // Duplicata: mesma combinação de critérios (NCM+CFOP+fornecedor+finalidade) já ativa.
+  const duplicada = await prisma.regraFinalidadeEntrada.findFirst({
+    where: {
+      tenantId: scope.tenantId,
+      empresaId: scope.empresaId,
+      ativo: true,
+      finalidade: data.finalidade,
+      ncm: data.ncm,
+      cfopOrigem: data.cfopOrigem,
+      fornecedorId: data.fornecedorId
+    },
+    select: { nome: true }
+  });
+  if (duplicada) {
+    throw new Error(`Já existe uma regra ativa com os mesmos critérios ("${duplicada.nome}"). Edite ou desative a existente.`);
+  }
   const regra = await prisma.regraFinalidadeEntrada.create({
     data: { tenantId: scope.tenantId, empresaId: scope.empresaId, ...data }
   });
