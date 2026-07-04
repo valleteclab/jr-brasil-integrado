@@ -1,12 +1,18 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { PayableSummary, ReceivableSummary, BankAccountSummary, ClienteOption, MaquinaCartaoOption } from "@/lib/services/finance";
 import { EnviarDocumentoModal } from "./EnviarDocumentoModal";
+
+/** Baixa (movimento) de um título — para o seletor de estorno parcial. */
+type BaixaMov = { id: string; valor: number; data: string; dataLabel: string; formaPagamento: string | null; contaBancaria: string | null };
 import { usePaginado, Paginacao, noPeriodo } from "@/components/shared/Paginacao";
 import { baixarCsv } from "@/lib/export/csv";
 
 type FormaPagamentoOption = { id: string; nome: string };
+
+const fmtBrl = (v: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
 
 export type ClassificacaoOption = { id: string; nome: string; grupo: string; tipo: "DESPESA" | "RECEITA" };
 
@@ -110,6 +116,12 @@ function SettleForm({ tipo, id, descricao, saldoNumber, bankAccounts, formasPaga
   // "Como foi pago" no cartão (só em contas a pagar): qual maquininha, bandeira e parcelas.
   const ehCartao = tipo === "pagar" && formaEhCartao(formaPagamento);
   const ehCredito = ehCartao && formaEhCredito(formaPagamento);
+
+  // Aviso de saldo: numa conta a pagar, a baixa debita a conta. Se o saldo não cobrir, avisa (não bloqueia).
+  const valorNum = parseFloat(valor) || 0;
+  const contaSelecionada = bankAccounts.find((b) => b.id === contaBancariaId) ?? null;
+  const saldoFicaraNegativo =
+    tipo === "pagar" && contaSelecionada != null && valorNum > 0 && contaSelecionada.saldoAtualNumber < valorNum;
 
   const endpoint =
     tipo === "pagar"
@@ -247,7 +259,11 @@ function SettleForm({ tipo, id, descricao, saldoNumber, bankAccounts, formasPaga
                     <label>
                       Parcelas
                       <input type="number" min={1} max={24} value={parcelas} onChange={(e) => setParcelas(Math.max(1, Number(e.target.value) || 1))} />
-                      <span className="sublabel">{parcelas > 1 ? `Parcelado em ${parcelas}x` : "À vista"}</span>
+                      <span className="sublabel">
+                        {parcelas > 1
+                          ? `${parcelas}x de ${fmtBrl(valorNum / parcelas)} (total ${fmtBrl(valorNum)})`
+                          : "À vista"}
+                      </span>
                     </label>
                   )}
                 </>
@@ -263,11 +279,28 @@ function SettleForm({ tipo, id, descricao, saldoNumber, bankAccounts, formasPaga
                       </option>
                     ))}
                   </select>
+                  {contaSelecionada && (
+                    <span className="sublabel">
+                      Saldo atual: {contaSelecionada.saldoAtual}
+                      {saldoFicaraNegativo
+                        ? ` → após a baixa: ${fmtBrl(contaSelecionada.saldoAtualNumber - valorNum)}`
+                        : ""}
+                    </span>
+                  )}
                 </label>
               ) : (
                 <div className="alert danger full" style={{ margin: "0" }}>
                   <span className="lead">Atenção:</span>
                   <span>Cadastre uma conta bancária para registrar baixas (a baixa precisa debitar/creditar o saldo).</span>
+                </div>
+              )}
+              {saldoFicaraNegativo && (
+                <div className="alert warning full" style={{ margin: "0" }}>
+                  <span className="lead">Saldo insuficiente:</span>
+                  <span>
+                    {contaSelecionada?.nome} tem {contaSelecionada?.saldoAtual} e a baixa é de {fmtBrl(valorNum)}.
+                    A conta ficará negativa. Confirme só se for isso mesmo.
+                  </span>
                 </div>
               )}
             </div>
@@ -489,6 +522,7 @@ function NewAccountForm({ tipo, formasPagamento, clientes, classificacoes, onSuc
 // ─── Componente principal ─────────────────────────────────────────────────────
 
 export function FinanceManager({ initialPayables, initialReceivables, bankAccounts, formasPagamento = [], clientes = [], maquinas = [], classificacoes = [], contasCobranca = [], isAdmin = false }: Props) {
+  const router = useRouter();
   const [aba, setAba] = useState<Aba>("pagar");
   const [payables, setPayables] = useState(initialPayables);
   const [receivables, setReceivables] = useState(initialReceivables);
@@ -498,6 +532,9 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
   const [settlingId, setSettlingId] = useState<string | null>(null);
   const [showNewForm, setShowNewForm] = useState(false);
   const [globalError, setGlobalError] = useState("");
+  // Estorno por baixa: quando há mais de uma baixa, abre o seletor.
+  const [estornoModal, setEstornoModal] = useState<{ id: string; descricao: string; baixas: BaixaMov[] } | null>(null);
+  const [estornoBusy, setEstornoBusy] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   // Boleto sendo enviado ao cliente (e-mail/WhatsApp) pelo modal compartilhado.
   const [enviandoBoleto, setEnviandoBoleto] = useState<{ id: string; descricao: string } | null>(null);
@@ -723,43 +760,51 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
     }
   }
 
+  const estornoBase = (id: string) => aba === "pagar"
+    ? `/api/erp/financeiro/contas-pagar/${id}/estornar`
+    : `/api/erp/financeiro/contas-receber/${id}/estornar`;
+
+  // Abre o fluxo de estorno: com 1 baixa, estorna direto; com várias, deixa escolher qual.
   async function estornarBaixa(id: string, descricao: string) {
+    setGlobalError("");
+    let baixas: BaixaMov[] = [];
+    try {
+      const res = await fetch(estornoBase(id));
+      const data = (await res.json().catch(() => ({}))) as { baixas?: BaixaMov[]; error?: string };
+      if (!res.ok) throw new Error(data.error || "Não foi possível carregar as baixas.");
+      baixas = data.baixas ?? [];
+    } catch (e) {
+      setGlobalError(e instanceof Error ? e.message : "Falha ao carregar baixas.");
+      return;
+    }
+    if (baixas.length > 1) {
+      setEstornoModal({ id, descricao, baixas });
+      return;
+    }
     if (!window.confirm(`Estornar a baixa de "${descricao}"? Isso desfaz o pagamento e ajusta o saldo bancário.`)) return;
+    await executarEstorno(id);
+  }
+
+  // Executa o estorno (total quando movimentoId ausente; parcial quando informado) e recarrega.
+  async function executarEstorno(id: string, movimentoId?: string) {
+    setEstornoBusy(true);
     setBusyId(id);
     setGlobalError("");
-    const endpoint =
-      aba === "pagar"
-        ? `/api/erp/financeiro/contas-pagar/${id}/estornar`
-        : `/api/erp/financeiro/contas-receber/${id}/estornar`;
     try {
-      const res = await fetch(endpoint, { method: "POST" });
+      const res = await fetch(estornoBase(id), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(movimentoId ? { movimentoId } : {})
+      });
       const data = (await res.json().catch(() => ({}))) as { status?: string; error?: string };
       if (!res.ok) throw new Error(data.error || "Não foi possível estornar a baixa.");
-      // Volta a linha ao estado "em aberto" (sem pagamento): atualiza sem reload.
-      function reverterRow<T extends PayableSummary | ReceivableSummary>(items: T[]): T[] {
-        return items.map((r) => {
-          if (r.id !== id) return r;
-          const venc = new Date(r.vencimentoRaw);
-          const hoje = new Date();
-          hoje.setHours(0, 0, 0, 0);
-          const vencido = venc < hoje;
-          return {
-            ...r,
-            statusLabel: vencido ? "Vencido" : "Aberto",
-            statusTone: vencido ? ("danger" as const) : ("info" as const),
-            canSettle: true,
-            canEstornar: false,
-            valorPago: "R$ 0,00",
-            saldo: r.valor,
-            saldoNumber: Number(r.valor.replace(/[^\d,-]/g, "").replace(".", "").replace(",", ".")) || 0
-          };
-        });
-      }
-      if (aba === "pagar") setPayables((prev) => reverterRow(prev));
-      else setReceivables((prev) => reverterRow(prev));
+      setEstornoModal(null);
+      // Recarrega do servidor: o título pode ter ficado PARCIAL (estorno de uma baixa) ou reaberto.
+      router.refresh();
     } catch (e) {
       setGlobalError(e instanceof Error ? e.message : "Falha ao estornar baixa.");
     } finally {
+      setEstornoBusy(false);
       setBusyId(null);
     }
   }
@@ -774,6 +819,26 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
     });
   }, [rows, query, de, ate]);
   const paged = usePaginado(filtered, 25);
+
+  // Resumo do que está filtrado: saldo em aberto separando o que já venceu (vermelho) do que está a vencer.
+  const totais = useMemo(() => {
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+    let vencido = 0;
+    let aVencer = 0;
+    let quitado = 0;
+    for (const r of filtered) {
+      const saldo = r.saldoNumber || 0;
+      if (saldo <= 0) {
+        quitado += 1;
+        continue;
+      }
+      const venc = new Date(r.vencimentoRaw);
+      if (venc < hoje) vencido += saldo;
+      else aVencer += saldo;
+    }
+    return { vencido, aVencer, quitado };
+  }, [filtered]);
 
   const settlingItem = settlingId ? rows.find((r) => r.id === settlingId) : null;
 
@@ -868,6 +933,22 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
         >
           + Nova conta
         </button>
+      </div>
+
+      {/* Resumo dos saldos filtrados */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 16, padding: "10px 16px", background: "#fff", borderLeft: "1px solid var(--erp-line)", borderRight: "1px solid var(--erp-line)", fontSize: 13 }}>
+        <span style={{ color: "var(--erp-slate)" }}>
+          {aba === "pagar" ? "A pagar" : "A receber"} (a vencer): <strong>{fmtBrl(totais.aVencer)}</strong>
+        </span>
+        <span style={{ color: totais.vencido > 0 ? "var(--erp-danger, #c0392b)" : "var(--erp-slate)", fontWeight: totais.vencido > 0 ? 600 : 400 }}>
+          Vencido: <strong>{fmtBrl(totais.vencido)}</strong>
+        </span>
+        <span style={{ color: "var(--erp-slate)" }}>
+          Total em aberto: <strong>{fmtBrl(totais.aVencer + totais.vencido)}</strong>
+        </span>
+        <span style={{ color: "var(--erp-slate)", marginLeft: "auto" }}>
+          Quitadas: <strong>{totais.quitado}</strong>
+        </span>
       </div>
 
       {globalError && (
@@ -1167,6 +1248,45 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
           endpoint={`/api/erp/financeiro/contas-receber/${enviandoBoleto.id}/boleto/enviar`}
           onClose={() => setEnviandoBoleto(null)}
         />
+      )}
+
+      {/* Estorno POR BAIXA: escolher qual baixa reverter (ou todas). */}
+      {estornoModal && (
+        <div className="drawer-bd" style={{ display: "grid", placeItems: "center", zIndex: 80 }} onClick={() => !estornoBusy && setEstornoModal(null)} role="presentation">
+          <div className="erp-card" style={{ width: "min(560px, 94vw)", maxHeight: "88vh", overflow: "auto" }} onClick={(e) => e.stopPropagation()}>
+            <div className="erp-card-head"><h3>Estornar baixa — {estornoModal.descricao}</h3></div>
+            <div className="erp-card-body">
+              <p style={{ fontSize: 13, color: "var(--erp-slate)", marginTop: 0 }}>
+                Este título teve {estornoModal.baixas.length} baixas. Escolha qual estornar — só ela é revertida
+                (o restante do pagamento continua). Ou estorne todas de uma vez.
+              </p>
+              <div className="erp-table-wrap">
+                <table className="erp-table">
+                  <thead><tr><th>Data</th><th>Forma</th><th>Conta</th><th className="num">Valor</th><th className="actions" /></tr></thead>
+                  <tbody>
+                    {estornoModal.baixas.map((b) => (
+                      <tr key={b.id}>
+                        <td>{b.dataLabel}</td>
+                        <td>{b.formaPagamento ?? "—"}</td>
+                        <td>{b.contaBancaria ?? "—"}</td>
+                        <td className="num">{new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(b.valor)}</td>
+                        <td className="actions">
+                          <button type="button" className="btn-erp danger xs" disabled={estornoBusy} onClick={() => executarEstorno(estornoModal.id, b.id)}>Estornar esta</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div style={{ display: "flex", gap: 8, justifyContent: "space-between", marginTop: 12 }}>
+                <button type="button" className="btn-erp ghost sm" disabled={estornoBusy} onClick={() => setEstornoModal(null)}>Cancelar</button>
+                <button type="button" className="btn-erp danger sm" disabled={estornoBusy} onClick={() => { if (window.confirm("Estornar TODAS as baixas deste título?")) executarEstorno(estornoModal.id); }}>
+                  {estornoBusy ? "Estornando…" : "Estornar todas"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </>
   );

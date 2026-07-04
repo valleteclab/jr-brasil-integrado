@@ -507,7 +507,24 @@ export async function deleteReceivable(scope: TenantScope, id: string) {
  * (CREDITO, origem "ESTORNO") devolvendo o valor ao saldo da conta bancária, e zera
  * valorPago/juros/multa/descontoBaixa da conta, voltando o status para ABERTO (ou VENCIDO).
  */
-export async function estornarBaixaPayable(scope: TenantScope, contaPagarId: string) {
+/** Lista as baixas (movimentos de débito) de um título a pagar — para escolher qual estornar. */
+export async function listBaixasPayable(scope: TenantScope, contaPagarId: string) {
+  const movimentos = await prisma.movimentoFinanceiro.findMany({
+    where: { contaPagarId, origem: "CONTA_PAGAR", ...scopedByTenantCompany(scope) },
+    orderBy: { dataMovimento: "asc" },
+    include: { contaBancaria: { select: { nome: true } } }
+  });
+  return movimentos.map((m) => ({
+    id: m.id,
+    valor: Number(m.valor),
+    data: m.dataMovimento.toISOString(),
+    dataLabel: m.dataMovimento.toLocaleDateString("pt-BR"),
+    formaPagamento: m.formaPagamento,
+    contaBancaria: m.contaBancaria?.nome ?? null
+  }));
+}
+
+export async function estornarBaixaPayable(scope: TenantScope, contaPagarId: string, opts?: { movimentoId?: string }) {
   return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     // Relê dentro da transação para tratar concorrência (duas requisições simultâneas).
     const conta = await tx.contaPagar.findFirst({
@@ -523,11 +540,19 @@ export async function estornarBaixaPayable(scope: TenantScope, contaPagarId: str
       throw new FinanceValidationError("Não há baixa para estornar.");
     }
 
-    // Movimentos de baixa desta conta (DEBITO, origem CONTA_PAGAR) — não inclui estornos anteriores.
+    // Movimentos de baixa desta conta (DEBITO, origem CONTA_PAGAR) — estorno parcial via movimentoId.
     const movimentos = await tx.movimentoFinanceiro.findMany({
-      where: { contaPagarId, origem: "CONTA_PAGAR", ...scopedByTenantCompany(scope) },
+      where: {
+        contaPagarId, origem: "CONTA_PAGAR", ...scopedByTenantCompany(scope),
+        ...(opts?.movimentoId ? { id: opts.movimentoId } : {})
+      },
       orderBy: { dataMovimento: "asc" }
     });
+    if (opts?.movimentoId && movimentos.length === 0) {
+      throw new FinanceValidationError("Baixa informada não encontrada para estorno.");
+    }
+    const parcial = Boolean(opts?.movimentoId);
+    const valorEstornado = round2(movimentos.reduce((s, m) => s + Number(m.valor), 0));
 
     const agora = new Date();
 
@@ -569,21 +594,18 @@ export async function estornarBaixaPayable(scope: TenantScope, contaPagarId: str
       });
     }
 
-    // Volta a conta ao estado "em aberto": zera o que foi acumulado na baixa e limpa pagoEm.
+    // Estorno PARCIAL só retira o valor da baixa revertida; sobrando saldo pago, volta a PARCIAL.
     const hoje = new Date();
     hoje.setHours(0, 0, 0, 0);
-    const novoStatus: "ABERTO" | "VENCIDO" = conta.vencimento < hoje ? "VENCIDO" : "ABERTO";
+    const emAbertoStatus: "ABERTO" | "VENCIDO" = conta.vencimento < hoje ? "VENCIDO" : "ABERTO";
+    const pagoRestante = parcial ? round2(Math.max(0, Number(conta.valorPago) - valorEstornado)) : 0;
+    const aindaPago = pagoRestante > 0;
 
     const contaAtualizada = await tx.contaPagar.update({
       where: { id: contaPagarId },
-      data: {
-        valorPago: 0,
-        juros: 0,
-        multa: 0,
-        descontoBaixa: 0,
-        status: novoStatus,
-        pagoEm: null
-      }
+      data: aindaPago
+        ? { valorPago: pagoRestante, status: "PARCIAL" }
+        : { valorPago: 0, juros: 0, multa: 0, descontoBaixa: 0, status: emAbertoStatus, pagoEm: null }
     });
 
     await createAuditLog(tx, {
@@ -592,10 +614,11 @@ export async function estornarBaixaPayable(scope: TenantScope, contaPagarId: str
       entidadeId: contaPagarId,
       acao: "ESTORNO_BAIXA",
       payload: {
-        valorEstornado: Number(conta.valorPago),
+        valorEstornado,
         movimentosRevertidos: movimentos.length,
+        parcial,
         statusAnterior: conta.status,
-        novoStatus
+        novoStatus: contaAtualizada.status
       }
     });
 
@@ -610,7 +633,24 @@ export async function estornarBaixaPayable(scope: TenantScope, contaPagarId: str
  * Para cada MovimentoFinanceiro de baixa (origem CONTA_RECEBER), cria um movimento INVERSO
  * (DEBITO, origem "ESTORNO") subtraindo do saldo da conta bancária o que havia sido creditado.
  */
-export async function estornarBaixaReceivable(scope: TenantScope, contaReceberId: string) {
+/** Lista as baixas (movimentos de crédito) de um título a receber — para escolher qual estornar. */
+export async function listBaixasReceivable(scope: TenantScope, contaReceberId: string) {
+  const movimentos = await prisma.movimentoFinanceiro.findMany({
+    where: { contaReceberId, origem: "CONTA_RECEBER", ...scopedByTenantCompany(scope) },
+    orderBy: { dataMovimento: "asc" },
+    include: { contaBancaria: { select: { nome: true } } }
+  });
+  return movimentos.map((m) => ({
+    id: m.id,
+    valor: Number(m.valor),
+    data: m.dataMovimento.toISOString(),
+    dataLabel: m.dataMovimento.toLocaleDateString("pt-BR"),
+    formaPagamento: m.formaPagamento,
+    contaBancaria: m.contaBancaria?.nome ?? null
+  }));
+}
+
+export async function estornarBaixaReceivable(scope: TenantScope, contaReceberId: string, opts?: { movimentoId?: string }) {
   return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     // Relê dentro da transação para tratar concorrência (duas requisições simultâneas).
     const conta = await tx.contaReceber.findFirst({
@@ -627,10 +667,19 @@ export async function estornarBaixaReceivable(scope: TenantScope, contaReceberId
     }
 
     // Movimentos de baixa desta conta (CREDITO, origem CONTA_RECEBER) — não inclui estornos anteriores.
+    // Estorno PARCIAL: quando `movimentoId` é informado, reverte só aquela baixa; senão, todas.
     const movimentos = await tx.movimentoFinanceiro.findMany({
-      where: { contaReceberId, origem: "CONTA_RECEBER", ...scopedByTenantCompany(scope) },
+      where: {
+        contaReceberId, origem: "CONTA_RECEBER", ...scopedByTenantCompany(scope),
+        ...(opts?.movimentoId ? { id: opts.movimentoId } : {})
+      },
       orderBy: { dataMovimento: "asc" }
     });
+    if (opts?.movimentoId && movimentos.length === 0) {
+      throw new FinanceValidationError("Baixa informada não encontrada para estorno.");
+    }
+    const parcial = Boolean(opts?.movimentoId);
+    const valorEstornado = round2(movimentos.reduce((s, m) => s + Number(m.valor), 0));
 
     const agora = new Date();
 
@@ -672,21 +721,19 @@ export async function estornarBaixaReceivable(scope: TenantScope, contaReceberId
       });
     }
 
-    // Volta a conta ao estado "em aberto": zera o que foi acumulado na baixa e limpa pagoEm.
+    // Recalcula o pago: estorno PARCIAL só retira o valor da baixa revertida; quando sobra saldo pago,
+    // a conta volta a PARCIAL (senão, ABERTO/VENCIDO). Estorno TOTAL zera tudo.
     const hoje = new Date();
     hoje.setHours(0, 0, 0, 0);
-    const novoStatus: "ABERTO" | "VENCIDO" = conta.vencimento < hoje ? "VENCIDO" : "ABERTO";
+    const emAbertoStatus: "ABERTO" | "VENCIDO" = conta.vencimento < hoje ? "VENCIDO" : "ABERTO";
+    const pagoRestante = parcial ? round2(Math.max(0, Number(conta.valorPago) - valorEstornado)) : 0;
+    const aindaPago = pagoRestante > 0;
 
     const contaAtualizada = await tx.contaReceber.update({
       where: { id: contaReceberId },
-      data: {
-        valorPago: 0,
-        juros: 0,
-        multa: 0,
-        descontoBaixa: 0,
-        status: novoStatus,
-        pagoEm: null
-      }
+      data: aindaPago
+        ? { valorPago: pagoRestante, status: "PARCIAL" }
+        : { valorPago: 0, juros: 0, multa: 0, descontoBaixa: 0, status: emAbertoStatus, pagoEm: null }
     });
 
     await createAuditLog(tx, {
@@ -695,10 +742,11 @@ export async function estornarBaixaReceivable(scope: TenantScope, contaReceberId
       entidadeId: contaReceberId,
       acao: "ESTORNO_BAIXA",
       payload: {
-        valorEstornado: Number(conta.valorPago),
+        valorEstornado,
         movimentosRevertidos: movimentos.length,
+        parcial,
         statusAnterior: conta.status,
-        novoStatus
+        novoStatus: contaAtualizada.status
       }
     });
 
