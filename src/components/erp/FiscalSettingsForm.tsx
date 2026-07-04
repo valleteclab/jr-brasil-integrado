@@ -391,7 +391,10 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
             <Button type="button" variant="light" onClick={testarConexao} disabled={testBusy}>
               {testBusy ? "Testando…" : "Testar conexão"}
             </Button>
-            <span className="muted">Testa a credencial já salva. Salve antes de testar uma credencial nova.</span>
+            <span className="muted">
+              Testa a credencial já salva. Salve antes de testar uma credencial nova.
+              {config.testedAt && <> · Último teste: <strong>{new Date(config.testedAt).toLocaleString("pt-BR")}</strong>.</>}
+            </span>
           </div>
           {testResult && (
             <div className={`alert ${testResult.ok ? "success" : "danger"}`}>

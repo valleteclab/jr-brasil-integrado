@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import type { StockBalance, StockMovement, InventorySummary, DepositoOption, ProdutoOption } from "@/lib/services/stock";
 import { correspondeBusca } from "@/lib/search/normalize";
+import { usePaginado, Paginacao } from "@/components/shared/Paginacao";
 
 type PillTone = "success" | "warn" | "danger" | "info" | "violet" | "mute";
 
@@ -487,6 +488,18 @@ function InventoriesTab({
 }) {
   const [showForm, setShowForm] = useState(false);
   const [flash, setFlash] = useState("");
+  const [busca, setBusca] = useState("");
+  const [statusFiltro, setStatusFiltro] = useState("");
+
+  const filtered = useMemo(
+    () => inventories.filter((inv) =>
+      (!statusFiltro || inv.status === statusFiltro) &&
+      correspondeBusca(busca, inv.numero, inv.depositoNome, inv.descricao)
+    ),
+    [inventories, busca, statusFiltro]
+  );
+  const pag = usePaginado(filtered, 20);
+  const statusUnicos = useMemo(() => Array.from(new Set(inventories.map((i) => i.status))), [inventories]);
 
   function handleCreated(id: string, numero: string) {
     setShowForm(false);
@@ -499,6 +512,14 @@ function InventoriesTab({
   return (
     <section>
       <div className="erp-toolbar product-toolbar">
+        <div className="toolbar-search">
+          <span className="ic-sr" aria-hidden="true">⌕</span>
+          <input className="search" placeholder="Buscar por número, depósito, descrição…" value={busca} onChange={(e) => setBusca(e.target.value)} />
+        </div>
+        <select className="btn-erp ghost sm" value={statusFiltro} onChange={(e) => setStatusFiltro(e.target.value)}>
+          <option value="">Todos os status</option>
+          {statusUnicos.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
         <div className="toolbar-grow" />
         <button type="button" className="btn-erp primary sm" onClick={() => setShowForm(true)}>Novo inventário</button>
       </div>
@@ -529,7 +550,7 @@ function InventoriesTab({
             </tr>
           </thead>
           <tbody>
-            {inventories.map((inv) => (
+            {pag.itensPagina.map((inv) => (
               <tr key={inv.id}>
                 <td><span className="mono bold">{inv.numero}</span></td>
                 <td>{inv.depositoNome}</td>
@@ -551,12 +572,12 @@ function InventoriesTab({
                 </td>
               </tr>
             ))}
-            {inventories.length === 0 && (
+            {pag.total === 0 && (
               <tr>
                 <td colSpan={9}>
                   <div className="empty-st">
-                    <h4>Nenhum inventário criado</h4>
-                    <p>Clique em &quot;Novo inventário&quot; para iniciar uma contagem.</p>
+                    <h4>{inventories.length ? "Nenhum inventário encontrado" : "Nenhum inventário criado"}</h4>
+                    <p>{inventories.length ? "Ajuste a busca ou o filtro de status." : "Clique em \"Novo inventário\" para iniciar uma contagem."}</p>
                   </div>
                 </td>
               </tr>
@@ -564,6 +585,7 @@ function InventoriesTab({
           </tbody>
         </table>
       </div>
+      <Paginacao pagina={pag.pagina} totalPaginas={pag.totalPaginas} onPagina={pag.setPagina} inicio={pag.inicio} fim={pag.fim} total={pag.total} rotuloItem="inventários" />
     </section>
   );
 }

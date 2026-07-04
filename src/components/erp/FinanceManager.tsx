@@ -3,6 +3,8 @@
 import { useMemo, useState } from "react";
 import type { PayableSummary, ReceivableSummary, BankAccountSummary, ClienteOption, MaquinaCartaoOption } from "@/lib/services/finance";
 import { EnviarDocumentoModal } from "./EnviarDocumentoModal";
+import { usePaginado, Paginacao, noPeriodo } from "@/components/shared/Paginacao";
+import { baixarCsv } from "@/lib/export/csv";
 
 type FormaPagamentoOption = { id: string; nome: string };
 
@@ -491,6 +493,8 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
   const [payables, setPayables] = useState(initialPayables);
   const [receivables, setReceivables] = useState(initialReceivables);
   const [query, setQuery] = useState("");
+  const [de, setDe] = useState("");
+  const [ate, setAte] = useState("");
   const [settlingId, setSettlingId] = useState<string | null>(null);
   const [showNewForm, setShowNewForm] = useState(false);
   const [globalError, setGlobalError] = useState("");
@@ -764,13 +768,12 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter((r) =>
-      [r.descricao, r.parte, r.numeroDocumento, r.statusLabel, r.vencimento].some((f) =>
-        f.toLowerCase().includes(q)
-      )
-    );
-  }, [rows, query]);
+    return rows.filter((r) => {
+      const casaBusca = !q || [r.descricao, r.parte, r.numeroDocumento, r.statusLabel, r.vencimento].some((f) => f.toLowerCase().includes(q));
+      return casaBusca && noPeriodo(r.vencimentoRaw, de, ate);
+    });
+  }, [rows, query, de, ate]);
+  const paged = usePaginado(filtered, 25);
 
   const settlingItem = settlingId ? rows.find((r) => r.id === settlingId) : null;
 
@@ -832,7 +835,32 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
             onChange={(e) => setQuery(e.target.value)}
           />
         </div>
+        <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: "var(--erp-slate)" }} title="Vencimento a partir de">
+          Venc. de <input type="date" value={de} onChange={(e) => setDe(e.target.value)} style={{ height: 32 }} />
+        </label>
+        <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: "var(--erp-slate)" }} title="Vencimento até">
+          até <input type="date" value={ate} onChange={(e) => setAte(e.target.value)} style={{ height: 32 }} />
+        </label>
+        {(de || ate) && <button type="button" className="btn-erp ghost sm" onClick={() => { setDe(""); setAte(""); }}>Limpar período</button>}
         <div className="grow" />
+        <button
+          type="button"
+          className="btn-erp ghost sm"
+          disabled={!filtered.length}
+          title="Exportar as contas filtradas em CSV"
+          onClick={() => baixarCsv(aba === "pagar" ? "contas-a-pagar" : "contas-a-receber", filtered.map((r) => ({
+            Descrição: r.descricao,
+            [aba === "pagar" ? "Fornecedor" : "Cliente"]: r.parte,
+            "Nº documento": r.numeroDocumento,
+            Vencimento: r.vencimento,
+            Valor: r.valor,
+            "Valor pago": r.valorPago,
+            Saldo: r.saldo,
+            Status: r.statusLabel
+          })))}
+        >
+          ⬇ CSV
+        </button>
         <button
           type="button"
           className="btn-erp primary sm"
@@ -867,7 +895,7 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
             </tr>
           </thead>
           <tbody>
-            {filtered.map((r) => (
+            {paged.itensPagina.map((r) => (
               <tr key={r.id}>
                 <td>
                   <strong>{r.descricao}</strong>
@@ -1060,14 +1088,7 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
             )}
           </tbody>
         </table>
-        {filtered.length > 0 && (
-          <div className="erp-table-foot">
-            <span>{filtered.length} conta(s)</span>
-            <div className="pagi">
-              <button type="button" className="active">1</button>
-            </div>
-          </div>
-        )}
+        <Paginacao pagina={paged.pagina} totalPaginas={paged.totalPaginas} onPagina={paged.setPagina} inicio={paged.inicio} fim={paged.fim} total={paged.total} rotuloItem="conta(s)" />
       </div>
 
       {/* Drawer da cobrança Pix (QR + verificação) */}

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { baixarCsv } from "@/lib/export/csv";
 
 /**
  * CONCILIAÇÃO BANCÁRIA: consulta o extrato da conta no Sicoob e compara com os movimentos do ERP.
@@ -89,6 +90,24 @@ export function ExtratoBancarioWorkspace({ contas }: { contas: Array<{ id: strin
           {busy ? "Consultando…" : "Consultar extrato"}
         </button>
         <div className="grow" />
+        {resultado && resultado.linhas.length > 0 && (
+          <button
+            type="button"
+            className="btn-erp ghost sm"
+            onClick={() => baixarCsv(`conciliacao-${resultado.conta.nome}-${resultado.periodo.mes}-${resultado.periodo.ano}`, resultado.linhas.map((l) => ({
+              Data: l.data ? new Date(l.data).toLocaleDateString("pt-BR") : "",
+              Origem: l.origem,
+              Descrição: l.descricao,
+              Documento: l.documento ?? "",
+              Valor: l.valor,
+              Situação: l.situacao === "CONCILIADO" ? "Conciliado" : l.situacao === "SO_BANCO" ? "Só no banco" : "Só no ERP",
+              "Casado com (ERP)": l.casadoCom ?? "",
+              Antecipação: l.pareceAntecipacao ? "Sim" : ""
+            })), { Valor: "moeda" })}
+          >
+            ⬇ Exportar CSV
+          </button>
+        )}
       </div>
 
       {erro && <div className="alert danger"><span className="lead">Erro:</span><span>{erro}</span></div>}

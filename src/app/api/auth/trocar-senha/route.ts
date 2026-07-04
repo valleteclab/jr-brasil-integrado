@@ -34,7 +34,7 @@ export async function POST(request: Request) {
 
     await prisma.usuario.update({
       where: { id: usuario.id },
-      data: { senhaHash: hashPassword(novaSenha) }
+      data: { senhaHash: hashPassword(novaSenha), senhaAtualizadaEm: new Date() }
     });
 
     // Revoga as outras sessões (encerra acessos antigos); mantém a sessão atual.

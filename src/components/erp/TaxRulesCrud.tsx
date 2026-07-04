@@ -234,6 +234,7 @@ export function TaxRulesCrud({ initialRules, fiscalCodes = {} }: TaxRulesCrudPro
               <th>CST/CSOSN</th>
               <th className="num">Alíquota</th>
               <th>Status</th>
+              <th>Atualizada</th>
               <th className="actions">Ações</th>
             </tr>
           </thead>
@@ -256,6 +257,7 @@ export function TaxRulesCrud({ initialRules, fiscalCodes = {} }: TaxRulesCrudPro
                     {rule.active ? "Ativa" : "Inativa"}
                   </span>
                 </td>
+                <td><small className="block-muted">{rule.updatedAt ? new Date(rule.updatedAt).toLocaleDateString("pt-BR") : "—"}</small></td>
                 <td className="actions">
                   <button type="button" className="btn-erp ghost xs" onClick={() => openEdit(rule)}>Abrir</button>
                   {rule.active && <button type="button" className="btn-erp danger xs" onClick={() => archiveRule(rule)}>Inativar</button>}
@@ -263,7 +265,7 @@ export function TaxRulesCrud({ initialRules, fiscalCodes = {} }: TaxRulesCrudPro
               </tr>
             ))}
             {!filteredRules.length && (
-              <tr><td colSpan={9}><div className="empty-st"><h4>Nenhuma regra tributária</h4><p>Cadastre a primeira regra tributária.</p></div></td></tr>
+              <tr><td colSpan={10}><div className="empty-st"><h4>Nenhuma regra tributária</h4><p>Cadastre a primeira regra tributária.</p></div></td></tr>
             )}
           </tbody>
         </table>

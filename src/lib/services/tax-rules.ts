@@ -37,6 +37,8 @@ export type TaxRuleSummary = {
   validFrom: string;
   validUntil: string;
   active: boolean;
+  /** Última alteração da regra (ISO) — exibida na lista para auditoria ("atualizada em..."). */
+  updatedAt?: string;
 };
 
 function decimalToInput(value: unknown) {
@@ -81,7 +83,8 @@ export function mapTaxRule(rule: RegraTributaria): TaxRuleSummary {
     gnreCamposExtras: rule.gnreCamposExtras ?? "",
     validFrom: dateToInput(rule.vigenciaInicio),
     validUntil: dateToInput(rule.vigenciaFim),
-    active: rule.ativo
+    active: rule.ativo,
+    updatedAt: rule.atualizadoEm ? rule.atualizadoEm.toISOString() : ""
   };
 }
 

@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import { Card } from "@/components/shared/Card";
 import { Button } from "@/components/shared/Button";
 import { StatusBadge } from "@/components/shared/StatusBadge";
+import { correspondeBusca } from "@/lib/search/normalize";
+import { usePaginado, Paginacao } from "@/components/shared/Paginacao";
 
 type VinculoInfo = { clienteId: string; clienteNome: string; empresaNome: string | null; perfilNome: string; ativo: boolean };
 type Usuario = {
@@ -43,8 +45,19 @@ export function UsuariosManager({ usuarios, estrutura }: Props) {
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState("");
   const [criado, setCriado] = useState<{ email: string; senha: string } | null>(null);
+  const [busca, setBusca] = useState("");
+  const [statusFiltro, setStatusFiltro] = useState<"" | "ATIVO" | "INATIVO">("");
 
   const clienteSel = useMemo(() => estrutura.find((c) => c.id === form.tenantId), [estrutura, form.tenantId]);
+
+  const filtrados = useMemo(
+    () => usuarios.filter((u) =>
+      (!statusFiltro || u.status === statusFiltro) &&
+      correspondeBusca(busca, u.nome, u.email, ...u.vinculos.map((v) => v.clienteNome))
+    ),
+    [usuarios, busca, statusFiltro]
+  );
+  const { itensPagina, pagina, setPagina, totalPaginas, inicio, fim, total } = usePaginado(filtrados, 20);
 
   function set<K extends keyof typeof novoVazio>(campo: K, valor: string) {
     setForm((f) => {
@@ -189,6 +202,17 @@ export function UsuariosManager({ usuarios, estrutura }: Props) {
       )}
 
       <Card>
+        <div className="erp-toolbar" style={{ marginBottom: 8 }}>
+          <div className="toolbar-search">
+            <span className="ic-sr" aria-hidden="true">⌕</span>
+            <input className="search" placeholder="Buscar por nome, e-mail ou cliente…" value={busca} onChange={(e) => setBusca(e.target.value)} />
+          </div>
+          <select className="btn-erp ghost sm" value={statusFiltro} onChange={(e) => setStatusFiltro(e.target.value as "" | "ATIVO" | "INATIVO")}>
+            <option value="">Todos os status</option>
+            <option value="ATIVO">Ativos</option>
+            <option value="INATIVO">Inativos</option>
+          </select>
+        </div>
         <div className="erp-table-wrap">
           <table className="erp-table">
             <thead>
@@ -202,12 +226,12 @@ export function UsuariosManager({ usuarios, estrutura }: Props) {
               </tr>
             </thead>
             <tbody>
-              {usuarios.length === 0 && (
+              {total === 0 && (
                 <tr>
-                  <td colSpan={6}>Nenhum usuário cadastrado.</td>
+                  <td colSpan={6}>{usuarios.length === 0 ? "Nenhum usuário cadastrado." : "Nenhum usuário encontrado com esses filtros."}</td>
                 </tr>
               )}
-              {usuarios.map((u) => (
+              {itensPagina.map((u) => (
                 <tr key={u.id}>
                   <td>
                     <Link href={`/admin/usuarios/${u.id}`} className="bold">{u.nome}</Link>
@@ -225,6 +249,7 @@ export function UsuariosManager({ usuarios, estrutura }: Props) {
             </tbody>
           </table>
         </div>
+        <Paginacao pagina={pagina} totalPaginas={totalPaginas} onPagina={setPagina} inicio={inicio} fim={fim} total={total} rotuloItem="usuários" />
       </Card>
     </>
   );

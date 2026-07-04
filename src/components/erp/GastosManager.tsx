@@ -3,6 +3,7 @@
 import { useMemo, useRef, useState, type ChangeEvent } from "react";
 import type { GastoRow, GastosResumo } from "@/lib/services/gastos";
 import { KpiCard } from "@/components/shared/KpiCard";
+import { baixarCsv } from "@/lib/export/csv";
 
 const linkBtn: React.CSSProperties = { background: "none", border: 0, padding: 0, color: "#4f46e5", cursor: "pointer", textAlign: "left" };
 
@@ -250,6 +251,25 @@ export function GastosManager({ initialGastos, resumo: resumoInicial, categorias
         </label>
         <button type="button" className="btn-erp ghost sm" onClick={() => setEditor(editorVazio(categorias[0] ?? "Outros"))}>+ Gasto manual</button>
         {filtroCategoria && <button type="button" className="btn-erp ghost sm" onClick={() => setFiltroCategoria("")}>Limpar filtro: {filtroCategoria} ✕</button>}
+        <div className="grow" />
+        <button
+          type="button"
+          className="btn-erp ghost sm"
+          disabled={!filtered.length}
+          onClick={() => baixarCsv("gastos", filtered.map((g) => ({
+            Data: g.data,
+            Estabelecimento: g.estabelecimento,
+            Documento: g.documento ?? "",
+            Categoria: g.categoria,
+            Valor: g.valorTotal,
+            "Forma de pagamento": g.formaPagamento ?? "",
+            Origem: g.origem,
+            Situação: g.status,
+            "Lançado no financeiro": g.lancadoFinanceiro ? "Sim" : "Não"
+          })), { Valor: "moeda" })}
+        >
+          ⬇ Exportar CSV
+        </button>
       </div>
 
       {erro && <div className="alert danger" style={{ margin: "0 0 12px" }}><span>{erro}</span></div>}

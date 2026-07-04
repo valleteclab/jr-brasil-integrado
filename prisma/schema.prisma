@@ -621,6 +621,8 @@ model Usuario {
   sessoes         Sessao[]
   desafios2fa     Desafio2fa[]
   ultimoAcessoEm  DateTime?
+  /// Última troca de senha (auditoria de segurança — exibida em Minha conta → Segurança).
+  senhaAtualizadaEm DateTime?
   criadoEm        DateTime         @default(now())
   atualizadoEm    DateTime         @updatedAt
 }

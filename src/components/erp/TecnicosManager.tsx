@@ -1,8 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/shared/Button";
+import { correspondeBusca } from "@/lib/search/normalize";
+import { usePaginado, Paginacao } from "@/components/shared/Paginacao";
 
 type Tecnico = {
   id: string;
@@ -31,6 +33,17 @@ export function TecnicosManager({ tecnicos, usuarios }: Props) {
   const [form, setForm] = useState(vazio);
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState("");
+  const [busca, setBusca] = useState("");
+  const [statusFiltro, setStatusFiltro] = useState<"" | "ativos" | "inativos">("ativos");
+
+  const filtrados = useMemo(
+    () => tecnicos.filter((t) =>
+      (statusFiltro === "" || (statusFiltro === "ativos" ? t.ativo : !t.ativo)) &&
+      correspondeBusca(busca, t.nome, t.especialidade, t.telefone, t.usuarioNome)
+    ),
+    [tecnicos, busca, statusFiltro]
+  );
+  const { itensPagina, pagina, setPagina, totalPaginas, inicio, fim, total } = usePaginado(filtrados, 20);
 
   function abrirNovo() {
     setEditId(null);
@@ -101,6 +114,15 @@ export function TecnicosManager({ tecnicos, usuarios }: Props) {
   return (
     <>
       <div className="erp-toolbar">
+        <div className="toolbar-search">
+          <span className="ic-sr" aria-hidden="true">⌕</span>
+          <input className="search" placeholder="Buscar por nome, especialidade, telefone…" value={busca} onChange={(e) => setBusca(e.target.value)} />
+        </div>
+        <select className="btn-erp ghost sm" value={statusFiltro} onChange={(e) => setStatusFiltro(e.target.value as "" | "ativos" | "inativos")}>
+          <option value="ativos">Ativos</option>
+          <option value="inativos">Inativos</option>
+          <option value="">Todos</option>
+        </select>
         <div className="grow" />
         <button type="button" className="btn-erp primary sm" onClick={abrirNovo}>+ Novo técnico</button>
       </div>
@@ -121,7 +143,7 @@ export function TecnicosManager({ tecnicos, usuarios }: Props) {
             </tr>
           </thead>
           <tbody>
-            {tecnicos.map((t) => (
+            {itensPagina.map((t) => (
               <tr key={t.id}>
                 <td>
                   <div style={{ fontWeight: 600 }}>{t.nome}</div>
@@ -138,12 +160,13 @@ export function TecnicosManager({ tecnicos, usuarios }: Props) {
                 </td>
               </tr>
             ))}
-            {!tecnicos.length && (
-              <tr><td colSpan={7}><div className="empty-st"><h4>Nenhum técnico cadastrado</h4><p>Cadastre a equipe da oficina para atribuir OS e registrar o que foi feito.</p></div></td></tr>
+            {!total && (
+              <tr><td colSpan={7}><div className="empty-st"><h4>{tecnicos.length ? "Nenhum técnico encontrado" : "Nenhum técnico cadastrado"}</h4><p>{tecnicos.length ? "Ajuste a busca ou o filtro de status." : "Cadastre a equipe da oficina para atribuir OS e registrar o que foi feito."}</p></div></td></tr>
             )}
           </tbody>
         </table>
       </div>
+      <Paginacao pagina={pagina} totalPaginas={totalPaginas} onPagina={setPagina} inicio={inicio} fim={fim} total={total} rotuloItem="técnicos" />
 
       {drawer && (
         <>

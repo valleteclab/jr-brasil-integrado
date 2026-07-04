@@ -3,6 +3,8 @@
 import { useMemo, useState } from "react";
 import type { ColaboradorSummary, PerfilSummary } from "@/lib/services/team";
 import { MODULOS as CATALOGO_MODULOS, type ModuloKey } from "@/lib/auth/modules";
+import { correspondeBusca } from "@/lib/search/normalize";
+import { usePaginado, Paginacao } from "@/components/shared/Paginacao";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -76,6 +78,17 @@ export function TeamManager({ initialColaboradores, initialPerfis }: TeamManager
   const [perfilSaving, setPerfilSaving] = useState(false);
 
   const [actioning, setActioning] = useState<string | null>(null);
+  const [busca, setBusca] = useState("");
+  const [statusFiltro, setStatusFiltro] = useState<"" | "ativos" | "inativos">("");
+
+  const colaboradoresFiltrados = useMemo(
+    () => colaboradores.filter((c) =>
+      (statusFiltro === "" || (statusFiltro === "ativos" ? c.ativo : !c.ativo)) &&
+      correspondeBusca(busca, c.nome, c.email, c.perfilNome)
+    ),
+    [colaboradores, busca, statusFiltro]
+  );
+  const pag = usePaginado(colaboradoresFiltrados, 20);
 
   // KPIs
   const kpis = useMemo(() => ({
@@ -316,6 +329,18 @@ export function TeamManager({ initialColaboradores, initialPerfis }: TeamManager
 
       {/* Colaboradores */}
       {tab === "colaboradores" && (
+        <>
+        <div className="erp-toolbar" style={{ marginBottom: 8 }}>
+          <div className="toolbar-search">
+            <span className="ic-sr" aria-hidden="true">⌕</span>
+            <input className="search" placeholder="Buscar por nome, e-mail ou perfil…" value={busca} onChange={(e) => setBusca(e.target.value)} />
+          </div>
+          <select className="btn-erp ghost sm" value={statusFiltro} onChange={(e) => setStatusFiltro(e.target.value as "" | "ativos" | "inativos")}>
+            <option value="">Todos</option>
+            <option value="ativos">Ativos</option>
+            <option value="inativos">Inativos</option>
+          </select>
+        </div>
         <div className="erp-table-wrap">
             <table className="erp-table">
               <thead>
@@ -328,7 +353,7 @@ export function TeamManager({ initialColaboradores, initialPerfis }: TeamManager
                 </tr>
               </thead>
               <tbody>
-                {colaboradores.map((c) => (
+                {pag.itensPagina.map((c) => (
                   <tr key={c.vinculoId}>
                     <td><div style={{ fontWeight: 600, fontSize: 13 }}>{c.nome}</div></td>
                     <td className="mono">{c.email}</td>
@@ -362,12 +387,12 @@ export function TeamManager({ initialColaboradores, initialPerfis }: TeamManager
                     </td>
                   </tr>
                 ))}
-                {!colaboradores.length && (
+                {!pag.total && (
                   <tr>
                     <td colSpan={5}>
                       <div className="empty-st">
-                        <h4>Nenhum colaborador cadastrado</h4>
-                        <p>Convide o primeiro colaborador para começar.</p>
+                        <h4>{colaboradores.length ? "Nenhum colaborador encontrado" : "Nenhum colaborador cadastrado"}</h4>
+                        <p>{colaboradores.length ? "Ajuste a busca ou o filtro de status." : "Convide o primeiro colaborador para começar."}</p>
                       </div>
                     </td>
                   </tr>
@@ -375,6 +400,8 @@ export function TeamManager({ initialColaboradores, initialPerfis }: TeamManager
               </tbody>
             </table>
         </div>
+        <Paginacao pagina={pag.pagina} totalPaginas={pag.totalPaginas} onPagina={pag.setPagina} inicio={pag.inicio} fim={pag.fim} total={pag.total} rotuloItem="colaboradores" />
+        </>
       )}
 
       {/* Perfis */}

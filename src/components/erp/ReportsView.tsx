@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { KpiCard } from "@/components/shared/KpiCard";
 import { StatusBadge } from "@/components/shared/StatusBadge";
+import { baixarCsv, type FormatoColuna } from "@/lib/export/csv";
 import type { AccountingPackageReport, ApuracaoImpostosReport, SalesReport, StockReport, FinanceReport, FiscalReport, DreSimplificado } from "@/lib/services/reports";
 import type { LivroEntradasReport } from "@/lib/services/livro-entradas";
 import type { FechamentoMensalReport, FechamentoGrupo } from "@/lib/services/fechamento-mensal";
@@ -54,10 +55,22 @@ function PdfLink({ tipo, params, label = "📄 PDF" }: { tipo: string; params?: 
   return <a className="btn light" href={pdfHref(tipo, params)} target="_blank" rel="noreferrer">{label}</a>;
 }
 
+/** Botão de export CSV client-side de uma tabela do relatório (dados já no client). */
+function CsvBtn({ nome, linhas, formatos, label = "⬇ CSV" }: { nome: string; linhas: Array<Record<string, unknown>>; formatos?: Record<string, FormatoColuna>; label?: string }) {
+  return (
+    <button type="button" className="btn light" disabled={!linhas.length} onClick={() => baixarCsv(nome, linhas, formatos)}>{label}</button>
+  );
+}
+
 function AbaVendas({ data }: { data: SalesReport }) {
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "0.75rem" }}>
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginBottom: "0.75rem" }}>
+        <CsvBtn
+          nome="vendas-top-produtos"
+          linhas={data.topProdutos.map((p, i) => ({ "#": i + 1, SKU: p.sku, Produto: p.nome, "Qtd. vendida": p.quantidadeTotal, Total: p.totalVendido }))}
+          formatos={{ Total: "moeda" }}
+        />
         <PdfLink tipo="vendas" params={{ dias: data.periodoDias }} label="📄 Relatório em PDF" />
       </div>
       <div className="kpi-row">
@@ -134,7 +147,12 @@ function AbaVendas({ data }: { data: SalesReport }) {
 function AbaEstoque({ data }: { data: StockReport }) {
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "0.75rem" }}>
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginBottom: "0.75rem" }}>
+        <CsvBtn
+          nome="estoque-itens-criticos"
+          label="⬇ CSV (críticos)"
+          linhas={data.itensCriticos.map((it) => ({ SKU: it.sku, Produto: it.nome, Categoria: it.categoria, "Saldo atual": it.saldoAtual, Mínimo: it.minimo, "Valor a custo": it.valorCusto }))}
+        />
         <PdfLink tipo="estoque" label="📄 Relatório em PDF" />
       </div>
       <div className="kpi-row">
@@ -540,7 +558,11 @@ function statusNotaTone(s: string): "success" | "warn" | "danger" | "info" | "mu
 function AbaFiscal({ data }: { data: FiscalReport }) {
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "0.75rem" }}>
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginBottom: "0.75rem" }}>
+        <CsvBtn
+          nome={`fiscal-notas-${data.mes}`}
+          linhas={data.linhas.map((l) => ({ Modelo: l.modelo, Status: statusNotaLabel(l.status), "Qtd.": l.contagem, "Valor total": l.valorTotal, Tributos: l.tributos }))}
+        />
         <PdfLink tipo="fiscal" label="📄 Relatório em PDF" />
       </div>
       <div className="kpi-row">

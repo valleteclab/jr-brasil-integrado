@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { CashFlowData, CashFlowDay } from "@/lib/services/finance";
+import { baixarCsv } from "@/lib/export/csv";
 
 type Props = {
   data: CashFlowData;
@@ -121,6 +122,20 @@ export function CashFlowView({ data }: Props) {
         <span style={{ fontSize: 12, color: "var(--erp-slate)" }}>
           {diasFiltrados.length} dias com movimentação projetada
         </span>
+        <button
+          type="button"
+          className="btn-erp ghost sm"
+          disabled={!diasFiltrados.length}
+          onClick={() => baixarCsv(`fluxo-caixa-${periodo}dias`, diasFiltrados.map((d) => ({
+            Data: d.data,
+            Entradas: d.entradas,
+            Saídas: d.saidas,
+            "Saldo do dia": d.saldoDia,
+            "Saldo acumulado": d.saldoAcumulado
+          })), { Entradas: "moeda", "Saídas": "moeda", "Saldo do dia": "moeda", "Saldo acumulado": "moeda" })}
+        >
+          ⬇ Exportar CSV
+        </button>
       </div>
 
       {/* Tabela de projeção */}
