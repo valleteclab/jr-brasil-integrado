@@ -15,12 +15,25 @@ export type CreateSupplierInput = {
   razaoSocial: string;
   nomeFantasia?: string;
   documento: string;
+  inscricaoEstadual?: string;
   email?: string;
   telefone?: string;
+  cep?: string;
+  logradouro?: string;
+  numero?: string;
+  complemento?: string;
+  bairro?: string;
   cidade?: string;
   uf?: string;
   condicaoPagamento?: string;
+  observacoes?: string;
 };
+
+// Aplica trim e converte vazio → null; centraliza o tratamento dos campos opcionais de texto.
+function opt(v: string | undefined): string | null | undefined {
+  if (v === undefined) return undefined;
+  return v.trim() || null;
+}
 
 export type UpdateSupplierInput = Partial<CreateSupplierInput>;
 
@@ -61,11 +74,18 @@ export async function createSupplier(scope: TenantScope, input: CreateSupplierIn
         razaoSocial: input.razaoSocial.trim(),
         nomeFantasia: input.nomeFantasia?.trim() || null,
         documento,
+        inscricaoEstadual: opt(input.inscricaoEstadual) ?? null,
         email: input.email?.trim() || null,
         telefone: input.telefone?.trim() || null,
+        cep: opt(input.cep) ?? null,
+        logradouro: opt(input.logradouro) ?? null,
+        numero: opt(input.numero) ?? null,
+        complemento: opt(input.complemento) ?? null,
+        bairro: opt(input.bairro) ?? null,
         cidade: input.cidade?.trim() || null,
         uf: input.uf?.trim() || null,
         condicaoPagamento: input.condicaoPagamento?.trim() || null,
+        observacoes: opt(input.observacoes) ?? null,
         ativo: true
       }
     });
@@ -118,11 +138,18 @@ export async function updateSupplier(scope: TenantScope, id: string, input: Upda
         ...(input.razaoSocial !== undefined && { razaoSocial: input.razaoSocial.trim() }),
         ...(input.nomeFantasia !== undefined && { nomeFantasia: input.nomeFantasia?.trim() || null }),
         ...(documento !== undefined && { documento }),
+        ...(input.inscricaoEstadual !== undefined && { inscricaoEstadual: opt(input.inscricaoEstadual) }),
         ...(input.email !== undefined && { email: input.email?.trim() || null }),
         ...(input.telefone !== undefined && { telefone: input.telefone?.trim() || null }),
+        ...(input.cep !== undefined && { cep: opt(input.cep) }),
+        ...(input.logradouro !== undefined && { logradouro: opt(input.logradouro) }),
+        ...(input.numero !== undefined && { numero: opt(input.numero) }),
+        ...(input.complemento !== undefined && { complemento: opt(input.complemento) }),
+        ...(input.bairro !== undefined && { bairro: opt(input.bairro) }),
         ...(input.cidade !== undefined && { cidade: input.cidade?.trim() || null }),
         ...(input.uf !== undefined && { uf: input.uf?.trim() || null }),
-        ...(input.condicaoPagamento !== undefined && { condicaoPagamento: input.condicaoPagamento?.trim() || null })
+        ...(input.condicaoPagamento !== undefined && { condicaoPagamento: input.condicaoPagamento?.trim() || null }),
+        ...(input.observacoes !== undefined && { observacoes: opt(input.observacoes) })
       }
     });
 

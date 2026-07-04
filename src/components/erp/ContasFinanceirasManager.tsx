@@ -132,9 +132,28 @@ export function ContasFinanceirasManager({ initial }: { initial: Conta[] }) {
             {TIPOS_CHAVE_PIX.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
           </select>
         </label>
-        {!editingId && (
-          <label>Saldo inicial<input value={form.saldoInicial} onChange={(e) => setForm({ ...form, saldoInicial: e.target.value })} /></label>
+        {form.chavePix.trim() && !form.tipoChavePix && (
+          <p className="field-hint full" style={{ color: "var(--erp-warn, #b8860b)", margin: "-4px 0 0" }}>
+            Selecione o tipo da chave Pix — sem ele a chave não é validada e o banco pode recusar a cobrança.
+          </p>
         )}
+        <label>
+          Saldo inicial
+          <input value={form.saldoInicial} onChange={(e) => setForm({ ...form, saldoInicial: e.target.value })} placeholder="0,00" />
+        </label>
+        {editingId && (
+          <p className="field-hint full" style={{ color: "var(--erp-slate)", margin: "-4px 0 0" }}>
+            Corrigir o saldo inicial ajusta o saldo atual na mesma medida (os movimentos lançados são preservados). A alteração fica registrada na auditoria.
+          </p>
+        )}
+      </div>
+
+      <div className="alert info" style={{ margin: "0 16px 12px", display: "block" }}>
+        <strong>Emissão de boleto/Pix pelo banco</strong>{" "}
+        <span>
+          exige o certificado digital <strong>A1</strong> da empresa configurado (Configurações → Fiscal / Integração bancária) e o
+          credenciamento junto ao banco. Sem o A1 válido, cadastrar a conta e a chave Pix aqui não habilita a cobrança automática.
+        </span>
       </div>
 
       {message && <div className="alert info" style={{ margin: "0 16px 12px" }}><strong>OK</strong><span>{message}</span></div>}

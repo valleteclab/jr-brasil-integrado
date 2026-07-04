@@ -61,6 +61,39 @@ function normalizeTipoConta(value: unknown): TipoContaFinanceira {
   return tipo;
 }
 
+/**
+ * Valida a chave Pix conforme o tipo escolhido (evita cadastrar chave que o banco vai recusar
+ * na cobrança). Só valida quando chave e tipo estão preenchidos.
+ */
+export function validarChavePix(chave: string, tipo: string): void {
+  const c = clean(chave);
+  if (!c) return;
+  const t = clean(tipo).toUpperCase();
+  const soDigitos = c.replace(/\D+/g, "");
+  switch (t) {
+    case "CPF":
+      if (soDigitos.length !== 11) throw new PaymentConfigError("Chave Pix CPF deve ter 11 dígitos.");
+      break;
+    case "CNPJ":
+      if (soDigitos.length !== 14) throw new PaymentConfigError("Chave Pix CNPJ deve ter 14 dígitos.");
+      break;
+    case "EMAIL":
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c)) throw new PaymentConfigError("Chave Pix e-mail inválida.");
+      break;
+    case "TELEFONE":
+      // E.164 br: +55 + DDD + número (10 ou 11 dígitos nacionais).
+      if (soDigitos.length < 10 || soDigitos.length > 13) throw new PaymentConfigError("Chave Pix telefone inválida (informe DDD + número).");
+      break;
+    case "ALEATORIA":
+      if (!/^[0-9a-fA-F]{8}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{12}$/.test(c)) {
+        throw new PaymentConfigError("Chave Pix aleatória deve ser um EVP (UUID de 32 caracteres).");
+      }
+      break;
+    default:
+      throw new PaymentConfigError("Selecione o tipo da chave Pix (CPF, CNPJ, e-mail, telefone ou aleatória).");
+  }
+}
+
 export async function listContasFinanceiras(scope: TenantScope) {
   return prisma.contaBancaria.findMany({
     where: { tenantId: scope.tenantId, empresaId: scope.empresaId },
@@ -72,6 +105,7 @@ export async function createContaFinanceira(scope: TenantScope, input: ContaFina
   const nome = required(input.nome, "Nome da conta");
   const tipo = normalizeTipoConta(input.tipo);
   const saldoInicial = Number(input.saldoInicial ?? 0) || 0;
+  if (clean(input.chavePix)) validarChavePix(clean(input.chavePix), clean(input.tipoChavePix));
 
   const conta = await prisma.contaBancaria.create({
     data: {
@@ -97,6 +131,27 @@ export async function updateContaFinanceira(scope: TenantScope, id: string, inpu
   const existente = await prisma.contaBancaria.findFirst({ where: { id, tenantId: scope.tenantId, empresaId: scope.empresaId } });
   if (!existente) throw new PaymentConfigError("Conta financeira não encontrada.");
 
+  // Valida a chave Pix contra o tipo (novo tipo ou o já salvo).
+  const chaveFinal = input.chavePix !== undefined ? clean(input.chavePix) : (existente.chavePix ?? "");
+  const tipoChaveFinal = input.tipoChavePix !== undefined ? clean(input.tipoChavePix) : (existente.tipoChavePix ?? "");
+  if (chaveFinal) validarChavePix(chaveFinal, tipoChaveFinal);
+
+  // Correção do SALDO INICIAL: ajusta o saldo atual pelo mesmo delta (não recalcula do zero,
+  // preserva os movimentos já lançados) e registra o antes/depois na auditoria.
+  let ajusteSaldo: { saldoInicialAnterior: number; saldoInicialNovo: number; saldoAtualNovo: number } | null = null;
+  if (input.saldoInicial !== undefined && input.saldoInicial !== null) {
+    const novoInicial = Number(input.saldoInicial) || 0;
+    const inicialAnterior = Number(existente.saldoInicial);
+    const delta = Math.round((novoInicial - inicialAnterior) * 100) / 100;
+    if (delta !== 0) {
+      ajusteSaldo = {
+        saldoInicialAnterior: inicialAnterior,
+        saldoInicialNovo: novoInicial,
+        saldoAtualNovo: Math.round((Number(existente.saldoAtual) + delta) * 100) / 100
+      };
+    }
+  }
+
   const conta = await prisma.contaBancaria.update({
     where: { id },
     data: {
@@ -107,10 +162,17 @@ export async function updateContaFinanceira(scope: TenantScope, id: string, inpu
       ...(input.conta !== undefined ? { conta: clean(input.conta) || null } : {}),
       ...(input.chavePix !== undefined ? { chavePix: clean(input.chavePix) || null } : {}),
       ...(input.tipoChavePix !== undefined ? { tipoChavePix: clean(input.tipoChavePix).toUpperCase() || null } : {}),
+      ...(ajusteSaldo ? { saldoInicial: ajusteSaldo.saldoInicialNovo, saldoAtual: ajusteSaldo.saldoAtualNovo } : {}),
       ...(input.ativo !== undefined ? { ativo: input.ativo } : {})
     }
   });
-  await createAuditLog(prisma, { scope, entidade: "ContaBancaria", entidadeId: conta.id, acao: "UPDATE", payload: { nome: conta.nome } });
+  await createAuditLog(prisma, {
+    scope,
+    entidade: "ContaBancaria",
+    entidadeId: conta.id,
+    acao: ajusteSaldo ? "AJUSTE_SALDO_INICIAL" : "UPDATE",
+    payload: ajusteSaldo ? { nome: conta.nome, ...ajusteSaldo } : { nome: conta.nome }
+  });
   return conta;
 }
 

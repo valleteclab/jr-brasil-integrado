@@ -14,22 +14,36 @@ type FormState = {
   razaoSocial: string;
   nomeFantasia: string;
   documento: string;
+  inscricaoEstadual: string;
   email: string;
   telefone: string;
+  cep: string;
+  logradouro: string;
+  numero: string;
+  complemento: string;
+  bairro: string;
   cidade: string;
   uf: string;
   condicaoPagamento: string;
+  observacoes: string;
 };
 
 const emptyForm: FormState = {
   razaoSocial: "",
   nomeFantasia: "",
   documento: "",
+  inscricaoEstadual: "",
   email: "",
   telefone: "",
+  cep: "",
+  logradouro: "",
+  numero: "",
+  complemento: "",
+  bairro: "",
   cidade: "",
   uf: "",
-  condicaoPagamento: ""
+  condicaoPagamento: "",
+  observacoes: ""
 };
 
 function toForm(s: SupplierSummary): FormState {
@@ -38,11 +52,18 @@ function toForm(s: SupplierSummary): FormState {
     razaoSocial: s.razaoSocial,
     nomeFantasia: s.nomeFantasia,
     documento: s.documento,
+    inscricaoEstadual: s.inscricaoEstadual,
     email: s.email,
     telefone: s.telefone,
+    cep: s.cep,
+    logradouro: s.logradouro,
+    numero: s.numero,
+    complemento: s.complemento,
+    bairro: s.bairro,
     cidade: s.cidade,
     uf: s.uf,
-    condicaoPagamento: s.condicaoPagamento
+    condicaoPagamento: s.condicaoPagamento,
+    observacoes: s.observacoes
   };
 }
 
@@ -81,6 +102,11 @@ export function SuppliersCrud({ initialSuppliers }: Props) {
       nomeFantasia: d.nomeFantasia ?? c.nomeFantasia,
       email: d.email ?? c.email,
       telefone: d.telefone ?? c.telefone,
+      cep: d.endereco.cep ?? c.cep,
+      logradouro: d.endereco.logradouro ?? c.logradouro,
+      numero: d.endereco.numero ?? c.numero,
+      complemento: d.endereco.complemento ?? c.complemento,
+      bairro: d.endereco.bairro ?? c.bairro,
       cidade: d.endereco.cidade ?? c.cidade,
       uf: d.endereco.uf ?? c.uf
     }));
@@ -134,11 +160,18 @@ export function SuppliersCrud({ initialSuppliers }: Props) {
                   razaoSocial: form.razaoSocial,
                   nomeFantasia: form.nomeFantasia,
                   documento: normalizeDocumento(form.documento),
+                  inscricaoEstadual: form.inscricaoEstadual,
                   email: form.email,
                   telefone: form.telefone,
+                  cep: form.cep,
+                  logradouro: form.logradouro,
+                  numero: form.numero,
+                  complemento: form.complemento,
+                  bairro: form.bairro,
                   cidade: form.cidade,
                   uf: form.uf,
                   condicaoPagamento: form.condicaoPagamento,
+                  observacoes: form.observacoes,
                   label: form.nomeFantasia
                     ? `${form.nomeFantasia} (${form.razaoSocial})`
                     : form.razaoSocial
@@ -160,11 +193,18 @@ export function SuppliersCrud({ initialSuppliers }: Props) {
             razaoSocial: form.razaoSocial,
             nomeFantasia: form.nomeFantasia,
             documento: form.documento.replace(/\D/g, ""),
+            inscricaoEstadual: form.inscricaoEstadual,
             email: form.email,
             telefone: form.telefone,
+            cep: form.cep,
+            logradouro: form.logradouro,
+            numero: form.numero,
+            complemento: form.complemento,
+            bairro: form.bairro,
             cidade: form.cidade,
             uf: form.uf,
             condicaoPagamento: form.condicaoPagamento,
+            observacoes: form.observacoes,
             ativo: true,
             label: form.nomeFantasia
               ? `${form.nomeFantasia} (${form.razaoSocial})`
@@ -325,6 +365,14 @@ export function SuppliersCrud({ initialSuppliers }: Props) {
                   </span>
                 </label>
                 <label>
+                  Inscrição estadual
+                  <input
+                    value={form.inscricaoEstadual}
+                    onChange={(e) => update("inscricaoEstadual", e.target.value)}
+                    placeholder="ISENTO ou nº da IE"
+                  />
+                </label>
+                <label>
                   E-mail
                   <input
                     type="email"
@@ -337,6 +385,43 @@ export function SuppliersCrud({ initialSuppliers }: Props) {
                   <input
                     value={form.telefone}
                     onChange={(e) => update("telefone", e.target.value)}
+                  />
+                </label>
+                <label>
+                  CEP
+                  <input
+                    value={form.cep}
+                    onChange={(e) => update("cep", e.target.value)}
+                    placeholder="00000-000"
+                  />
+                </label>
+                <label className="full">
+                  Logradouro
+                  <input
+                    value={form.logradouro}
+                    onChange={(e) => update("logradouro", e.target.value)}
+                    placeholder="Rua, avenida..."
+                  />
+                </label>
+                <label>
+                  Número
+                  <input
+                    value={form.numero}
+                    onChange={(e) => update("numero", e.target.value)}
+                  />
+                </label>
+                <label>
+                  Complemento
+                  <input
+                    value={form.complemento}
+                    onChange={(e) => update("complemento", e.target.value)}
+                  />
+                </label>
+                <label>
+                  Bairro
+                  <input
+                    value={form.bairro}
+                    onChange={(e) => update("bairro", e.target.value)}
                   />
                 </label>
                 <label>
@@ -360,6 +445,15 @@ export function SuppliersCrud({ initialSuppliers }: Props) {
                     value={form.condicaoPagamento}
                     onChange={(e) => update("condicaoPagamento", e.target.value)}
                     placeholder="Ex: 30/60 dias, à vista..."
+                  />
+                </label>
+                <label className="full">
+                  Observações
+                  <textarea
+                    rows={2}
+                    value={form.observacoes}
+                    onChange={(e) => update("observacoes", e.target.value)}
+                    placeholder="Anotações internas sobre o fornecedor"
                   />
                 </label>
               </div>

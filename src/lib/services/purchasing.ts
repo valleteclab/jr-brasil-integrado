@@ -7,11 +7,18 @@ export type SupplierSummary = {
   razaoSocial: string;
   nomeFantasia: string;
   documento: string;
+  inscricaoEstadual: string;
   email: string;
   telefone: string;
+  cep: string;
+  logradouro: string;
+  numero: string;
+  complemento: string;
+  bairro: string;
   cidade: string;
   uf: string;
   condicaoPagamento: string;
+  observacoes: string;
   ativo: boolean;
   label: string;
 };
@@ -134,11 +141,18 @@ export async function listSuppliers(): Promise<SupplierSummary[]> {
     razaoSocial: f.razaoSocial,
     nomeFantasia: f.nomeFantasia ?? "",
     documento: f.documento,
+    inscricaoEstadual: f.inscricaoEstadual ?? "",
     email: f.email ?? "",
     telefone: f.telefone ?? "",
+    cep: f.cep ?? "",
+    logradouro: f.logradouro ?? "",
+    numero: f.numero ?? "",
+    complemento: f.complemento ?? "",
+    bairro: f.bairro ?? "",
     cidade: f.cidade ?? "",
     uf: f.uf ?? "",
     condicaoPagamento: f.condicaoPagamento ?? "",
+    observacoes: f.observacoes ?? "",
     ativo: f.ativo,
     label: f.nomeFantasia ? `${f.nomeFantasia} (${f.razaoSocial})` : f.razaoSocial
   }));

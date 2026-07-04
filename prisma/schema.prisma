@@ -1410,11 +1410,18 @@ model Fornecedor {
   razaoSocial        String
   nomeFantasia       String?
   documento          String
+  inscricaoEstadual  String?
   email              String?
   telefone           String?
+  cep                String?
+  logradouro         String?
+  numero             String?
+  complemento        String?
+  bairro             String?
   cidade             String?
   uf                 String?
   condicaoPagamento  String?
+  observacoes        String?
   ativo              Boolean             @default(true)
   produtosVinculados ProdutoFornecedor[]
   entradasFiscais    EntradaFiscal[]
