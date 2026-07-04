@@ -104,6 +104,24 @@ function recalcCfopEntrada(finalidade: FinalidadeEntrada, cfopAtual: string | un
   return par[interestadual ? 1 : 0];
 }
 
+// Espelha finalidadeMovimentaEstoque() de src/domains/fiscal/finalidade-entrada.ts: entra
+// mercadoria física (vira SKU/estoque) para revenda, insumo e as operações que recolocam
+// mercadoria no estoque + material aplicado em serviço. Só uso/consumo, imobilizado e
+// combustível NÃO viram SKU. Antes o cliente checava só REVENDA/INDUSTRIALIZACAO — o que fazia
+// 2.126 (material p/ serviço) cair errado no box de "uso e consumo".
+function finalidadeMovimentaEstoqueClient(finalidade: FinalidadeEntrada): boolean {
+  return (
+    finalidade === "REVENDA" ||
+    finalidade === "INDUSTRIALIZACAO" ||
+    finalidade === "DEVOLUCAO_VENDA" ||
+    finalidade === "TRANSFERENCIA" ||
+    finalidade === "RETORNO_INDUSTRIALIZACAO" ||
+    finalidade === "BONIFICACAO" ||
+    finalidade === "MATERIAL_SERVICO_ICMS" ||
+    finalidade === "MATERIAL_SERVICO_ISS"
+  );
+}
+
 // CFOPs de entrada especiais (fora da matriz das 4 finalidades), oferecidos como atalho no campo
 // editável. 1xxx = mesmo estado, 2xxx = outro estado, 3xxx = exterior (importação).
 const CFOP_ENTRADA_ESPECIAIS: Array<{ code: string; label: string }> = [
@@ -534,7 +552,7 @@ export function FiscalEntryWizard({ initialDraft = null, products, formasPagamen
           finalidade,
           finalidadeOrigem: "MANUAL",
           cfopEntradaDerivado: recalcCfopEntrada(finalidade, item.cfopEntradaDerivado),
-          movimentaEstoque: finalidade === "REVENDA" || finalidade === "INDUSTRIALIZACAO"
+          movimentaEstoque: finalidadeMovimentaEstoqueClient(finalidade)
         }))
       };
     });
@@ -722,7 +740,7 @@ export function FiscalEntryWizard({ initialDraft = null, products, formasPagamen
               finalidade: suggestion.finalidade,
               finalidadeOrigem: "IA",
               cfopEntradaDerivado: recalcCfopEntrada(suggestion.finalidade, item.cfopEntradaDerivado),
-              movimentaEstoque: suggestion.finalidade === "REVENDA" || suggestion.finalidade === "INDUSTRIALIZACAO"
+              movimentaEstoque: finalidadeMovimentaEstoqueClient(suggestion.finalidade)
             };
           })
         };
@@ -1030,7 +1048,7 @@ export function FiscalEntryWizard({ initialDraft = null, products, formasPagamen
                             finalidade,
                             finalidadeOrigem: "MANUAL",
                             cfopEntradaDerivado: recalcCfopEntrada(finalidade, item.cfopEntradaDerivado),
-                            movimentaEstoque: finalidade === "REVENDA" || finalidade === "INDUSTRIALIZACAO"
+                            movimentaEstoque: finalidadeMovimentaEstoqueClient(finalidade)
                           });
                         }}
                       >
@@ -1080,7 +1098,11 @@ export function FiscalEntryWizard({ initialDraft = null, products, formasPagamen
                         />
                       ) : item.movimentaEstoque === false ? (
                         <div className="new-sku-box">
-                          {item.finalidade === "IMOBILIZADO" ? "Bem do ativo imobilizado" : "Material de uso e consumo"}: lançado
+                          {item.finalidade === "IMOBILIZADO"
+                            ? "Bem do ativo imobilizado"
+                            : item.finalidade === "COMBUSTIVEL_LUBRIFICANTE"
+                              ? "Combustível / lubrificante"
+                              : "Material de uso e consumo"}: lançado
                           como despesa/ativo, <strong>sem criar SKU nem movimentar estoque</strong>. A obrigação financeira é gerada normalmente.
                         </div>
                       ) : (
