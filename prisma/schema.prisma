@@ -357,6 +357,7 @@ model Empresa {
   pedidosVenda              PedidoVenda[]
   orcamentos                Orcamento[]
   ordensServico             OrdemServico[]
+  tecnicos                  Tecnico[]
   pedidosCompra             PedidoCompra[]
   contasPagar               ContaPagar[]
   contasReceber             ContaReceber[]
@@ -1290,10 +1291,15 @@ model OrdemServico {
   status            StatusOrdemServico    @default(ABERTA)
   equipamento       String
   placaOuSerial     String?
+  /// KM / horímetro do veículo/equipamento na entrada (garantia e histórico).
+  km                String?
   diagnostico       String?
   problemaRelatado  String?
   depositoId        String?
   previsaoEm        DateTime?
+  /// Técnico responsável pela OS (o dono do serviço). Apontamentos podem ser de vários técnicos.
+  tecnicoResponsavelId String?
+  tecnicoResponsavel   Tecnico?           @relation("OsResponsavel", fields: [tecnicoResponsavelId], references: [id])
   totalServicos     Decimal               @default(0) @db.Decimal(14, 2)
   totalPecas        Decimal               @default(0) @db.Decimal(14, 2)
   desconto          Decimal               @default(0) @db.Decimal(14, 2)
@@ -1304,6 +1310,7 @@ model OrdemServico {
   faturadoEm        DateTime?
   servicos          OrdemServicoMaoObra[]
   pecas             OrdemServicoPeca[]
+  apontamentos      OrdemServicoApontamento[]
   contasReceber     ContaReceber[]
   notasFiscais      NotaFiscal[]
   criadoEm          DateTime              @default(now())
@@ -1324,8 +1331,53 @@ model OrdemServicoMaoObra {
   valorHora          Decimal      @db.Decimal(14, 2)
   total              Decimal      @db.Decimal(14, 2)
   codigoServicoLc116 String?
+  /// Técnico que executou este serviço (para produtividade por técnico).
+  tecnicoId          String?
+  tecnico            Tecnico?     @relation(fields: [tecnicoId], references: [id])
 
   @@index([tenantId, empresaId])
+}
+
+/// Cadastro de TÉCNICOS/MECÂNICOS da oficina. Podem ter login vinculado (usuarioId) para
+/// atualizar as próprias OS (apontamentos). custoHora é interno (produtividade/custo real).
+model Tecnico {
+  id             String       @id @default(cuid())
+  tenantId       String
+  empresaId      String
+  empresa        Empresa      @relation(fields: [empresaId], references: [id])
+  nome           String
+  especialidade  String?
+  telefone       String?
+  custoHora      Decimal      @default(0) @db.Decimal(14, 2)
+  /// Vínculo com o login do técnico (Usuario) — quem estiver logado é reconhecido como este técnico.
+  usuarioId      String?      @unique
+  ativo          Boolean      @default(true)
+  apontamentos   OrdemServicoApontamento[]
+  maoObras       OrdemServicoMaoObra[]
+  ordensResponsavel OrdemServico[]        @relation("OsResponsavel")
+  criadoEm       DateTime     @default(now())
+  atualizadoEm   DateTime     @updatedAt
+
+  @@index([tenantId, empresaId, ativo])
+}
+
+/// APONTAMENTO: o técnico registra O QUE FOI FEITO na OS (timeline de execução) + horas.
+/// É o histórico de trabalho — separado da mão de obra cobrada (que vai na nota).
+model OrdemServicoApontamento {
+  id             String       @id @default(cuid())
+  tenantId       String
+  empresaId      String
+  ordemServicoId String
+  ordemServico   OrdemServico @relation(fields: [ordemServicoId], references: [id])
+  tecnicoId      String
+  tecnico        Tecnico      @relation(fields: [tecnicoId], references: [id])
+  descricao      String
+  horas          Decimal?     @db.Decimal(8, 2)
+  /// Snapshot do status da OS no momento do apontamento (para a timeline).
+  statusMomento  String?
+  criadoEm       DateTime     @default(now())
+
+  @@index([tenantId, empresaId, ordemServicoId])
 }
 
 model OrdemServicoPeca {

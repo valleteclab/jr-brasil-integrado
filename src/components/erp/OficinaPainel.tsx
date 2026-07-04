@@ -17,6 +17,7 @@ type OrdemPainel = {
   placa: string | null;
   problema: string | null;
   cliente: string;
+  tecnico: string | null;
   previsaoEm: string | null;
   criadoEm: string;
   atrasada: boolean;
@@ -145,7 +146,7 @@ export function OficinaPainel({ inicial, empresaNome }: { inicial: PainelData | 
                       <span style={{ marginLeft: "auto", fontSize: 13, color: "#64748b" }}>há {tempoDesde(os.criadoEm)}</span>
                     </div>
                     <div style={{ fontSize: 16, fontWeight: 600, marginTop: 4 }}>{os.equipamento}</div>
-                    <div style={{ fontSize: 14, color: "#94a3b8" }}>{os.cliente}</div>
+                    <div style={{ fontSize: 14, color: "#94a3b8" }}>{os.cliente}{os.tecnico ? ` · 👨‍🔧 ${os.tecnico}` : ""}</div>
                     {os.problema && <div style={{ fontSize: 13, color: "#7c8aa5", marginTop: 4, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{os.problema}</div>}
                     {os.previsaoEm && (
                       <div style={{ fontSize: 13, marginTop: 6, color: os.atrasada ? "#fca5a5" : "#7c8aa5", fontWeight: os.atrasada ? 700 : 400 }}>

@@ -25,17 +25,25 @@ export type OrdemServicoSummary = {
 
 export type OrdemServicoDetail = OrdemServicoSummary & {
   depositoId: string | null;
+  km: string | null;
   problemaRelatado: string | null;
   diagnostico: string | null;
   observacoes: string | null;
   condicaoPagamento: string | null;
   formaPagamento: string | null;
+  desconto: string;
+  descontoNum: number;
+  previsaoRaw: string | null;
+  tecnicoResponsavelId: string | null;
+  tecnicoResponsavelNome: string | null;
   servicos: Array<{
     id: string;
     descricao: string;
     horas: string;
     valorHora: string;
     total: string;
+    tecnicoId: string | null;
+    tecnicoNome: string | null;
   }>;
   pecas: Array<{
     id: string;
@@ -45,6 +53,14 @@ export type OrdemServicoDetail = OrdemServicoSummary & {
     quantidade: number;
     precoUnitario: string;
     total: string;
+  }>;
+  apontamentos: Array<{
+    id: string;
+    tecnicoNome: string;
+    descricao: string;
+    horas: string | null;
+    statusMomento: string | null;
+    criadoEm: string;
   }>;
 };
 
@@ -141,11 +157,13 @@ export async function getOrdemServicoDetail(id: string): Promise<OrdemServicoDet
       where: { id, ...scopedByTenantCompany(scope) },
       include: {
         cliente: { select: { razaoSocial: true, nomeFantasia: true } },
-        servicos: { orderBy: { id: "asc" } },
+        tecnicoResponsavel: { select: { id: true, nome: true } },
+        servicos: { orderBy: { id: "asc" }, include: { tecnico: { select: { id: true, nome: true } } } },
         pecas: {
           include: { produto: { select: { nome: true, sku: true } } },
           orderBy: { id: "asc" },
         },
+        apontamentos: { orderBy: { criadoEm: "desc" }, include: { tecnico: { select: { nome: true } } } },
       },
     });
     if (!os) return null;
@@ -153,17 +171,25 @@ export async function getOrdemServicoDetail(id: string): Promise<OrdemServicoDet
     return {
       ...mapOs(os),
       depositoId: os.depositoId,
+      km: os.km,
       problemaRelatado: os.problemaRelatado,
       diagnostico: os.diagnostico,
       observacoes: os.observacoes,
       condicaoPagamento: os.condicaoPagamento,
       formaPagamento: os.formaPagamento,
+      desconto: formatBrl(Number(os.desconto)),
+      descontoNum: Number(os.desconto),
+      previsaoRaw: os.previsaoEm?.toISOString() ?? null,
+      tecnicoResponsavelId: os.tecnicoResponsavelId,
+      tecnicoResponsavelNome: os.tecnicoResponsavel?.nome ?? null,
       servicos: os.servicos.map((s) => ({
         id: s.id,
         descricao: s.descricao,
         horas: Number(s.horas).toFixed(2),
         valorHora: formatBrl(Number(s.valorHora)),
         total: formatBrl(Number(s.total)),
+        tecnicoId: s.tecnicoId,
+        tecnicoNome: s.tecnico?.nome ?? null,
       })),
       pecas: os.pecas.map((p) => ({
         id: p.id,
@@ -173,6 +199,14 @@ export async function getOrdemServicoDetail(id: string): Promise<OrdemServicoDet
         quantidade: Number(p.quantidade),
         precoUnitario: formatBrl(Number(p.precoUnitario)),
         total: formatBrl(Number(p.total)),
+      })),
+      apontamentos: os.apontamentos.map((a) => ({
+        id: a.id,
+        tecnicoNome: a.tecnico.nome,
+        descricao: a.descricao,
+        horas: a.horas != null ? Number(a.horas).toFixed(2) : null,
+        statusMomento: a.statusMomento,
+        criadoEm: a.criadoEm.toISOString(),
       })),
     };
   } catch (error) {

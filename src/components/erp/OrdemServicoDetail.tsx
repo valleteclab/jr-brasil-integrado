@@ -9,6 +9,8 @@ import { CODIGO_SERVICO_OPTIONS } from "@/domains/fiscal/codigo-tributacao-nacio
 type Props = {
   os: OsDetail;
   formData: OsFormData;
+  tecnicos: Array<{ id: string; nome: string }>;
+  meuTecnico: { id: string; nome: string } | null;
 };
 
 type StatusOrdemServico = "ABERTA" | "EM_ANDAMENTO" | "AGUARDANDO_PECAS" | "FINALIZADA_NAO_FATURADA";
@@ -20,7 +22,7 @@ const STATUS_OPTIONS: { value: StatusOrdemServico; label: string }[] = [
   { value: "FINALIZADA_NAO_FATURADA", label: "Finalizada (não faturada)" },
 ];
 
-export function OrdemServicoDetail({ os: initialOs, formData }: Props) {
+export function OrdemServicoDetail({ os: initialOs, formData, tecnicos, meuTecnico }: Props) {
   const router = useRouter();
   const lastAutoRefreshRef = useRef(0);
   const [os, setOs] = useState(initialOs);
@@ -32,6 +34,26 @@ export function OrdemServicoDetail({ os: initialOs, formData }: Props) {
   const [horas, setHoras] = useState(1);
   const [valorHora, setValorHora] = useState(0);
   const [codigoServLc116, setCodigoServLc116] = useState("");
+  const [tecnicoServ, setTecnicoServ] = useState("");
+
+  // Editar cabeçalho
+  const [editandoCab, setEditandoCab] = useState(false);
+  const [cab, setCab] = useState({
+    equipamento: initialOs.equipamento,
+    placaOuSerial: initialOs.placaOuSerial ?? "",
+    km: initialOs.km ?? "",
+    problemaRelatado: initialOs.problemaRelatado ?? "",
+    diagnostico: initialOs.diagnostico ?? "",
+    observacoes: initialOs.observacoes ?? "",
+    previsaoEm: initialOs.previsaoRaw ? initialOs.previsaoRaw.slice(0, 16) : "",
+    tecnicoResponsavelId: initialOs.tecnicoResponsavelId ?? "",
+    desconto: initialOs.descontoNum ? String(initialOs.descontoNum) : ""
+  });
+
+  // Apontamento (o técnico registra o que foi feito)
+  const [apontDescricao, setApontDescricao] = useState("");
+  const [apontHoras, setApontHoras] = useState("");
+  const [apontTecnico, setApontTecnico] = useState(meuTecnico?.id ?? "");
 
   // Peca form
   const [produtoId, setProdutoId] = useState("");
@@ -95,7 +117,7 @@ export function OrdemServicoDetail({ os: initialOs, formData }: Props) {
       const res = await fetch(`/api/erp/os/${os.id}/servico`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ descricao: descricaoServ, horas, valorHora, codigoServicoLc116: codigoServLc116 || null }),
+        body: JSON.stringify({ descricao: descricaoServ, horas, valorHora, codigoServicoLc116: codigoServLc116 || null, tecnicoId: tecnicoServ || null }),
       });
       const data = (await res.json()) as { error?: string };
       if (!res.ok) throw new Error(data.error ?? "Erro ao adicionar serviço.");
@@ -103,6 +125,7 @@ export function OrdemServicoDetail({ os: initialOs, formData }: Props) {
       setHoras(1);
       setValorHora(0);
       setCodigoServLc116("");
+      setTecnicoServ("");
       refreshOs();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao adicionar serviço.");
@@ -171,6 +194,59 @@ export function OrdemServicoDetail({ os: initialOs, formData }: Props) {
       refreshOs();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao remover peça.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleSalvarCabecalho(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/erp/os/${os.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          equipamento: cab.equipamento,
+          placaOuSerial: cab.placaOuSerial || null,
+          km: cab.km || null,
+          problemaRelatado: cab.problemaRelatado || null,
+          diagnostico: cab.diagnostico || null,
+          observacoes: cab.observacoes || null,
+          previsaoEm: cab.previsaoEm || null,
+          tecnicoResponsavelId: cab.tecnicoResponsavelId || null,
+          desconto: cab.desconto ? Number(cab.desconto.replace(",", ".")) : 0
+        }),
+      });
+      const data = (await res.json()) as { error?: string };
+      if (!res.ok) throw new Error(data.error ?? "Erro ao salvar.");
+      setEditandoCab(false);
+      refreshOs();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao salvar.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleAddApontamento(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/erp/os/${os.id}/apontamento`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ descricao: apontDescricao, horas: apontHoras ? Number(apontHoras.replace(",", ".")) : null, tecnicoId: apontTecnico || null }),
+      });
+      const data = (await res.json()) as { error?: string };
+      if (!res.ok) throw new Error(data.error ?? "Erro ao registrar apontamento.");
+      setApontDescricao("");
+      setApontHoras("");
+      refreshOs();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao registrar apontamento.");
     } finally {
       setBusy(false);
     }
@@ -249,31 +325,51 @@ export function OrdemServicoDetail({ os: initialOs, formData }: Props) {
       <div className="erp-card">
         <div className="erp-card-head">
           <h3>OS {os.numero}</h3>
-          <span className={`pill ${os.statusTone}`}>
-            <span className="dot" />
-            {os.statusLabel}
-          </span>
-        </div>
-        <div className="kpi-row" style={{ marginBottom: 0, padding: 16 }}>
-          <div className="kpi"><div className="l">Número</div><div className="v">{os.numero}</div></div>
-          <div className="kpi"><div className="l">Cliente</div><div className="v">{os.cliente}</div></div>
-          <div className="kpi"><div className="l">Equipamento</div><div className="v">{os.equipamento}</div></div>
-          {os.placaOuSerial && <div className="kpi"><div className="l">Placa / Série</div><div className="v">{os.placaOuSerial}</div></div>}
-          {os.previsaoEm && <div className="kpi"><div className="l">Previsão</div><div className="v">{os.previsaoEm}</div></div>}
-        </div>
-        {(os.problemaRelatado || os.observacoes) && (
-          <div className="erp-card-body" style={{ borderTop: "1px solid var(--erp-line)" }}>
-            {os.problemaRelatado && (
-              <p style={{ margin: 0 }}>
-                <strong>Problema relatado:</strong> {os.problemaRelatado}
-              </p>
-            )}
-            {os.observacoes && (
-              <p style={{ margin: os.problemaRelatado ? "8px 0 0" : 0 }}>
-                <strong>Observações:</strong> {os.observacoes}
-              </p>
-            )}
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span className={`pill ${os.statusTone}`}><span className="dot" />{os.statusLabel}</span>
+            {editavel && !editandoCab && <button type="button" className="btn-erp ghost xs" onClick={() => setEditandoCab(true)}>✏️ Editar</button>}
           </div>
+        </div>
+
+        {editandoCab ? (
+          <form className="erp-form" style={{ padding: 16 }} onSubmit={handleSalvarCabecalho}>
+            <label>Equipamento<input value={cab.equipamento} onChange={(e) => setCab((c) => ({ ...c, equipamento: e.target.value }))} required /></label>
+            <label>Placa / Série<input value={cab.placaOuSerial} onChange={(e) => setCab((c) => ({ ...c, placaOuSerial: e.target.value }))} /></label>
+            <label>KM / Horímetro<input value={cab.km} onChange={(e) => setCab((c) => ({ ...c, km: e.target.value }))} /></label>
+            <label>Previsão de entrega<input type="datetime-local" value={cab.previsaoEm} onChange={(e) => setCab((c) => ({ ...c, previsaoEm: e.target.value }))} /></label>
+            <label>Técnico responsável
+              <select value={cab.tecnicoResponsavelId} onChange={(e) => setCab((c) => ({ ...c, tecnicoResponsavelId: e.target.value }))}>
+                <option value="">— sem responsável —</option>
+                {tecnicos.map((t) => <option key={t.id} value={t.id}>{t.nome}</option>)}
+              </select>
+            </label>
+            <label>Desconto (R$)<input inputMode="decimal" value={cab.desconto} onChange={(e) => setCab((c) => ({ ...c, desconto: e.target.value }))} /></label>
+            <label className="full">Problema relatado<textarea value={cab.problemaRelatado} onChange={(e) => setCab((c) => ({ ...c, problemaRelatado: e.target.value }))} /></label>
+            <label className="full">Diagnóstico (técnico)<textarea value={cab.diagnostico} onChange={(e) => setCab((c) => ({ ...c, diagnostico: e.target.value }))} /></label>
+            <label className="full">Observações<textarea value={cab.observacoes} onChange={(e) => setCab((c) => ({ ...c, observacoes: e.target.value }))} /></label>
+            <div className="full" style={{ display: "flex", gap: 8 }}>
+              <button type="submit" className="btn-erp primary sm" disabled={busy}>{busy ? "Salvando…" : "Salvar"}</button>
+              <button type="button" className="btn-erp ghost sm" onClick={() => setEditandoCab(false)}>Cancelar</button>
+            </div>
+          </form>
+        ) : (
+          <>
+            <div className="kpi-row" style={{ marginBottom: 0, padding: 16 }}>
+              <div className="kpi"><div className="l">Cliente</div><div className="v">{os.cliente}</div></div>
+              <div className="kpi"><div className="l">Equipamento</div><div className="v">{os.equipamento}</div></div>
+              {os.placaOuSerial && <div className="kpi"><div className="l">Placa / Série</div><div className="v">{os.placaOuSerial}</div></div>}
+              {os.km && <div className="kpi"><div className="l">KM / Horímetro</div><div className="v">{os.km}</div></div>}
+              <div className="kpi"><div className="l">Técnico responsável</div><div className="v">{os.tecnicoResponsavelNome ?? "—"}</div></div>
+              {os.previsaoEm && <div className="kpi"><div className="l">Previsão</div><div className="v">{os.previsaoEm}</div></div>}
+            </div>
+            {(os.problemaRelatado || os.diagnostico || os.observacoes) && (
+              <div className="erp-card-body" style={{ borderTop: "1px solid var(--erp-line)" }}>
+                {os.problemaRelatado && <p style={{ margin: 0 }}><strong>Problema relatado:</strong> {os.problemaRelatado}</p>}
+                {os.diagnostico && <p style={{ margin: os.problemaRelatado ? "8px 0 0" : 0 }}><strong>Diagnóstico:</strong> {os.diagnostico}</p>}
+                {os.observacoes && <p style={{ margin: (os.problemaRelatado || os.diagnostico) ? "8px 0 0" : 0 }}><strong>Observações:</strong> {os.observacoes}</p>}
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -297,6 +393,47 @@ export function OrdemServicoDetail({ os: initialOs, formData }: Props) {
         </div>
       )}
 
+      {/* Apontamentos — o técnico registra o que foi feito */}
+      <div className="erp-card">
+        <div className="erp-card-head"><h3>Execução — o que foi feito ({os.apontamentos.length})</h3></div>
+        {editavel && (
+          <form className="erp-form" style={{ padding: "12px 16px 0" }} onSubmit={handleAddApontamento}>
+            <label className="full">O que foi feito
+              <textarea placeholder="Ex.: Removido o cabeçote, trocada a junta e retificado o motor." value={apontDescricao} onChange={(e) => setApontDescricao(e.target.value)} required />
+            </label>
+            <label>Horas gastas (opcional)<input inputMode="decimal" placeholder="Ex.: 2,5" value={apontHoras} onChange={(e) => setApontHoras(e.target.value)} /></label>
+            <label>Técnico
+              <select value={apontTecnico} onChange={(e) => setApontTecnico(e.target.value)}>
+                <option value="">{meuTecnico ? `${meuTecnico.nome} (você)` : "— selecione —"}</option>
+                {tecnicos.map((t) => <option key={t.id} value={t.id}>{t.nome}</option>)}
+              </select>
+              {!meuTecnico && !apontTecnico && <small className="field-hint">Vincule seu login a um técnico (cadastro de Técnicos) para registrar automaticamente como você.</small>}
+            </label>
+            <label style={{ display: "flex", alignItems: "flex-end" }}>
+              <button type="submit" className="btn-erp primary sm" disabled={busy}>{busy ? "Registrando…" : "Registrar"}</button>
+            </label>
+          </form>
+        )}
+        <div style={{ padding: 16 }}>
+          {os.apontamentos.length === 0 ? (
+            <div className="empty-st"><p>Nenhum registro de execução ainda.</p></div>
+          ) : (
+            <ol style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 10 }}>
+              {os.apontamentos.map((a) => (
+                <li key={a.id} style={{ borderLeft: "3px solid var(--erp-primary, #3b82f6)", paddingLeft: 12 }}>
+                  <div style={{ fontSize: 13, color: "var(--erp-slate, #64748b)" }}>
+                    <strong style={{ color: "var(--erp-ink, #0f172a)" }}>{a.tecnicoNome}</strong>
+                    {" · "}{new Date(a.criadoEm).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}
+                    {a.horas && ` · ${a.horas}h`}
+                  </div>
+                  <div style={{ fontSize: 14, whiteSpace: "pre-wrap" }}>{a.descricao}</div>
+                </li>
+              ))}
+            </ol>
+          )}
+        </div>
+      </div>
+
       {/* Serviços */}
       <div className="erp-card">
         <div className="erp-card-head"><h3>Serviços (mão de obra)</h3></div>
@@ -305,6 +442,7 @@ export function OrdemServicoDetail({ os: initialOs, formData }: Props) {
             <thead>
               <tr>
                 <th>Descrição</th>
+                <th>Técnico</th>
                 <th className="num">Horas</th>
                 <th className="num">Valor/hora</th>
                 <th className="num">Total</th>
@@ -315,6 +453,7 @@ export function OrdemServicoDetail({ os: initialOs, formData }: Props) {
               {os.servicos.map((s) => (
                 <tr key={s.id}>
                   <td>{s.descricao}</td>
+                  <td>{s.tecnicoNome ?? "—"}</td>
                   <td className="num">{s.horas}h</td>
                   <td className="num">{s.valorHora}</td>
                   <td className="num">
@@ -336,7 +475,7 @@ export function OrdemServicoDetail({ os: initialOs, formData }: Props) {
               ))}
               {os.servicos.length === 0 && (
                 <tr>
-                  <td colSpan={editavel ? 5 : 4}>
+                  <td colSpan={editavel ? 6 : 5}>
                     <div className="empty-st">
                       <h4>Sem serviços</h4>
                       <p>Nenhum serviço adicionado.</p>
@@ -383,6 +522,13 @@ export function OrdemServicoDetail({ os: initialOs, formData }: Props) {
                   onChange={(e) => setValorHora(Number(e.target.value))}
                   required
                 />
+              </label>
+              <label>
+                Técnico que executou
+                <select value={tecnicoServ} onChange={(e) => setTecnicoServ(e.target.value)}>
+                  <option value="">— opcional —</option>
+                  {tecnicos.map((t) => <option key={t.id} value={t.id}>{t.nome}</option>)}
+                </select>
               </label>
               <label className="full">
                 Código de Tributação Nacional — para NFS-e

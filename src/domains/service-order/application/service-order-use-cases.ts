@@ -28,10 +28,12 @@ export type CreateOrdemServicoInput = {
   clienteId: string;
   equipamento: string;
   placaOuSerial?: string;
+  km?: string;
   problemaRelatado?: string;
   previsaoEm?: Date | string;
   depositoId?: string;
   observacoes?: string;
+  tecnicoResponsavelId?: string | null;
 };
 
 export async function createOrdemServico(scope: TenantScope, input: CreateOrdemServicoInput) {
@@ -49,10 +51,12 @@ export async function createOrdemServico(scope: TenantScope, input: CreateOrdemS
         clienteId: input.clienteId,
         equipamento: input.equipamento,
         placaOuSerial: input.placaOuSerial ?? null,
+        km: input.km?.trim() || null,
         problemaRelatado: input.problemaRelatado ?? null,
         previsaoEm: input.previsaoEm ? new Date(input.previsaoEm) : null,
         depositoId: input.depositoId ?? null,
         observacoes: input.observacoes ?? null,
+        tecnicoResponsavelId: input.tecnicoResponsavelId?.trim() || null,
         status: "ABERTA",
         totalServicos: 0,
         totalPecas: 0,
@@ -81,6 +85,7 @@ export type AddServicoInput = {
   horas: number;
   valorHora: number;
   codigoServicoLc116?: string | null;
+  tecnicoId?: string | null;
 };
 
 export async function addServico(scope: TenantScope, osId: string, input: AddServicoInput) {
@@ -112,6 +117,7 @@ export async function addServico(scope: TenantScope, osId: string, input: AddSer
         valorHora: input.valorHora,
         total,
         codigoServicoLc116,
+        tecnicoId: input.tecnicoId?.trim() || null,
       },
     });
 
@@ -281,6 +287,114 @@ export async function removePeca(scope: TenantScope, osId: string, pecaId: strin
 
     return { removed: true };
   }, TX_OPTIONS);
+}
+
+export type UpdateOrdemServicoInput = {
+  equipamento?: string;
+  placaOuSerial?: string | null;
+  km?: string | null;
+  problemaRelatado?: string | null;
+  diagnostico?: string | null;
+  previsaoEm?: string | null;
+  observacoes?: string | null;
+  tecnicoResponsavelId?: string | null;
+  /** Desconto em VALOR (R$) sobre o total. Recalcula o total da OS. */
+  desconto?: number | null;
+};
+
+/** Edita o cabeçalho da OS (dados do veículo/diagnóstico, técnico responsável, desconto). */
+export async function updateOrdemServico(scope: TenantScope, osId: string, input: UpdateOrdemServicoInput) {
+  return prisma.$transaction(async (tx) => {
+    const os = await tx.ordemServico.findFirst({ where: { id: osId, ...scopedByTenantCompany(scope) } });
+    if (!os) throw new Error("Ordem de serviço não encontrada.");
+    if (["FATURADA", "CANCELADA"].includes(os.status)) {
+      throw new Error("Não é possível editar uma OS faturada ou cancelada.");
+    }
+
+    // Técnico responsável precisa existir na empresa.
+    if (input.tecnicoResponsavelId) {
+      const t = await tx.tecnico.findFirst({ where: { id: input.tecnicoResponsavelId, ...scopedByTenantCompany(scope) }, select: { id: true } });
+      if (!t) throw new Error("Técnico responsável não encontrado.");
+    }
+
+    const data: Record<string, unknown> = {};
+    if (input.equipamento !== undefined) {
+      const eq = input.equipamento.trim();
+      if (!eq) throw new Error("O equipamento não pode ficar vazio.");
+      data.equipamento = eq;
+    }
+    if (input.placaOuSerial !== undefined) data.placaOuSerial = input.placaOuSerial?.trim() || null;
+    if (input.km !== undefined) data.km = input.km?.trim() || null;
+    if (input.problemaRelatado !== undefined) data.problemaRelatado = input.problemaRelatado?.trim() || null;
+    if (input.diagnostico !== undefined) data.diagnostico = input.diagnostico?.trim() || null;
+    if (input.observacoes !== undefined) data.observacoes = input.observacoes?.trim() || null;
+    if (input.previsaoEm !== undefined) {
+      data.previsaoEm = input.previsaoEm ? new Date(`${input.previsaoEm.slice(0, 16)}`) : null;
+    }
+    if (input.tecnicoResponsavelId !== undefined) data.tecnicoResponsavelId = input.tecnicoResponsavelId?.trim() || null;
+    if (input.desconto !== undefined) {
+      const desconto = Math.max(0, Number(input.desconto ?? 0) || 0);
+      const bruto = Number(os.totalServicos) + Number(os.totalPecas);
+      if (desconto > bruto) throw new Error(`O desconto (${desconto.toFixed(2)}) não pode ser maior que o total dos itens (${bruto.toFixed(2)}).`);
+      data.desconto = desconto;
+      data.total = Math.max(0, bruto - desconto);
+    }
+
+    const atualizada = await tx.ordemServico.update({ where: { id: osId }, data });
+    await createAuditLog(tx, {
+      scope, entidade: "OrdemServico", entidadeId: osId, acao: "UPDATE",
+      payload: { campos: Object.keys(data) }
+    });
+    return atualizada;
+  }, TX_OPTIONS).then((os) => {
+    publishRealtime(scope, "oficina"); // painel: previsão/técnico/desconto podem ter mudado
+    return os;
+  });
+}
+
+export type AddApontamentoInput = {
+  tecnicoId: string;
+  descricao: string;
+  horas?: number | null;
+};
+
+/**
+ * APONTAMENTO: o técnico registra o QUE FOI FEITO na OS (timeline de execução) + horas gastas.
+ * É o histórico de trabalho — distinto da mão de obra COBRADA (que vai na nota fiscal).
+ */
+export async function addApontamento(scope: TenantScope, osId: string, input: AddApontamentoInput) {
+  const descricao = input.descricao?.trim();
+  if (!descricao) throw new Error("Descreva o que foi feito.");
+  if (!input.tecnicoId) throw new Error("Técnico não identificado.");
+
+  return prisma.$transaction(async (tx) => {
+    const os = await tx.ordemServico.findFirst({ where: { id: osId, ...scopedByTenantCompany(scope) }, select: { id: true, status: true } });
+    if (!os) throw new Error("Ordem de serviço não encontrada.");
+    if (["FATURADA", "CANCELADA"].includes(os.status)) {
+      throw new Error("Não é possível apontar em uma OS faturada ou cancelada.");
+    }
+    const tecnico = await tx.tecnico.findFirst({ where: { id: input.tecnicoId, ...scopedByTenantCompany(scope) }, select: { id: true, nome: true } });
+    if (!tecnico) throw new Error("Técnico não encontrado.");
+
+    const apontamento = await tx.ordemServicoApontamento.create({
+      data: {
+        ...scopedByTenantCompany(scope),
+        ordemServicoId: osId,
+        tecnicoId: tecnico.id,
+        descricao,
+        horas: input.horas != null && Number(input.horas) > 0 ? Number(input.horas) : null,
+        statusMomento: os.status
+      }
+    });
+    await createAuditLog(tx, {
+      scope, entidade: "OrdemServicoApontamento", entidadeId: apontamento.id, acao: "ADD",
+      payload: { osId, tecnico: tecnico.nome, horas: input.horas ?? null }
+    });
+    return apontamento;
+  }, TX_OPTIONS).then((a) => {
+    publishRealtime(scope, "oficina");
+    return a;
+  });
 }
 
 const VALID_STATUS_TRANSITIONS: Record<string, StatusOrdemServico[]> = {

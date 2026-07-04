@@ -25,6 +25,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
       horas: Number(body.horas),
       valorHora: Number(body.valorHora),
       codigoServicoLc116: body.codigoServicoLc116 ?? null,
+      tecnicoId: body.tecnicoId ?? null,
     });
     return NextResponse.json({ id: servico.id });
   } catch (error) {

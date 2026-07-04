@@ -34,6 +34,7 @@ export default async function OrdensServicoPage() {
         title="Ordens de Serviço"
         action={
           <div style={{ display: "flex", gap: 8 }}>
+            <Button href="/erp/tecnicos" variant="light">👨‍🔧 Técnicos</Button>
             <a className="btn-erp light" href="/oficina" target="_blank" rel="noopener noreferrer" title="Abre o painel de acompanhamento em nova aba (para a TV da oficina)">📺 Painel da oficina</a>
             <Button href="/erp/os/nova" variant="primary">+ Nova OS</Button>
           </div>

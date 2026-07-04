@@ -24,7 +24,8 @@ export async function GET() {
       select: {
         id: true, numero: true, status: true, equipamento: true, placaOuSerial: true,
         problemaRelatado: true, previsaoEm: true, criadoEm: true,
-        cliente: { select: { razaoSocial: true, nomeFantasia: true } }
+        cliente: { select: { razaoSocial: true, nomeFantasia: true } },
+        tecnicoResponsavel: { select: { nome: true } }
       }
     });
 
@@ -38,6 +39,7 @@ export async function GET() {
         placa: os.placaOuSerial ?? null,
         problema: os.problemaRelatado ?? null,
         cliente: os.cliente.nomeFantasia || os.cliente.razaoSocial,
+        tecnico: os.tecnicoResponsavel?.nome ?? null,
         previsaoEm: os.previsaoEm?.toISOString() ?? null,
         criadoEm: os.criadoEm.toISOString(),
         // Atrasada: tem previsão no passado e ainda não finalizou.

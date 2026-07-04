@@ -54,6 +54,7 @@ const groups: ErpNavGroup[] = [
       { label: "Vendas", href: "/erp/vendas", icon: "🏪", badgeKey: "vendas" },
       { label: "Orçamentos", href: "/erp/orcamentos", icon: "📄", badgeKey: "orcamentos" },
       { label: "Ordens de Serviço", href: "/erp/os", icon: "🔧", badgeKey: "os" },
+      { label: "Técnicos", href: "/erp/tecnicos", icon: "👨‍🔧" },
       { label: "Expedição", href: "/erp/expedicao", icon: "📤" }
     ]
   },
