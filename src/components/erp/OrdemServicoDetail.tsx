@@ -62,6 +62,7 @@ export function OrdemServicoDetail({ os: initialOs, formData, tecnicos, meuTecni
 
   // Faturamento
   const [emitirNfse, setEmitirNfse] = useState(false);
+  const [emitirNfePecas, setEmitirNfePecas] = useState(false);
   const [formaPagamento, setFormaPagamento] = useState("");
   const [condicaoPagamento, setCondicaoPagamento] = useState("");
   // NFS-e: ISS informado + retenções
@@ -283,6 +284,7 @@ export function OrdemServicoDetail({ os: initialOs, formData, tecnicos, meuTecni
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           emitirNfse,
+          emitirNfePecas,
           formaPagamento: formaPagamento || undefined,
           condicaoPagamento: condicaoPagamento || undefined,
         }),
@@ -292,16 +294,15 @@ export function OrdemServicoDetail({ os: initialOs, formData, tecnicos, meuTecni
         status?: string;
         notaFiscalId?: string;
         nfseError?: boolean;
+        notaPecasId?: string;
+        nfePecasError?: boolean;
       };
       if (!res.ok) throw new Error(data.error ?? "Erro ao faturar OS.");
 
-      if (data.nfseError) {
-        window.alert("OS faturada, mas houve falha na emissão da NFS-e. Emita manualmente em Fiscal.");
-      } else if (data.notaFiscalId) {
-        window.alert("OS faturada e NFS-e emitida com sucesso!");
-      } else {
-        window.alert("OS faturada com sucesso! Conta a receber criada.");
-      }
+      const avisos: string[] = ["OS faturada. Conta a receber criada."];
+      if (emitirNfse) avisos.push(data.nfseError ? "⚠ Falha na NFS-e (serviços) — reemita em Fiscal." : data.notaFiscalId ? "✓ NFS-e (serviços) emitida." : "");
+      if (emitirNfePecas) avisos.push(data.nfePecasError ? "⚠ Falha na NF-e (peças) — reemita em Fiscal." : data.notaPecasId ? "✓ NF-e (peças) emitida." : "");
+      window.alert(avisos.filter(Boolean).join("\n"));
       refreshOs();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao faturar OS.");
@@ -699,7 +700,17 @@ export function OrdemServicoDetail({ os: initialOs, formData, tecnicos, meuTecni
                     checked={emitirNfse}
                     onChange={(e) => setEmitirNfse(e.target.checked)}
                   />
-                  Emitir NFS-e para os serviços
+                  Emitir NFS-e para os serviços (mão de obra)
+                </label>
+              )}
+              {os.pecas.length > 0 && (
+                <label className="check-row">
+                  <input
+                    type="checkbox"
+                    checked={emitirNfePecas}
+                    onChange={(e) => setEmitirNfePecas(e.target.checked)}
+                  />
+                  Emitir NF-e (modelo 55) para as peças (mercadoria)
                 </label>
               )}
             </div>

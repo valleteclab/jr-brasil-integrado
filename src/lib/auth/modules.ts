@@ -11,6 +11,7 @@ export type ModuloKey =
   | "vendas"
   | "orcamentos"
   | "os"
+  | "tecnicos"
   | "expedicao"
   | "compras"
   | "entradas-fiscais"
@@ -38,6 +39,7 @@ export const MODULOS: Array<{ key: ModuloKey; label: string }> = [
   { key: "vendas", label: "Vendas" },
   { key: "orcamentos", label: "Orçamentos" },
   { key: "os", label: "Ordens de Serviço" },
+  { key: "tecnicos", label: "Técnicos (oficina)" },
   { key: "expedicao", label: "Expedição" },
   { key: "compras", label: "Compras" },
   { key: "entradas-fiscais", label: "Notas de entrada" },
@@ -75,7 +77,7 @@ export const PERFIS_PADRAO: Array<{ nome: string; descricao: string; modulos: Mo
   {
     nome: "SALES",
     descricao: "Vendas, atendimento, caixa e orçamentos.",
-    modulos: ["dashboard", "atendimento", "caixa", "vendas", "orcamentos", "os", "expedicao", "clientes", "produtos", "assistente"]
+    modulos: ["dashboard", "atendimento", "caixa", "vendas", "orcamentos", "os", "tecnicos", "expedicao", "clientes", "produtos", "assistente"]
   },
   {
     nome: "STOCK",
@@ -90,7 +92,7 @@ export const PERFIS_PADRAO: Array<{ nome: string; descricao: string; modulos: Mo
   {
     nome: "WORKSHOP",
     descricao: "Oficina: ordens de serviço.",
-    modulos: ["dashboard", "os", "clientes", "produtos", "estoque"]
+    modulos: ["dashboard", "os", "tecnicos", "clientes", "produtos", "estoque"]
   },
   {
     nome: "FINANCE",
@@ -124,8 +126,8 @@ export type TipoNegocio = "VENDA" | "SERVICO" | "AMBOS";
 // (dashboard, clientes, financeiro, fluxo-caixa, fiscal, relatorios, assistente, configuracoes)
 // nunca são escondidos. É um filtro de MENU — o acesso real continua governado pelo perfil/RBAC.
 const MODULOS_OCULTOS_POR_TIPO: Record<TipoNegocio, ModuloKey[]> = {
-  // Só mercadoria: esconde ordens de serviço.
-  VENDA: ["os"],
+  // Só mercadoria: esconde ordens de serviço (e o cadastro de técnicos da oficina).
+  VENDA: ["os", "tecnicos"],
   // Só serviço: esconde a cadeia de mercadoria/estoque (e o SPED Fiscal, que é EFD ICMS/IPI).
   SERVICO: ["compras", "entradas-fiscais", "estoque", "inventarios", "fornecedores", "regras-finalidade", "sped-fiscal"],
   // Vende e presta serviço: mostra tudo.

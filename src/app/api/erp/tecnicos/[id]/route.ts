@@ -6,7 +6,7 @@ import { TecnicoError, archiveTecnico, updateTecnico } from "@/domains/service-o
 
 export async function PATCH(request: Request, { params }: { params: { id: string } }) {
   try {
-    await requireModulo("os");
+    await requireModulo("tecnicos");
     const scope = await getDevelopmentTenantScope();
     const session = await getSession();
     const t = await updateTecnico(scope, params.id, await request.json(), session?.usuarioId);
@@ -19,7 +19,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
 
 export async function DELETE(_request: Request, { params }: { params: { id: string } }) {
   try {
-    await requireModulo("os");
+    await requireModulo("tecnicos");
     const scope = await getDevelopmentTenantScope();
     const session = await getSession();
     await archiveTecnico(scope, params.id, session?.usuarioId);

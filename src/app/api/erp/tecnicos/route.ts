@@ -6,7 +6,7 @@ import { TecnicoError, createTecnico, listTecnicos } from "@/domains/service-ord
 
 export async function GET() {
   try {
-    await requireModulo("os");
+    await requireModulo("tecnicos");
     const scope = await getDevelopmentTenantScope();
     const tecnicos = await listTecnicos(scope, { incluirInativos: true });
     return NextResponse.json({ tecnicos });
@@ -18,7 +18,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    await requireModulo("os");
+    await requireModulo("tecnicos");
     const scope = await getDevelopmentTenantScope();
     const session = await getSession();
     const t = await createTecnico(scope, await request.json(), session?.usuarioId);

@@ -12,6 +12,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
 
     const result = await faturarOrdemServico(scope, params.id, {
       emitirNfse: body.emitirNfse === true,
+      emitirNfePecas: body.emitirNfePecas === true,
       condicaoPagamento: body.condicaoPagamento ?? undefined,
       formaPagamento: body.formaPagamento ?? undefined,
     });

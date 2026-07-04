@@ -11,7 +11,7 @@ import {
   releaseReservations,
   commitReservationsAsExit
 } from "@/domains/stock/application/stock-service";
-import { buildNfseFromOrdemServico } from "@/domains/fiscal/document-builder";
+import { buildDocumentFromPedido, buildNfseFromOrdemServico } from "@/domains/fiscal/document-builder";
 import { emitFiscalDocument } from "@/domains/fiscal/application/fiscal-emission-use-cases";
 import { isCodigoServicoValido } from "@/domains/fiscal/codigo-tributacao-nacional";
 import { computeRetencoes, issPorServico } from "@/domains/fiscal/nfse-tax";
@@ -463,6 +463,8 @@ export type FaturarOsInput = {
   baseCalculoIss?: number | null;
   /** NFS-e: retenções na fonte (ISS retido + federais). */
   retencoes?: RetencoesInput | null;
+  /** Emitir NF-e modelo 55 das PEÇAS (mercadoria) — nota própria além da NFS-e dos serviços. */
+  emitirNfePecas?: boolean;
 };
 
 export async function faturarOrdemServico(scope: TenantScope, id: string, input: FaturarOsInput = {}) {
@@ -479,7 +481,13 @@ export async function faturarOrdemServico(scope: TenantScope, id: string, input:
       servicos: true,
       pecas: {
         include: {
-          produto: { select: { id: true, sku: true, nome: true, custoMedio: true, precoCusto: true } },
+          produto: {
+            select: {
+              id: true, sku: true, nome: true, custoMedio: true, precoCusto: true,
+              ncm: true, cest: true, cfop: true, origem: true, unidade: true,
+              fiscal: { select: { ncm: true, cest: true, origem: true, regraTributariaId: true, icmsSt: true } }
+            }
+          },
         },
       },
     },
@@ -585,23 +593,28 @@ export async function faturarOrdemServico(scope: TenantScope, id: string, input:
 
   publishRealtime(scope, "oficina"); // painel da oficina: OS faturada sai do quadro
 
-  // Emissão de NFS-e fora da transação (I/O externo)
+  // Emissões fiscais FORA da transação (I/O externo). O faturamento JÁ foi confirmado — falha
+  // fiscal não desfaz a baixa/conta a receber; devolve o erro para reemitir depois.
+  const resultado: {
+    id: string; status: string; contaReceberId: string;
+    notaFiscalId?: string; notaStatus?: string; nfseError?: boolean;
+    notaPecasId?: string; notaPecasStatus?: string; nfePecasError?: boolean;
+  } = { id, status: "FATURADA", contaReceberId: contaReceber.id };
+
+  // 1) NFS-e dos SERVIÇOS (mão de obra).
   if (input.emitirNfse && os.servicos.length > 0) {
     try {
-      // Código LC 116 por serviço; quando ausente, usa o padrão da empresa (config fiscal).
       const configFiscal = await prisma.configuracaoFiscal.findUnique({
         where: { empresaId: scope.empresaId },
         select: { codigoServicoLc116Padrao: true },
       });
       const lc116Padrao = configFiscal?.codigoServicoLc116Padrao ?? null;
-
       const valorServicos = os.servicos.reduce((sum, s) => sum + Number(s.total), 0);
       const issInput = {
         aliquotaIss: input.aliquotaIss ?? null,
         deducoes: input.deducoes ?? null,
         baseCalculoIss: input.baseCalculoIss ?? null,
       };
-
       const docNfse = buildNfseFromOrdemServico({
         cliente: os.cliente,
         condicaoPagamento: condicaoPagamento ?? null,
@@ -619,26 +632,60 @@ export async function faturarOrdemServico(scope: TenantScope, id: string, input:
           };
         }),
       });
-
-      const nota = await emitFiscalDocument(scope, docNfse, {
-        clienteId: os.clienteId,
-        ordemServicoId: id,
-      });
-
-      // Vincula nota fiscal à conta a receber
+      const nota = await emitFiscalDocument(scope, docNfse, { clienteId: os.clienteId, ordemServicoId: id });
       if (nota.status === "AUTORIZADA") {
-        await prisma.contaReceber.update({
-          where: { id: contaReceber.id },
-          data: { notaFiscalId: nota.id },
-        });
+        await prisma.contaReceber.update({ where: { id: contaReceber.id }, data: { notaFiscalId: nota.id } });
       }
-
-      return { id, status: "FATURADA", contaReceberId: contaReceber.id, notaFiscalId: nota.id, notaStatus: nota.status };
+      resultado.notaFiscalId = nota.id;
+      resultado.notaStatus = nota.status;
     } catch {
-      // NFS-e falhou mas faturamento já foi confirmado
-      return { id, status: "FATURADA", contaReceberId: contaReceber.id, nfseError: true };
+      resultado.nfseError = true;
     }
   }
 
-  return { id, status: "FATURADA", contaReceberId: contaReceber.id };
+  // 2) NF-e modelo 55 das PEÇAS (mercadoria). Documento fiscal PRÓPRIO — obrigatório para a saída
+  //    de mercadoria (ICMS). Usa a mesma ficha fiscal/regra tributária do produto (como na venda).
+  if (input.emitirNfePecas && os.pecas.length > 0) {
+    try {
+      const docPecas = buildDocumentFromPedido({
+        cliente: os.cliente,
+        modelo: "NFE",
+        naturezaOperacao: "Venda de peças (ordem de serviço)",
+        formaPagamento: formaPagamento ?? null,
+        condicaoPagamento: condicaoPagamento ?? null,
+        numeroPedido: os.numero,
+        observacoes: `Peças da OS ${os.numero} — ${os.equipamento}.`,
+        itens: os.pecas.map((p) => ({
+          produto: {
+            id: p.produto.id,
+            sku: p.produto.sku,
+            nome: p.produto.nome,
+            ncm: p.produto.ncm,
+            cest: p.produto.cest,
+            cfop: p.produto.cfop,
+            origem: p.produto.origem,
+            unidade: p.produto.unidade,
+            fiscal: p.produto.fiscal
+              ? {
+                  ncm: p.produto.fiscal.ncm,
+                  cest: p.produto.fiscal.cest,
+                  origem: p.produto.fiscal.origem,
+                  regraTributariaId: p.produto.fiscal.regraTributariaId,
+                  icmsSt: p.produto.fiscal.icmsSt,
+                }
+              : null,
+          },
+          quantidade: Number(p.quantidade),
+          precoUnitario: Number(p.precoUnitario),
+        })),
+      });
+      const notaPecas = await emitFiscalDocument(scope, docPecas, { clienteId: os.clienteId, ordemServicoId: id });
+      resultado.notaPecasId = notaPecas.id;
+      resultado.notaPecasStatus = notaPecas.status;
+    } catch {
+      resultado.nfePecasError = true;
+    }
+  }
+
+  return resultado;
 }

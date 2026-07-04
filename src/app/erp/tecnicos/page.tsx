@@ -1,7 +1,7 @@
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Button } from "@/components/shared/Button";
 import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
-import { moduloLiberado } from "@/lib/auth/tenant-features";
+import { requireModulo, ForbiddenError } from "@/lib/auth/session";
 import { ModuloBloqueado } from "@/components/erp/ModuloBloqueado";
 import { listTecnicos, listUsuariosDaEmpresa } from "@/domains/service-order/application/tecnico-use-cases";
 import { TecnicosManager } from "@/components/erp/TecnicosManager";
@@ -10,8 +10,12 @@ export const dynamic = "force-dynamic";
 
 export default async function TecnicosPage() {
   const scope = await getDevelopmentTenantScope();
-  if (!(await moduloLiberado(scope, "ordemServicoHabilitada"))) {
-    return <ModuloBloqueado titulo="Ordens de serviço indisponíveis" />;
+  // RBAC por perfil: o módulo "tecnicos" precisa estar liberado ao perfil do usuário.
+  try {
+    await requireModulo("tecnicos");
+  } catch (e) {
+    if (e instanceof ForbiddenError) return <ModuloBloqueado titulo="Técnicos indisponíveis para o seu perfil" />;
+    throw e;
   }
 
   const [tecnicos, usuarios] = await Promise.all([
