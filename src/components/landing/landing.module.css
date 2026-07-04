@@ -1,0 +1,122 @@
+/* Landing page de vendas do XERP. Namespace isolado (CSS module), tokens de marca do globals. */
+
+.page { color: #0e1117; background: #ffffff; overflow-x: hidden; }
+.page * { box-sizing: border-box; }
+
+/* ─── Nav ─── */
+.nav {
+  position: sticky; top: 0; z-index: 50;
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 14px 24px; max-width: 1200px; margin: 0 auto;
+}
+.navInner { position: sticky; top: 0; z-index: 50; background: rgba(14,17,23,.72); backdrop-filter: saturate(150%) blur(10px); border-bottom: 1px solid rgba(255,255,255,.08); }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: -.02em; color: #fff; font-size: 18px; }
+.brandMark { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 9px; background: #ffc107; color: #0e1117; font-weight: 900; }
+.navLinks { display: flex; align-items: center; gap: 22px; }
+.navLinks a { color: rgba(255,255,255,.82); text-decoration: none; font-size: 14.5px; font-weight: 600; }
+.navLinks a:hover { color: #fff; }
+
+.btn { display: inline-flex; align-items: center; gap: 8px; padding: 11px 20px; border-radius: 10px; font-weight: 700; font-size: 15px; text-decoration: none; border: 1px solid transparent; cursor: pointer; transition: transform .12s, box-shadow .12s, background .12s; }
+.btn:hover { transform: translateY(-1px); }
+.btnPrimary { background: #ffc107; color: #0e1117; box-shadow: 0 8px 24px -8px rgba(255,193,7,.6); }
+.btnPrimary:hover { background: #ffcd2e; }
+.btnDark { background: #0e1117; color: #fff; }
+.btnGhost { background: transparent; color: #fff; border-color: rgba(255,255,255,.22); }
+.btnLight { background: #fff; color: #0e1117; border-color: #e5e7eb; }
+.btnLg { padding: 14px 26px; font-size: 16px; }
+
+/* ─── Hero ─── */
+.hero { background: radial-gradient(1200px 500px at 70% -10%, rgba(255,193,7,.16), transparent 60%), #0e1117; color: #fff; }
+.heroInner { max-width: 1200px; margin: 0 auto; padding: 64px 24px 72px; display: grid; grid-template-columns: 1.05fr .95fr; gap: 44px; align-items: center; }
+.eyebrow { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: #ffc107; background: rgba(255,193,7,.1); border: 1px solid rgba(255,193,7,.25); padding: 6px 12px; border-radius: 999px; }
+.heroInner h1 { font-size: clamp(34px, 5vw, 56px); line-height: 1.04; letter-spacing: -.03em; margin: 20px 0 16px; }
+.heroInner h1 em { font-style: normal; color: #ffc107; }
+.heroSub { font-size: 18px; line-height: 1.6; color: rgba(255,255,255,.8); max-width: 560px; }
+.heroActions { display: flex; gap: 12px; margin: 28px 0 18px; flex-wrap: wrap; }
+.heroNote { font-size: 13.5px; color: rgba(255,255,255,.55); }
+.heroNote strong { color: rgba(255,255,255,.85); }
+
+/* Painel visual do hero */
+.mock { background: linear-gradient(180deg, #151a22, #0e1117); border: 1px solid rgba(255,255,255,.1); border-radius: 18px; padding: 18px; box-shadow: 0 40px 80px -30px rgba(0,0,0,.7); }
+.mockHead { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+.dot { width: 11px; height: 11px; border-radius: 50%; }
+.mockTitle { margin-left: auto; font-size: 12px; color: rgba(255,255,255,.5); font-weight: 700; }
+.kpis { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+.kpi { background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.08); border-radius: 12px; padding: 12px 14px; }
+.kpi span { display: block; font-size: 11.5px; color: rgba(255,255,255,.55); font-weight: 700; letter-spacing: .02em; }
+.kpi strong { display: block; font-size: 22px; margin-top: 4px; letter-spacing: -.02em; }
+.kpi .up { color: #34d399; font-size: 12px; font-weight: 700; }
+.chatRow { display: flex; gap: 8px; align-items: flex-start; margin-top: 4px; }
+.chatBubble { background: rgba(255,193,7,.14); border: 1px solid rgba(255,193,7,.25); color: #fff; border-radius: 12px; padding: 9px 12px; font-size: 13px; line-height: 1.4; max-width: 92%; }
+.chatBubbleUser { background: rgba(255,255,255,.06); border-color: rgba(255,255,255,.1); margin-left: auto; }
+
+/* ─── Faixa de números ─── */
+.stats { max-width: 1200px; margin: -32px auto 0; padding: 0 24px; position: relative; z-index: 2; }
+.statsInner { background: #fff; border: 1px solid #eef0f2; border-radius: 16px; box-shadow: 0 24px 60px -30px rgba(15,17,23,.25); display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; padding: 22px; }
+.stat { text-align: center; padding: 6px; }
+.stat strong { display: block; font-size: 26px; letter-spacing: -.02em; }
+.stat span { font-size: 13px; color: #64748b; }
+
+/* ─── Seções ─── */
+.section { max-width: 1200px; margin: 0 auto; padding: 72px 24px; }
+.sectionHead { text-align: center; max-width: 720px; margin: 0 auto 40px; }
+.sectionHead .tag { font-size: 12.5px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: #e0a800; }
+.sectionHead h2 { font-size: clamp(28px, 3.5vw, 40px); line-height: 1.1; letter-spacing: -.02em; margin: 10px 0 12px; }
+.sectionHead p { font-size: 17px; color: #475569; line-height: 1.6; }
+
+.features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+.feature { background: #fff; border: 1px solid #eef0f2; border-radius: 16px; padding: 24px; transition: box-shadow .15s, transform .15s, border-color .15s; }
+.feature:hover { box-shadow: 0 18px 40px -22px rgba(15,17,23,.28); transform: translateY(-3px); border-color: #e6e8eb; }
+.featureIcon { width: 46px; height: 46px; border-radius: 12px; display: grid; place-items: center; font-size: 24px; background: #fff8e1; border: 1px solid #ffe9a8; margin-bottom: 14px; }
+.feature h3 { font-size: 19px; margin: 0 0 6px; letter-spacing: -.01em; }
+.feature p { color: #475569; font-size: 14.5px; line-height: 1.6; margin: 0; }
+
+/* Bloco WhatsApp/IA */
+.spotlight { background: #0e1117; color: #fff; }
+.spotlightInner { max-width: 1200px; margin: 0 auto; padding: 72px 24px; display: grid; grid-template-columns: 1fr 1fr; gap: 44px; align-items: center; }
+.spotlightInner .tag { color: #ffc107; }
+.spotlightInner h2 { font-size: clamp(28px, 3.5vw, 40px); line-height: 1.1; letter-spacing: -.02em; margin: 10px 0 14px; }
+.spotlightInner p { color: rgba(255,255,255,.8); font-size: 17px; line-height: 1.6; }
+.checkList { list-style: none; padding: 0; margin: 20px 0 0; display: grid; gap: 12px; }
+.checkList li { display: flex; gap: 10px; align-items: flex-start; font-size: 15.5px; color: rgba(255,255,255,.9); }
+.checkMark { flex: 0 0 auto; width: 22px; height: 22px; border-radius: 50%; background: rgba(52,211,153,.16); color: #34d399; display: grid; place-items: center; font-size: 13px; font-weight: 900; }
+.phone { background: linear-gradient(180deg, #151a22, #0e1117); border: 1px solid rgba(255,255,255,.12); border-radius: 22px; padding: 16px; max-width: 340px; margin: 0 auto; box-shadow: 0 40px 80px -30px rgba(0,0,0,.7); }
+.phoneHead { display: flex; align-items: center; gap: 10px; padding: 4px 6px 12px; border-bottom: 1px solid rgba(255,255,255,.08); margin-bottom: 12px; }
+.phoneAvatar { width: 34px; height: 34px; border-radius: 50%; background: #25d366; display: grid; place-items: center; font-size: 17px; }
+.phoneName { font-weight: 700; font-size: 14px; }
+.phoneName span { display: block; font-size: 11px; color: rgba(255,255,255,.5); font-weight: 500; }
+.msg { border-radius: 12px; padding: 9px 12px; font-size: 13.5px; line-height: 1.45; margin-bottom: 8px; max-width: 88%; }
+.msgIn { background: rgba(255,255,255,.06); }
+.msgOut { background: #075e54; margin-left: auto; }
+
+/* Para quem */
+.segments { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+.segment { background: #fff; border: 1px solid #eef0f2; border-radius: 14px; padding: 20px; text-align: center; }
+.segment .ic { font-size: 30px; }
+.segment strong { display: block; margin-top: 8px; font-size: 15.5px; }
+.segment span { font-size: 13px; color: #64748b; }
+
+/* CTA final */
+.cta { max-width: 1100px; margin: 0 auto 80px; padding: 0 24px; }
+.ctaInner { background: radial-gradient(600px 260px at 80% -20%, rgba(255,193,7,.25), transparent 60%), #0e1117; color: #fff; border-radius: 24px; padding: 56px 40px; text-align: center; }
+.ctaInner h2 { font-size: clamp(28px, 3.6vw, 42px); letter-spacing: -.02em; margin: 0 0 12px; }
+.ctaInner p { color: rgba(255,255,255,.8); font-size: 18px; max-width: 620px; margin: 0 auto 26px; line-height: 1.6; }
+.ctaActions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+
+/* Footer */
+.footer { border-top: 1px solid #eef0f2; }
+.footerInner { max-width: 1200px; margin: 0 auto; padding: 28px 24px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; color: #64748b; font-size: 13.5px; }
+.footerBrand { display: flex; align-items: center; gap: 8px; font-weight: 800; color: #0e1117; }
+
+/* ─── Responsivo ─── */
+@media (max-width: 900px) {
+  .heroInner, .spotlightInner { grid-template-columns: 1fr; }
+  .navLinks { display: none; }
+  .features { grid-template-columns: 1fr 1fr; }
+  .statsInner { grid-template-columns: 1fr 1fr; }
+  .segments { grid-template-columns: 1fr 1fr; }
+  .mock { order: 2; }
+}
+@media (max-width: 560px) {
+  .features, .segments, .statsInner { grid-template-columns: 1fr; }
+}

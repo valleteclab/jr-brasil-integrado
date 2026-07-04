@@ -1,5 +1,6 @@
 import { AiSettingsForm } from "@/components/erp/AiSettingsForm";
 import { AgentApiKeys } from "@/components/erp/AgentApiKeys";
+import { AgentPhones } from "@/components/erp/AgentPhones";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { getAiConfig } from "@/domains/ai/openrouter-service";
 import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
@@ -20,6 +21,7 @@ export default async function AiSettingsPage() {
         <p>Configure a chave OpenRouter desta empresa para recursos assistidos por IA.</p>
       </PageHeader>
       <AiSettingsForm initialConfig={config} />
+      <AgentPhones />
       <AgentApiKeys />
     </>
   );

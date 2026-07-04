@@ -15,6 +15,9 @@ import { emitirBoleto } from "./write/emitir-boleto";
 import { cobrarPix } from "./write/cobrar-pix";
 import { faturarPedido } from "./write/faturar-pedido";
 import { emitirNfse } from "./write/emitir-nfse";
+import { cancelarBoleto } from "./write/cancelar-boleto";
+import { cancelarNota } from "./write/cancelar-nota";
+import { enviarDocumento } from "./write/enviar-documento";
 
 /** Fonte única de verdade das ferramentas do agente — usada pelo chat web e pelo MCP. */
 export const ALL_TOOLS: AgentTool[] = [
@@ -33,7 +36,10 @@ export const ALL_TOOLS: AgentTool[] = [
   emitirBoleto,
   cobrarPix,
   faturarPedido,
-  emitirNfse
+  emitirNfse,
+  cancelarBoleto,
+  cancelarNota,
+  enviarDocumento
 ];
 
 export function getToolsForRole(role: AgentRole): AgentTool[] {
