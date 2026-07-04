@@ -3,9 +3,9 @@ import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import { scopedByTenantCompany } from "@/lib/auth/dev-session";
 import { createAuditLog } from "@/lib/audit/audit-service";
-import { authDaConta, contaTemCobranca } from "@/domains/finance/application/boleto-use-cases";
 import { estornarBaixaReceivable, settleReceivable } from "@/domains/finance/application/finance-use-cases";
-import { criarCobrancaImediata, consultarCobrancaImediata, devolverPix, gerarTxid } from "@/domains/finance/providers/sicoob-pix";
+import { gerarTxid } from "@/domains/finance/providers/sicoob-pix";
+import { getBankProvider, contaTemPix, contaSandbox, bancoLabel } from "@/domains/finance/providers/bank-registry";
 
 /**
  * PIX RECEBIMENTOS (Sicoob): cobrança dinâmica com QR Code. Dois usos:
@@ -25,11 +25,11 @@ export class PixError extends Error {
 /** Contas aptas a gerar QR Pix dinâmico: chave Pix cadastrada + credenciamento Sicoob. */
 export async function listContasComPix(scope: TenantScope): Promise<Array<{ id: string; nome: string; chavePix: string }>> {
   const contas = await prisma.contaBancaria.findMany({
-    where: { ...scopedByTenantCompany(scope), ativo: true, chavePix: { not: null }, sicoobNumeroCliente: { not: null } },
+    where: { ...scopedByTenantCompany(scope), ativo: true, chavePix: { not: null } },
     orderBy: { nome: "asc" }
   });
   return contas
-    .filter((c) => contaTemCobranca(c) && c.chavePix?.trim())
+    .filter((c) => contaTemPix(c))
     .map((c) => ({ id: c.id, nome: c.nome, chavePix: c.chavePix as string }));
 }
 
@@ -75,7 +75,7 @@ export async function criarPixCobranca(
   const conta = await prisma.contaBancaria.findFirst({ where: { id: input.contaBancariaId, ...scopedByTenantCompany(scope), ativo: true } });
   if (!conta) throw new PixError("Conta bancária não encontrada.");
   if (!conta.chavePix?.trim()) throw new PixError(`Cadastre a chave Pix da conta "${conta.nome}" para gerar QR Code.`);
-  if (!contaTemCobranca(conta)) throw new PixError(`A conta "${conta.nome}" não tem o credenciamento Sicoob configurado.`);
+  if (!contaTemPix(conta)) throw new PixError(`A conta "${conta.nome}" não tem o credenciamento ${bancoLabel(conta)} (Pix) configurado.`);
 
   if (input.contaReceberId) {
     const titulo = await prisma.contaReceber.findFirst({ where: { id: input.contaReceberId, ...scopedByTenantCompany(scope) }, include: { pixCobranca: true } });
@@ -95,9 +95,9 @@ export async function criarPixCobranca(
     }
   }
 
-  const auth = await authDaConta(scope, conta);
+  const provider = await getBankProvider(scope, conta);
   const txid = gerarTxid();
-  const cob = await criarCobrancaImediata(auth, {
+  const cob = await provider.criarCobrancaPix({
     txid,
     chave: conta.chavePix.trim(),
     valor,
@@ -128,7 +128,7 @@ export async function criarPixCobranca(
     payload: { txid: cob.txid, valor, contaReceberId: input.contaReceberId ?? null, pedidoVendaId: input.pedidoVendaId ?? null }
   }));
 
-  const sandboxSemBrcode = !cob.brcode && conta.sicoobSandbox;
+  const sandboxSemBrcode = !cob.brcode && contaSandbox(conta);
   return {
     id: registro.id,
     txid: cob.txid,
@@ -137,7 +137,7 @@ export async function criarPixCobranca(
     valor,
     status: "ATIVA",
     aviso: sandboxSemBrcode
-      ? "O SANDBOX do Sicoob devolve dados de exemplo — o BR Code real (QR pagável) só vem em produção."
+      ? `O SANDBOX do ${bancoLabel(conta)} devolve dados de exemplo — o BR Code real (QR pagável) só vem em produção.`
       : null
   };
 }
@@ -155,8 +155,8 @@ export async function sincronizarPix(scope: TenantScope, pixCobrancaId: string) 
     }
   });
   if (!pix) throw new PixError("Cobrança Pix não encontrada.");
-  const auth = await authDaConta(scope, pix.contaBancaria);
-  const consulta = await consultarCobrancaImediata(auth, pix.txid);
+  const provider = await getBankProvider(scope, pix.contaBancaria);
+  const consulta = await provider.consultarCobrancaPix(pix.txid);
   const status = (consulta.status ?? "").toUpperCase();
 
   if (status === "CONCLUIDA") {
@@ -204,19 +204,19 @@ export async function devolverPixDoTitulo(scope: TenantScope, contaReceberId: st
   if (pix.status === "DEVOLVIDA") return { status: "DEVOLVIDA", estornado: false, jaDevolvido: true };
   if (pix.status !== "CONCLUIDA") throw new PixError(`A cobrança Pix não está paga (${pix.status}) — nada a devolver.`);
 
-  const auth = await authDaConta(scope, pix.contaBancaria);
+  const provider = await getBankProvider(scope, pix.contaBancaria);
 
   // endToEndId do pagamento: normalmente salvo na sincronização; se faltar, busca na consulta.
   let e2eid = pix.e2eid;
   if (!e2eid) {
-    const consulta = await consultarCobrancaImediata(auth, pix.txid);
+    const consulta = await provider.consultarCobrancaPix(pix.txid);
     e2eid = consulta.e2eid;
     if (e2eid) await prisma.pixCobranca.update({ where: { id: pix.id }, data: { e2eid } });
   }
-  if (!e2eid) throw new PixError("Pagamento sem endToEndId no Sicoob — faça a devolução pelo app do banco.");
+  if (!e2eid) throw new PixError(`Pagamento sem endToEndId no ${bancoLabel(pix.contaBancaria)} — faça a devolução pelo app do banco.`);
 
   const valor = Number(pix.valor);
-  const dev = await devolverPix(auth, { e2eId: e2eid, idDevolucao: pix.id, valor });
+  const dev = await provider.devolverPix(e2eid, pix.id, valor);
 
   await prisma.pixCobranca.update({
     where: { id: pix.id },

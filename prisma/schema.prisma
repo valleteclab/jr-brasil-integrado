@@ -2485,6 +2485,22 @@ model ContaBancaria {
   contasReceber   ContaReceber[]
   formasPagamento FormaPagamento[]
   antecipacoes    AntecipacaoRecebivel[]
+  // ── Banco integrado para cobrança/Pix/extrato ──
+  // Discriminador do provedor bancário desta conta (distinto de `banco`, que é o nome descritivo).
+  // SICOOB (default) usa os campos sicoob* abaixo; SICREDI e ITAU usam os campos genéricos banco*.
+  bancoIntegrado        String   @default("SICOOB")
+  // Credenciais genéricas dos demais bancos (Sicredi/Itaú). Segredos são guardados criptografados
+  // (encryptSecret): bancoClientSecret, bancoApiKey e bancoAcesso. O mTLS reaproveita o A1 da empresa.
+  bancoClientId         String?  // client_id (Sicredi Pix / Itaú)
+  bancoClientSecret     String?  // client_secret criptografado (Sicredi Pix / Itaú)
+  bancoApiKey           String?  // x-api-key criptografado (Sicredi Cobrança — token do portal dev)
+  bancoAcesso           String?  // código de acesso/senha criptografado (Sicredi Cobrança — OAuth password)
+  bancoBeneficiario     String?  // código do beneficiário (Sicredi) / id_beneficiario (Itaú)
+  bancoCooperativa      String?  // cooperativa (Sicredi) / agência (Itaú)
+  bancoPosto            String?  // posto da cooperativa (Sicredi)
+  bancoConta            String?  // conta corrente (Itaú)
+  bancoConvenio         String?  // carteira/convênio (Itaú)
+  bancoSandbox          Boolean  @default(false)
   // ── Cobrança Sicoob (emissão de boleto pela API oficial) ──
   // Credenciamento por conta: client_id (obtido no Sicoob Desenvolvedores), número do cliente
   // (código do beneficiário/cooperado) e conta corrente de cobrança. O mTLS de produção usa o

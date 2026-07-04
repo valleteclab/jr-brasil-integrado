@@ -4,16 +4,9 @@ import { scopedByTenantCompany, scopedByTenantCompanyAmbiente } from "@/lib/auth
 import { createAuditLog } from "@/lib/audit/audit-service";
 import { carregarCertificado } from "@/domains/fiscal/application/certificado-use-cases";
 import { encryptSecret, decryptSecret } from "@/lib/security/secret-crypto";
-import {
-  incluirBoleto,
-  consultarBoleto as consultarBoletoSicoob,
-  baixarBoleto as baixarBoletoSicoob,
-  prorrogarVencimentoBoleto,
-  cadastrarWebhookCobranca,
-  consultarWebhooksCobranca,
-  SicoobError,
-  type SicoobAuth
-} from "@/domains/finance/providers/sicoob-cobranca";
+import { type SicoobAuth } from "@/domains/finance/providers/sicoob-cobranca";
+import { getBankProvider, contaTemBoleto } from "@/domains/finance/providers/bank-registry";
+import { BankError } from "@/domains/finance/providers/bank-provider";
 import { randomBytes } from "node:crypto";
 import { settleReceivable } from "@/domains/finance/application/finance-use-cases";
 import { classificacaoReceitaPadraoId } from "@/domains/finance/application/classificacao-use-cases";
@@ -68,13 +61,17 @@ export async function configurarSicoob(
 
 export type ContaCobranca = NonNullable<Awaited<ReturnType<typeof prisma.contaBancaria.findFirst>>>;
 
+/** A conta tem cobrança (boleto) do seu banco configurada? (multibanco — delega ao registry). */
 export function contaTemCobranca(conta: ContaCobranca): boolean {
-  return Boolean(conta.sicoobNumeroCliente && (conta.sicoobSandbox ? conta.sicoobSandboxToken : conta.sicoobClientId));
+  return contaTemBoleto(conta);
 }
 
-/** Auth Sicoob da conta (compartilhada por cobrança, Pix e conta-corrente — mesmo credenciamento). */
+/**
+ * Auth SICOOB da conta (usada só por diagnósticos Sicoob — a rota /api/cron/sicoob-teste). O fluxo
+ * de cobrança/Pix/extrato usa `getBankProvider` (multibanco). Guard específico dos campos sicoob*.
+ */
 export async function authDaConta(scope: TenantScope, conta: ContaCobranca): Promise<SicoobAuth> {
-  if (!contaTemCobranca(conta)) {
+  if (!(conta.sicoobNumeroCliente && (conta.sicoobSandbox ? conta.sicoobSandboxToken : conta.sicoobClientId))) {
     throw new BoletoError(
       `A conta "${conta.nome}" não está configurada para cobrança Sicoob (client_id/nº do beneficiário em Configurações → Contas financeiras).`
     );
@@ -130,15 +127,12 @@ export async function listConfigCobranca(scope: TenantScope): Promise<ConfigCobr
   }));
 }
 
-/** Contas bancárias com cobrança Sicoob habilitada (para a UI decidir se mostra "Gerar boleto"). */
+/** Contas bancárias com cobrança (boleto) habilitada — qualquer banco (para a UI mostrar "Gerar boleto"). */
 export async function listContasComCobranca(scope: TenantScope): Promise<Array<{ id: string; nome: string }>> {
   const contas = await prisma.contaBancaria.findMany({
-    where: { ...scopedByTenantCompany(scope), ativo: true, sicoobNumeroCliente: { not: null } },
-    select: { id: true, nome: true, sicoobSandbox: true, sicoobSandboxToken: true, sicoobClientId: true, sicoobNumeroCliente: true }
+    where: { ...scopedByTenantCompany(scope), ativo: true }
   });
-  return contas
-    .filter((c) => Boolean(c.sicoobSandbox ? c.sicoobSandboxToken : c.sicoobClientId))
-    .map((c) => ({ id: c.id, nome: c.nome }));
+  return contas.filter((c) => contaTemBoleto(c)).map((c) => ({ id: c.id, nome: c.nome }));
 }
 
 const DATE_ISO = (d: Date) => d.toISOString().slice(0, 10);
@@ -166,7 +160,7 @@ export async function gerarBoletoParaRecebivel(
 
   const conta = await prisma.contaBancaria.findFirst({ where: { id: input.contaBancariaId, ...scopedByTenantCompany(scope), ativo: true } });
   if (!conta) throw new BoletoError("Conta bancária não encontrada.");
-  const auth = await authDaConta(scope, conta);
+  const provider = await getBankProvider(scope, conta);
 
   // Pagador: o registro do boleto exige CPF/CNPJ + endereço completo do cliente.
   const cliente = titulo.cliente;
@@ -204,10 +198,7 @@ export async function gerarBoletoParaRecebivel(
   });
 
   try {
-    const resultado = await incluirBoleto(auth, {
-      numeroCliente: conta.sicoobNumeroCliente as number,
-      codigoModalidade: conta.sicoobModalidade,
-      numeroContaCorrente: conta.sicoobContaCorrente ? Number(onlyDigits(conta.sicoobContaCorrente)) : undefined,
+    const resultado = await provider.incluirBoleto({
       seuNumero,
       valor: saldo,
       dataVencimento: DATE_ISO(vencimento),
@@ -222,7 +213,7 @@ export async function gerarBoletoParaRecebivel(
         uf: end.uf.toUpperCase().slice(0, 2),
         email: cliente.contatos[0]?.email ?? undefined
       },
-      mensagensInstrucao: [`Referente a: ${titulo.descricao}`.slice(0, 80)]
+      mensagens: [`Referente a: ${titulo.descricao}`.slice(0, 80)]
     });
 
     const atualizado = await prisma.boletoCobranca.update({
@@ -250,7 +241,7 @@ export async function gerarBoletoParaRecebivel(
   } catch (error) {
     const message = error instanceof Error ? error.message : "Falha ao registrar o boleto.";
     await prisma.boletoCobranca.update({ where: { id: registro.id }, data: { status: "ERRO", ultimoErro: message } });
-    throw error instanceof SicoobError ? new BoletoError(message) : error;
+    throw error instanceof BankError ? new BoletoError(message) : error;
   }
 }
 
@@ -265,13 +256,9 @@ export async function sincronizarBoleto(scope: TenantScope, contaReceberId: stri
   });
   if (!boleto) throw new BoletoError("Este título não tem boleto emitido.");
   if (!boleto.nossoNumero) throw new BoletoError("Boleto sem nosso número (registro não confirmado).");
-  const auth = await authDaConta(scope, boleto.contaBancaria);
+  const provider = await getBankProvider(scope, boleto.contaBancaria);
 
-  const consulta = await consultarBoletoSicoob(auth, {
-    numeroCliente: boleto.contaBancaria.sicoobNumeroCliente as number,
-    codigoModalidade: boleto.contaBancaria.sicoobModalidade,
-    nossoNumero: boleto.nossoNumero
-  });
+  const consulta = await provider.consultarBoleto(boleto.nossoNumero);
 
   const situacao = (consulta.situacao ?? "").toUpperCase();
   if (situacao.includes("LIQUID")) {
@@ -554,12 +541,8 @@ export async function baixarBoletoNoBanco(scope: TenantScope, contaReceberId: st
   if (!boleto.nossoNumero) throw new BoletoError("Boleto sem nosso número (registro não confirmado).");
   if (boleto.status === "LIQUIDADO") throw new BoletoError("O boleto já foi liquidado no banco — não pode ser baixado.");
   if (boleto.status === "BAIXADO") return boleto;
-  const auth = await authDaConta(scope, boleto.contaBancaria);
-  await baixarBoletoSicoob(auth, {
-    numeroCliente: boleto.contaBancaria.sicoobNumeroCliente as number,
-    codigoModalidade: boleto.contaBancaria.sicoobModalidade,
-    nossoNumero: boleto.nossoNumero
-  });
+  const provider = await getBankProvider(scope, boleto.contaBancaria);
+  await provider.baixarBoleto(boleto.nossoNumero);
   const atualizado = await prisma.boletoCobranca.update({ where: { id: boleto.id }, data: { status: "BAIXADO" } });
   await prisma.$transaction(async (tx) => createAuditLog(tx, {
     scope, usuarioId, entidade: "BoletoCobranca", entidadeId: boleto.id, acao: "BAIXA_BANCO",
@@ -623,13 +606,8 @@ export async function prorrogarBoletoNoBanco(scope: TenantScope, contaReceberId:
   if (novaData <= boleto.vencimento) {
     throw new BoletoError("A prorrogação só pode ADIAR o vencimento (o Sicoob não aceita antecipar). Para outra data, baixe o boleto e emita um novo.");
   }
-  const auth = await authDaConta(scope, boleto.contaBancaria);
-  await prorrogarVencimentoBoleto(auth, {
-    numeroCliente: boleto.contaBancaria.sicoobNumeroCliente as number,
-    codigoModalidade: boleto.contaBancaria.sicoobModalidade,
-    nossoNumero: boleto.nossoNumero,
-    dataVencimento: DATE_ISO(novaData)
-  });
+  const provider = await getBankProvider(scope, boleto.contaBancaria);
+  await provider.prorrogarBoleto(boleto.nossoNumero, DATE_ISO(novaData));
   await prisma.boletoCobranca.update({ where: { id: boleto.id }, data: { vencimento: novaData } });
   await prisma.contaReceber.update({ where: { id: contaReceberId }, data: { vencimento: novaData } });
   await prisma.$transaction(async (tx) => createAuditLog(tx, {
@@ -647,7 +625,7 @@ export async function prorrogarBoletoNoBanco(scope: TenantScope, contaReceberId:
 export async function ativarWebhookCobranca(scope: TenantScope, contaBancariaId: string, usuarioId?: string) {
   const conta = await prisma.contaBancaria.findFirst({ where: { id: contaBancariaId, ...scopedByTenantCompany(scope), ativo: true } });
   if (!conta) throw new BoletoError("Conta bancária não encontrada.");
-  const auth = await authDaConta(scope, conta);
+  const provider = await getBankProvider(scope, conta);
   const baseUrl = (process.env.ERP_BASE ?? process.env.APP_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? "").trim().replace(/\/+$/, "");
   if (!/^https:\/\//.test(baseUrl)) {
     throw new BoletoError("Defina ERP_BASE (https, endereço público do ERP) no ambiente para ativar o webhook — o Sicoob precisa alcançar o servidor.");
@@ -657,7 +635,7 @@ export async function ativarWebhookCobranca(scope: TenantScope, contaBancariaId:
   if (!email) throw new BoletoError("Cadastre o e-mail da empresa (Configurações → Empresa) — o Sicoob exige um e-mail de contato no webhook.");
   const secret = conta.sicoobWebhookSecret ?? randomBytes(24).toString("hex");
   const url = `${baseUrl}/api/webhooks/sicoob/cobranca/${secret}`;
-  const idWebhook = await cadastrarWebhookCobranca(auth, { url, email });
+  const idWebhook = await provider.cadastrarWebhookCobranca(url, email);
   await prisma.contaBancaria.update({ where: { id: conta.id }, data: { sicoobWebhookId: idWebhook, sicoobWebhookSecret: secret } });
   await prisma.$transaction(async (tx) => createAuditLog(tx, {
     scope, usuarioId, entidade: "ContaBancaria", entidadeId: conta.id, acao: "WEBHOOK_COBRANCA", payload: { idWebhook, url }
@@ -670,8 +648,8 @@ export async function statusWebhookCobranca(scope: TenantScope, contaBancariaId:
   const conta = await prisma.contaBancaria.findFirst({ where: { id: contaBancariaId, ...scopedByTenantCompany(scope) } });
   if (!conta) throw new BoletoError("Conta bancária não encontrada.");
   if (!conta.sicoobWebhookId) return { ativo: false, situacao: null as string | null };
-  const auth = await authDaConta(scope, conta);
-  const lista = await consultarWebhooksCobranca(auth);
+  const provider = await getBankProvider(scope, conta);
+  const lista = await provider.consultarWebhooksCobranca();
   const meu = lista.find((w) => w.idWebhook === conta.sicoobWebhookId) ?? null;
   return { ativo: Boolean(meu), situacao: meu?.descricaoSituacao ?? null };
 }

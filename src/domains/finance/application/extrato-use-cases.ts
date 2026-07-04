@@ -1,8 +1,9 @@
 import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import { scopedByTenantCompany } from "@/lib/auth/dev-session";
-import { authDaConta, contaTemCobranca, BoletoError } from "@/domains/finance/application/boleto-use-cases";
-import { consultarSaldo, consultarExtrato, type TransacaoExtrato } from "@/domains/finance/providers/sicoob-conta";
+import { BoletoError } from "@/domains/finance/application/boleto-use-cases";
+import { getBankProvider, contaTemExtrato, bancoLabel } from "@/domains/finance/providers/bank-registry";
+import type { TransacaoExtrato } from "@/domains/finance/providers/bank-provider";
 
 /**
  * CONCILIAÇÃO BANCÁRIA (Sicoob Conta-Corrente v4): compara o extrato real do banco com os
@@ -57,8 +58,8 @@ export async function extratoConciliado(
 ): Promise<ExtratoConciliado> {
   const conta = await prisma.contaBancaria.findFirst({ where: { id: contaBancariaId, ...scopedByTenantCompany(scope), ativo: true } });
   if (!conta) throw new BoletoError("Conta bancária não encontrada.");
-  if (!contaTemCobranca(conta)) {
-    throw new BoletoError(`A conta "${conta.nome}" não tem o credenciamento Sicoob configurado (Configurações → Contas financeiras).`);
+  if (!contaTemExtrato(conta)) {
+    throw new BoletoError(`Extrato/conciliação por API está disponível apenas para contas Sicoob configuradas. O ${bancoLabel(conta)} não expõe extrato por API (use Open Finance/arquivo).`);
   }
   const numeroConta = (conta.sicoobContaCorrente ?? "").replace(/\D+/g, "");
   if (!numeroConta) throw new BoletoError(`Informe o número da conta corrente Sicoob da conta "${conta.nome}" para consultar o extrato.`);
@@ -69,10 +70,10 @@ export async function extratoConciliado(
   const diaInicial = Math.min(ultimoDia, Math.max(1, Math.floor(params.diaInicial ?? 1)));
   const diaFinal = Math.min(ultimoDia, Math.max(diaInicial, Math.floor(params.diaFinal ?? ultimoDia)));
 
-  const auth = await authDaConta(scope, conta);
+  const provider = await getBankProvider(scope, conta);
   const [saldo, extrato] = await Promise.all([
-    consultarSaldo(auth, numeroConta).catch(() => ({ saldo: null, saldoLimite: null, saldoBloqueado: null })),
-    consultarExtrato(auth, { numeroContaCorrente: numeroConta, mes, ano, diaInicial, diaFinal })
+    provider.consultarSaldo(numeroConta).catch(() => ({ saldo: null, saldoLimite: null, saldoBloqueado: null })),
+    provider.consultarExtrato(numeroConta, { mes, ano, diaInicial, diaFinal })
   ]);
 
   // Movimentos do ERP no período (saldo bancário é global — sem filtro de ambiente).
