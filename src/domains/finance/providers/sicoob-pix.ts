@@ -86,6 +86,33 @@ export async function consultarCobrancaImediata(auth: SicoobAuth, txid: string):
   };
 }
 
+export type PixDevolucao = {
+  id: string;
+  status: string | null;
+  bruto: unknown;
+};
+
+/**
+ * DEVOLVE um Pix recebido (total ou parcial) pelo endToEndId do pagamento — padrão BACEN
+ * PUT /pix/{e2eId}/devolucao/{id}. Escopo pix.write é pedido SÓ AQUI: se o credenciamento não o
+ * tiver, apenas a devolução falha (token com escopo inválido derrubaria os demais fluxos Pix).
+ */
+export async function devolverPix(
+  auth: SicoobAuth,
+  params: { e2eId: string; idDevolucao: string; valor: number }
+): Promise<PixDevolucao> {
+  const cfg = { ...PIX, scopes: "pix.read pix.write" };
+  const id = params.idDevolucao.replace(/[^0-9a-zA-Z]/g, "").slice(0, 35) || "1";
+  const res = await sicoobApi(auth, cfg, "PUT", `/pix/${encodeURIComponent(params.e2eId)}/devolucao/${id}`, {
+    valor: params.valor.toFixed(2)
+  });
+  if (res.statusCode < 200 || res.statusCode >= 300) throw new SicoobError(parseErroSicoob(res));
+  let data: unknown = {};
+  try { data = JSON.parse(res.body); } catch { /* vazio */ }
+  const b = (data ?? {}) as Record<string, unknown>;
+  return { id: (b.id as string) ?? id, status: (b.status as string) ?? null, bruto: data };
+}
+
 /** Registra o webhook Pix da chave: o Sicoob chama a URL a cada Pix recebido nessa chave. */
 export async function registrarWebhookPix(auth: SicoobAuth, chave: string, url: string): Promise<void> {
   const res = await sicoobApi(auth, PIX, "PUT", `/webhook/${encodeURIComponent(chave)}`, { webhookUrl: url });

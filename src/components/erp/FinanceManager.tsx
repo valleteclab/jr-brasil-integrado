@@ -676,6 +676,33 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
     }
   }
 
+  async function devolverPix(id: string, descricao: string, valor: string) {
+    if (!window.confirm(
+      `Devolver o Pix de ${valor} recebido em "${descricao}"?\n\n` +
+      "O dinheiro VOLTA AO PAGADOR pela API do Sicoob (cai em segundos) e a baixa é estornada no ERP — o título reabre."
+    )) return;
+    setBusyId(id);
+    setGlobalError("");
+    try {
+      const res = await fetch(`/api/erp/financeiro/contas-receber/${id}/pix/devolver`, { method: "POST" });
+      const data = (await res.json().catch(() => ({}))) as { status?: string; estornado?: boolean; error?: string };
+      if (!res.ok) throw new Error(data.error || "Não foi possível devolver o Pix.");
+      setReceivables((prev) => prev.map((r) => (r.id === id
+        ? {
+            ...r,
+            pixStatus: "DEVOLVIDA",
+            ...(data.estornado
+              ? { statusLabel: "Aberto", statusTone: "info" as const, canSettle: true, valorPago: "R$ 0,00", saldo: r.valor, canEstornar: false }
+              : {})
+          }
+        : r)));
+    } catch (e) {
+      setGlobalError(e instanceof Error ? e.message : "Falha ao devolver o Pix.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function excluirReceber(id: string, descricao: string) {
     if (!window.confirm(`Excluir a conta a receber "${descricao}"? Esta ação não pode ser desfeita.`)) return;
     setBusyId(id);
@@ -975,6 +1002,20 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
                     >
                       {busyId === r.id ? "..." : "Estornar baixa"}
                     </button>
+                  )}
+                  {isAdmin && aba === "receber" && (r as ReceivableSummary).pixStatus === "CONCLUIDA" && (
+                    <button
+                      type="button"
+                      className="btn-erp danger xs"
+                      title="Devolve o Pix ao pagador pela API do Sicoob e estorna a baixa (admin)"
+                      disabled={busyId === r.id}
+                      onClick={() => devolverPix(r.id, r.descricao, r.valor)}
+                    >
+                      {busyId === r.id ? "..." : "↩ Devolver Pix"}
+                    </button>
+                  )}
+                  {aba === "receber" && (r as ReceivableSummary).pixStatus === "DEVOLVIDA" && (
+                    <span className="status-badge mute" style={{ fontSize: 11 }}>Pix devolvido</span>
                   )}
                   {isAdmin && aba === "pagar" && (r as PayableSummary).canDelete && (
                     <button

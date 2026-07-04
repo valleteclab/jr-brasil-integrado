@@ -50,6 +50,8 @@ export type ReceivableSummary = {
   /** Boleto Sicoob deste título (null = sem boleto). */
   boletoStatus?: string | null;
   boletoLinhaDigitavel?: string | null;
+  /** Cobrança Pix deste título (ATIVA/CONCLUIDA/DEVOLVIDA...; null = sem Pix). */
+  pixStatus?: string | null;
   canSettle: boolean;
   /** Pode ser excluída (admin): sem recebimento, sem antecipação e sem boleto ativo no banco. */
   canDelete?: boolean;
@@ -271,7 +273,8 @@ export async function listReceivables(filtroStatus?: string): Promise<Receivable
     include: {
       cliente: { select: { razaoSocial: true, nomeFantasia: true } },
       classificacao: { select: { id: true, nome: true } },
-      boleto: { select: { status: true, linhaDigitavel: true } }
+      boleto: { select: { status: true, linhaDigitavel: true } },
+      pixCobranca: { select: { status: true } }
     },
     orderBy: [{ vencimento: "asc" }, { criadoEm: "desc" }]
   });
@@ -307,6 +310,7 @@ export async function listReceivables(filtroStatus?: string): Promise<Receivable
       classificacaoNome: c.classificacao?.nome ?? null,
       boletoStatus: c.boleto?.status ?? null,
       boletoLinhaDigitavel: c.boleto?.linhaDigitavel ?? null,
+      pixStatus: c.pixCobranca?.status ?? null,
       canSettle,
       // Excluir (admin): sem recebimento, sem antecipação e sem boleto ATIVO no banco
       // (EMITIDO/REGISTRADO/LIQUIDADO exigem cancelar/estornar antes).

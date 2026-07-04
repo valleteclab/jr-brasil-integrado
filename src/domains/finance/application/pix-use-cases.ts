@@ -4,8 +4,8 @@ import type { TenantScope } from "@/lib/auth/dev-session";
 import { scopedByTenantCompany } from "@/lib/auth/dev-session";
 import { createAuditLog } from "@/lib/audit/audit-service";
 import { authDaConta, contaTemCobranca } from "@/domains/finance/application/boleto-use-cases";
-import { settleReceivable } from "@/domains/finance/application/finance-use-cases";
-import { criarCobrancaImediata, consultarCobrancaImediata, gerarTxid } from "@/domains/finance/providers/sicoob-pix";
+import { estornarBaixaReceivable, settleReceivable } from "@/domains/finance/application/finance-use-cases";
+import { criarCobrancaImediata, consultarCobrancaImediata, devolverPix, gerarTxid } from "@/domains/finance/providers/sicoob-pix";
 
 /**
  * PIX RECEBIMENTOS (Sicoob): cobrança dinâmica com QR Code. Dois usos:
@@ -187,6 +187,59 @@ export async function sincronizarPix(scope: TenantScope, pixCobrancaId: string) 
   }
   await prisma.pixCobranca.update({ where: { id: pix.id }, data: { payload: consulta.bruto as object } });
   return { status: status || "ATIVA", pago: false, baixado: false };
+}
+
+/**
+ * DEVOLVE o Pix recebido de um título (valor TOTAL, pelo endToEndId do pagamento) E estorna a
+ * baixa no ERP — as duas pontas de uma vez: o dinheiro volta ao pagador no banco (padrão BACEN,
+ * cai em segundos) e o título reabre com o saldo da conta ajustado. Exige pix.write no
+ * credenciamento do app Sicoob.
+ */
+export async function devolverPixDoTitulo(scope: TenantScope, contaReceberId: string, usuarioId?: string) {
+  const pix = await prisma.pixCobranca.findFirst({
+    where: { contaReceberId, tenantId: scope.tenantId, empresaId: scope.empresaId },
+    include: { contaBancaria: true }
+  });
+  if (!pix) throw new PixError("Este título não tem cobrança Pix.");
+  if (pix.status === "DEVOLVIDA") return { status: "DEVOLVIDA", estornado: false, jaDevolvido: true };
+  if (pix.status !== "CONCLUIDA") throw new PixError(`A cobrança Pix não está paga (${pix.status}) — nada a devolver.`);
+
+  const auth = await authDaConta(scope, pix.contaBancaria);
+
+  // endToEndId do pagamento: normalmente salvo na sincronização; se faltar, busca na consulta.
+  let e2eid = pix.e2eid;
+  if (!e2eid) {
+    const consulta = await consultarCobrancaImediata(auth, pix.txid);
+    e2eid = consulta.e2eid;
+    if (e2eid) await prisma.pixCobranca.update({ where: { id: pix.id }, data: { e2eid } });
+  }
+  if (!e2eid) throw new PixError("Pagamento sem endToEndId no Sicoob — faça a devolução pelo app do banco.");
+
+  const valor = Number(pix.valor);
+  const dev = await devolverPix(auth, { e2eId: e2eid, idDevolucao: pix.id, valor });
+
+  await prisma.pixCobranca.update({
+    where: { id: pix.id },
+    data: { status: "DEVOLVIDA", payload: dev.bruto as object }
+  });
+
+  // Estorna a baixa no ERP (título reabre; movimento inverso ajusta o saldo da conta).
+  let estornado = false;
+  const titulo = await prisma.contaReceber.findFirst({
+    where: { id: contaReceberId, ...scopedByTenantCompany(scope) },
+    select: { status: true, valorPago: true }
+  });
+  if (titulo && Number(titulo.valorPago) > 0 && ["PAGO", "PARCIAL"].includes(titulo.status)) {
+    await estornarBaixaReceivable(scope, contaReceberId);
+    estornado = true;
+  }
+
+  await prisma.$transaction(async (tx) => createAuditLog(tx, {
+    scope, usuarioId, entidade: "PixCobranca", entidadeId: pix.id, acao: "PIX_DEVOLVIDO",
+    payload: { contaReceberId, e2eid, valor, statusDevolucao: dev.status, estornado }
+  }));
+
+  return { status: dev.status ?? "EM_PROCESSAMENTO", estornado, jaDevolvido: false };
 }
 
 /**
