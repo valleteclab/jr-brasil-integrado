@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import type { CSSProperties, ReactNode } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import type { ErpShellBadges, ErpShellContext } from "@/lib/services/erp-shell";
 import { moduloFromPath, moduloVisivelNoTipoNegocio } from "@/lib/auth/modules";
 import { HREF_FLAG, TIPO_VENDA_FLAG } from "@/lib/auth/feature-flags";
@@ -123,6 +123,9 @@ export function ErpShell({ children, context, modulos }: ErpShellProps) {
   const pathname = usePathname();
   const router = useRouter();
   const producao = context.ambiente === "PRODUCAO";
+  // Menu lateral vira drawer no celular (≤900px). Fecha ao navegar.
+  const [menuAberto, setMenuAberto] = useState(false);
+  useEffect(() => { setMenuAberto(false); }, [pathname]);
 
   // "Novo atendimento" só aparece se houver ao menos um tipo de venda liberado pelo dono do SaaS.
   const algumTipoVenda = Object.values(TIPO_VENDA_FLAG).some((flag) => context.features[flag]);
@@ -161,7 +164,8 @@ export function ErpShell({ children, context, modulos }: ErpShellProps) {
 
   return (
     <div className="erp-app" style={temaVars}>
-      <aside className="erp-side">
+      {menuAberto && <div className="erp-side-bd" onClick={() => setMenuAberto(false)} aria-hidden="true" />}
+      <aside className={`erp-side${menuAberto ? " erp-side--open" : ""}`}>
         <div className="erp-side-head">
           {context.logoSistema ? (
             // Fundo claro atrás da logo: garante legibilidade de logos com cores escuras sobre a
@@ -216,6 +220,7 @@ export function ErpShell({ children, context, modulos }: ErpShellProps) {
 
       <div className="erp-main">
         <header className="erp-top">
+          <button type="button" className="erp-menu-btn" onClick={() => setMenuAberto((v) => !v)} aria-label="Abrir menu">☰</button>
           <div className="erp-top-search">
             <span className="ic-sr" aria-hidden="true">⌕</span>
             <input placeholder="Buscar pedido, NF, cliente, produto, código… (⌘ K)" />

@@ -2310,6 +2310,24 @@ label.checkbox input {
 .erp-app { display: grid; grid-template-columns: var(--erp-side-w, 232px) 1fr; min-height: 100vh; }
 
 .erp-side { background: var(--erp-side); color: #cbd5e1; display: flex; flex-direction: column; position: sticky; top: 0; height: 100vh; overflow: hidden; }
+/* Botão de menu (hambúrguer) — só aparece no mobile. */
+.erp-menu-btn { display: none; align-items: center; justify-content: center; width: 40px; height: 40px; margin-right: 4px; border: 1px solid var(--erp-line); border-radius: 8px; background: #fff; font-size: 20px; cursor: pointer; flex: 0 0 auto; }
+.erp-side-bd { display: none; }
+
+/* ── ERP no celular: barra lateral vira drawer (off-canvas) ── */
+@media (max-width: 900px) {
+  .erp-app { grid-template-columns: 1fr; }
+  .erp-side {
+    position: fixed; top: 0; left: 0; bottom: 0; z-index: 60; width: 264px; max-width: 84vw;
+    transform: translateX(-100%); transition: transform .22s ease; box-shadow: 0 0 44px rgba(0,0,0,.5);
+  }
+  .erp-side--open { transform: translateX(0); }
+  .erp-side-bd { display: block; position: fixed; inset: 0; z-index: 55; background: rgba(0,0,0,.5); }
+  .erp-menu-btn { display: inline-flex; }
+  .erp-top { position: sticky; top: 0; z-index: 40; }
+  .erp-top-search { display: none; }
+  .erp-page { padding: 14px; }
+}
 .erp-side-head { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid rgba(255,255,255,.06); }
 .erp-side-head .mark { width: 32px; height: 32px; border-radius: 6px; background: var(--erp-yellow); color: var(--erp-ink); display: grid; place-items: center; font-family: "Barlow Condensed", sans-serif; font-weight: 800; font-size: 14px; letter-spacing: .5px; }
 .erp-side-head b { font-family: "Barlow Condensed", sans-serif; color: #fff; font-size: 16px; line-height: 1; letter-spacing: .4px; display: block; }
