@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import { scopedByTenantCompany, scopedByTenantCompanyAmbiente } from "@/lib/auth/dev-session";
@@ -147,6 +148,8 @@ export type AddPecaInput = {
   produtoId: string;
   quantidade: number;
   precoUnitario: number;
+  /** Peça a COMPRAR (não há em estoque): registra como aguardando chegada, sem reservar. */
+  aguardandoCompra?: boolean;
 };
 
 export async function addPeca(scope: TenantScope, osId: string, input: AddPecaInput) {
@@ -163,6 +166,7 @@ export async function addPeca(scope: TenantScope, osId: string, input: AddPecaIn
       throw new Error("Não é possível adicionar peças a uma OS faturada ou cancelada.");
     }
 
+    const aguardandoCompra = input.aguardandoCompra === true;
     const total = input.quantidade * Number(input.precoUnitario);
     const peca = await tx.ordemServicoPeca.create({
       data: {
@@ -172,21 +176,25 @@ export async function addPeca(scope: TenantScope, osId: string, input: AddPecaIn
         quantidade: input.quantidade,
         precoUnitario: input.precoUnitario,
         total,
+        aguardandoCompra,
       },
     });
 
-    // Reserva a peça no estoque (1 reserva por peça): dá visibilidade do comprometido e
-    // impede duas OS de contarem com a mesma peça. A baixa física só ocorre no faturamento.
-    const deposito = os.depositoId
-      ? { id: os.depositoId }
-      : await getDefaultDeposito(tx, scope);
-    await reserveStock(tx, scope, {
-      produtoId: input.produtoId,
-      depositoId: deposito.id,
-      quantidade: input.quantidade,
-      origemTipo: "ORDEM_SERVICO_PECA",
-      origemId: peca.id,
-    });
+    // Peça EM ESTOQUE: reserva (1 reserva por peça) — visibilidade do comprometido e trava contra
+    // duas OS contarem com a mesma peça; a baixa física só ocorre no faturamento. Peça A COMPRAR
+    // não reserva (não há saldo) — fica aguardando a nota de entrada chegar.
+    if (!aguardandoCompra) {
+      const deposito = os.depositoId
+        ? { id: os.depositoId }
+        : await getDefaultDeposito(tx, scope);
+      await reserveStock(tx, scope, {
+        produtoId: input.produtoId,
+        depositoId: deposito.id,
+        quantidade: input.quantidade,
+        origemTipo: "ORDEM_SERVICO_PECA",
+        origemId: peca.id,
+      });
+    }
 
     // Recalcular totais
     const totalServicos = Number(os.totalServicos);
@@ -770,4 +778,66 @@ export async function reemitirNotaOrdemServico(scope: TenantScope, osId: string,
 
   const nota = await emitFiscalDocument(scope, doc, { clienteId: os.clienteId, ordemServicoId: osId, retryNotaId: falhada?.id ?? null });
   return { notaId: nota.id, status: nota.status, modelo: modeloAlvo };
+}
+
+/**
+ * PEÇAS A COMPRAR: peças de OS abertas marcadas como "aguardando compra" e ainda não chegadas.
+ * É a fila de compras da oficina — o comprador vê o que precisa pedir e para qual OS.
+ */
+export async function listPecasAguardandoCompra(scope: TenantScope) {
+  const pecas = await prisma.ordemServicoPeca.findMany({
+    where: {
+      ...scopedByTenantCompany(scope),
+      aguardandoCompra: true,
+      chegouEm: null,
+      ordemServico: { status: { in: ["ABERTA", "EM_ANDAMENTO", "AGUARDANDO_PECAS"] } }
+    },
+    include: {
+      produto: { select: { sku: true, nome: true } },
+      ordemServico: { select: { id: true, numero: true, equipamento: true, cliente: { select: { razaoSocial: true, nomeFantasia: true } } } }
+    },
+    orderBy: { ordemServico: { criadoEm: "asc" } }
+  });
+  return pecas.map((p) => ({
+    id: p.id,
+    osId: p.ordemServico.id,
+    osNumero: p.ordemServico.numero,
+    equipamento: p.ordemServico.equipamento,
+    cliente: p.ordemServico.cliente.nomeFantasia || p.ordemServico.cliente.razaoSocial,
+    produtoId: p.produtoId,
+    sku: p.produto.sku,
+    nome: p.produto.nome,
+    quantidade: Number(p.quantidade)
+  }));
+}
+
+/**
+ * NOTIFICA a chegada de peças: chamado quando uma ENTRADA FISCAL credita estoque dos produtos.
+ * Marca `chegouEm` nas peças de OS que aguardavam esses produtos e devolve as OS afetadas (para
+ * o chamador publicar o realtime da oficina fora da transação). Idempotente (só as ainda não
+ * chegadas). Recebe o `tx` da própria transação da entrada fiscal.
+ */
+export async function notificarChegadaPecas(
+  tx: Prisma.TransactionClient,
+  scope: TenantScope,
+  produtoIds: string[]
+): Promise<string[]> {
+  const ids = Array.from(new Set(produtoIds.filter(Boolean)));
+  if (!ids.length) return [];
+  const pendentes = await tx.ordemServicoPeca.findMany({
+    where: {
+      ...scopedByTenantCompany(scope),
+      produtoId: { in: ids },
+      aguardandoCompra: true,
+      chegouEm: null,
+      ordemServico: { status: { in: ["ABERTA", "EM_ANDAMENTO", "AGUARDANDO_PECAS"] } }
+    },
+    select: { id: true, ordemServicoId: true }
+  });
+  if (!pendentes.length) return [];
+  await tx.ordemServicoPeca.updateMany({
+    where: { id: { in: pendentes.map((p) => p.id) } },
+    data: { chegouEm: new Date() }
+  });
+  return Array.from(new Set(pendentes.map((p) => p.ordemServicoId)));
 }

@@ -53,6 +53,8 @@ export type OrdemServicoDetail = OrdemServicoSummary & {
     quantidade: number;
     precoUnitario: string;
     total: string;
+    aguardandoCompra: boolean;
+    chegou: boolean;
   }>;
   apontamentos: Array<{
     id: string;
@@ -208,6 +210,8 @@ export async function getOrdemServicoDetail(id: string): Promise<OrdemServicoDet
         quantidade: Number(p.quantidade),
         precoUnitario: formatBrl(Number(p.precoUnitario)),
         total: formatBrl(Number(p.total)),
+        aguardandoCompra: p.aguardandoCompra,
+        chegou: p.chegouEm != null,
       })),
       apontamentos: os.apontamentos.map((a) => ({
         id: a.id,

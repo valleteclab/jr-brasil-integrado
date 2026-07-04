@@ -4,6 +4,8 @@ import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import { scopedByTenantCompany, scopedByTenantCompanyAmbiente } from "@/lib/auth/dev-session";
 import { createAuditLog } from "@/lib/audit/audit-service";
+import { publishRealtime } from "@/lib/realtime/broker";
+import { notificarChegadaPecas } from "@/domains/service-order/application/service-order-use-cases";
 import { parseNfeXml } from "@/domains/products/xml/nfe-server-parser";
 import type { ParsedNfeItem } from "@/domains/products/xml/nfe-server-parser";
 import { callOpenRouter } from "@/domains/ai/openrouter-service";
@@ -860,7 +862,7 @@ export async function processFiscalEntry(
     itensParaCategorizar.map((i) => ({ id: i.id, descricao: i.descricaoFornecedor }))
   ).catch(() => ({} as Record<string, string>));
 
-  return prisma.$transaction(async (tx) => {
+  const resultado = await prisma.$transaction(async (tx) => {
     const entrada = await tx.entradaFiscal.findFirst({
       where: {
         tenantId: scope.tenantId,
@@ -984,6 +986,10 @@ export async function processFiscalEntry(
     // Gerador de SKUs internos (PRD-NNNNNN) para os produtos novos desta nota — criado sob demanda,
     // com UMA varredura do maior número já usado (mesmo com vários itens novos na mesma transação).
     let proximoSkuAutomatico: (() => Promise<string>) | null = null;
+
+    // Produtos que tiveram estoque CREDITADO nesta entrada — usados para avisar OS que aguardavam
+    // a chegada dessas peças (fluxo "peça chega na loja").
+    const produtosCreditados = new Set<string>();
 
     for (const item of entrada.itens) {
       const movimentaEstoque = item.movimentaEstoque;
@@ -1269,7 +1275,11 @@ export async function processFiscalEntry(
           observacoes: `Entrada fiscal NF-e ${entrada.numero || entrada.chaveAcesso || entrada.id}.`
         }
       });
+      produtosCreditados.add(produtoId);
     }
+
+    // "Peça chega na loja": marca como chegada as peças de OS que aguardavam esses produtos.
+    const osComPecaChegando = await notificarChegadaPecas(tx, scope, [...produtosCreditados]);
 
     // Classificação financeira sugerida (finalidade predominante dos itens → plano; senão memória
     // do fornecedor) — alimenta o fechamento mensal sem exigir classificação manual conta a conta.
@@ -1392,8 +1402,12 @@ export async function processFiscalEntry(
       payload: { created, updated, itens: entrada.itens.length, contasPagar: parcelas.length }
     });
 
-    return { id: entrada.id, created, updated, contasPagar: parcelas.length };
+    return { id: entrada.id, created, updated, contasPagar: parcelas.length, osComPecaChegando };
   }, FISCAL_BATCH_TRANSACTION_OPTIONS);
+
+  // Fora da transação: avisa o painel da oficina que peças aguardadas chegaram (best-effort).
+  if (resultado.osComPecaChegando.length) publishRealtime(scope, "oficina");
+  return resultado;
 }
 
 export async function getFiscalEntryDraft(scope: TenantScope, entradaFiscalId: string) {

@@ -6,6 +6,8 @@ import { listOrdensServico } from "@/lib/services/service-order";
 import type { OrdemServicoSummary } from "@/lib/services/service-order";
 import { ModuloBloqueado } from "@/components/erp/ModuloBloqueado";
 import { moduloLiberadoNoScope } from "@/lib/auth/tenant-features";
+import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
+import { listPecasAguardandoCompra } from "@/domains/service-order/application/service-order-use-cases";
 
 export const dynamic = "force-dynamic";
 
@@ -13,10 +15,12 @@ export default async function OrdensServicoPage() {
   if (!(await moduloLiberadoNoScope("ordemServicoHabilitada"))) return <ModuloBloqueado titulo="Ordens de Serviço indisponível" />;
 
   let oss: OrdemServicoSummary[] = [];
+  let pecasAComprar: Awaited<ReturnType<typeof listPecasAguardandoCompra>> = [];
   let loadError = "";
 
   try {
-    oss = await listOrdensServico();
+    const scope = await getDevelopmentTenantScope();
+    [oss, pecasAComprar] = await Promise.all([listOrdensServico(), listPecasAguardandoCompra(scope)]);
   } catch (error) {
     loadError = error instanceof Error ? error.message : "Não foi possível carregar ordens de serviço.";
   }
@@ -59,6 +63,28 @@ export default async function OrdensServicoPage() {
         <KpiCard label="Aguardando faturar" value={String(finalizadas)} />
         <KpiCard label="Faturadas" value={String(faturadas)} />
       </div>
+
+      {pecasAComprar.length > 0 && (
+        <section className="erp-card" style={{ marginBottom: 16, borderLeft: "3px solid var(--erp-warn, #f59e0b)" }}>
+          <div className="erp-card-head"><h3>🛒 Peças a comprar ({pecasAComprar.length})</h3></div>
+          <div className="erp-table-wrap">
+            <table className="erp-table">
+              <thead><tr><th>Peça</th><th className="num">Qtd.</th><th>OS</th><th>Cliente / equipamento</th></tr></thead>
+              <tbody>
+                {pecasAComprar.map((p) => (
+                  <tr key={p.id}>
+                    <td><strong>{p.nome}</strong><span className="sublabel">{p.sku}</span></td>
+                    <td className="num">{p.quantidade}</td>
+                    <td><a href={`/erp/os/${p.osId}`}>OS {p.osNumero}</a></td>
+                    <td>{p.cliente}<span className="sublabel">{p.equipamento}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="erp-card-body"><small style={{ color: "var(--erp-slate, #64748b)" }}>Quando a nota de entrada dessas peças chegar (importada em Notas de Entrada), a OS é avisada automaticamente e a peça sai desta lista.</small></div>
+        </section>
+      )}
 
       <OrdensServicoList oss={oss} />
     </>

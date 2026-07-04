@@ -1391,8 +1391,13 @@ model OrdemServicoPeca {
   quantidade     Decimal      @db.Decimal(14, 4)
   precoUnitario  Decimal      @db.Decimal(14, 2)
   total          Decimal      @db.Decimal(14, 2)
+  /// Peça a COMPRAR (não estava em estoque): fica esperando a nota de entrada chegar.
+  aguardandoCompra Boolean    @default(false)
+  /// Preenchido quando a peça chega (entrada fiscal do produto credita estoque) — avisa a oficina.
+  chegouEm       DateTime?
 
   @@index([tenantId, empresaId])
+  @@index([tenantId, empresaId, produtoId, aguardandoCompra])
 }
 
 model Fornecedor {

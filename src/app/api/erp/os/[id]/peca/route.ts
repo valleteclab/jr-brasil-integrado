@@ -24,6 +24,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
       produtoId: body.produtoId,
       quantidade: Number(body.quantidade),
       precoUnitario: Number(body.precoUnitario),
+      aguardandoCompra: body.aguardandoCompra === true,
     });
     return NextResponse.json({ id: peca.id });
   } catch (error) {

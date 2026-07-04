@@ -59,6 +59,7 @@ export function OrdemServicoDetail({ os: initialOs, formData, tecnicos, meuTecni
   const [produtoId, setProdutoId] = useState("");
   const [quantidadePeca, setQuantidadePeca] = useState(1);
   const [precoPeca, setPrecoPeca] = useState(0);
+  const [pecaAComprar, setPecaAComprar] = useState(false);
 
   // Faturamento
   const [emitirNfse, setEmitirNfse] = useState(false);
@@ -165,13 +166,14 @@ export function OrdemServicoDetail({ os: initialOs, formData, tecnicos, meuTecni
       const res = await fetch(`/api/erp/os/${os.id}/peca`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ produtoId, quantidade: quantidadePeca, precoUnitario: preco }),
+        body: JSON.stringify({ produtoId, quantidade: quantidadePeca, precoUnitario: preco, aguardandoCompra: pecaAComprar }),
       });
       const data = (await res.json()) as { error?: string };
       if (!res.ok) throw new Error(data.error ?? "Erro ao adicionar peça.");
       setProdutoId("");
       setQuantidadePeca(1);
       setPrecoPeca(0);
+      setPecaAComprar(false);
       refreshOs();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao adicionar peça.");
@@ -582,6 +584,7 @@ export function OrdemServicoDetail({ os: initialOs, formData, tecnicos, meuTecni
             <thead>
               <tr>
                 <th>Produto</th>
+                <th>Situação</th>
                 <th className="num">Qtd.</th>
                 <th className="num">Preço unit.</th>
                 <th className="num">Total</th>
@@ -594,6 +597,13 @@ export function OrdemServicoDetail({ os: initialOs, formData, tecnicos, meuTecni
                   <td>
                     <strong>{p.produtoNome}</strong>
                     <span className="sublabel">{p.produtoSku}</span>
+                  </td>
+                  <td>
+                    {!p.aguardandoCompra
+                      ? <span className="pill success" style={{ fontSize: 11 }}><span className="dot" />Em estoque</span>
+                      : p.chegou
+                        ? <span className="pill success" style={{ fontSize: 11 }}><span className="dot" />✓ Chegou</span>
+                        : <span className="pill warn" style={{ fontSize: 11 }}><span className="dot" />A comprar</span>}
                   </td>
                   <td className="num">{p.quantidade}</td>
                   <td className="num">{p.precoUnitario}</td>
@@ -616,7 +626,7 @@ export function OrdemServicoDetail({ os: initialOs, formData, tecnicos, meuTecni
               ))}
               {os.pecas.length === 0 && (
                 <tr>
-                  <td colSpan={editavel ? 5 : 4}>
+                  <td colSpan={editavel ? 6 : 5}>
                     <div className="empty-st">
                       <h4>Sem peças</h4>
                       <p>Nenhuma peça adicionada.</p>
@@ -671,6 +681,10 @@ export function OrdemServicoDetail({ os: initialOs, formData, tecnicos, meuTecni
                   onChange={(e) => setPrecoPeca(Number(e.target.value))}
                   required
                 />
+              </label>
+              <label className="check-row full" style={{ marginTop: 4 }}>
+                <input type="checkbox" checked={pecaAComprar} onChange={(e) => setPecaAComprar(e.target.checked)} />
+                Peça a comprar (não tem em estoque) — fica <strong style={{ margin: "0 4px" }}>aguardando chegar</strong> e o sistema avisa quando a nota de entrada dela chegar.
               </label>
             </div>
             <div className="erp-toolbar">
