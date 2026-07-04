@@ -6,10 +6,17 @@ import { abrirCaixa, CaixaError } from "@/domains/cashier/application/cashier-us
 
 export async function POST(request: Request) {
   try {
-    await requireModulo("caixa");
+    // O operador é SEMPRE o usuário logado (nome + id da sessão) — o cliente não envia o nome,
+    // evitando abrir o caixa em nome de outra pessoa.
+    const user = await requireModulo("caixa");
     const scope = await getDevelopmentTenantScope();
-    const body = (await request.json()) as { operador?: string; saldoInicial?: number; observacao?: string };
-    const caixa = await abrirCaixa(scope, { operador: body.operador ?? "", saldoInicial: body.saldoInicial, observacao: body.observacao });
+    const body = (await request.json()) as { saldoInicial?: number; observacao?: string };
+    const caixa = await abrirCaixa(scope, {
+      operador: user.nome,
+      operadorUsuarioId: user.usuarioId,
+      saldoInicial: body.saldoInicial,
+      observacao: body.observacao
+    });
     return NextResponse.json({ id: caixa.id, status: caixa.status });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro ao abrir o caixa.";

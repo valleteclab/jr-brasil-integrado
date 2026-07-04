@@ -103,29 +103,28 @@ const CREDIARIO_OPCAO = { value: "CREDIARIO", label: "Crediário (a prazo)" };
 const brl = (v: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
 const round2 = (v: number) => Math.round((v + Number.EPSILON) * 100) / 100;
 
-export function PdvWorkspace({ data, caixaAberto }: { data: PdvData; caixaAberto: CaixaAberto | null }) {
-  if (!caixaAberto) return <AbrirCaixa />;
+export function PdvWorkspace({ data, caixaAberto, usuarioNome }: { data: PdvData; caixaAberto: CaixaAberto | null; usuarioNome: string }) {
+  if (!caixaAberto) return <AbrirCaixa usuarioNome={usuarioNome} />;
   return <Pdv data={data} caixa={caixaAberto} />;
 }
 
 // ─── Abertura de caixa (turno obrigatório) ──────────────────────────────────────
 
-function AbrirCaixa() {
+function AbrirCaixa({ usuarioNome }: { usuarioNome: string }) {
   const router = useRouter();
-  const [operador, setOperador] = useState("");
   const [fundo, setFundo] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   async function abrir() {
-    if (!operador.trim()) { setError("Informe o operador."); return; }
+    // O operador é o usuário logado (definido no servidor) — não se digita mais o nome.
     setLoading(true);
     setError("");
     try {
       const res = await fetch("/api/erp/caixa/abrir", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ operador: operador.trim(), saldoInicial: Number(fundo.replace(",", ".")) || 0 })
+        body: JSON.stringify({ saldoInicial: Number(fundo.replace(",", ".")) || 0 })
       });
       const d = await res.json() as { error?: string };
       if (!res.ok) throw new Error(d.error || "Não foi possível abrir o caixa.");
@@ -142,10 +141,10 @@ function AbrirCaixa() {
       <div className="pdv-abrir">
         <div className="pdv-abrir-card">
           <h2>Abrir caixa</h2>
-          <p className="block-muted">O PDV opera com turno de caixa. Informe o operador e o fundo de troco para começar.</p>
+          <p className="block-muted">O PDV opera com turno de caixa. Confira o operador e informe o fundo de troco para começar.</p>
           {error && <div className="alert danger">{error}</div>}
-          <label>Operador<input autoFocus value={operador} onChange={(e) => setOperador(e.target.value)} placeholder="Nome do operador" /></label>
-          <label>Fundo de troco (R$)<input value={fundo} onChange={(e) => setFundo(e.target.value)} inputMode="decimal" placeholder="0,00" /></label>
+          <label>Operador<input value={usuarioNome || "usuário logado"} readOnly disabled title="O caixa abre com o usuário logado" /></label>
+          <label>Fundo de troco (R$)<input autoFocus value={fundo} onChange={(e) => setFundo(e.target.value)} inputMode="decimal" placeholder="0,00" /></label>
           <button className="pdv-finalizar" onClick={abrir} disabled={loading}>{loading ? "Abrindo..." : "Abrir caixa"}</button>
         </div>
       </div>

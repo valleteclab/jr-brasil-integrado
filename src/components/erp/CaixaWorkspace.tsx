@@ -86,7 +86,6 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
 
-  const [operador, setOperador] = useState("");
   const [saldoInicial, setSaldoInicial] = useState(0);
 
   const [sel, setSel] = useState<PreVendaResumo | null>(null);
@@ -197,9 +196,9 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
   }
 
   async function abrir() {
-    if (!operador.trim()) { setError("Informe o operador."); return; }
+    // O operador é o usuário logado (definido no servidor) — não se digita mais o nome.
     setBusy(true);
-    try { await post("/api/erp/caixa/abrir", { operador, saldoInicial }); router.refresh(); }
+    try { await post("/api/erp/caixa/abrir", { saldoInicial }); router.refresh(); }
     catch (e) { setError(e instanceof Error ? e.message : "Erro ao abrir caixa."); }
     finally { setBusy(false); }
   }
@@ -361,7 +360,11 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
         <div className="erp-card" style={{ maxWidth: 460 }}>
           <div className="erp-card-head"><h3>Abrir caixa</h3></div>
           <div className="erp-form" style={{ gridTemplateColumns: "1fr" }}>
-            <label>Operador<input value={operador} onChange={(e) => setOperador(e.target.value)} placeholder="Nome do operador" /></label>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", background: "var(--erp-soft, #f4f5f7)", borderRadius: 8, fontSize: 14 }}>
+              <span>👤 Operador:</span>
+              <strong>{data.usuarioNome || "usuário logado"}</strong>
+              <span className="sublabel" style={{ marginLeft: "auto" }}>(usuário logado)</span>
+            </div>
             <label>Fundo de troco (R$)<input type="number" min={0} step="0.01" value={saldoInicial} onChange={(e) => setSaldoInicial(Number(e.target.value) || 0)} /></label>
             <button type="button" className="btn-erp primary lg" disabled={busy} onClick={abrir}>{busy ? "Abrindo…" : "Abrir caixa"}</button>
           </div>

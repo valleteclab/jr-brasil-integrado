@@ -2735,7 +2735,10 @@ model Caixa {
   empresaId            String
   // Ambiente fiscal vigente quando o caixa foi aberto.
   ambiente             AmbienteFiscal   @default(HOMOLOGACAO)
+  /// Nome do operador que abriu (derivado do usuário logado — não digitado).
   operador             String
+  /// Usuário logado que abriu o caixa (rastreabilidade — quem abriu de fato).
+  operadorUsuarioId    String?
   status               StatusCaixa      @default(ABERTO)
   saldoInicial         Decimal          @default(0) @db.Decimal(14, 2)
   saldoFinalInformado  Decimal?         @db.Decimal(14, 2)

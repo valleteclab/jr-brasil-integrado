@@ -167,10 +167,12 @@ async function assertCaixaAbertoTx(tx: PrismaTx, scope: TenantScope, caixaId: st
 
 export async function abrirCaixa(
   scope: TenantScope,
-  input: { operador: string; saldoInicial?: number; observacao?: string }
+  input: { operador: string; operadorUsuarioId?: string | null; saldoInicial?: number; observacao?: string }
 ) {
+  // O operador é o USUÁRIO LOGADO (nome + id vêm da sessão, não são digitados) — evita abrir com
+  // nome de outra pessoa e garante rastreabilidade de quem realmente abriu o caixa.
   const operador = input.operador?.trim();
-  if (!operador) throw new CaixaError("Informe o operador do caixa.");
+  if (!operador) throw new CaixaError("Sessão sem usuário identificado. Faça login novamente para abrir o caixa.");
 
   const existente = await getCaixaAberto(scope);
   if (existente) throw new CaixaError("Já existe um caixa aberto. Feche-o antes de abrir outro.");
@@ -182,6 +184,7 @@ export async function abrirCaixa(
       data: {
         ...scopedByTenantCompanyAmbiente(scope),
         operador,
+        operadorUsuarioId: input.operadorUsuarioId ?? null,
         status: "ABERTO",
         saldoInicial,
         observacaoAbertura: input.observacao?.trim() || null
@@ -199,7 +202,7 @@ export async function abrirCaixa(
         }
       });
     }
-    await createAuditLog(tx, { scope, entidade: "Caixa", entidadeId: caixa.id, acao: "ABRIR", payload: { operador, saldoInicial } });
+    await createAuditLog(tx, { scope, usuarioId: input.operadorUsuarioId ?? undefined, entidade: "Caixa", entidadeId: caixa.id, acao: "ABRIR", payload: { operador, operadorUsuarioId: input.operadorUsuarioId ?? null, saldoInicial } });
     return caixa;
   });
 }

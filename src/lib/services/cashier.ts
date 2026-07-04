@@ -1,5 +1,6 @@
 import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
 import { scopedByTenantCompany, scopedByTenantCompanyAmbiente } from "@/lib/auth/dev-session";
+import { getSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/db/prisma";
 import { getCaixaAberto, getResumoCaixa, type ResumoCaixa } from "@/domains/cashier/application/cashier-use-cases";
 import { listContasComCobranca } from "@/domains/finance/application/boleto-use-cases";
@@ -32,6 +33,8 @@ export type MaquinaCartaoResumo = { id: string; nome: string; adquirente: string
 
 export type CaixaPageData = {
   caixa: { id: string; operador: string; abertoEm: string; resumo: ResumoCaixa } | null;
+  /** Nome do usuário logado — é ele quem abre o caixa (não se digita mais o operador). */
+  usuarioNome: string;
   preVendas: PreVendaResumo[];
   /** Contas recebedoras (PIX/transferência) e maquininhas (cartão) para detalhar o recebimento. */
   contas: ContaRecebedora[];
@@ -51,6 +54,7 @@ export type CaixaPageData = {
 /** Dados da tela de caixa: turno aberto (com resumo) e pré-vendas aguardando pagamento. */
 export async function getCaixaPageData(): Promise<CaixaPageData> {
   const scope = await getDevelopmentTenantScope();
+  const sessao = await getSession();
   const aberto = await getCaixaAberto(scope);
   const tenant = await prisma.tenant.findUnique({
     where: { id: scope.tenantId },
@@ -124,6 +128,7 @@ export async function getCaixaPageData(): Promise<CaixaPageData> {
           resumo: await getResumoCaixa(scope, aberto.id)
         }
       : null,
+    usuarioNome: sessao?.nome ?? "",
     preVendas,
     contas: contasRaw,
     maquinas: maquinasRaw,
