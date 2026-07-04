@@ -802,8 +802,7 @@ export function CustomersCrud({ initialCustomers, tabelasPreco }: CustomersCrudP
                 <th>Documento</th>
                 <th>Segmento</th>
                 <th>Contato</th>
-                <th className="num">Limite</th>
-                <th className="num">Crédito usado</th>
+                <th className="num">Crédito (limite · usado · disp.)</th>
                 <th>Condição</th>
                 <th>Status</th>
                 <th className="actions">Ações</th>
@@ -819,8 +818,23 @@ export function CustomersCrud({ initialCustomers, tabelasPreco }: CustomersCrudP
                   <td className="mono">{formatDocumento(c.documento)}</td>
                   <td>{c.segmento ?? <span className="sublabel">—</span>}</td>
                   <td>{c.contatosPrincipal ?? <span className="sublabel">—</span>}</td>
-                  <td className="num">{c.limiteCredito}</td>
-                  <td className="num">{c.creditoUsado}</td>
+                  <td className="num">
+                    {(() => {
+                      const limite = parseCurrency(c.limiteCredito);
+                      const disp = parseCurrency(c.creditoDisponivel);
+                      const semLimite = limite <= 0;
+                      const corDisp = semLimite ? "var(--erp-slate, #475569)" : disp <= 0 ? "var(--erp-danger, #dc2626)" : "var(--erp-success, #16a34a)";
+                      return (
+                        <>
+                          <div><strong>{c.limiteCredito}</strong></div>
+                          <span className="sublabel">usado {c.creditoUsado}</span>
+                          <div style={{ color: corDisp, fontWeight: 700, fontSize: 12 }}>
+                            {semLimite ? "sem limite" : `disp. ${c.creditoDisponivel}`}
+                          </div>
+                        </>
+                      );
+                    })()}
+                  </td>
                   <td>{c.condicaoPagamento ?? <span className="sublabel">A definir</span>}</td>
                   <td>
                     <span className={`pill ${c.statusTone}`}>

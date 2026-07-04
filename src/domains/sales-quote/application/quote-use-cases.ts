@@ -157,6 +157,28 @@ export async function approveQuote(scope: TenantScope, id: string) {
   }, TX_OPTIONS);
 }
 
+/**
+ * RENOVA um orçamento expirado (ou próximo do vencimento): estende a validade e volta o status para
+ * EM_ANALISE, para reaproveitar a cotação com preços/prazos atuais sem refazer tudo.
+ */
+export async function renovarQuote(scope: TenantScope, id: string, validadeDias = 7) {
+  return prisma.$transaction(async (tx) => {
+    const orc = await tx.orcamento.findFirst({ where: { id, ...scopedByTenantCompany(scope) } });
+    if (!orc) throw new Error("Orçamento não encontrado.");
+    if (["CONVERTIDO", "REJEITADO"].includes(orc.status)) {
+      throw new Error(`Orçamento ${orc.numero} está ${orc.status.toLowerCase()} e não pode ser renovado.`);
+    }
+    const dias = Math.max(1, Math.min(180, Math.floor(validadeDias)));
+    const validoAte = new Date(Date.now() + dias * 24 * 60 * 60 * 1000);
+    const updated = await tx.orcamento.update({
+      where: { id },
+      data: { status: "EM_ANALISE", validoAte },
+    });
+    await createAuditLog(tx, { scope, entidade: "Orcamento", entidadeId: id, acao: "RENOVAR", payload: { validoAte: validoAte.toISOString(), dias } });
+    return updated;
+  }, TX_OPTIONS);
+}
+
 export async function rejectQuote(scope: TenantScope, id: string) {
   return prisma.$transaction(async (tx) => {
     const orc = await tx.orcamento.findFirst({

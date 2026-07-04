@@ -109,7 +109,7 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO", allow
   // Vendedor = usuário logado (resolvido no servidor). Fica fixo na UI; sem seleção manual.
   const vendedor = data.vendedorLogadoNome ?? "";
   // Condição de pagamento foi removida do fluxo de venda — não faz sentido p/ o usuário hoje.
-  const condicao = "";
+  const [condicao, setCondicao] = useState("");
   const [validadeDias, setValidadeDias] = useState(7);
   const [showCli, setShowCli] = useState(false);
   const [showNovoCli, setShowNovoCli] = useState(false);
@@ -598,6 +598,34 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO", allow
               </div>
             )}
           </div>
+
+          {/* Condição de pagamento (venda a prazo / pedido faturado / orçamento) */}
+          {(tipo === "PEDIDO_FATURADO" || isOrcamento) && (
+            <div className="erp-card">
+              <div className="erp-card-head"><h3>Condição de pagamento</h3></div>
+              <div className="erp-card-body" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <input
+                  list="condicao-sugestoes"
+                  value={condicao}
+                  onChange={(e) => setCondicao(e.target.value)}
+                  placeholder="Ex.: 30/60/90, 30 dias, à vista"
+                  style={{ flex: "1 1 200px", height: 34, padding: "0 12px", border: "1px solid var(--erp-line)", borderRadius: 5, fontSize: 13 }}
+                />
+                <datalist id="condicao-sugestoes">
+                  <option value="À vista" />
+                  <option value="30 dias" />
+                  <option value="30/60" />
+                  <option value="30/60/90" />
+                  <option value="28/42/56" />
+                  <option value="Entrada + 30/60" />
+                </datalist>
+                {["À vista", "30 dias", "30/60/90"].map((s) => (
+                  <button key={s} type="button" className="btn-erp ghost xs" onClick={() => setCondicao(s)}>{s}</button>
+                ))}
+              </div>
+              <div className="erp-card-body" style={{ paddingTop: 0 }}><small style={{ color: "var(--erp-slate)" }}>Define os prazos das parcelas (ex.: “30/60/90” = 3 parcelas). Deixe vazio para 1x em 30 dias.</small></div>
+            </div>
+          )}
 
           {/* Observações (não-OS) */}
           {!isOs && (

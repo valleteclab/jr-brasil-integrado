@@ -29,6 +29,22 @@ export function QuotesList({ quotes, isAdmin = false }: Props) {
     );
   }, [query, rows]);
 
+  async function renovar(id: string) {
+    setBusyId(id); setError("");
+    try {
+      const res = await fetch(`/api/erp/orcamentos/${id}/renovar`, { method: "POST" });
+      const data = (await res.json().catch(() => ({}))) as { error?: string; validoAte?: string };
+      if (!res.ok) throw new Error(data.error || "Falha ao renovar.");
+      const novaValidade = data.validoAte ? new Date(data.validoAte).toLocaleDateString("pt-BR") : null;
+      setRows((cur) => cur.map((r) => r.id === id ? {
+        ...r, status: "EM_ANALISE", statusLabel: "Em análise", statusTone: "info" as const,
+        validoAte: novaValidade, canAprovar: true, canRejeitar: true
+      } : r));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha ao renovar orçamento.");
+    } finally { setBusyId(null); }
+  }
+
   async function callAction(id: string, action: "aprovar" | "rejeitar" | "converter") {
     setBusyId(id);
     setError("");
@@ -164,7 +180,11 @@ export function QuotesList({ quotes, isAdmin = false }: Props) {
                 <td>
                   <StatusBadge tone={orc.statusTone}>{orc.statusLabel}</StatusBadge>
                 </td>
-                <td>{orc.validoAte ?? <span className="block-muted">—</span>}</td>
+                <td>
+                  {orc.status === "EXPIRADO"
+                    ? <span style={{ color: "var(--erp-warn, #d97706)", fontWeight: 700 }} title="Orçamento vencido">⚠ expirou {orc.validoAte ? `em ${orc.validoAte}` : ""}</span>
+                    : (orc.validoAte ?? <span className="block-muted">—</span>)}
+                </td>
                 <td className="num">
                   <strong>{orc.total}</strong>
                   {Number(orc.desconto.replace(/[^\d,]/g, "").replace(",", ".")) > 0 && (
@@ -189,6 +209,17 @@ export function QuotesList({ quotes, isAdmin = false }: Props) {
                   >
                     📤 Enviar
                   </button>
+                  {orc.status === "EXPIRADO" && (
+                    <button
+                      type="button"
+                      className="btn-erp light xs"
+                      title="Reabrir com nova validade (7 dias)"
+                      disabled={busyId === orc.id}
+                      onClick={() => renovar(orc.id)}
+                    >
+                      {busyId === orc.id ? "Renovando…" : "🔄 Renovar"}
+                    </button>
+                  )}
                   {orc.canAprovar && (
                     <Button
                       variant="light"
