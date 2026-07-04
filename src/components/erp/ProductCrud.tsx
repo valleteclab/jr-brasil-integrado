@@ -287,7 +287,9 @@ function enrichProduct(product: ErpProductSummary): ProductRecord {
     allowNegativeStock: product.allowNegativeStock ?? false,
     allowBackorder: product.allowBackorder ?? false,
     supplier: product.supplier ?? "",
-    supplierCode: product.supplierCode ?? product.sku,
+    // "Código no fornecedor" reflete o código do fabricante/fornecedor (Produto.codigoFabricante);
+    // cai no vínculo do fornecedor e, por fim, no SKU. (O save deste campo grava codigoFabricante.)
+    supplierCode: product.manufacturerCode || product.supplierCode || product.sku,
     purchaseUnit: product.purchaseUnit ?? "UN",
     purchaseConversion: product.purchaseConversion ?? "1",
     leadTime: "",
@@ -425,7 +427,7 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
       .filter((product) =>
         correspondeBusca(
           query,
-          product.sku, product.name, product.brand, product.category, product.originalCode, product.barcode, product.supplierCode,
+          product.sku, product.name, product.brand, product.category, product.originalCode, product.manufacturerCode, product.barcode, product.supplierCode,
           // Aplicação veicular: permite achar a peça pelo veículo ("gol", "palio 2010"...).
           ...(product.aplicacoes ?? []).map((a) => `${a.marca} ${a.modelo} ${a.anoFaixa} ${a.observacoes}`)
         )
@@ -1545,7 +1547,7 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
                         <ProductThumb url={product.imageUrl} name={product.name} />
                         <span>
                           <strong>{product.name}</strong>
-                          <small>Cód. {product.originalCode || product.sku}</small>
+                          <small>Cód. {product.originalCode || product.sku}{product.manufacturerCode ? ` · fab. ${product.manufacturerCode}` : ""}</small>
                         </span>
                       </div>
                     </td>

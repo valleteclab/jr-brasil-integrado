@@ -35,6 +35,8 @@ export type ErpProductSummary = {
   status: "Em estoque" | "Crítico" | "Zerado";
   ecommerceVisible: boolean;
   originalCode?: string;
+  /** Código do produto no FABRICANTE/fornecedor (ex.: CZ205, 2653) — Produto.codigoFabricante. */
+  manufacturerCode?: string;
   barcode?: string;
   unit?: string;
   type?: string;
@@ -375,6 +377,7 @@ export async function listErpProductSummaries(): Promise<ErpProductSummary[]> {
         status: getStockStatus(availableStock, minimumStock),
         ecommerceVisible: product.visivelEcommerce,
         originalCode: product.codigoOriginal ?? "",
+        manufacturerCode: product.codigoFabricante ?? "",
         barcode: product.gtin ?? "",
         unit: product.unidade,
         type: product.tipo,
