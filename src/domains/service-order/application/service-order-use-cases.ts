@@ -689,3 +689,85 @@ export async function faturarOrdemServico(scope: TenantScope, id: string, input:
 
   return resultado;
 }
+
+/**
+ * REEMITE uma nota da OS já FATURADA: NFS-e (serviços) ou NF-e modelo 55 (peças). Reaproveita uma
+ * nota anterior REJEITADA/ERRO (retryNotaId) quando houver — senão emite nova. Usa as regras
+ * tributárias padrão (ISS/retenções manuais informados no faturamento não são regravados; para
+ * casos especiais, emita pelo módulo Fiscal). Só para OS FATURADA.
+ */
+export async function reemitirNotaOrdemServico(scope: TenantScope, osId: string, tipo: "SERVICOS" | "PECAS") {
+  const os = await prisma.ordemServico.findFirst({
+    where: { id: osId, ...scopedByTenantCompany(scope) },
+    include: {
+      cliente: { include: { enderecos: true, contatos: true } },
+      servicos: true,
+      pecas: {
+        include: {
+          produto: {
+            select: {
+              id: true, sku: true, nome: true, ncm: true, cest: true, cfop: true, origem: true, unidade: true,
+              fiscal: { select: { ncm: true, cest: true, origem: true, regraTributariaId: true, icmsSt: true } }
+            }
+          }
+        }
+      },
+      notasFiscais: { select: { id: true, modelo: true, status: true } }
+    }
+  });
+  if (!os) throw new Error("Ordem de serviço não encontrada.");
+  if (os.status !== "FATURADA") throw new Error("A OS precisa estar faturada para reemitir a nota.");
+
+  const modeloAlvo = tipo === "SERVICOS" ? "NFSE" : "NFE";
+  if (tipo === "SERVICOS" && os.servicos.length === 0) throw new Error("A OS não tem serviços para emitir NFS-e.");
+  if (tipo === "PECAS" && os.pecas.length === 0) throw new Error("A OS não tem peças para emitir NF-e.");
+
+  // Já existe uma nota AUTORIZADA desse tipo? Não reemite (evita duplicidade).
+  const jaAutorizada = os.notasFiscais.find((n) => n.modelo === modeloAlvo && n.status === "AUTORIZADA");
+  if (jaAutorizada) throw new Error(`Já existe ${modeloAlvo === "NFSE" ? "uma NFS-e" : "uma NF-e"} autorizada para esta OS.`);
+  // Nota anterior falhada para reaproveitar (retry).
+  const falhada = os.notasFiscais.find((n) => n.modelo === modeloAlvo && (n.status === "REJEITADA" || n.status === "ERRO"));
+
+  let doc;
+  if (tipo === "SERVICOS") {
+    const configFiscal = await prisma.configuracaoFiscal.findUnique({
+      where: { empresaId: scope.empresaId }, select: { codigoServicoLc116Padrao: true }
+    });
+    const lc116Padrao = configFiscal?.codigoServicoLc116Padrao ?? null;
+    const valorServicos = os.servicos.reduce((s, sv) => s + Number(sv.total), 0);
+    doc = buildNfseFromOrdemServico({
+      cliente: os.cliente,
+      condicaoPagamento: os.condicaoPagamento,
+      formaPagamento: os.formaPagamento,
+      servicos: os.servicos.map((s) => {
+        const iss = issPorServico(valorServicos, Number(s.total), { aliquotaIss: null, deducoes: null, baseCalculoIss: null });
+        return { descricao: s.descricao, valor: Number(s.total), itemListaServico: s.codigoServicoLc116 ?? lc116Padrao, aliquotaIss: iss.aliquotaIss, baseIss: iss.baseIss };
+      })
+    });
+  } else {
+    doc = buildDocumentFromPedido({
+      cliente: os.cliente,
+      modelo: "NFE",
+      naturezaOperacao: "Venda de peças (ordem de serviço)",
+      formaPagamento: os.formaPagamento,
+      condicaoPagamento: os.condicaoPagamento,
+      numeroPedido: os.numero,
+      observacoes: `Peças da OS ${os.numero} — ${os.equipamento}.`,
+      itens: os.pecas.map((p) => ({
+        produto: {
+          id: p.produto.id, sku: p.produto.sku, nome: p.produto.nome, ncm: p.produto.ncm, cest: p.produto.cest,
+          cfop: p.produto.cfop, origem: p.produto.origem, unidade: p.produto.unidade,
+          fiscal: p.produto.fiscal ? {
+            ncm: p.produto.fiscal.ncm, cest: p.produto.fiscal.cest, origem: p.produto.fiscal.origem,
+            regraTributariaId: p.produto.fiscal.regraTributariaId, icmsSt: p.produto.fiscal.icmsSt
+          } : null
+        },
+        quantidade: Number(p.quantidade),
+        precoUnitario: Number(p.precoUnitario)
+      }))
+    });
+  }
+
+  const nota = await emitFiscalDocument(scope, doc, { clienteId: os.clienteId, ordemServicoId: osId, retryNotaId: falhada?.id ?? null });
+  return { notaId: nota.id, status: nota.status, modelo: modeloAlvo };
+}

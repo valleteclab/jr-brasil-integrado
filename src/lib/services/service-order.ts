@@ -62,6 +62,14 @@ export type OrdemServicoDetail = OrdemServicoSummary & {
     statusMomento: string | null;
     criadoEm: string;
   }>;
+  notas: Array<{
+    id: string;
+    modelo: string;
+    numero: string | null;
+    status: string;
+    chaveAcesso: string | null;
+    motivo: string | null;
+  }>;
 };
 
 export type OsFormData = {
@@ -164,6 +172,7 @@ export async function getOrdemServicoDetail(id: string): Promise<OrdemServicoDet
           orderBy: { id: "asc" },
         },
         apontamentos: { orderBy: { criadoEm: "desc" }, include: { tecnico: { select: { nome: true } } } },
+        notasFiscais: { orderBy: { criadoEm: "desc" }, select: { id: true, modelo: true, numero: true, numeroNfse: true, status: true, chaveAcesso: true, motivo: true } },
       },
     });
     if (!os) return null;
@@ -207,6 +216,14 @@ export async function getOrdemServicoDetail(id: string): Promise<OrdemServicoDet
         horas: a.horas != null ? Number(a.horas).toFixed(2) : null,
         statusMomento: a.statusMomento,
         criadoEm: a.criadoEm.toISOString(),
+      })),
+      notas: os.notasFiscais.map((n) => ({
+        id: n.id,
+        modelo: n.modelo,
+        numero: n.numeroNfse || n.numero,
+        status: n.status,
+        chaveAcesso: n.chaveAcesso,
+        motivo: n.motivo,
       })),
     };
   } catch (error) {

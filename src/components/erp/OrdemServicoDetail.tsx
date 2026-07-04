@@ -253,6 +253,27 @@ export function OrdemServicoDetail({ os: initialOs, formData, tecnicos, meuTecni
     }
   }
 
+  async function handleReemitir(tipo: "SERVICOS" | "PECAS") {
+    if (!window.confirm(`Reemitir a ${tipo === "SERVICOS" ? "NFS-e (serviços)" : "NF-e (peças)"} desta OS?`)) return;
+    setError("");
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/erp/os/${os.id}/reemitir`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tipo }),
+      });
+      const data = (await res.json()) as { error?: string; status?: string };
+      if (!res.ok) throw new Error(data.error ?? "Erro ao reemitir.");
+      window.alert(data.status === "AUTORIZADA" ? "Nota autorizada!" : `Nota em ${data.status ?? "processamento"} — acompanhe em instantes.`);
+      refreshOs();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao reemitir.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleChangeStatus(newStatus: StatusOrdemServico) {
     if (!window.confirm(`Alterar status para "${newStatus}"?`)) return;
     setError("");
@@ -328,6 +349,7 @@ export function OrdemServicoDetail({ os: initialOs, formData, tecnicos, meuTecni
           <h3>OS {os.numero}</h3>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span className={`pill ${os.statusTone}`}><span className="dot" />{os.statusLabel}</span>
+            <a className="btn-erp ghost xs" href={`/api/erp/os/${os.id}/pdf`} target="_blank" rel="noopener noreferrer">🖨 Imprimir OS</a>
             {editavel && !editandoCab && <button type="button" className="btn-erp ghost xs" onClick={() => setEditandoCab(true)}>✏️ Editar</button>}
           </div>
         </div>
@@ -725,13 +747,51 @@ export function OrdemServicoDetail({ os: initialOs, formData, tecnicos, meuTecni
       )}
 
       {os.status === "FATURADA" && (
-        <div className="alert success">
-          <strong>OS Faturada</strong>
-          <span>
-            Faturada em {os.faturadoEm}. Acesse{" "}
-            <a href="/erp/financeiro">Financeiro</a> para ver a conta a receber.
-          </span>
-        </div>
+        <>
+          <div className="alert success">
+            <strong>OS Faturada</strong>
+            <span>
+              Faturada em {os.faturadoEm}. Acesse{" "}
+              <a href="/erp/financeiro">Financeiro</a> para ver a conta a receber.
+            </span>
+          </div>
+
+          {/* Notas fiscais da OS — status e reemissão */}
+          <div className="erp-card">
+            <div className="erp-card-head"><h3>Notas fiscais</h3></div>
+            <div className="erp-table-wrap">
+              <table className="erp-table">
+                <thead><tr><th>Documento</th><th>Número</th><th>Situação</th><th className="actions" /></tr></thead>
+                <tbody>
+                  {os.notas.map((n) => {
+                    const falhou = ["REJEITADA", "ERRO", "DENEGADA"].includes(n.status);
+                    return (
+                      <tr key={n.id}>
+                        <td>{n.modelo === "NFSE" ? "NFS-e (serviços)" : "NF-e (peças)"}</td>
+                        <td>{n.numero || "—"}</td>
+                        <td>
+                          <span className={`pill ${n.status === "AUTORIZADA" ? "success" : falhou ? "danger" : "warn"}`}><span className="dot" />{n.status}</span>
+                          {n.motivo && falhou && <small className="block-muted">{n.motivo}</small>}
+                        </td>
+                        <td className="actions">
+                          {n.status === "AUTORIZADA" && <a className="btn-erp ghost xs" href={`/api/erp/fiscal/${n.id}/pdf`} target="_blank" rel="noopener noreferrer">DANFE/PDF</a>}
+                          {falhou && <button type="button" className="btn-erp primary xs" disabled={busy} onClick={() => handleReemitir(n.modelo === "NFSE" ? "SERVICOS" : "PECAS")}>↻ Reemitir</button>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {/* Notas que ainda não existem mas podem ser emitidas */}
+                  {os.servicos.length > 0 && !os.notas.some((n) => n.modelo === "NFSE") && (
+                    <tr><td>NFS-e (serviços)</td><td>—</td><td><span className="pill mute"><span className="dot" />não emitida</span></td><td className="actions"><button type="button" className="btn-erp primary xs" disabled={busy} onClick={() => handleReemitir("SERVICOS")}>Emitir</button></td></tr>
+                  )}
+                  {os.pecas.length > 0 && !os.notas.some((n) => n.modelo === "NFE") && (
+                    <tr><td>NF-e (peças)</td><td>—</td><td><span className="pill mute"><span className="dot" />não emitida</span></td><td className="actions"><button type="button" className="btn-erp primary xs" disabled={busy} onClick={() => handleReemitir("PECAS")}>Emitir</button></td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
       )}
     </div>
   );
