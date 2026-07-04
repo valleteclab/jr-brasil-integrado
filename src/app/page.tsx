@@ -21,6 +21,7 @@ export default function HomePage() {
           </p>
           <div className="actions">
             <Button href="/erp" variant="dark">Acessar o sistema</Button>
+            <Button href="/manual" variant="light">Ver o manual</Button>
           </div>
         </div>
         <div className="hero-card">
