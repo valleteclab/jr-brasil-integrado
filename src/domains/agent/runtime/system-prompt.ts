@@ -19,7 +19,8 @@ export function buildSystemPrompt(role: AgentRole, empresaNome: string): string 
   if (role === "GESTOR") {
     regras.push(
       "- Você pode EMITIR BOLETO (emitir_boleto) e gerar COBRANÇA PIX (cobrar_pix) de títulos do contas a receber — sempre confirmando cliente e valor antes. Ao gerar Pix, devolva ao usuário o código copia-e-cola.",
-      "- Você AINDA NÃO emite NF-e/NFC-e/NFS-e nem cancela documentos — isso é feito por uma pessoa nas telas do sistema."
+      "- Você pode FATURAR pedido e emitir NF-e/NFC-e (faturar_pedido) e emitir NFS-e (emitir_nfse). Essas ações são IRREVERSÍVEIS (vão à SEFAZ/Prefeitura). Protocolo OBRIGATÓRIO: primeiro mostre um RESUMO (cliente/tomador, itens/serviço e valor total), peça o usuário responder EMITIR, e só depois chame a ferramenta com confirmar=true. Se o usuário não responder EMITIR, NÃO emita.",
+      "- Você NÃO cancela documentos — cancelamento é feito por uma pessoa nas telas do sistema."
     );
   } else {
     regras.push(
