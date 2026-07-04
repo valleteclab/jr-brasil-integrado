@@ -2,8 +2,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { CSSProperties } from "react";
 import { ProductCard } from "@/components/storefront/ProductCard";
+import { StoreSort } from "@/components/storefront/StoreSort";
 import { listStorefrontProducts, listStorefrontCategories } from "@/lib/services/products";
-import type { StorefrontProduct } from "@/lib/services/products";
+import type { StorefrontProduct, StorefrontSort } from "@/lib/services/products";
 import { getLojaInfo } from "@/lib/services/loja";
 
 export const dynamic = "force-dynamic";
@@ -18,7 +19,9 @@ function darken(hex: string, amount = 0.14): string {
   return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, "0")}`;
 }
 
-type StorePageProps = { params: { slug: string }; searchParams?: { q?: string; categoria?: string } };
+type StorePageProps = { params: { slug: string }; searchParams?: { q?: string; categoria?: string; ordenar?: string } };
+
+const SORTS: StorefrontSort[] = ["recentes", "preco-asc", "preco-desc", "nome"];
 
 export default async function StorePage({ params, searchParams }: StorePageProps) {
   const loja = await getLojaInfo(params.slug);
@@ -26,6 +29,7 @@ export default async function StorePage({ params, searchParams }: StorePageProps
 
   const q = searchParams?.q?.trim() ?? "";
   const categoria = searchParams?.categoria?.trim() ?? "";
+  const ordenar = SORTS.includes(searchParams?.ordenar as StorefrontSort) ? (searchParams?.ordenar as StorefrontSort) : "recentes";
   const base = `/loja/${loja.slug}`;
 
   let products: StorefrontProduct[] = [];
@@ -33,7 +37,7 @@ export default async function StorePage({ params, searchParams }: StorePageProps
   let loadError = "";
   try {
     [products, categories] = await Promise.all([
-      listStorefrontProducts(loja.scope, { q, categoria }),
+      listStorefrontProducts(loja.scope, { q, categoria, ordenar }),
       listStorefrontCategories(loja.scope)
     ]);
   } catch (error) {
@@ -93,10 +97,16 @@ export default async function StorePage({ params, searchParams }: StorePageProps
           <h4>Nenhum produto encontrado</h4>
           <p>{q || categoria ? "Tente outro termo ou categoria." : "Em breve novos produtos no catálogo."}</p>
         </div>
-      ) : (
-        <section className="grid three">
-          {products.map((product) => <ProductCard key={product.id} product={product} />)}
-        </section>
+      ) : !loadError && (
+        <>
+          <div className="store-listbar">
+            <span className="store-count">{products.length} produto{products.length === 1 ? "" : "s"}{categoria ? ` em ${categoria}` : ""}{q ? ` para “${q}”` : ""}</span>
+            <StoreSort base={base} />
+          </div>
+          <section className="grid three">
+            {products.map((product) => <ProductCard key={product.id} product={product} />)}
+          </section>
+        </>
       )}
     </main>
   );

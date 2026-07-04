@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import type { StorefrontProduct } from "@/lib/services/products";
 import { useCart } from "./CartProvider";
+import { StoreImage } from "./StoreImage";
 
 type ProductCardProps = {
   product: StorefrontProduct;
@@ -22,13 +23,8 @@ export function ProductCard({ product }: ProductCardProps) {
 
   return (
     <article className="card product-card">
-      <Link
-        href={href}
-        className="product-media"
-        aria-label={product.name}
-        style={product.imageUrl ? { backgroundImage: `url(${product.imageUrl})` } : undefined}
-      >
-        {!product.imageUrl && <span>{product.sku}</span>}
+      <Link href={href} className="product-media" aria-label={product.name}>
+        <StoreImage src={product.imageUrl} alt={product.name} sku={product.sku} />
       </Link>
       <div className="product-meta">
         <span className="sku">{product.sku}</span>

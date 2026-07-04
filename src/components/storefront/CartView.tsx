@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCart } from "./CartProvider";
+import { StoreImage } from "./StoreImage";
 
 function brl(n: number) {
   return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -27,8 +28,8 @@ export function CartView() {
       <div className="cart-list">
         {itens.map((i) => (
           <div className="cart-row" key={i.id}>
-            <div className="cart-thumb" style={i.imageUrl ? { backgroundImage: `url(${i.imageUrl})` } : undefined}>
-              {!i.imageUrl && <span>{i.sku}</span>}
+            <div className="cart-thumb">
+              <StoreImage src={i.imageUrl} alt={i.nome} sku={i.sku} />
             </div>
             <div className="cart-info">
               <strong>{i.nome}</strong>

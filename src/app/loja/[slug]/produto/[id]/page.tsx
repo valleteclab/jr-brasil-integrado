@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { getStorefrontProduct } from "@/lib/services/products";
 import { getLojaInfo } from "@/lib/services/loja";
 import { AddToCartButton } from "@/components/storefront/AddToCartButton";
+import { ProductGallery } from "@/components/storefront/ProductGallery";
 
 export const dynamic = "force-dynamic";
 
@@ -30,9 +31,7 @@ export default async function ProdutoLojaPage({ params }: { params: { slug: stri
       <Link href={base} className="store-voltar">← Voltar ao catálogo</Link>
 
       <section className="produto-detalhe">
-        <div className="produto-foto" style={product.imageUrl ? { backgroundImage: `url(${product.imageUrl})` } : undefined}>
-          {!product.imageUrl && <span>{product.sku}</span>}
-        </div>
+        <ProductGallery images={product.images ?? []} alt={product.name} sku={product.sku} />
         <div className="produto-info">
           <span className="sku">{product.sku} · {product.brand}</span>
           <h1>{product.name}</h1>

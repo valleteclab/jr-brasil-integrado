@@ -15,8 +15,13 @@ export type StorefrontProduct = {
   priceValue: number;
   stockLabel: string;
   imageUrl?: string;
+  /** Todas as imagens do produto (galeria do detalhe); a primeira é a principal. */
+  images?: string[];
   description?: string;
 };
+
+/** Ordenação da vitrine da loja. */
+export type StorefrontSort = "recentes" | "preco-asc" | "preco-desc" | "nome";
 
 export type ErpProductSummary = {
   id: string;
@@ -149,7 +154,18 @@ export async function listUnidades(): Promise<Array<{ codigo: string; nome: stri
   }
 }
 
-export type StorefrontFilter = { q?: string; categoria?: string };
+export type StorefrontFilter = { q?: string; categoria?: string; ordenar?: StorefrontSort };
+
+/** Cláusula orderBy do Prisma conforme a ordenação escolhida na vitrine. */
+function storefrontOrderBy(ordenar?: StorefrontSort) {
+  switch (ordenar) {
+    case "preco-asc": return [{ precoVenda: "asc" as const }, { nome: "asc" as const }];
+    case "preco-desc": return [{ precoVenda: "desc" as const }, { nome: "asc" as const }];
+    case "nome": return [{ nome: "asc" as const }];
+    case "recentes":
+    default: return [{ criadoEm: "desc" as const }, { nome: "asc" as const }];
+  }
+}
 
 export async function listStorefrontProducts(scopeArg?: TenantScope, filtro?: StorefrontFilter): Promise<StorefrontProduct[]> {
   if (!process.env.DATABASE_URL) {
@@ -205,7 +221,7 @@ export async function listStorefrontProducts(scopeArg?: TenantScope, filtro?: St
           }
         }
       },
-      orderBy: [{ criadoEm: "asc" }, { nome: "asc" }]
+      orderBy: storefrontOrderBy(filtro?.ordenar)
     });
 
     return products.map((product) => {
@@ -241,7 +257,7 @@ export async function getStorefrontProduct(scope: TenantScope, id: string): Prom
     include: {
       categoria: true,
       marca: true,
-      imagens: { orderBy: { ordem: "asc" }, take: 1 },
+      imagens: { orderBy: { ordem: "asc" }, take: 8 },
       saldosEstoque: true
     }
   });
@@ -261,6 +277,10 @@ export async function getStorefrontProduct(scope: TenantScope, id: string): Prom
     priceValue: Number(product.precoVenda),
     stockLabel: `${availableStock} un.`,
     imageUrl: product.imagens[0]?.url ?? imagemDataloadUrl(product.gtin) ?? undefined,
+    // Galeria: imagens próprias na ordem; se não houver nenhuma, cai no banco Dataload pelo GTIN.
+    images: product.imagens.length
+      ? product.imagens.map((img) => img.url)
+      : ([imagemDataloadUrl(product.gtin)].filter(Boolean) as string[]),
     description: product.descricaoComercial ?? product.descricao ?? undefined
   };
 }

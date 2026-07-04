@@ -12,6 +12,8 @@ export type LojaInfo = {
   nome: string;
   logoSistema: string | null;
   corDestaque: string | null;
+  /** Telefone/WhatsApp da loja (só dígitos) — para o cliente falar após enviar o pedido. */
+  telefone: string | null;
 };
 
 const SELECT = {
@@ -21,16 +23,18 @@ const SELECT = {
   nomeFantasia: true,
   logoSistema: true,
   corDestaque: true,
-  slugLoja: true
+  slugLoja: true,
+  telefone: true
 } as const;
 
-function toInfo(empresa: { id: string; tenantId: string; razaoSocial: string; nomeFantasia: string | null; logoSistema: string | null; corDestaque: string | null; slugLoja: string | null }): LojaInfo {
+function toInfo(empresa: { id: string; tenantId: string; razaoSocial: string; nomeFantasia: string | null; logoSistema: string | null; corDestaque: string | null; slugLoja: string | null; telefone: string | null }): LojaInfo {
   return {
     scope: { tenantId: empresa.tenantId, empresaId: empresa.id },
     slug: empresa.slugLoja ?? "",
     nome: empresa.nomeFantasia ?? empresa.razaoSocial,
     logoSistema: empresa.logoSistema,
-    corDestaque: empresa.corDestaque
+    corDestaque: empresa.corDestaque,
+    telefone: empresa.telefone?.replace(/\D+/g, "") || null
   };
 }
 
