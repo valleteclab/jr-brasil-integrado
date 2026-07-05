@@ -1096,6 +1096,24 @@ function PagamentoModal({ total, loading, clienteSelecionado, contas, maquinas, 
       setPixBusy(false);
     }
   }
+  /** Devolve ao pagador um Pix pago (cliente desistiu da venda) — BACEN, cai em segundos. */
+  async function devolverPixQr() {
+    if (!pixQr) return;
+    if (!window.confirm("Devolver este Pix ao pagador? O valor volta para a conta de quem pagou (não dá para desfazer).")) return;
+    setPixBusy(true);
+    setPixErro("");
+    try {
+      const res = await fetch(`/api/erp/pix/cobranca/${pixQr.id}/devolver`, { method: "POST" });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(data.error || "Não foi possível devolver o Pix.");
+      setPixQr(null);
+    } catch (e) {
+      setPixErro(e instanceof Error ? e.message : "Falha ao devolver o Pix.");
+    } finally {
+      setPixBusy(false);
+    }
+  }
+
   // Confirmação AUTOMÁTICA do Pix: enquanto o QR está ativo, consulta o status a cada 4s.
   // O webhook do banco atualiza o ERP em tempo real; este poll traz a confirmação para a tela.
   useEffect(() => {
@@ -1229,7 +1247,10 @@ function PagamentoModal({ total, loading, clienteSelecionado, contas, maquinas, 
               <button type="button" className="pdv-item-x" onClick={() => setPixQr(null)}>×</button>
             </div>
             {pixQr.status === "CONCLUIDA" ? (
-              <div className="alert success"><strong>✓ Pago!</strong> Finalize a venda normalmente.</div>
+              <div className="alert success" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                <span><strong>✓ Pago!</strong> Finalize a venda normalmente.</span>
+                <button type="button" className="pdv-add-forma" style={{ margin: 0 }} disabled={pixBusy} onClick={devolverPixQr} title="Cliente desistiu: devolve o valor ao pagador">↩ Devolver Pix</button>
+              </div>
             ) : (
               <>
                 {pixQr.qrDataUrl ? (

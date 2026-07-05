@@ -357,6 +357,25 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
     }
   }
 
+  /** Devolve ao pagador um Pix pago (cliente desistiu da venda) — BACEN, cai em segundos. */
+  async function devolverPix(cobrancaId: string, linhaUid?: string) {
+    if (!window.confirm("Devolver este Pix ao pagador? O valor volta para a conta de quem pagou (não dá para desfazer).")) return;
+    setPixBusy(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/erp/pix/cobranca/${cobrancaId}/devolver`, { method: "POST" });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(data.error || "Não foi possível devolver o Pix.");
+      if (linhaUid) rmPag(linhaUid);
+      setPixQr((cur) => (cur && cur.id === cobrancaId ? null : cur));
+      router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Falha ao devolver o Pix.");
+    } finally {
+      setPixBusy(false);
+    }
+  }
+
   // Confirmação AUTOMÁTICA do Pix: enquanto o QR está ativo, consulta o status a cada 4s.
   // O webhook do banco atualiza o ERP em tempo real; este poll traz a confirmação para a tela.
   useEffect(() => {
@@ -550,7 +569,10 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
                   {pagamentos.map((p) => p.pixPagoId ? (
                     <div key={p.uid} className="alert success" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 10px" }}>
                       <span>✓ PIX já recebido (QR pago{data.contas.find((c) => c.id === p.contaBancariaId)?.nome ? ` · ${data.contas.find((c) => c.id === p.contaBancariaId)?.nome}` : ""})</span>
-                      <strong>{brl(p.valor)}</strong>
+                      <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <strong>{brl(p.valor)}</strong>
+                        <button type="button" className="btn-erp ghost xs" disabled={pixBusy} onClick={() => devolverPix(p.pixPagoId!, p.uid)} title="Cliente desistiu: devolve o valor ao pagador (BACEN, cai em segundos)">↩ Devolver Pix</button>
+                      </span>
                     </div>
                   ) : (
                     <div key={p.uid} style={{ display: "flex", flexDirection: "column", gap: 4, borderBottom: isPixOuTransfer(p.forma) || isCartao(p.forma) || p.forma === "BOLETO" ? "1px dashed var(--erp-line)" : "none", paddingBottom: isPixOuTransfer(p.forma) || isCartao(p.forma) || p.forma === "BOLETO" ? 6 : 0 }}>
@@ -782,7 +804,10 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
               <button type="button" className="btn-erp ghost xs" onClick={() => setPixQr(null)}>Fechar</button>
             </div>
             {pixQr.status === "CONCLUIDA" ? (
-              <div className="alert success"><strong>✓ Pago!</strong> Finalize o recebimento normalmente.</div>
+              <div className="alert success" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                <span><strong>✓ Pago!</strong> Finalize o recebimento normalmente.</span>
+                <button type="button" className="btn-erp ghost xs" disabled={pixBusy} onClick={() => devolverPix(pixQr.id)} title="Cliente desistiu: devolve o valor ao pagador">↩ Devolver Pix</button>
+              </div>
             ) : (
               <>
                 {pixQr.qrDataUrl ? (

@@ -249,6 +249,46 @@ export async function devolverPixDoTitulo(scope: TenantScope, contaReceberId: st
 }
 
 /**
+ * DEVOLVE um Pix AVULSO pago no caixa/PDV (cobrança SEM título vinculado) — cliente pagou o QR e
+ * desistiu antes de finalizar a venda. O dinheiro volta ao pagador no banco (padrão BACEN, cai em
+ * segundos) e a cobrança sai da retomada do caixa (DEVOLVIDA + consumida). Nenhum lançamento é
+ * estornado no ERP porque o valor ainda não tinha sido lançado (só entra na finalização da venda).
+ * Cobrança vinculada a título cai no fluxo completo (devolverPixDoTitulo, que estorna a baixa).
+ */
+export async function devolverPixAvulso(scope: TenantScope, pixCobrancaId: string, usuarioId?: string) {
+  const pix = await prisma.pixCobranca.findFirst({
+    where: { id: pixCobrancaId, ...scopedByTenantCompany(scope) },
+    include: { contaBancaria: true }
+  });
+  if (!pix) throw new PixError("Cobrança Pix não encontrada.");
+  if (pix.contaReceberId) return devolverPixDoTitulo(scope, pix.contaReceberId, usuarioId);
+  if (pix.status === "DEVOLVIDA") return { status: "DEVOLVIDA", estornado: false, jaDevolvido: true };
+  if (pix.status !== "CONCLUIDA") throw new PixError(`A cobrança Pix não está paga (${pix.status}) — nada a devolver.`);
+  if (pix.consumidaEm) throw new PixError("Este Pix já foi aproveitado num recebimento finalizado — estorne a venda pelo financeiro.");
+
+  const provider = await getBankProvider(scope, pix.contaBancaria);
+  let e2eid = pix.e2eid;
+  if (!e2eid) {
+    const consulta = await provider.consultarCobrancaPix(pix.txid);
+    e2eid = consulta.e2eid;
+    if (e2eid) await prisma.pixCobranca.update({ where: { id: pix.id }, data: { e2eid } });
+  }
+  if (!e2eid) throw new PixError(`Pagamento sem endToEndId no ${bancoLabel(pix.contaBancaria)} — faça a devolução pelo app do banco.`);
+
+  const valor = Number(pix.valor);
+  const dev = await provider.devolverPix(e2eid, pix.id, valor);
+  await prisma.pixCobranca.update({
+    where: { id: pix.id },
+    data: { status: "DEVOLVIDA", consumidaEm: new Date(), payload: dev.bruto as object }
+  });
+  await prisma.$transaction(async (tx) => createAuditLog(tx, {
+    scope, usuarioId, entidade: "PixCobranca", entidadeId: pix.id, acao: "PIX_DEVOLVIDO",
+    payload: { e2eid, valor, statusDevolucao: dev.status, avulso: true }
+  }));
+  return { status: dev.status ?? "EM_PROCESSAMENTO", estornado: false, jaDevolvido: false, valor };
+}
+
+/**
  * Garante o WEBHOOK Pix da conta no banco: o Sicoob chama o ERP a cada Pix recebido na chave —
  * confirmação em TEMPO REAL no caixa/PDV (o cron fica como rede de segurança). PUT idempotente.
  * A URL pública carrega um segredo por conta (mesmo campo do webhook de cobrança); o receiver
