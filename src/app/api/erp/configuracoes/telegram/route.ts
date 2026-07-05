@@ -33,8 +33,13 @@ export async function POST(request: Request) {
     await requireAdmin();
     const scope = await getDevelopmentTenantScope();
     const body = (await request.json()) as { ativo?: boolean; atenderClientes?: boolean; botToken?: string };
-    // URL pública para o setWebhook — derivada da própria requisição (o Telegram exige HTTPS).
-    const baseUrl = new URL(request.url).origin;
+    // URL PÚBLICA para o setWebhook. Atrás do Traefik o request.url é o endereço interno
+    // (porta 3000, que o Telegram rejeita) — a URL real vem dos headers x-forwarded-* do proxy.
+    const proto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim() || "https";
+    const host = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim()
+      || request.headers.get("host")?.trim()
+      || new URL(request.url).host;
+    const baseUrl = `${proto}://${host}`;
     const r = await saveTelegramConfig(
       scope,
       { ativo: Boolean(body.ativo), atenderClientes: body.atenderClientes ?? true, botToken: body.botToken ?? null },
