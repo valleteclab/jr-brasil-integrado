@@ -1,14 +1,16 @@
 import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import { scopedByTenantCompany } from "@/lib/auth/dev-session";
+import QRCode from "qrcode";
 import { confirmSale, createSale, invoiceSale } from "@/domains/sales/application/sale-use-cases";
 import { downloadNotaFiscalDocumento } from "@/domains/fiscal/application/fiscal-emission-use-cases";
 import { pdfDoBoleto } from "@/domains/finance/application/boleto-use-cases";
+import { criarPixCobranca, listContasComPix } from "@/domains/finance/application/pix-use-cases";
 import { resolverCliente, localizarProduto } from "../tools/write/resolver-venda";
 import { emitirBoleto } from "../tools/write/emitir-boleto";
 import { consultarOs } from "../tools/read/consultar-os";
 import { searchProducts } from "../queries/product-queries";
-import { sendTelegramBotoes, sendTelegramDocument, sendTelegramText, type BotaoInline, type TelegramRuntime } from "@/lib/telegram/telegram-service";
+import { sendTelegramBotoes, sendTelegramDocument, sendTelegramPhoto, sendTelegramText, type BotaoInline, type TelegramRuntime } from "@/lib/telegram/telegram-service";
 
 /**
  * FLUXOS GUIADOS do bot do Telegram (menu + botões, SEM IA): criar venda, consultar pedido,
@@ -92,7 +94,7 @@ function botoesPos(numero: string, gestor: boolean, status?: string, temNotaAuto
           temNotaAutorizada
             ? [B("📄 Nota em PDF (reenviar)", `pos:pdf:${numero}`)]
             : [B("🧾 Emitir NF-e", `pos:nfe:${numero}`), B("🧾 NFC-e", `pos:nfce:${numero}`)],
-          [B("💳 Boletos do pedido", `pos:bol:${numero}`)]
+          [B("💳 Boletos do pedido", `pos:bol:${numero}`), B("💠 Pix (QR Code)", `pos:pix:${numero}`)]
         ]
       : []),
     NAV
@@ -264,6 +266,53 @@ export async function handleTelegramCallback(ctx: Ctx, data: string): Promise<vo
     }
     return;
   }
+  if (data.startsWith("pos:pix:")) {
+    if (!gestor) { await sendTelegramText(ctx.runtime, ctx.chatId, "Cobrança Pix é ação do gestor."); return; }
+    const numero = data.slice("pos:pix:".length);
+    const pedido = await prisma.pedidoVenda.findFirst({ where: { numero, ...scopedByTenantCompany(ctx.scope) }, select: { id: true, status: true, total: true } });
+    if (!pedido) { await sendTelegramBotoes(ctx.runtime, ctx.chatId, `Pedido ${numero} não encontrado.`, [NAV]); return; }
+
+    const contas = await listContasComPix(ctx.scope);
+    if (!contas.length) { await sendTelegramBotoes(ctx.runtime, ctx.chatId, "Nenhuma conta com chave Pix + credenciamento configurado (Configurações → Contas financeiras).", [NAV]); return; }
+
+    // Títulos em aberto do pedido: Pix vinculado ao título dá BAIXA AUTOMÁTICA ao pagar.
+    const titulos = await prisma.contaReceber.findMany({
+      where: { pedidoVendaId: pedido.id, ...scopedByTenantCompany(ctx.scope), status: { in: ["ABERTO", "PARCIAL", "VENCIDO"] } },
+      orderBy: { vencimento: "asc" },
+      select: { id: true, descricao: true, valor: true, valorPago: true }
+    });
+    if (!titulos.length) {
+      const dica = pedido.status === "RASCUNHO" || pedido.status === "AGUARDANDO_PAGAMENTO"
+        ? "O pedido ainda não foi confirmado — toque em ✔️ Confirmar pedido para gerar o financeiro."
+        : "Não há parcelas em aberto (já quitadas?).";
+      await sendTelegramBotoes(ctx.runtime, ctx.chatId, `Sem título a cobrar no pedido ${numero}. ${dica}`, botoesPos(numero, gestor, pedido.status));
+      return;
+    }
+
+    for (const titulo of titulos) {
+      const valorAberto = Number(titulo.valor) - Number(titulo.valorPago);
+      if (valorAberto <= 0) continue;
+      try {
+        const pix = await criarPixCobranca(ctx.scope, {
+          contaBancariaId: contas[0].id,
+          valor: valorAberto,
+          descricao: `${titulo.descricao} (${numero})`.slice(0, 140),
+          pedidoVendaId: pedido.id,
+          contaReceberId: titulo.id
+        });
+        if (pix.brcode) {
+          await enviarQrPix(ctx, pix.brcode, `💠 Pix ${BRL.format(valorAberto)} — ${titulo.descricao}${pix.aviso ? `\n⚠️ ${pix.aviso}` : ""}`);
+          await sendTelegramText(ctx.runtime, ctx.chatId, `Copia e cola:\n${pix.brcode}`);
+        } else {
+          await sendTelegramText(ctx.runtime, ctx.chatId, `💠 Pix de ${BRL.format(valorAberto)} registrado (txid ${pix.txid}), mas o banco não devolveu o BR Code.${pix.aviso ? `\n⚠️ ${pix.aviso}` : ""}`);
+        }
+      } catch (e) {
+        await sendTelegramText(ctx.runtime, ctx.chatId, `❌ Pix de "${titulo.descricao}": ${e instanceof Error ? e.message : "falha"}`);
+      }
+    }
+    await sendTelegramBotoes(ctx.runtime, ctx.chatId, "A baixa do título é automática quando o pagamento cair. Mais alguma coisa?", [NAV]);
+    return;
+  }
   if (data.startsWith("pos:pdf:")) {
     const numero = data.slice("pos:pdf:".length);
     const pedido = await prisma.pedidoVenda.findFirst({ where: { numero, ...scopedByTenantCompany(ctx.scope) }, select: { id: true } });
@@ -413,6 +462,16 @@ export async function enviarPdfNota(ctx: Pick<Ctx, "runtime" | "scope" | "chatId
   } catch (e) {
     console.error("[telegram] PDF da nota indisponível:", e instanceof Error ? e.message : e);
     await sendTelegramText(ctx.runtime, ctx.chatId, "⚠️ Não consegui anexar o PDF da nota agora — ele fica disponível no ERP em Fiscal → Notas.");
+  }
+}
+
+/** Envia o QR CODE Pix como imagem no chat (o copia-e-cola vai em mensagem separada). */
+export async function enviarQrPix(ctx: Pick<Ctx, "runtime" | "chatId">, brcode: string, legenda: string) {
+  try {
+    const png = await QRCode.toBuffer(brcode, { type: "png", width: 512, margin: 2 });
+    await sendTelegramPhoto(ctx.runtime, ctx.chatId, "pix-qrcode.png", png, legenda);
+  } catch (e) {
+    console.error("[telegram] QR Pix falhou:", e instanceof Error ? e.message : e);
   }
 }
 

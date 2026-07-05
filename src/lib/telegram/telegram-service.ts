@@ -117,6 +117,24 @@ export async function answerTelegramCallback(runtime: TelegramRuntime, callbackI
   await tgCall(runtime.botToken, "answerCallbackQuery", { callback_query_id: callbackId }).catch(() => undefined);
 }
 
+/** Envia uma FOTO (ex.: QR Code Pix) direto no chat. */
+export async function sendTelegramPhoto(
+  runtime: TelegramRuntime,
+  chatId: string,
+  filename: string,
+  png: Buffer,
+  legenda?: string
+): Promise<void> {
+  if (!runtime.botToken) return;
+  const form = new FormData();
+  form.append("chat_id", chatId);
+  if (legenda) form.append("caption", legenda.slice(0, 1024));
+  form.append("photo", new Blob([new Uint8Array(png)], { type: "image/png" }), filename);
+  const res = await fetch(`${API}/bot${runtime.botToken}/sendPhoto`, { method: "POST", body: form });
+  const body = (await res.json().catch(() => ({}))) as { ok?: boolean; description?: string };
+  if (!res.ok || !body.ok) throw new Error(body.description || `Telegram sendPhoto falhou (HTTP ${res.status}).`);
+}
+
 /** Envia um ARQUIVO (ex.: PDF de nota/boleto) direto no chat — links do ERP exigem login. */
 export async function sendTelegramDocument(
   runtime: TelegramRuntime,

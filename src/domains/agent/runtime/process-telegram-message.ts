@@ -10,7 +10,7 @@ import {
   sendTelegramTextoSemTeclado,
   type TelegramRuntime
 } from "@/lib/telegram/telegram-service";
-import { enviarPdfBoleto, enviarPdfNota, handleTelegramCallback, handleTelegramTexto, mostrarMenu } from "./telegram-fluxos";
+import { enviarPdfBoleto, enviarPdfNota, enviarQrPix, handleTelegramCallback, handleTelegramTexto, mostrarMenu } from "./telegram-fluxos";
 
 /**
  * Processa um update do Telegram (mesmo agente do WhatsApp, canal TELEGRAM):
@@ -236,6 +236,10 @@ async function enviarPdfsDasTools(
           if (!b.contaReceberId) continue;
           await enviarPdfBoleto(ctx, b.contaReceberId, `💳 ${b.titulo ?? "Boleto"} — venc. ${b.vencimento ?? ""}`);
         }
+      }
+      if (m.toolName === "cobrar_pix" && typeof payload.data.brcode === "string" && payload.data.brcode) {
+        const valor = typeof payload.data.valor === "number" ? payload.data.valor : null;
+        await enviarQrPix(ctx, payload.data.brcode, `💠 Pix${valor ? ` R$ ${valor.toFixed(2).replace(".", ",")}` : ""} — escaneie ou use o copia-e-cola acima.`);
       }
     } catch (err) {
       console.error("[telegram] anexo de PDF falhou:", err instanceof Error ? err.message : err);
