@@ -81,14 +81,31 @@ function resumoVenda(e: Extract<Estado, { fluxo: "venda" }>): string {
   ].filter(Boolean).join("\n");
 }
 
-/** Pós-ações após criar/consultar um pedido (conforme papel e status). */
-function botoesPos(numero: string, gestor: boolean, status?: string): BotaoInline[][] {
+/** Pós-ações após criar/consultar um pedido (conforme papel, status e nota já emitida). */
+function botoesPos(numero: string, gestor: boolean, status?: string, temNotaAutorizada = false): BotaoInline[][] {
   const podeConfirmar = gestor && (!status || status === "RASCUNHO" || status === "AGUARDANDO_PAGAMENTO");
   return [
     ...(podeConfirmar ? [[B("✔️ Confirmar pedido", `pos:conf:${numero}`)]] : []),
-    ...(gestor ? [[B("🧾 Emitir NF-e", `pos:nfe:${numero}`), B("🧾 NFC-e", `pos:nfce:${numero}`)], [B("💳 Boletos do pedido", `pos:bol:${numero}`)]] : []),
+    ...(gestor
+      ? [
+          // Pedido já com nota autorizada: reenviar o PDF (emitir de novo daria erro).
+          temNotaAutorizada
+            ? [B("📄 Nota em PDF (reenviar)", `pos:pdf:${numero}`)]
+            : [B("🧾 Emitir NF-e", `pos:nfe:${numero}`), B("🧾 NFC-e", `pos:nfce:${numero}`)],
+          [B("💳 Boletos do pedido", `pos:bol:${numero}`)]
+        ]
+      : []),
     NAV
   ];
+}
+
+/** Última nota AUTORIZADA do pedido (para reenvio de PDF / curto-circuito da emissão). */
+async function notaAutorizadaDoPedido(scope: TenantScope, pedidoId: string) {
+  return prisma.notaFiscal.findFirst({
+    where: { pedidoVendaId: pedidoId, ...scopedByTenantCompany(scope), status: "AUTORIZADA" },
+    orderBy: { criadoEm: "desc" },
+    select: { id: true, numero: true, modelo: true, status: true }
+  });
 }
 
 // ─── Ações dos botões (callback_query) ───────────────────────────────────────
@@ -212,6 +229,13 @@ export async function handleTelegramCallback(ctx: Ctx, data: string): Promise<vo
     const numero = data.slice(modelo === "NFCE" ? "pos:nfce:".length : "pos:nfe:".length);
     const pedido = await prisma.pedidoVenda.findFirst({ where: { numero, ...scopedByTenantCompany(ctx.scope) }, select: { id: true, status: true } });
     if (!pedido) { await sendTelegramText(ctx.runtime, ctx.chatId, `Pedido ${numero} não encontrado.`); return; }
+    // Pedido já tem nota autorizada → reenvia o PDF em vez de tentar emitir de novo (daria erro).
+    const jaEmitida = await notaAutorizadaDoPedido(ctx.scope, pedido.id);
+    if (jaEmitida) {
+      await sendTelegramBotoes(ctx.runtime, ctx.chatId, `Este pedido já tem ${jaEmitida.modelo} nº ${jaEmitida.numero ?? "—"} AUTORIZADA — reenviando o PDF. 👇`, [[B("💳 Boletos do pedido", `pos:bol:${numero}`)], NAV]);
+      await enviarPdfNota(ctx, jaEmitida.id, `🧾 ${jaEmitida.modelo} nº ${jaEmitida.numero ?? ""} — pedido ${numero}`);
+      return;
+    }
     try {
       if (pedido.status === "RASCUNHO" || pedido.status === "AGUARDANDO_PAGAMENTO") await confirmSale(ctx.scope, pedido.id);
       const nota = await invoiceSale(ctx.scope, pedido.id, { modelo });
@@ -238,6 +262,15 @@ export async function handleTelegramCallback(ctx: Ctx, data: string): Promise<vo
     for (const b of d.boletos) {
       await enviarPdfBoleto(ctx, b.contaReceberId, `💳 ${b.titulo} — venc. ${b.vencimento}`);
     }
+    return;
+  }
+  if (data.startsWith("pos:pdf:")) {
+    const numero = data.slice("pos:pdf:".length);
+    const pedido = await prisma.pedidoVenda.findFirst({ where: { numero, ...scopedByTenantCompany(ctx.scope) }, select: { id: true } });
+    const nota = pedido ? await notaAutorizadaDoPedido(ctx.scope, pedido.id) : null;
+    if (!nota) { await sendTelegramBotoes(ctx.runtime, ctx.chatId, `O pedido ${numero} não tem nota autorizada.`, botoesPos(numero, gestor)); return; }
+    await enviarPdfNota(ctx, nota.id, `🧾 ${nota.modelo} nº ${nota.numero ?? ""} — pedido ${numero}`);
+    await sendTelegramBotoes(ctx.runtime, ctx.chatId, "Mais alguma coisa?", [[B("💳 Boletos do pedido", `pos:bol:${numero}`)], NAV]);
     return;
   }
   if (data.startsWith("ped:")) {
@@ -411,6 +444,7 @@ async function mostrarPedido(ctx: Ctx, numeroBruto: string) {
   if (!pedido) { await sendTelegramBotoes(ctx.runtime, ctx.chatId, `Pedido "${numero}" não encontrado.`, [NAV]); return; }
   const itens = pedido.itens.map((i) => `• ${Number(i.quantidade)}× ${i.produto.nome} (${i.produto.sku})`).join("\n");
   const notas = pedido.notasFiscais.map((n) => `🧾 ${n.modelo} nº ${n.numero ?? "—"} — ${n.status}`).join("\n");
+  const temNotaAutorizada = pedido.notasFiscais.some((n) => n.status === "AUTORIZADA");
   await sendTelegramBotoes(
     ctx.runtime,
     ctx.chatId,
@@ -421,6 +455,6 @@ async function mostrarPedido(ctx: Ctx, numeroBruto: string) {
       `Total: ${BRL.format(Number(pedido.total))}${pedido.formaPagamento ? ` · ${pedido.formaPagamento}` : ""}${pedido.condicaoPagamento ? ` · ${pedido.condicaoPagamento}` : ""}`,
       notas
     ].filter(Boolean).join("\n"),
-    botoesPos(pedido.numero, gestor, pedido.status)
+    botoesPos(pedido.numero, gestor, pedido.status, temNotaAutorizada)
   );
 }
