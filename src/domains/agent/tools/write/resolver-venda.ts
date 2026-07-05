@@ -128,15 +128,16 @@ export async function resolverItens(
       if (!produto) {
         const porCodigo = await localizarProduto(scope, item.produtoId);
         if (porCodigo.erro) return { erro: `produtoId "${item.produtoId}" não existe nesta empresa. ${porCodigo.erro}` };
-        produto = porCodigo.produto;
+        produto = porCodigo.produto ?? null;
       }
     } else if (item.sku?.trim()) {
       const achado = await localizarProduto(scope, item.sku);
       if (achado.erro) return { erro: achado.erro };
-      produto = achado.produto;
+      produto = achado.produto ?? null;
     } else {
       return { erro: "Cada item precisa de produtoId ou sku." };
     }
+    if (!produto) return { erro: `Não consegui localizar o produto do item (${item.sku ?? item.produtoId}).` };
 
     const precoInformado = Number(item.precoUnitario);
     const precoCadastro = Number(produto.precoVenda);
