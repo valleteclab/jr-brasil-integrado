@@ -50,6 +50,65 @@ export async function resolverCliente(
   };
 }
 
+type ProdutoResolvido = { id: string; sku: string; nome: string; precoVenda: unknown };
+
+/**
+ * Localiza um produto por código em CAMADAS: SKU exato → código do fabricante/original/GTIN →
+ * FUZZY por tokens (ex.: "boleto-teste" acha "TESTE-BOLETO"). Ambíguo devolve os candidatos.
+ * Tolerante de propósito: no chat o usuário digita o código de memória, com hífens/ordem trocada.
+ */
+async function localizarProduto(
+  scope: TenantScope,
+  codigo: string
+): Promise<{ produto: ProdutoResolvido; erro?: undefined } | { produto?: undefined; erro: string }> {
+  const base = scopedByTenantCompany(scope);
+  const sel = { id: true, sku: true, nome: true, precoVenda: true };
+  const termo = codigo.trim();
+
+  // 1) SKU exato (case-insensitive).
+  let p = await prisma.produto.findFirst({ where: { ...base, sku: { equals: termo, mode: "insensitive" } }, select: sel });
+  if (p) return { produto: p };
+
+  // 2) Código do fabricante / código original / GTIN exatos.
+  const digitos = termo.replace(/\D/g, "");
+  p = await prisma.produto.findFirst({
+    where: {
+      ...base,
+      OR: [
+        { codigoFabricante: { equals: termo, mode: "insensitive" } },
+        { codigoOriginal: { equals: termo, mode: "insensitive" } },
+        ...(digitos.length >= 8 ? [{ gtin: digitos }] : [])
+      ]
+    },
+    select: sel
+  });
+  if (p) return { produto: p };
+
+  // 3) Fuzzy por tokens: todos os tokens do código precisam aparecer no SKU ou no nome.
+  const tokens = termo.split(/[^a-zA-Z0-9]+/).filter((t) => t.length >= 2);
+  if (tokens.length) {
+    const candidatos = await prisma.produto.findMany({
+      where: {
+        ...base,
+        AND: tokens.map((t) => ({
+          OR: [
+            { sku: { contains: t, mode: "insensitive" as const } },
+            { nome: { contains: t, mode: "insensitive" as const } },
+            { codigoFabricante: { contains: t, mode: "insensitive" as const } }
+          ]
+        }))
+      },
+      select: sel,
+      take: 4
+    });
+    if (candidatos.length === 1) return { produto: candidatos[0] };
+    if (candidatos.length > 1) {
+      return { erro: `Mais de um produto para "${termo}": ${candidatos.map((c) => `${c.sku} (${c.nome})`).join(" | ")}. Pergunte ao usuário qual é e use o SKU exato.` };
+    }
+  }
+  return { erro: `Produto "${termo}" não encontrado. Use buscar_produto para localizar pelo nome.` };
+}
+
 export async function resolverItens(
   scope: TenantScope,
   itens: ItemRef[]
@@ -65,14 +124,16 @@ export async function resolverItens(
         where: { id: item.produtoId.trim(), ...scopedByTenantCompany(scope) },
         select: { id: true, precoVenda: true }
       });
-      if (!produto) return { erro: `produtoId "${item.produtoId}" não existe nesta empresa. Informe o sku que eu localizo.` };
+      // produtoId desconhecido pode ser um SKU no campo errado — tenta como código antes de falhar.
+      if (!produto) {
+        const porCodigo = await localizarProduto(scope, item.produtoId);
+        if (porCodigo.erro) return { erro: `produtoId "${item.produtoId}" não existe nesta empresa. ${porCodigo.erro}` };
+        produto = porCodigo.produto;
+      }
     } else if (item.sku?.trim()) {
-      const sku = item.sku.trim();
-      produto = await prisma.produto.findFirst({
-        where: { sku: { equals: sku, mode: "insensitive" }, ...scopedByTenantCompany(scope) },
-        select: { id: true, precoVenda: true }
-      });
-      if (!produto) return { erro: `Produto com SKU "${sku}" não encontrado. Use buscar_produto para localizar pelo nome.` };
+      const achado = await localizarProduto(scope, item.sku);
+      if (achado.erro) return { erro: achado.erro };
+      produto = achado.produto;
     } else {
       return { erro: "Cada item precisa de produtoId ou sku." };
     }

@@ -13,20 +13,24 @@ export async function searchProducts(
   const termo = (args.termo ?? "").trim();
   const limite = Math.min(Math.max(args.limite ?? 10, 1), 30);
 
+  // Busca por TOKENS: cada palavra/pedaço do termo precisa aparecer em algum campo — assim
+  // "boleto-teste" acha o SKU "TESTE-BOLETO" e "cruzeta spicer" acha por nome+marca do código.
+  const tokens = termo.split(/[^a-zA-Z0-9]+/).filter((t) => t.length >= 2);
+  const camposDoToken = (t: string) => ({
+    OR: [
+      { sku: { contains: t, mode: "insensitive" as const } },
+      { nome: { contains: t, mode: "insensitive" as const } },
+      { codigoOriginal: { contains: t, mode: "insensitive" as const } },
+      { codigoFabricante: { contains: t, mode: "insensitive" as const } },
+      { gtin: { contains: t, mode: "insensitive" as const } }
+    ]
+  });
+
   const produtos = await prisma.produto.findMany({
     where: {
       ...scopedByTenantCompany(scope),
       ativo: true,
-      ...(termo
-        ? {
-            OR: [
-              { sku: { contains: termo, mode: "insensitive" } },
-              { nome: { contains: termo, mode: "insensitive" } },
-              { codigoOriginal: { contains: termo, mode: "insensitive" } },
-              { gtin: { contains: termo, mode: "insensitive" } }
-            ]
-          }
-        : {})
+      ...(tokens.length ? { AND: tokens.map(camposDoToken) } : {})
     },
     take: limite,
     orderBy: { nome: "asc" },
