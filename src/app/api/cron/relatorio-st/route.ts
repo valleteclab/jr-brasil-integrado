@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
+import { applyCest, ncmPrefixos } from "@/domains/fiscal/cest-baseline";
 
 /**
  * RELATÓRIO DE ST (read-only, rota de operação protegida por CRON_SECRET). Cruza os NCMs dos
@@ -26,6 +27,18 @@ async function resolverEmpresa(cnpj: string) {
   if (!digitos) return null;
   const empresas = await prisma.empresa.findMany({ select: { id: true, tenantId: true, cnpj: true, razaoSocial: true } });
   return empresas.find((e) => (e.cnpj ?? "").replace(/\D/g, "") === digitos) ?? null;
+}
+
+/** POST → recarrega a tabela CEST da fonte oficial (agora com NCMs de 2–8 dígitos como prefixos). */
+export async function POST(request: Request) {
+  if (!autorizado(request)) return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
+  try {
+    const r = await applyCest();
+    return NextResponse.json({ recarregado: true, ...r });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Falha ao recarregar CEST.";
+    return NextResponse.json({ error: message }, { status: 400 });
+  }
 }
 
 const SEGMENTO: Record<string, string> = {
@@ -88,7 +101,8 @@ export async function GET(request: Request) {
     for (const g of grupos) {
       const ncm = g.ncm as string;
       const qtd = g._count._all;
-      const cests = await prisma.cest.findMany({ where: { ncms: { has: ncm } }, select: { codigo: true, descricao: true } });
+      // A tabela guarda NCMs como posições/prefixos (2–8 dígitos) — casa por qualquer prefixo.
+      const cests = await prisma.cest.findMany({ where: { ncms: { hasSome: ncmPrefixos(ncm) } }, select: { codigo: true, descricao: true } });
       const st = cests.length > 0;
       if (st) produtosComCest += qtd; else produtosSemCest += qtd;
       const segmentos = [...new Set(cests.map((c) => SEGMENTO[c.codigo.slice(0, 2)] ?? c.codigo.slice(0, 2)))];

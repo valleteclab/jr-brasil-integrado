@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db/prisma";
 import type { TipoCodigoFiscal } from "@/domains/fiscal/fiscal-codes-baseline";
+import { ncmPrefixos } from "@/domains/fiscal/cest-baseline";
 
 export type CodigoFiscalOption = { codigo: string; descricao: string };
 
@@ -35,9 +36,11 @@ export async function searchCest(ncm?: string | null, termo?: string | null, lim
   if (!process.env.DATABASE_URL) return [];
   try {
     const ncmDigits = (ncm ?? "").replace(/\D/g, "");
-    if (ncmDigits.length === 8) {
+    if (ncmDigits.length >= 4) {
+      // A tabela CEST guarda NCMs como POSIÇÕES/PREFIXOS (2–8 dígitos) — casa por qualquer
+      // prefixo do NCM do produto (ex.: 87089990 casa o CEST 01.075.00 gravado como "8708").
       const porNcm = await prisma.cest.findMany({
-        where: { ncms: { has: ncmDigits } },
+        where: { ncms: { hasSome: ncmPrefixos(ncmDigits) } },
         orderBy: { codigo: "asc" },
         take: limite,
         select: { codigo: true, descricao: true }
