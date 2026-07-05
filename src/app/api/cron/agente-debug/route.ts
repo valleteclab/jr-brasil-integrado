@@ -17,6 +17,20 @@ function autorizado(request: Request): boolean {
   return request.headers.get("x-cron-secret")?.trim() === secret;
 }
 
+/** POST ?arquivar=TELEGRAM → arquiva as conversas do canal (viram <CANAL>_ARQ; histórico preservado). */
+export async function POST(request: Request) {
+  if (!autorizado(request)) return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
+  try {
+    const canal = (new URL(request.url).searchParams.get("arquivar") ?? "").toUpperCase();
+    if (!canal || canal.endsWith("_ARQ")) return NextResponse.json({ error: "Informe ?arquivar=TELEGRAM|WHATSAPP." }, { status: 400 });
+    const r = await prisma.conversaAgente.updateMany({ where: { canal }, data: { canal: `${canal}_ARQ` } });
+    return NextResponse.json({ arquivadas: r.count, canal });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Falha ao arquivar.";
+    return NextResponse.json({ error: message }, { status: 400 });
+  }
+}
+
 export async function GET(request: Request) {
   if (!autorizado(request)) return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
   try {
