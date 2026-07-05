@@ -22,6 +22,8 @@ type Linha = {
   pareceAntecipacao: boolean;
   antecipacaoId: string | null;
   casadoCom: string | null;
+  /** Ambiente do movimento do ERP (homologação = teste, nunca bate com o banco real). */
+  ambiente?: string | null;
 };
 
 type Resultado = {
@@ -103,7 +105,8 @@ export function ExtratoBancarioWorkspace({ contas }: { contas: Array<{ id: strin
       Valor: l.valor,
       Situação: l.situacao === "CONCILIADO" ? "Conciliado" : l.situacao === "SO_BANCO" ? "Só no banco" : "Só no ERP",
       "Casado com (ERP)": l.casadoCom ?? "",
-      Antecipação: l.pareceAntecipacao ? "Sim" : ""
+      Antecipação: l.pareceAntecipacao ? "Sim" : "",
+      Ambiente: l.origem === "ERP" ? (l.ambiente === "HOMOLOGACAO" ? "Homologação (teste)" : "Produção") : ""
     })), { Valor: "moeda" });
   }
 
@@ -250,6 +253,9 @@ export function ExtratoBancarioWorkspace({ contas }: { contas: Array<{ id: strin
                             <span className="dot" />
                             {SITUACAO[l.situacao].label}{l.origem === "ERP" ? " (movimento do ERP)" : ""}
                           </span>
+                          {l.origem === "ERP" && l.ambiente === "HOMOLOGACAO" && (
+                            <small className="block-muted" title="Movimento criado em ambiente de homologação (teste) — não passou pelo banco real.">🧪 homologação (teste)</small>
+                          )}
                         </td>
                       </tr>
                     ))}

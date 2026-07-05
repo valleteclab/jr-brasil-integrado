@@ -28,6 +28,8 @@ export type LinhaConciliacao = {
   antecipacaoId: string | null;
   /** Descrição do movimento do ERP casado (quando CONCILIADO na visão do banco). */
   casadoCom: string | null;
+  /** Ambiente do movimento do ERP (SÓ_NO_ERP de homologação é teste — nunca vai bater com o banco). */
+  ambiente?: string | null;
 };
 
 export type ExtratoConciliado = {
@@ -67,6 +69,18 @@ function tokensDescricao(texto: string): Set<string> {
     .toLowerCase();
   const tokens = limpo.split(/[^a-z0-9]+/).filter((t) => t.length >= 3 && !STOPWORDS_EXTRATO.has(t));
   return new Set(tokens);
+}
+
+/**
+ * Categoria SEMÂNTICA da descrição — desempata linhas de mesmo valor/dia: "DÉBITO DEVOLUÇÃO PIX"
+ * deve casar com "Estorno de baixa", não com um Pix enviado qualquer.
+ */
+function categoriaTexto(texto: string): "DEVOLUCAO" | "RECEBIMENTO" | "TARIFA" | null {
+  const t = (texto ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  if (/devolu|estorno/.test(t)) return "DEVOLUCAO";
+  if (/tarifa|cesta|manutencao|iof|pacote de servico/.test(t)) return "TARIFA";
+  if (/receb|baixa|liquidac|venda/.test(t)) return "RECEBIMENTO";
+  return null;
 }
 
 /** Similaridade de descrição (Jaccard 0–1) entre a linha do banco e o movimento do ERP. */
@@ -118,13 +132,15 @@ export async function extratoConciliado(
   const movimentos = await prisma.movimentoFinanceiro.findMany({
     where: { ...scopedByTenantCompany(scope), contaBancariaId: conta.id, dataMovimento: { gte: inicio, lte: fim } },
     orderBy: { dataMovimento: "asc" },
-    select: { id: true, tipo: true, valor: true, descricao: true, dataMovimento: true }
+    select: { id: true, tipo: true, valor: true, descricao: true, dataMovimento: true, ambiente: true }
   });
   const movRestantes = movimentos.map((m) => ({
     id: m.id,
     valor: (m.tipo === "DEBITO" ? -1 : 1) * Number(m.valor),
     descricao: m.descricao,
     tokens: tokensDescricao(m.descricao),
+    categoria: categoriaTexto(m.descricao),
+    ambiente: m.ambiente as string | null,
     data: m.dataMovimento,
     usado: false
   }));
@@ -145,24 +161,43 @@ export async function extratoConciliado(
   let conciliadas = 0;
   let antecipacoesDetectadas = 0;
 
-  for (const t of extrato.transacoes as TransacaoExtrato[]) {
-    const dataBanco = parseDataExtrato(t.data);
-    const tokensBanco = tokensDescricao(`${t.descricao} ${t.informacoesComplementares ?? ""}`);
-    // Casa pelo VALOR (±1 centavo) e, entre os candidatos, escolhe o de melhor pontuação:
-    // data mais próxima + maior semelhança de descrição. Assim, vários lançamentos de mesmo
-    // valor no mês não se emparelham na ordem errada.
-    let par: (typeof movRestantes)[number] | null = null;
-    let melhorPontos = -Infinity;
+  // Pareamento GLOBAL banco×ERP: pontua TODOS os candidatos (valor ±1 centavo + janela de data)
+  // e fecha os pares do melhor para o pior — a ordem do extrato deixa de mandar. Além de data e
+  // semelhança de descrição, a CATEGORIA semântica desempata linhas de mesmo valor no mesmo dia
+  // ("DÉBITO DEVOLUÇÃO PIX" casa com "Estorno de baixa", não com um Pix enviado avulso).
+  const transacoes = extrato.transacoes as TransacaoExtrato[];
+  const infoBanco = transacoes.map((t) => ({
+    dataBanco: parseDataExtrato(t.data),
+    tokens: tokensDescricao(`${t.descricao} ${t.informacoesComplementares ?? ""}`),
+    categoria: categoriaTexto(`${t.descricao} ${t.informacoesComplementares ?? ""}`)
+  }));
+  const candidatos: Array<{ bi: number; m: (typeof movRestantes)[number]; pontos: number }> = [];
+  transacoes.forEach((t, bi) => {
+    const { dataBanco, tokens, categoria } = infoBanco[bi];
     for (const m of movRestantes) {
-      if (m.usado || Math.abs(m.valor - t.valor) > 0.011) continue;
+      if (Math.abs(m.valor - t.valor) > 0.011) continue;
       const distDias = dataBanco ? Math.abs(m.data.getTime() - dataBanco.getTime()) : 0;
-      // Aceita até 2 dias sempre; até 5 dias só se a descrição tiver alguma semelhança.
-      const sim = similaridade(tokensBanco, m.tokens);
-      if (distDias > DOIS_DIAS && !(distDias <= CINCO_DIAS && sim >= 0.34)) continue;
-      const pontos = sim * 100 - distDias / 86400000; // descrição pesa mais que 1 dia de distância
-      if (pontos > melhorPontos) { melhorPontos = pontos; par = m; }
+      const sim = similaridade(tokens, m.tokens);
+      const mesmaCategoria = Boolean(categoria && m.categoria && categoria === m.categoria);
+      // Aceita até 2 dias sempre; até 5 dias com alguma semelhança de descrição OU mesma categoria.
+      if (distDias > DOIS_DIAS && !(distDias <= CINCO_DIAS && (sim >= 0.34 || mesmaCategoria))) continue;
+      const bonusCategoria = categoria && m.categoria ? (mesmaCategoria ? 50 : -40) : 0;
+      const pontos = sim * 100 + bonusCategoria - distDias / 86400000;
+      candidatos.push({ bi, m, pontos });
     }
-    if (par) par.usado = true;
+  });
+  candidatos.sort((a, b) => b.pontos - a.pontos);
+  const parDoBanco = new Map<number, (typeof movRestantes)[number]>();
+  for (const c of candidatos) {
+    if (parDoBanco.has(c.bi) || c.m.usado) continue;
+    c.m.usado = true;
+    parDoBanco.set(c.bi, c.m);
+  }
+
+  for (let bi = 0; bi < transacoes.length; bi++) {
+    const t = transacoes[bi];
+    const { dataBanco } = infoBanco[bi];
+    const par = parDoBanco.get(bi) ?? null;
 
     const textoLinha = `${t.descricao} ${t.informacoesComplementares ?? ""}`;
     const pareceAntecipacao = t.valor > 0 && RE_ANTECIPACAO.test(textoLinha);
@@ -200,7 +235,8 @@ export async function extratoConciliado(
       situacao: "SO_ERP",
       pareceAntecipacao: false,
       antecipacaoId: null,
-      casadoCom: null
+      casadoCom: null,
+      ambiente: m.ambiente
     });
   }
 
