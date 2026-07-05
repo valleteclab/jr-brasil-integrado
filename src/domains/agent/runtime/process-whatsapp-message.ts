@@ -15,7 +15,7 @@ import { getWhatsappRuntime, sendWhatsappText } from "@/lib/whatsapp/whatsapp-se
  *
  * Nunca lança: erros são logados e absorvidos (webhook responde 200 sempre).
  */
-export async function processWhatsappMessage(input: { telefone: string; texto: string }): Promise<void> {
+export async function processWhatsappMessage(input: { telefone: string; texto: string; baseUrl?: string | null }): Promise<void> {
   const telefone = input.telefone.replace(/\D/g, "");
   const texto = input.texto.trim();
   if (!telefone || !texto) return;
@@ -92,7 +92,7 @@ export async function processWhatsappMessage(input: { telefone: string; texto: s
     data: { tenantId: scope.tenantId, empresaId: scope.empresaId, conversaId: conversa.id, papel: "USER", conteudo: texto }
   });
 
-  const result = await runAgentTurn({ scope, role, empresaNome, historico, mensagemUsuario: texto, conversaId: conversa.id, clienteId });
+  const result = await runAgentTurn({ scope, role, empresaNome, historico, mensagemUsuario: texto, conversaId: conversa.id, clienteId, baseUrl: input.baseUrl ?? null });
 
   for (const m of result.novasMensagens) {
     await prisma.mensagemAgente.create({

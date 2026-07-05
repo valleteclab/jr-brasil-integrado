@@ -41,14 +41,16 @@ export async function runAgentTurn(params: {
   conversaId: string;
   /** Quando o solicitante é um cliente final, injetamos o clienteId nas tools CLIENTE. */
   clienteId?: string | null;
+  /** URL pública do sistema (dos headers do canal) — usada para montar links absolutos. */
+  baseUrl?: string | null;
 }): Promise<AgentTurnResult> {
-  const { scope, role, empresaNome, historico, mensagemUsuario, conversaId, clienteId } = params;
+  const { scope, role, empresaNome, historico, mensagemUsuario, conversaId, clienteId, baseUrl } = params;
 
   const tools = getToolsForRole(role);
   const openAiTools = toOpenAiTools(tools);
 
   const messages: ToolChatMessage[] = [
-    { role: "system", content: buildSystemPrompt(role, empresaNome) },
+    { role: "system", content: buildSystemPrompt(role, empresaNome, baseUrl) },
     ...historico,
     { role: "user", content: mensagemUsuario }
   ];

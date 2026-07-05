@@ -56,13 +56,17 @@ export async function POST(request: Request) {
       data: { tenantId: scope.tenantId, empresaId: scope.empresaId, conversaId: conversa.id, papel: "USER", conteudo: mensagem }
     });
 
+    // URL pública (via proxy) para o agente montar links absolutos de PDF/documentos.
+    const proto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim() || "https";
+    const host = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim() || request.headers.get("host")?.trim() || "";
     const result = await runAgentTurn({
       scope,
       role,
       empresaNome,
       historico,
       mensagemUsuario: mensagem,
-      conversaId: conversa.id
+      conversaId: conversa.id,
+      baseUrl: host ? `${proto}://${host}` : null
     });
 
     // Persiste as mensagens geradas (tools + resposta final).

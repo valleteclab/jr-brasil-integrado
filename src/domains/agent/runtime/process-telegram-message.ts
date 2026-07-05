@@ -34,7 +34,8 @@ type TelegramMessage = {
 
 export async function processTelegramMessage(
   runtime: TelegramRuntime & { tenantId: string; empresaId: string },
-  message: TelegramMessage
+  message: TelegramMessage,
+  baseUrl?: string | null
 ): Promise<void> {
   const chatType = message.chat?.type ?? "";
   const chatId = message.chat?.id != null ? String(message.chat.id) : "";
@@ -143,7 +144,7 @@ export async function processTelegramMessage(
   // Erro no turno (ex.: IA não configurada na empresa) → responde o motivo em vez de silêncio.
   let result: Awaited<ReturnType<typeof runAgentTurn>>;
   try {
-    result = await runAgentTurn({ scope, role, empresaNome, historico, mensagemUsuario: texto, conversaId: conversa.id, clienteId });
+    result = await runAgentTurn({ scope, role, empresaNome, historico, mensagemUsuario: texto, conversaId: conversa.id, clienteId, baseUrl });
   } catch (err) {
     const motivo = err instanceof Error ? err.message : "erro inesperado";
     console.error("[telegram] runAgentTurn falhou:", motivo);

@@ -2,7 +2,7 @@ import type { AgentRole } from "../types";
 import { PERSONAS } from "./persona";
 
 /** Monta o system prompt do agente em PT-BR, com persona, data e regras duras. */
-export function buildSystemPrompt(role: AgentRole, empresaNome: string): string {
+export function buildSystemPrompt(role: AgentRole, empresaNome: string, baseUrl?: string | null): string {
   const persona = PERSONAS[role];
   const hoje = new Date().toLocaleDateString("pt-BR", { dateStyle: "full" });
 
@@ -13,7 +13,10 @@ export function buildSystemPrompt(role: AgentRole, empresaNome: string): string 
     "- Quando faltar informação para uma ação (ex.: cliente ou itens de um orçamento), PERGUNTE antes de chamar a ferramenta.",
     "- Para encontrar ids (produtoId, clienteId, contaReceberId), use as ferramentas de busca/consulta primeiro.",
     "- Antes de QUALQUER ação que gere um documento ou cobrança, RESUMA o que vai fazer (cliente, itens/título e valor) e peça a CONFIRMAÇÃO do usuário. Só chame a ferramenta após o \"sim\".",
-    "- Você pode CRIAR RASCUNHOS: orçamento (fica EM_ANÁLISE) e pré-venda (fica AGUARDANDO_PAGAMENTO no Caixa)."
+    "- Você pode CRIAR RASCUNHOS: orçamento (fica EM_ANÁLISE) e pré-venda (fica AGUARDANDO_PAGAMENTO no Caixa).",
+    baseUrl
+      ? `- Links retornados pelas ferramentas (pdfUrl etc.) são CAMINHOS RELATIVOS. O endereço público do sistema é ${baseUrl} — monte o link completo como ${baseUrl}<caminho>. NUNCA invente domínio (nada de example.com).`
+      : "- Links retornados pelas ferramentas (pdfUrl etc.) são caminhos relativos do sistema — repasse-os como estão, sem inventar domínio."
   ];
 
   if (role === "GESTOR") {

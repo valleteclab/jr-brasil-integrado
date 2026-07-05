@@ -4,6 +4,14 @@ import { processWhatsappReceipt } from "@/domains/expenses/runtime/process-whats
 
 export const dynamic = "force-dynamic";
 
+/** URL pública do sistema a partir dos headers do proxy (Traefik). */
+function baseUrlDe(request: Request): string {
+  const proto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim() || "https";
+  const host = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim() || request.headers.get("host")?.trim() || "";
+  return host ? `${proto}://${host}` : "";
+}
+
+
 /**
  * Webhook de entrada do WhatsApp (Z-API: "Ao receber"). SEMPRE responde 200, é tolerante a
  * payloads inesperados e absorve erros para evitar reentregas. A identidade (empresa/papel/cliente)
@@ -41,7 +49,7 @@ export async function POST(request: Request) {
       await processWhatsappReceipt({ telefone, imageUrl });
     } else {
       const texto = body?.text?.message?.trim() ?? "";
-      if (texto) await processWhatsappMessage({ telefone, texto });
+      if (texto) await processWhatsappMessage({ telefone, texto, baseUrl: baseUrlDe(request) || null });
     }
   } catch (error) {
     console.error("[webhook/whatsapp] falha ao processar:", error instanceof Error ? error.message : "erro desconhecido");

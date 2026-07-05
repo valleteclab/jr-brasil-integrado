@@ -5,6 +5,14 @@ import { processTelegramMessage } from "@/domains/agent/runtime/process-telegram
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
+/** URL pública do sistema a partir dos headers do proxy (Traefik). */
+function baseUrlDe(request: Request): string {
+  const proto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim() || "https";
+  const host = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim() || request.headers.get("host")?.trim() || "";
+  return host ? `${proto}://${host}` : "";
+}
+
+
 /**
  * Webhook de entrada do Telegram (um por empresa: /api/webhooks/telegram/<configId>).
  * Autenticação: o Telegram envia em TODO update o header X-Telegram-Bot-Api-Secret-Token com o
@@ -24,7 +32,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
 
     const update = (await request.json().catch(() => null)) as { message?: unknown } | null;
     if (update?.message) {
-      await processTelegramMessage(runtime, update.message as Parameters<typeof processTelegramMessage>[1]);
+      await processTelegramMessage(runtime, update.message as Parameters<typeof processTelegramMessage>[1], baseUrlDe(request) || null);
     }
   } catch (error) {
     console.error("[webhook/telegram] falha ao processar:", error instanceof Error ? error.message : "erro desconhecido");
