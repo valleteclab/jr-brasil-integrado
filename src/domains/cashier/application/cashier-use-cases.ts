@@ -684,13 +684,18 @@ export async function receberPagamentoEEmitir(
   });
   // Pagamentos do XML: líquidos por forma (somam o total da nota; troco fica fora).
   doc.pagamentos = liquidoPorForma;
-  // FATURAS na NF-e 55: parcelas do boleto viram duplicatas (quadro FATURA do DANFE).
+  // FATURAS na NF-e 55: parcelas do boleto viram duplicatas (quadro FATURA do DANFE) — só quando
+  // há vencimento FUTURO (a prazo). À vista com cobrança = SEFAZ Rejeição 853.
   if (input.modelo === "NFE" && boleto?.titulos?.length) {
-    doc.faturas = boleto.titulos.map((t, i) => ({
-      numero: String(i + 1).padStart(3, "0"),
-      vencimento: new Date(t.vencimento),
-      valor: t.valor
-    }));
+    const hoje = new Date().toISOString().slice(0, 10);
+    const aPrazo = boleto.titulos.some((t) => new Date(t.vencimento).toISOString().slice(0, 10) > hoje);
+    if (aPrazo) {
+      doc.faturas = boleto.titulos.map((t, i) => ({
+        numero: String(i + 1).padStart(3, "0"),
+        vencimento: new Date(t.vencimento),
+        valor: t.valor
+      }));
+    }
   }
 
   // 3) Emite (ou fecha só com recibo, se a empresa permite e o input pedir).

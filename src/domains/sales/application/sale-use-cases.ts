@@ -773,16 +773,19 @@ export async function invoiceSale(scope: TenantScope, id: string, options?: { mo
   // Monta documento fiscal — fora de transação (emitFiscalDocument gerencia suas próprias)
   const doc = buildDocumentoVenda(pedido, modelo);
 
-  // FATURAS/duplicatas (grupo cobr): venda a prazo leva as parcelas na NF-e 55 — é o que preenche
+  // FATURAS/duplicatas (grupo cobr): venda A PRAZO leva as parcelas na NF-e 55 — é o que preenche
   // o quadro FATURA do DANFE. As parcelas são as ContaReceber em aberto do pedido (criadas na
-  // confirmação conforme a condição de pagamento; boletos incluídos).
+  // confirmação conforme a condição de pagamento; boletos incluídos). Venda à vista (nenhuma
+  // parcela com vencimento futuro) NÃO leva cobrança — SEFAZ Rejeição 853.
   if (modelo === "NFE") {
     const parcelasNota = await prisma.contaReceber.findMany({
       where: { ...scopedByTenantCompany(scope), pedidoVendaId: id, status: { in: ["ABERTO", "PARCIAL", "VENCIDO"] } },
       orderBy: { vencimento: "asc" },
       select: { vencimento: true, valor: true }
     });
-    if (parcelasNota.length) {
+    const hoje = new Date().toISOString().slice(0, 10);
+    const aPrazo = parcelasNota.some((p) => p.vencimento.toISOString().slice(0, 10) > hoje);
+    if (parcelasNota.length && aPrazo) {
       doc.faturas = parcelasNota.map((p, i) => ({
         numero: String(i + 1).padStart(3, "0"),
         vencimento: p.vencimento,

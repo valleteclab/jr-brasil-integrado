@@ -473,16 +473,23 @@ export function buildNfeXml(input: EmitInput): BuildNfeResult {
     : (doc.modalidadeFrete ?? 9);
   const transp = `<transp><modFrete>${modFrete}</modFrete></transp>`;
 
-  // cobr: FATURA + duplicatas (venda a prazo — boleto/faturado). Só na NF-e 55 (a NFC-e não tem o
-  // grupo). É o que faz as parcelas aparecerem no quadro FATURA do DANFE.
-  const fats = (doc.faturas ?? []).filter((f) => f.valor > 0);
-  const cobr = doc.modelo !== "NFCE" && fats.length
+  // cobr: FATURA + duplicatas SÓ em venda A PRAZO (alguma parcela vence APÓS a emissão). À vista
+  // com cobr = Rejeição 853 ("Dados de cobrança não devem ser informados para pagamento à vista");
+  // e com cobr presente cada detPag leva indPag=1. Só na NF-e 55 (a NFC-e não tem o grupo).
+  const hojeEmissao = dhEmi.slice(0, 10);
+  const fats = doc.modelo !== "NFCE" ? (doc.faturas ?? []).filter((f) => f.valor > 0) : [];
+  const aPrazo = fats.some((f) => f.vencimento.toISOString().slice(0, 10) > hojeEmissao);
+  const cobr = aPrazo
     ? `<cobr><fat><nFat>${esc(sanitize(String(input.numero)))}</nFat><vOrig>${fmt(input.total)}</vOrig><vDesc>0.00</vDesc><vLiq>${fmt(input.total)}</vLiq></fat>` +
-      fats.map((f) =>
-        `<dup><nDup>${esc(sanitize(f.numero).slice(0, 60))}</nDup><dVenc>${f.vencimento.toISOString().slice(0, 10)}</dVenc><vDup>${fmt(f.valor)}</vDup></dup>`
-      ).join("") +
+      fats.map((f) => {
+        // dVenc não pode ser anterior à emissão (ex.: reemissão com parcela vencida) — trava em hoje.
+        const dV = f.vencimento.toISOString().slice(0, 10);
+        return `<dup><nDup>${esc(sanitize(f.numero).slice(0, 60))}</nDup><dVenc>${dV < hojeEmissao ? hojeEmissao : dV}</dVenc><vDup>${fmt(f.valor)}</vDup></dup>`;
+      }).join("") +
       `</cobr>`
     : "";
+  // indPag (0=à vista, 1=a prazo): com cobr presente é OBRIGADO ser 1; à vista omitimos (aceito).
+  const indPag = aPrazo ? `<indPag>1</indPag>` : "";
 
   // pag: devolução = sem pagamento (90); senão, pagamentos informados ou único pelo total.
   const tpPagFallback = doc.finalidade === "DEVOLUCAO" ? "90" : mapTpPag(doc.formaPagamento);
@@ -491,13 +498,13 @@ export function buildNfeXml(input: EmitInput): BuildNfeResult {
   if (tpPagFallback === "90") {
     pagInner = `<detPag><tPag>90</tPag><vPag>0.00</vPag></detPag>`;
   } else if (lista.length) {
-    // Ordem do schema (detPag): tPag → xPag (só quando tPag=99) → vPag → card. xPag depois de vPag
-    // rejeita com cStat 215 ("invalid child element xPag").
+    // Ordem do schema (detPag): indPag → tPag → xPag (só quando tPag=99) → vPag → card. xPag depois
+    // de vPag rejeita com cStat 215 ("invalid child element xPag").
     const detPag = lista.map((p) => {
       const tPag = mapTpPag(p.forma);
       const card = (tPag === "03" || tPag === "04" || tPag === "17") ? `<card><tpIntegra>2</tpIntegra></card>` : "";
       const xPag = tPag === "99" ? tag("xPag", esc(sanitize(p.forma) || "Outros")) : "";
-      return `<detPag><tPag>${tPag}</tPag>${xPag}<vPag>${fmt(Number(p.valor))}</vPag>${card}</detPag>`;
+      return `<detPag>${indPag}<tPag>${tPag}</tPag>${xPag}<vPag>${fmt(Number(p.valor))}</vPag>${card}</detPag>`;
     }).join("");
     const recebido = round2(lista.reduce((s, p) => s + Number(p.valor), 0));
     const troco = round2(Math.max(recebido - input.total, 0));
@@ -505,7 +512,7 @@ export function buildNfeXml(input: EmitInput): BuildNfeResult {
   } else {
     const card = (tpPagFallback === "03" || tpPagFallback === "04" || tpPagFallback === "17") ? `<card><tpIntegra>2</tpIntegra></card>` : "";
     const xPag = tpPagFallback === "99" ? tag("xPag", esc(sanitize(doc.formaPagamento) || "Outros")) : "";
-    pagInner = `<detPag><tPag>${tpPagFallback}</tPag>${xPag}<vPag>${fmt(input.total)}</vPag>${card}</detPag>`;
+    pagInner = `<detPag>${indPag}<tPag>${tpPagFallback}</tPag>${xPag}<vPag>${fmt(input.total)}</vPag>${card}</detPag>`;
   }
   const pag = `<pag>${pagInner}</pag>`;
 
