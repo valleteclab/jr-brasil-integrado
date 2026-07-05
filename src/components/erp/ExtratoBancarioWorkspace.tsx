@@ -265,7 +265,7 @@ export function ExtratoBancarioWorkspace({ contas }: { contas: Array<{ id: strin
               {/* CONCILIAÇÃO — banco × ERP, com pendências e checklist da diferença. */}
               <div className="kpi-row" style={{ marginTop: 12 }}>
                 <div className="kpi"><span className="kpi-label">Saldo no banco</span><strong>{resultado.saldoBanco != null ? brl(resultado.saldoBanco) : "—"}</strong></div>
-                <div className="kpi"><span className="kpi-label">Saldo no ERP</span><strong>{brl(resultado.saldoErp)}</strong></div>
+                <div className="kpi"><span className="kpi-label">Saldo no ERP (produção)</span><strong>{brl(resultado.saldoErp)}</strong></div>
                 <div className="kpi"><span className="kpi-label">Conciliadas</span><strong>{resultado.resumo.conciliadas}</strong></div>
                 <div className="kpi"><span className="kpi-label">Só no banco</span><strong>{resultado.resumo.soBanco}</strong></div>
                 <div className="kpi"><span className="kpi-label">Só no ERP</span><strong>{resultado.resumo.soErp}</strong></div>

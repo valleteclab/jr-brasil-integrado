@@ -130,8 +130,10 @@ export async function extratoConciliado(
   // Movimentos do ERP no período (saldo bancário é global — sem filtro de ambiente).
   const inicio = new Date(ano, mes - 1, diaInicial, 0, 0, 0);
   const fim = new Date(ano, mes - 1, diaFinal, 23, 59, 59);
+  // SÓ movimentos de PRODUÇÃO: o extrato do banco é sempre real — lançamento de homologação
+  // (teste) nunca vai bater e só polui a tela; fica fora da comparação.
   const movimentos = await prisma.movimentoFinanceiro.findMany({
-    where: { ...scopedByTenantCompany(scope), contaBancariaId: conta.id, dataMovimento: { gte: inicio, lte: fim } },
+    where: { ...scopedByTenantCompany(scope), contaBancariaId: conta.id, ambiente: "PRODUCAO", dataMovimento: { gte: inicio, lte: fim } },
     orderBy: { dataMovimento: "asc" },
     select: { id: true, tipo: true, valor: true, descricao: true, dataMovimento: true, ambiente: true }
   });
@@ -246,7 +248,15 @@ export async function extratoConciliado(
   const round2 = (v: number) => Math.round((v + Number.EPSILON) * 100) / 100;
   const totalSoBanco = round2(linhas.filter((l) => l.situacao === "SO_BANCO").reduce((s, l) => s + l.valor, 0));
   const totalSoErp = round2(linhas.filter((l) => l.situacao === "SO_ERP").reduce((s, l) => s + l.valor, 0));
-  const saldoErp = Number(conta.saldoAtual);
+  // saldoAtual é GLOBAL (inclui testes de homologação que mexeram no saldo). Para comparar com o
+  // banco real, expurga o efeito líquido dos movimentos de homologação desta conta.
+  const homologAgg = await prisma.movimentoFinanceiro.groupBy({
+    by: ["tipo"],
+    where: { ...scopedByTenantCompany(scope), contaBancariaId: conta.id, ambiente: "HOMOLOGACAO" },
+    _sum: { valor: true }
+  });
+  const efeitoHomolog = homologAgg.reduce((s2, g) => s2 + (g.tipo === "DEBITO" ? -1 : 1) * Number(g._sum.valor ?? 0), 0);
+  const saldoErp = Math.round((Number(conta.saldoAtual) - efeitoHomolog) * 100) / 100;
   const diferenca = saldo.saldo != null ? round2(saldo.saldo - saldoErp) : null;
   // Os lançamentos pendentes (só-banco menos só-ERP) devem explicar a diferença de saldo.
   const explicada = diferenca != null && Math.abs(diferenca - round2(totalSoBanco - totalSoErp)) <= 0.02;
