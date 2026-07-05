@@ -43,6 +43,18 @@ export async function GET(request: Request) {
   if (!autorizado(request)) return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
   try {
     const url = new URL(request.url);
+    // Lista os CEST de um segmento (?seg=01 → autopeças) com descrição, para montar o De/Para
+    // família→CEST com os códigos OFICIAIS da tabela (sem inventar código).
+    const seg = url.searchParams.get("seg");
+    if (seg) {
+      const dig = seg.replace(/\D/g, "").slice(0, 2);
+      const lista = await prisma.cest.findMany({
+        where: { codigo: { startsWith: dig } },
+        orderBy: { codigo: "asc" },
+        select: { codigo: true, descricao: true }
+      });
+      return NextResponse.json({ segmento: dig, total: lista.length, itens: lista });
+    }
     // Diagnóstico da tabela CEST: ?probe=8708 → mostra se o capítulo tem CEST e como os NCMs estão gravados.
     const probe = url.searchParams.get("probe");
     if (probe) {
