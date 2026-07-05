@@ -19,6 +19,11 @@ function api(auth: SicoobAuth, method: string, path: string, payload?: unknown):
   return sicoobApi(auth, COBRANCA, method, path, payload);
 }
 
+/** DIAGNÓSTICO (rota sicoob-teste): chamada crua na API de cobrança — devolve status+corpo brutos. */
+export function chamadaCobrancaCrua(auth: SicoobAuth, method: string, path: string, payload?: unknown): Promise<HttpResult> {
+  return api(auth, method, path, payload);
+}
+
 export type IncluirBoletoInput = {
   numeroCliente: number;
   codigoModalidade: number;

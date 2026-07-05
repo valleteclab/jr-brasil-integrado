@@ -47,6 +47,28 @@ export async function POST(request: Request) {
 
     const auth = await authDaConta(scope, conta);
 
+    // PROBE de método HTTP no endpoint de BAIXA (diagnóstico do 405): pedido + método a testar.
+    const bodyProbe = body as { probeBaixaPedido?: string; metodo?: string };
+    if (bodyProbe.probeBaixaPedido) {
+      const pedido = await prisma.pedidoVenda.findFirst({
+        where: { tenantId: empresa.tenantId, empresaId: empresa.id, numero: bodyProbe.probeBaixaPedido },
+        select: { id: true }
+      });
+      if (!pedido) throw new BoletoError(`Pedido ${bodyProbe.probeBaixaPedido} não encontrado.`);
+      const boletoDb = await prisma.boletoCobranca.findFirst({
+        where: { tenantId: empresa.tenantId, empresaId: empresa.id, contaReceber: { pedidoVendaId: pedido.id } },
+        select: { nossoNumero: true, status: true }
+      });
+      if (!boletoDb?.nossoNumero) throw new BoletoError("Boleto do pedido sem nossoNumero.");
+      const { chamadaCobrancaCrua } = await import("@/domains/finance/providers/sicoob-cobranca");
+      const metodo = (bodyProbe.metodo ?? "POST").toUpperCase();
+      const r = await chamadaCobrancaCrua(auth, metodo, `/boletos/${boletoDb.nossoNumero}/baixar`, {
+        numeroCliente: conta.sicoobNumeroCliente as number,
+        codigoModalidade: conta.sicoobModalidade
+      });
+      return NextResponse.json({ metodo, nossoNumero: boletoDb.nossoNumero, statusBoletoDb: boletoDb.status, statusCode: r.statusCode, corpo: r.body.slice(0, 500) });
+    }
+
     // Reproduz a consulta do "Consultar pgto": GET do boleto pelo nosso número (resposta bruta).
     if (body.consultarBoleto) {
       const { consultarBoleto } = await import("@/domains/finance/providers/sicoob-cobranca");
