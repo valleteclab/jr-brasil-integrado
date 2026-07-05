@@ -10,7 +10,7 @@ import {
   sendTelegramTextoSemTeclado,
   type TelegramRuntime
 } from "@/lib/telegram/telegram-service";
-import { handleTelegramCallback, handleTelegramTexto, mostrarMenu } from "./telegram-fluxos";
+import { enviarPdfBoleto, enviarPdfNota, handleTelegramCallback, handleTelegramTexto, mostrarMenu } from "./telegram-fluxos";
 
 /**
  * Processa um update do Telegram (mesmo agente do WhatsApp, canal TELEGRAM):
@@ -210,6 +210,37 @@ export async function processTelegramMessage(
       : `\n\n📝 ${tipoLabel} ${result.draft.numero ?? ""} criado(a) como rascunho. Um responsável vai confirmar no sistema.`;
   }
   await sendTelegramText(runtime, chatId, resposta);
+
+  // Documentos gerados pelas tools do turno (NF/boleto) vão como PDF anexo — link do ERP exige login.
+  await enviarPdfsDasTools(runtime, scope, chatId, result.novasMensagens);
+}
+
+/** Varre os resultados das tools do turno da IA e anexa os PDFs (nota fiscal e boletos). */
+async function enviarPdfsDasTools(
+  runtime: TelegramRuntime & { tenantId: string; empresaId: string },
+  scope: TenantScope,
+  chatId: string,
+  mensagens: Array<{ papel: string; toolName?: string; toolPayload?: unknown }>
+): Promise<void> {
+  for (const m of mensagens) {
+    if (m.papel !== "TOOL" || !m.toolPayload) continue;
+    const payload = m.toolPayload as { ok?: boolean; data?: Record<string, unknown> | null };
+    if (!payload.ok || !payload.data) continue;
+    const ctx = { runtime, scope, chatId };
+    try {
+      if (m.toolName === "faturar_pedido" && typeof payload.data.notaId === "string") {
+        await enviarPdfNota(ctx, payload.data.notaId, `🧾 Nota nº ${payload.data.numeroNota ?? ""} — pedido ${payload.data.pedido ?? ""}`);
+      }
+      if (m.toolName === "emitir_boleto" && Array.isArray(payload.data.boletos)) {
+        for (const b of payload.data.boletos as Array<{ contaReceberId?: string; titulo?: string; vencimento?: string }>) {
+          if (!b.contaReceberId) continue;
+          await enviarPdfBoleto(ctx, b.contaReceberId, `💳 ${b.titulo ?? "Boleto"} — venc. ${b.vencimento ?? ""}`);
+        }
+      }
+    } catch (err) {
+      console.error("[telegram] anexo de PDF falhou:", err instanceof Error ? err.message : err);
+    }
+  }
 }
 
 type TelegramCallbackQuery = {

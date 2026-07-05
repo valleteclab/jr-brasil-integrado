@@ -73,9 +73,16 @@ export const emitirBoleto: AgentTool = {
     const falhas: Array<{ titulo: string; erro: string }> = [];
     for (const titulo of titulos) {
       try {
-        const boleto = await gerarBoletoParaRecebivel(scope, titulo.id, { contaBancariaId });
+        // Título já com boleto vigente → devolve a 2ª VIA em vez de falhar.
+        const existente = await prisma.boletoCobranca.findFirst({
+          where: { contaReceberId: titulo.id, ...scopedByTenantCompany(scope), status: { notIn: ["ERRO", "CANCELADO"] } },
+          select: { status: true, nossoNumero: true, linhaDigitavel: true, valor: true, vencimento: true }
+        });
+        const boleto = existente ?? (await gerarBoletoParaRecebivel(scope, titulo.id, { contaBancariaId }));
         boletos.push({
+          contaReceberId: titulo.id,
           titulo: titulo.descricao,
+          segundaVia: Boolean(existente),
           status: boleto.status,
           nossoNumero: boleto.nossoNumero,
           linhaDigitavel: boleto.linhaDigitavel,

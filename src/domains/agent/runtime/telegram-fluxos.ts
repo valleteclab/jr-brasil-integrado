@@ -2,11 +2,13 @@ import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import { scopedByTenantCompany } from "@/lib/auth/dev-session";
 import { confirmSale, createSale, invoiceSale } from "@/domains/sales/application/sale-use-cases";
+import { downloadNotaFiscalDocumento } from "@/domains/fiscal/application/fiscal-emission-use-cases";
+import { pdfDoBoleto } from "@/domains/finance/application/boleto-use-cases";
 import { resolverCliente, localizarProduto } from "../tools/write/resolver-venda";
 import { emitirBoleto } from "../tools/write/emitir-boleto";
 import { consultarOs } from "../tools/read/consultar-os";
 import { searchProducts } from "../queries/product-queries";
-import { sendTelegramBotoes, sendTelegramText, type BotaoInline, type TelegramRuntime } from "@/lib/telegram/telegram-service";
+import { sendTelegramBotoes, sendTelegramDocument, sendTelegramText, type BotaoInline, type TelegramRuntime } from "@/lib/telegram/telegram-service";
 
 /**
  * FLUXOS GUIADOS do bot do Telegram (menu + botões, SEM IA): criar venda, consultar pedido,
@@ -213,13 +215,13 @@ export async function handleTelegramCallback(ctx: Ctx, data: string): Promise<vo
     try {
       if (pedido.status === "RASCUNHO" || pedido.status === "AGUARDANDO_PAGAMENTO") await confirmSale(ctx.scope, pedido.id);
       const nota = await invoiceSale(ctx.scope, pedido.id, { modelo });
-      const pdf = ctx.baseUrl ? `${ctx.baseUrl}/api/erp/fiscal/${nota.id}/pdf` : `/api/erp/fiscal/${nota.id}/pdf`;
       await sendTelegramBotoes(
         ctx.runtime,
         ctx.chatId,
-        `🧾 ${modelo === "NFCE" ? "NFC-e" : "NF-e"} nº ${nota.numero} ${nota.status}.\nChave: ${nota.chaveAcesso ?? "—"}\nPDF: ${pdf}`,
+        `🧾 ${modelo === "NFCE" ? "NFC-e" : "NF-e"} nº ${nota.numero} ${nota.status}.\nChave: ${nota.chaveAcesso ?? "—"}`,
         [[B("💳 Boletos do pedido", `pos:bol:${numero}`)], NAV]
       );
+      await enviarPdfNota(ctx, nota.id, `🧾 ${modelo === "NFCE" ? "NFC-e" : "NF-e"} nº ${nota.numero} — pedido ${numero}`);
     } catch (e) {
       await sendTelegramBotoes(ctx.runtime, ctx.chatId, `❌ ${e instanceof Error ? e.message : "Falha ao emitir a nota."}`, [NAV]);
     }
@@ -230,9 +232,12 @@ export async function handleTelegramCallback(ctx: Ctx, data: string): Promise<vo
     const numero = data.slice("pos:bol:".length);
     const r = await emitirBoleto.handler(ctx.scope, { pedidoNumero: numero });
     if (!r.ok) { await sendTelegramBotoes(ctx.runtime, ctx.chatId, `❌ ${r.error}`, botoesPos(numero, gestor)); return; }
-    const d = r.data as { emitidos: number; boletos: Array<{ titulo: string; valor: number; vencimento: string; linhaDigitavel: string | null; pdfUrl: string }> };
-    const linhas = d.boletos.map((b) => `• ${b.titulo} — ${BRL.format(b.valor)} venc. ${b.vencimento}\n  Linha digitável: ${b.linhaDigitavel ?? "—"}\n  PDF: ${ctx.baseUrl ?? ""}${b.pdfUrl}`);
-    await sendTelegramBotoes(ctx.runtime, ctx.chatId, `💳 ${d.emitidos} boleto(s) emitido(s):\n\n${linhas.join("\n\n")}`, [NAV]);
+    const d = r.data as { emitidos: number; boletos: Array<{ contaReceberId: string; titulo: string; segundaVia?: boolean; valor: number; vencimento: string; linhaDigitavel: string | null }> };
+    const linhas = d.boletos.map((b) => `• ${b.titulo}${b.segundaVia ? " (2ª via)" : ""} — ${BRL.format(b.valor)} venc. ${b.vencimento}\n  Linha digitável: ${b.linhaDigitavel ?? "—"}`);
+    await sendTelegramBotoes(ctx.runtime, ctx.chatId, `💳 ${d.emitidos} boleto(s):\n\n${linhas.join("\n\n")}`, [NAV]);
+    for (const b of d.boletos) {
+      await enviarPdfBoleto(ctx, b.contaReceberId, `💳 ${b.titulo} — venc. ${b.vencimento}`);
+    }
     return;
   }
   if (data.startsWith("ped:")) {
@@ -365,6 +370,29 @@ export async function handleTelegramTexto(ctx: Ctx, texto: string): Promise<bool
   }
 
   return false;
+}
+
+/** Envia o PDF da nota (DANFE/DANFCE) como DOCUMENTO no chat — link do ERP exige login. */
+export async function enviarPdfNota(ctx: Pick<Ctx, "runtime" | "scope" | "chatId">, notaId: string, legenda: string) {
+  try {
+    const doc = await downloadNotaFiscalDocumento(ctx.scope, notaId, "pdf");
+    await sendTelegramDocument(ctx.runtime, ctx.chatId, doc.filename || `nota-${notaId}.pdf`, doc.body, legenda);
+  } catch (e) {
+    console.error("[telegram] PDF da nota indisponível:", e instanceof Error ? e.message : e);
+    await sendTelegramText(ctx.runtime, ctx.chatId, "⚠️ Não consegui anexar o PDF da nota agora — ele fica disponível no ERP em Fiscal → Notas.");
+  }
+}
+
+/** Envia o PDF do boleto como DOCUMENTO no chat. */
+export async function enviarPdfBoleto(ctx: Pick<Ctx, "runtime" | "scope" | "chatId">, contaReceberId: string, legenda: string) {
+  try {
+    const pdf = await pdfDoBoleto(ctx.scope, contaReceberId);
+    await sendTelegramDocument(ctx.runtime, ctx.chatId, `boleto-${contaReceberId.slice(-8)}.pdf`, pdf, legenda);
+  } catch (e) {
+    // Sandbox do Sicoob devolve PDF de exemplo inválido — o erro já explica; não interrompe o fluxo.
+    console.error("[telegram] PDF do boleto indisponível:", e instanceof Error ? e.message : e);
+    await sendTelegramText(ctx.runtime, ctx.chatId, `⚠️ PDF do boleto indisponível: ${e instanceof Error ? e.message : "falha"}`);
+  }
 }
 
 async function mostrarPedido(ctx: Ctx, numeroBruto: string) {

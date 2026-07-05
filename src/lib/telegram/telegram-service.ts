@@ -117,6 +117,24 @@ export async function answerTelegramCallback(runtime: TelegramRuntime, callbackI
   await tgCall(runtime.botToken, "answerCallbackQuery", { callback_query_id: callbackId }).catch(() => undefined);
 }
 
+/** Envia um ARQUIVO (ex.: PDF de nota/boleto) direto no chat — links do ERP exigem login. */
+export async function sendTelegramDocument(
+  runtime: TelegramRuntime,
+  chatId: string,
+  filename: string,
+  conteudo: Buffer,
+  legenda?: string
+): Promise<void> {
+  if (!runtime.botToken) return;
+  const form = new FormData();
+  form.append("chat_id", chatId);
+  if (legenda) form.append("caption", legenda.slice(0, 1024));
+  form.append("document", new Blob([new Uint8Array(conteudo)], { type: "application/pdf" }), filename);
+  const res = await fetch(`${API}/bot${runtime.botToken}/sendDocument`, { method: "POST", body: form });
+  const body = (await res.json().catch(() => ({}))) as { ok?: boolean; description?: string };
+  if (!res.ok || !body.ok) throw new Error(body.description || `Telegram sendDocument falhou (HTTP ${res.status}).`);
+}
+
 /**
  * Salva a config: criptografa o token (vazio = mantém o atual), valida com getMe e registra o
  * webhook com secret novo. Retorna o username do bot.
