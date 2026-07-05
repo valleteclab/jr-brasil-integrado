@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { baixarCsv } from "@/lib/export/csv";
 
@@ -60,6 +60,28 @@ export function ExtratoBancarioWorkspace({ contas }: { contas: Array<{ id: strin
   const [erro, setErro] = useState("");
   const [resultado, setResultado] = useState<Resultado | null>(null);
   const [aba, setAba] = useState<"extrato" | "conciliacao">("extrato");
+  const [consultadoEm, setConsultadoEm] = useState("");
+  // Conciliação manual de linha só-no-banco (lançar no ERP).
+  const [classificacoes, setClassificacoes] = useState<Array<{ id: string; nome: string; tipo: string }>>([]);
+  const [lancando, setLancando] = useState<{ linha: Linha; descricaoErp: string; classificacaoId: string } | null>(null);
+  const [lancBusy, setLancBusy] = useState(false);
+
+  // A consulta PERSISTE ao sair da tela: cada conta/período guarda o último resultado no navegador
+  // e ele é restaurado ao voltar (o botão "Consultar" atualiza direto no banco quando quiser).
+  const chaveCache = `erp:extrato:${contaId}:${ano}-${String(mes).padStart(2, "0")}`;
+  useEffect(() => {
+    try {
+      const bruto = localStorage.getItem(chaveCache);
+      if (bruto) {
+        const salvo = JSON.parse(bruto) as { resultado: Resultado; em: string };
+        setResultado(salvo.resultado);
+        setConsultadoEm(salvo.em);
+        return;
+      }
+    } catch { /* cache corrompido → ignora */ }
+    setResultado(null);
+    setConsultadoEm("");
+  }, [chaveCache]);
 
   // Extrato PURO: só as linhas que vieram do banco, na ordem do banco.
   const linhasBanco = useMemo(() => (resultado?.linhas ?? []).filter((l) => l.origem === "BANCO"), [resultado]);
@@ -78,6 +100,9 @@ export function ExtratoBancarioWorkspace({ contas }: { contas: Array<{ id: strin
       const data = (await res.json().catch(() => ({}))) as Resultado & { error?: string };
       if (!res.ok) throw new Error(data.error || "Não foi possível consultar o extrato.");
       setResultado(data);
+      const em = new Date().toLocaleString("pt-BR");
+      setConsultadoEm(em);
+      try { localStorage.setItem(chaveCache, JSON.stringify({ resultado: data, em })); } catch { /* sem espaço → segue sem cache */ }
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Falha ao consultar o extrato.");
       setResultado(null);
@@ -110,6 +135,48 @@ export function ExtratoBancarioWorkspace({ contas }: { contas: Array<{ id: strin
     })), { Valor: "moeda" });
   }
 
+  /** Abre o mini-formulário de lançamento para uma linha só-no-banco. */
+  async function abrirLancamento(l: Linha) {
+    if (!classificacoes.length) {
+      try {
+        const res = await fetch("/api/erp/financeiro/classificacoes");
+        const d = (await res.json().catch(() => ({}))) as { classificacoes?: Array<{ id: string; nome: string; tipo: string; ativo?: boolean }> };
+        setClassificacoes((d.classificacoes ?? []).filter((c) => c.ativo !== false).map((c) => ({ id: c.id, nome: c.nome, tipo: c.tipo })));
+      } catch { /* sem classificações → lança sem */ }
+    }
+    setLancando({ linha: l, descricaoErp: l.descricao, classificacaoId: "" });
+  }
+
+  /** Confirma o lançamento: cria conta paga quitada (débito) ou crédito no ERP e re-consulta. */
+  async function confirmarLancamento() {
+    if (!lancando || !resultado) return;
+    setLancBusy(true);
+    setErro("");
+    try {
+      const l = lancando.linha;
+      const res = await fetch(`/api/erp/financeiro/contas-bancarias/${resultado.conta.id}/extrato/lancar`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          data: l.data,
+          descricao: l.descricao,
+          documento: l.documento,
+          valor: l.valor,
+          classificacaoId: lancando.classificacaoId || null,
+          descricaoErp: lancando.descricaoErp.trim() || null
+        })
+      });
+      const d = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(d.error || "Não foi possível lançar a transação.");
+      setLancando(null);
+      await consultar(); // re-consulta: a linha concilia com o lançamento novo e o cache é atualizado
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Falha ao lançar a transação.");
+    } finally {
+      setLancBusy(false);
+    }
+  }
+
   if (!contas.length) {
     return (
       <div className="erp-card" style={{ padding: 20 }}>
@@ -135,6 +202,7 @@ export function ExtratoBancarioWorkspace({ contas }: { contas: Array<{ id: strin
           {busy ? "Consultando…" : "Consultar extrato"}
         </button>
         <div className="grow" />
+        {consultadoEm && <small className="block-muted" title="Última consulta salva — o resultado fica guardado ao sair da tela.">consultado em {consultadoEm}</small>}
         {resultado && resultado.linhas.length > 0 && (
           <button type="button" className="btn-erp ghost sm" onClick={exportar}>⬇ Exportar CSV</button>
         )}
@@ -232,7 +300,8 @@ export function ExtratoBancarioWorkspace({ contas }: { contas: Array<{ id: strin
                   </thead>
                   <tbody>
                     {resultado.linhas.map((l, i) => (
-                      <tr key={i}>
+                      <Fragment key={i}>
+                      <tr>
                         <td>{l.data ? new Date(l.data).toLocaleDateString("pt-BR") : "—"}</td>
                         <td>
                           <strong>{l.descricao}</strong>
@@ -256,8 +325,44 @@ export function ExtratoBancarioWorkspace({ contas }: { contas: Array<{ id: strin
                           {l.origem === "ERP" && l.ambiente === "HOMOLOGACAO" && (
                             <small className="block-muted" title="Movimento criado em ambiente de homologação (teste) — não passou pelo banco real.">🧪 homologação (teste)</small>
                           )}
+                          {l.situacao === "SO_BANCO" && (
+                            <div style={{ marginTop: 4 }}>
+                              <button type="button" className="btn-erp light xs" disabled={lancBusy} onClick={() => abrirLancamento(l)} title="Registrar no ERP esta transação que só está no banco (ex.: conta paga fora do sistema, tarifa)">
+                                ➕ Lançar no ERP
+                              </button>
+                            </div>
+                          )}
                         </td>
                       </tr>
+                      {lancando && lancando.linha === l && (
+                        <tr>
+                          <td colSpan={5} style={{ background: "var(--erp-bg, #fafafa)" }}>
+                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "end", padding: "6px 2px" }}>
+                              <label style={{ display: "flex", flexDirection: "column", gap: 4, flex: "2 1 260px", fontSize: 12 }}>
+                                Descrição do lançamento
+                                <input value={lancando.descricaoErp} onChange={(e) => setLancando((cur) => (cur ? { ...cur, descricaoErp: e.target.value } : cur))} style={{ height: 34 }} />
+                              </label>
+                              <label style={{ display: "flex", flexDirection: "column", gap: 4, flex: "1 1 220px", fontSize: 12 }}>
+                                Classificação gerencial {l.valor < 0 ? "(despesa)" : "(receita)"}
+                                <select value={lancando.classificacaoId} onChange={(e) => setLancando((cur) => (cur ? { ...cur, classificacaoId: e.target.value } : cur))} style={{ height: 34 }}>
+                                  <option value="">Sem classificação…</option>
+                                  {classificacoes.filter((c) => c.tipo === (l.valor < 0 ? "DESPESA" : "RECEITA")).map((c) => (
+                                    <option key={c.id} value={c.id}>{c.nome}</option>
+                                  ))}
+                                </select>
+                              </label>
+                              <span style={{ fontSize: 12, paddingBottom: 8 }}>
+                                {l.valor < 0
+                                  ? <>Vai criar uma <strong>conta paga quitada</strong> de {brl(Math.abs(l.valor))} em {l.data ? new Date(l.data).toLocaleDateString("pt-BR") : "—"} nesta conta.</>
+                                  : <>Vai registrar um <strong>crédito</strong> de {brl(l.valor)} em {l.data ? new Date(l.data).toLocaleDateString("pt-BR") : "—"} nesta conta.</>}
+                              </span>
+                              <button type="button" className="btn-erp primary sm" disabled={lancBusy} onClick={confirmarLancamento}>{lancBusy ? "Lançando…" : "Confirmar lançamento"}</button>
+                              <button type="button" className="btn-erp ghost sm" disabled={lancBusy} onClick={() => setLancando(null)}>Cancelar</button>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                      </Fragment>
                     ))}
                     {!resultado.linhas.length && (
                       <tr><td colSpan={5}><div className="empty-st"><h4>Sem transações no período</h4></div></td></tr>

@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
-import { scopedByTenantCompany } from "@/lib/auth/dev-session";
+import { scopedByTenantCompany, scopedByTenantCompanyAmbiente } from "@/lib/auth/dev-session";
+import { createAuditLog } from "@/lib/audit/audit-service";
 import { BoletoError } from "@/domains/finance/application/boleto-use-cases";
 import { getBankProvider, contaTemExtrato, bancoLabel } from "@/domains/finance/providers/bank-registry";
 import type { TransacaoExtrato } from "@/domains/finance/providers/bank-provider";
@@ -265,4 +266,84 @@ export async function extratoConciliado(
     },
     diferenca: { saldoBanco: saldo.saldo, saldoErp, diferenca, totalSoBanco, totalSoErp, explicada }
   };
+}
+
+/**
+ * CONCILIAÇÃO MANUAL: lança no ERP uma transação que está SÓ NO BANCO (ex.: pagamento feito pelo
+ * app, tarifa, Pix avulso). Débito vira ContaPagar QUITADA (com classificação gerencial) + movimento;
+ * crédito vira movimento de CRÉDITO direto. A data/valor iguais aos do extrato fazem a linha
+ * conciliar automaticamente na próxima consulta.
+ */
+export async function lancarLinhaExtrato(
+  scope: TenantScope,
+  contaBancariaId: string,
+  input: { data: string; descricao: string; documento?: string | null; valor: number; classificacaoId?: string | null; descricaoErp?: string | null },
+  usuarioId?: string
+): Promise<{ contaPagarId: string | null; movimentoId: string }> {
+  const valor = Math.round(Number(input.valor) * 100) / 100;
+  if (!valor || !Number.isFinite(valor)) throw new BoletoError("Valor inválido.");
+  const dataMovimento = new Date(input.data);
+  if (Number.isNaN(dataMovimento.getTime())) throw new BoletoError("Data inválida.");
+  const descricao = (input.descricaoErp ?? "").trim() || `Conciliação: ${input.descricao}`.slice(0, 180);
+  const round2 = (v: number) => Math.round((v + Number.EPSILON) * 100) / 100;
+
+  return prisma.$transaction(async (tx) => {
+    const conta = await tx.contaBancaria.findFirst({ where: { id: contaBancariaId, ...scopedByTenantCompany(scope), ativo: true } });
+    if (!conta) throw new BoletoError("Conta bancária não encontrada.");
+
+    let contaPagarId: string | null = null;
+    if (valor < 0) {
+      const pagar = await tx.contaPagar.create({
+        data: {
+          tenantId: scope.tenantId,
+          empresaId: scope.empresaId,
+          ambiente: scope.ambiente ?? "HOMOLOGACAO",
+          descricao,
+          origem: "CONCILIACAO",
+          numeroDocumento: input.documento ?? null,
+          vencimento: dataMovimento,
+          valor: Math.abs(valor),
+          valorPago: Math.abs(valor),
+          status: "PAGO",
+          pagoEm: dataMovimento,
+          formaPagamento: "DEBITO_EM_CONTA",
+          contaBancariaId: conta.id,
+          classificacaoId: input.classificacaoId ?? null,
+          observacoes: `Lançado pela conciliação bancária a partir do extrato: "${input.descricao}".`
+        }
+      });
+      contaPagarId = pagar.id;
+    }
+
+    const saldoAnterior = Number(conta.saldoAtual);
+    const saldoPosterior = round2(saldoAnterior + valor);
+    await tx.contaBancaria.update({ where: { id: conta.id }, data: { saldoAtual: saldoPosterior } });
+    const movimento = await tx.movimentoFinanceiro.create({
+      data: {
+        ...scopedByTenantCompanyAmbiente(scope),
+        contaBancariaId: conta.id,
+        contaPagarId,
+        tipo: valor < 0 ? "DEBITO" : "CREDITO",
+        origem: "CONCILIACAO",
+        descricao,
+        valor: Math.abs(valor),
+        formaPagamento: "DEBITO_EM_CONTA",
+        saldoAnterior,
+        saldoPosterior,
+        dataMovimento,
+        usuarioId: usuarioId ?? null
+      }
+    });
+
+    await createAuditLog(tx, {
+      scope,
+      usuarioId,
+      entidade: "MovimentoFinanceiro",
+      entidadeId: movimento.id,
+      acao: "CONCILIACAO_MANUAL",
+      payload: { contaBancariaId: conta.id, descricaoBanco: input.descricao, valor, contaPagarId }
+    });
+
+    return { contaPagarId, movimentoId: movimento.id };
+  });
 }
