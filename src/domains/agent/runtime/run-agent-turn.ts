@@ -6,9 +6,11 @@ import type { AgentDraft, AgentRole } from "../types";
 import { getTool, getToolsForRole, toOpenAiTools } from "../tools/registry";
 import { buildSystemPrompt } from "./system-prompt";
 
-// Turnos "faça a venda" reais consomem várias iterações (buscar cliente → buscar produto →
-// criar), inclusive com retentativas quando o modelo erra um id. 8 dá folga sem custo relevante.
-const MAX_ITERACOES = 8;
+// Limites de SEGURANÇA (custo/loop descontrolado) — não devem interromper fluxos legítimos:
+// as tools de venda resolvem cliente/produto sozinhas (1 chamada) e, se algum limite estourar,
+// o turno fecha com uma resposta em texto resumindo o que foi feito (nunca silêncio).
+const MAX_ITERACOES = 15;
+const MAX_MS = 90_000;
 
 export type AgentTurnResult = {
   assistantText: string;
@@ -54,7 +56,8 @@ export async function runAgentTurn(params: {
   const novasMensagens: AgentTurnResult["novasMensagens"] = [];
   let draft: AgentDraft | null = null;
 
-  for (let i = 0; i < MAX_ITERACOES; i++) {
+  const inicio = Date.now();
+  for (let i = 0; i < MAX_ITERACOES && Date.now() - inicio < MAX_MS; i++) {
     const assistant = await callOpenRouterWithTools(scope, messages, openAiTools);
     const toolCalls = assistant.tool_calls ?? [];
 
