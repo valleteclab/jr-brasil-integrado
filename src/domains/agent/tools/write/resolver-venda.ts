@@ -50,14 +50,14 @@ export async function resolverCliente(
   };
 }
 
-type ProdutoResolvido = { id: string; sku: string; nome: string; precoVenda: unknown };
+export type ProdutoResolvido = { id: string; sku: string; nome: string; precoVenda: unknown };
 
 /**
  * Localiza um produto por código em CAMADAS: SKU exato → código do fabricante/original/GTIN →
  * FUZZY por tokens (ex.: "boleto-teste" acha "TESTE-BOLETO"). Ambíguo devolve os candidatos.
  * Tolerante de propósito: no chat o usuário digita o código de memória, com hífens/ordem trocada.
  */
-async function localizarProduto(
+export async function localizarProduto(
   scope: TenantScope,
   codigo: string
 ): Promise<{ produto: ProdutoResolvido; erro?: undefined } | { produto?: undefined; erro: string }> {

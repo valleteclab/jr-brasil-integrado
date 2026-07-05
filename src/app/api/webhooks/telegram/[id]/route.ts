@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getTelegramRuntimeById } from "@/lib/telegram/telegram-service";
-import { processTelegramMessage } from "@/domains/agent/runtime/process-telegram-message";
+import { processTelegramCallback, processTelegramMessage } from "@/domains/agent/runtime/process-telegram-message";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -30,8 +30,11 @@ export async function POST(request: Request, { params }: { params: { id: string 
       return NextResponse.json({ received: true }, { status: 200 });
     }
 
-    const update = (await request.json().catch(() => null)) as { message?: unknown } | null;
-    if (update?.message) {
+    const update = (await request.json().catch(() => null)) as { message?: unknown; callback_query?: unknown } | null;
+    if (update?.callback_query) {
+      // Clique em botão inline dos fluxos guiados.
+      await processTelegramCallback(runtime, update.callback_query as Parameters<typeof processTelegramCallback>[1], baseUrlDe(request) || null);
+    } else if (update?.message) {
       await processTelegramMessage(runtime, update.message as Parameters<typeof processTelegramMessage>[1], baseUrlDe(request) || null);
     }
   } catch (error) {

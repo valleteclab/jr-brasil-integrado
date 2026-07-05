@@ -3046,6 +3046,8 @@ model TelegramVinculo {
   nome         String?
   role         AgentRole @default(CLIENTE)
   clienteId    String?
+  /// Estado do FLUXO guiado por botões (máquina de estados; null = sem fluxo ativo → IA).
+  estado       Json?
   ativo        Boolean   @default(true)
   criadoEm     DateTime  @default(now())
   atualizadoEm DateTime  @updatedAt

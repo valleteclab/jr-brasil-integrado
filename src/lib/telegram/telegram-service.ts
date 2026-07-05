@@ -94,6 +94,29 @@ export async function sendTelegramTextoSemTeclado(runtime: TelegramRuntime, chat
   await tgCall(runtime.botToken, "sendMessage", { chat_id: chatId, text: texto, reply_markup: { remove_keyboard: true } });
 }
 
+export type BotaoInline = { text: string; data: string };
+
+/** Mensagem com BOTÕES inline (fluxos guiados sem IA). `data` volta no callback_query (máx 64 bytes). */
+export async function sendTelegramBotoes(
+  runtime: TelegramRuntime,
+  chatId: string,
+  texto: string,
+  botoes: BotaoInline[][]
+): Promise<void> {
+  if (!runtime.botToken) return;
+  await tgCall(runtime.botToken, "sendMessage", {
+    chat_id: chatId,
+    text: texto,
+    reply_markup: { inline_keyboard: botoes.map((linha) => linha.map((b) => ({ text: b.text, callback_data: b.data }))) }
+  });
+}
+
+/** Confirma o recebimento de um callback (tira o "reloginho" do botão). Nunca lança. */
+export async function answerTelegramCallback(runtime: TelegramRuntime, callbackId: string): Promise<void> {
+  if (!runtime.botToken || !callbackId) return;
+  await tgCall(runtime.botToken, "answerCallbackQuery", { callback_query_id: callbackId }).catch(() => undefined);
+}
+
 /**
  * Salva a config: criptografa o token (vazio = mantém o atual), valida com getMe e registra o
  * webhook com secret novo. Retorna o username do bot.
@@ -123,7 +146,8 @@ export async function saveTelegramConfig(
     await tgCall(token, "setWebhook", {
       url: `${baseUrl}/api/webhooks/telegram/${cfgId}`,
       secret_token: webhookSecret,
-      allowed_updates: ["message"]
+      // callback_query = cliques nos botões inline dos fluxos guiados.
+      allowed_updates: ["message", "callback_query"]
     });
     await prisma.configuracaoTelegram.update({
       where: { id: cfgId },

@@ -4,11 +4,13 @@ import type { AgentRole } from "../types";
 import { runAgentTurn } from "./run-agent-turn";
 import type { ToolChatMessage } from "@/domains/ai/openrouter-service";
 import {
+  answerTelegramCallback,
   sendTelegramPedirContato,
   sendTelegramText,
   sendTelegramTextoSemTeclado,
   type TelegramRuntime
 } from "@/lib/telegram/telegram-service";
+import { handleTelegramCallback, handleTelegramTexto, mostrarMenu } from "./telegram-fluxos";
 
 /**
  * Processa um update do Telegram (mesmo agente do WhatsApp, canal TELEGRAM):
@@ -82,8 +84,15 @@ export async function processTelegramMessage(
       });
       const saudacao = identidade.role === "CLIENTE"
         ? "✅ Número confirmado! Sou o assistente da empresa — posso consultar seus pedidos, boletos e o andamento das suas OS. Como posso ajudar?"
-        : `✅ Número confirmado (${identidade.role.toLowerCase()})! Posso consultar estoque, pedidos e OS, criar orçamentos/pré-vendas, emitir boleto/Pix e notas. Como posso ajudar?`;
+        : `✅ Número confirmado (${identidade.role.toLowerCase()})!`;
       await sendTelegramTextoSemTeclado(runtime, chatId, saudacao);
+      // Gestor/vendedor já recebe o MENU de fluxos guiados (a IA é uma das opções).
+      if (identidade.role !== "CLIENTE") {
+        const novoVinculo = await prisma.telegramVinculo.findUnique({ where: { empresaId_chatId: { empresaId: scope.empresaId, chatId } } });
+        if (novoVinculo) {
+          await mostrarMenu({ runtime, scope, vinculo: { id: novoVinculo.id, role: novoVinculo.role, estado: novoVinculo.estado, chatId }, chatId, baseUrl: baseUrl ?? null });
+        }
+      }
       return;
     }
     // Qualquer outra mensagem sem vínculo → pede o contato.
@@ -108,6 +117,22 @@ export async function processTelegramMessage(
     select: { ambiente: true }
   });
   scope.ambiente = cfgFiscal?.ambiente ?? "HOMOLOGACAO";
+
+  // FLUXOS GUIADOS (script, sem IA) primeiro — gestor/vendedor: menu, venda passo a passo,
+  // consultas etc. Só cai na IA quando não há fluxo ativo (modo livre) ou o texto não é do fluxo.
+  if (role !== "CLIENTE") {
+    try {
+      const tratado = await handleTelegramTexto(
+        { runtime, scope, vinculo: { id: vinculo.id, role: vinculo.role, estado: vinculo.estado, chatId }, chatId, baseUrl: baseUrl ?? null },
+        texto
+      );
+      if (tratado) return;
+    } catch (err) {
+      console.error("[telegram] fluxo guiado falhou:", err instanceof Error ? err.message : err);
+      await sendTelegramText(runtime, chatId, "⚠️ Algo deu errado nesse passo. Digite 'menu' para recomeçar.");
+      return;
+    }
+  }
 
   const empresa = await prisma.empresa.findFirst({
     where: { id: scope.empresaId, tenantId: scope.tenantId },
@@ -185,6 +210,51 @@ export async function processTelegramMessage(
       : `\n\n📝 ${tipoLabel} ${result.draft.numero ?? ""} criado(a) como rascunho. Um responsável vai confirmar no sistema.`;
   }
   await sendTelegramText(runtime, chatId, resposta);
+}
+
+type TelegramCallbackQuery = {
+  id?: string;
+  data?: string;
+  from?: { id?: number };
+  message?: { chat?: { id?: number; type?: string } };
+};
+
+/** Processa um clique em botão inline (callback_query) — fluxos guiados sem IA. */
+export async function processTelegramCallback(
+  runtime: TelegramRuntime & { tenantId: string; empresaId: string },
+  callback: TelegramCallbackQuery,
+  baseUrl?: string | null
+): Promise<void> {
+  const chatId = callback.message?.chat?.id != null ? String(callback.message.chat.id) : "";
+  const data = (callback.data ?? "").trim();
+  if (callback.id) await answerTelegramCallback(runtime, callback.id);
+  if (!chatId || !data) return;
+
+  const scope: TenantScope = { tenantId: runtime.tenantId, empresaId: runtime.empresaId };
+  const vinculo = await prisma.telegramVinculo.findUnique({
+    where: { empresaId_chatId: { empresaId: scope.empresaId, chatId } }
+  });
+  if (!vinculo || !vinculo.ativo) {
+    await sendTelegramPedirContato(runtime, chatId, "Preciso confirmar quem você é — toque no botão e compartilhe seu número.");
+    return;
+  }
+  if (vinculo.role === "CLIENTE") return; // fluxos guiados são só do time (v1)
+
+  const cfgFiscal = await prisma.configuracaoFiscal.findUnique({
+    where: { empresaId: scope.empresaId },
+    select: { ambiente: true }
+  });
+  scope.ambiente = cfgFiscal?.ambiente ?? "HOMOLOGACAO";
+
+  try {
+    await handleTelegramCallback(
+      { runtime, scope, vinculo: { id: vinculo.id, role: vinculo.role, estado: vinculo.estado, chatId }, chatId, baseUrl: baseUrl ?? null },
+      data
+    );
+  } catch (err) {
+    console.error("[telegram] callback falhou:", err instanceof Error ? err.message : err);
+    await sendTelegramText(runtime, chatId, "⚠️ Algo deu errado nessa ação. Digite 'menu' para recomeçar.");
+  }
 }
 
 /** Casa o telefone com AgenteTelefone (papel dele) ou ClienteContato (CLIENTE). */
