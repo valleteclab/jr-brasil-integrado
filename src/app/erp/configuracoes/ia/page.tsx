@@ -1,6 +1,7 @@
 import { AiSettingsForm } from "@/components/erp/AiSettingsForm";
 import { AgentApiKeys } from "@/components/erp/AgentApiKeys";
 import { AgentPhones } from "@/components/erp/AgentPhones";
+import { TelegramConfig } from "@/components/erp/TelegramConfig";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { getAiConfig } from "@/domains/ai/openrouter-service";
 import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
@@ -22,6 +23,7 @@ export default async function AiSettingsPage() {
       </PageHeader>
       <AiSettingsForm initialConfig={config} />
       <AgentPhones />
+      <TelegramConfig />
       <AgentApiKeys />
     </>
   );

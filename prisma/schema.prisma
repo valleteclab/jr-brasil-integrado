@@ -328,6 +328,8 @@ model Tenant {
   chavesApiAgente          ChaveApiAgente[]
   telefonesAgente          AgenteTelefone[]
   configWhatsapp           ConfiguracaoWhatsapp[]
+  configTelegram           ConfiguracaoTelegram[]
+  vinculosTelegram         TelegramVinculo[]
   configEmail              ConfiguracaoEmail[]
   criadoEm                 DateTime                 @default(now())
   atualizadoEm             DateTime                 @updatedAt
@@ -394,6 +396,8 @@ model Empresa {
   chavesApiAgente           ChaveApiAgente[]
   telefonesAgente           AgenteTelefone[]
   configWhatsapp            ConfiguracaoWhatsapp[]
+  configTelegram            ConfiguracaoTelegram[]
+  vinculosTelegram          TelegramVinculo[]
   configEmail               ConfiguracaoEmail[]
   enderecoLogradouro        String?
   enderecoNumero            String?
@@ -3002,6 +3006,51 @@ model ConfiguracaoWhatsapp {
   criadoEm          DateTime         @default(now())
   atualizadoEm      DateTime         @updatedAt
 
+  @@index([tenantId, empresaId])
+}
+
+/// Bot do Telegram da empresa (token do BotFather). Mesmo agente do WhatsApp/web, canal TELEGRAM.
+/// O webhook é registrado automaticamente ao salvar (setWebhook com secret_token).
+model ConfiguracaoTelegram {
+  id              String   @id @default(cuid())
+  tenantId        String
+  empresaId       String   @unique
+  tenant          Tenant   @relation(fields: [tenantId], references: [id])
+  empresa         Empresa  @relation(fields: [empresaId], references: [id])
+  ativo           Boolean  @default(false)
+  /// Token do bot (BotFather), criptografado.
+  botTokenCripto  String?
+  /// Username público do bot (@...), preenchido via getMe ao salvar.
+  botUsername     String?
+  /// Segredo enviado pelo Telegram no header X-Telegram-Bot-Api-Secret-Token (valida o webhook).
+  webhookSecret   String?
+  /// Atende clientes finais (telefone casando com ClienteContato) além dos telefones autorizados.
+  atenderClientes Boolean  @default(true)
+  criadoEm        DateTime @default(now())
+  atualizadoEm    DateTime @updatedAt
+
+  @@index([tenantId, empresaId])
+}
+
+/// Identidade de um chat do Telegram: criado quando o usuário COMPARTILHA O CONTATO (verificado
+/// pelo Telegram) e o telefone casa com AgenteTelefone (papel dele) ou ClienteContato (CLIENTE).
+model TelegramVinculo {
+  id           String    @id @default(cuid())
+  tenantId     String
+  empresaId    String
+  tenant       Tenant    @relation(fields: [tenantId], references: [id])
+  empresa      Empresa   @relation(fields: [empresaId], references: [id])
+  /// chat_id do Telegram (chat privado = id do usuário).
+  chatId       String
+  telefone     String?
+  nome         String?
+  role         AgentRole @default(CLIENTE)
+  clienteId    String?
+  ativo        Boolean   @default(true)
+  criadoEm     DateTime  @default(now())
+  atualizadoEm DateTime  @updatedAt
+
+  @@unique([empresaId, chatId])
   @@index([tenantId, empresaId])
 }
 

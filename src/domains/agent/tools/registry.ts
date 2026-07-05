@@ -9,6 +9,7 @@ import { relatorioFinanceiro } from "./read/relatorio-financeiro";
 import { dashboardTool } from "./read/dashboard";
 import { consultarMeusPedidos } from "./read/consultar-meus-pedidos";
 import { consultarContasReceber } from "./read/consultar-contas-receber";
+import { consultarOs } from "./read/consultar-os";
 import { criarOrcamento } from "./write/criar-orcamento";
 import { criarPreVenda } from "./write/criar-pre-venda";
 import { emitirBoleto } from "./write/emitir-boleto";
@@ -31,6 +32,7 @@ export const ALL_TOOLS: AgentTool[] = [
   dashboardTool,
   consultarMeusPedidos,
   consultarContasReceber,
+  consultarOs,
   criarOrcamento,
   criarPreVenda,
   emitirBoleto,
