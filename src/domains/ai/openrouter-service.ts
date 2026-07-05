@@ -288,7 +288,7 @@ export async function callOpenRouterWithTools(
   scope: TenantScope,
   messages: ToolChatMessage[],
   tools: unknown[],
-  options?: { maxTokens?: number; temperature?: number }
+  options?: { maxTokens?: number; temperature?: number; toolChoice?: "auto" | "none" }
 ): Promise<AssistantToolMessage> {
   const config = await getActiveOpenRouterSecret(scope);
   const response = await fetch(OPENROUTER_CHAT_URL, {
@@ -296,7 +296,8 @@ export async function callOpenRouterWithTools(
       model: config.model,
       messages,
       tools,
-      tool_choice: "auto",
+      // "none" força resposta em TEXTO (fechamento do turno quando o loop de tools esgota).
+      tool_choice: options?.toolChoice ?? "auto",
       temperature: options?.temperature ?? 0.2,
       max_tokens: options?.maxTokens ?? 900
     }),

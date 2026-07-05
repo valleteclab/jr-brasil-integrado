@@ -6,7 +6,9 @@ import type { AgentDraft, AgentRole } from "../types";
 import { getTool, getToolsForRole, toOpenAiTools } from "../tools/registry";
 import { buildSystemPrompt } from "./system-prompt";
 
-const MAX_ITERACOES = 5;
+// Turnos "faça a venda" reais consomem várias iterações (buscar cliente → buscar produto →
+// criar), inclusive com retentativas quando o modelo erra um id. 8 dá folga sem custo relevante.
+const MAX_ITERACOES = 8;
 
 export type AgentTurnResult = {
   assistantText: string;
@@ -117,7 +119,19 @@ export async function runAgentTurn(params: {
     }
   }
 
-  // Estourou o limite de iterações sem resposta final.
+  // Estourou o limite de iterações: força UMA resposta final em texto (tool_choice "none") para
+  // o modelo fechar o turno resumindo o que fez — em vez do aviso genérico (ex.: a pré-venda FOI
+  // criada na última iteração e o usuário merece a confirmação, não "não consegui concluir").
+  try {
+    const fechamento = await callOpenRouterWithTools(scope, messages, openAiTools, { toolChoice: "none" });
+    const texto = (fechamento.content ?? "").trim();
+    if (texto) {
+      novasMensagens.push({ papel: "ASSISTANT", conteudo: texto });
+      return { assistantText: texto, draft, novasMensagens };
+    }
+  } catch {
+    // cai no aviso genérico
+  }
   const aviso = "Não consegui concluir a solicitação em tempo. Tente reformular ou peça um passo de cada vez.";
   novasMensagens.push({ papel: "ASSISTANT", conteudo: aviso });
   return { assistantText: aviso, draft, novasMensagens };

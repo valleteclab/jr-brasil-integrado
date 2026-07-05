@@ -1,5 +1,6 @@
 import type { AgentTool } from "../../types";
 import { createQuote } from "@/domains/sales-quote/application/quote-use-cases";
+import { validarIdsVenda } from "./validar-ids";
 
 export const criarOrcamento: AgentTool = {
   name: "criar_orcamento",
@@ -36,6 +37,8 @@ export const criarOrcamento: AgentTool = {
     if (!args.clienteId || itens.length === 0) {
       return { ok: false, data: null, error: "Informe clienteId e ao menos um item." };
     }
+    const erroIds = await validarIdsVenda(scope, String(args.clienteId), itens.map((i) => String(i.produtoId)));
+    if (erroIds) return { ok: false, data: null, error: erroIds };
     const orcamento = await createQuote(scope, {
       clienteId: String(args.clienteId),
       itens: itens.map((i) => ({

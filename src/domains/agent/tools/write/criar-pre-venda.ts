@@ -1,5 +1,6 @@
 import type { AgentTool } from "../../types";
 import { createSale } from "@/domains/sales/application/sale-use-cases";
+import { validarIdsVenda } from "./validar-ids";
 
 export const criarPreVenda: AgentTool = {
   name: "criar_pre_venda",
@@ -34,6 +35,12 @@ export const criarPreVenda: AgentTool = {
     if (itens.length === 0) {
       return { ok: false, data: null, error: "Informe ao menos um item." };
     }
+    const erroIds = await validarIdsVenda(
+      scope,
+      args.clienteId ? String(args.clienteId) : null,
+      itens.map((i) => String(i.produtoId))
+    );
+    if (erroIds) return { ok: false, data: null, error: erroIds };
     const pedido = await createSale(scope, {
       clienteId: args.clienteId ? String(args.clienteId) : null,
       canal: "BALCAO",
