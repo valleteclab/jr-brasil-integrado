@@ -140,7 +140,20 @@ export async function processTelegramMessage(
     data: { tenantId: scope.tenantId, empresaId: scope.empresaId, conversaId: conversa.id, papel: "USER", conteudo: texto }
   });
 
-  const result = await runAgentTurn({ scope, role, empresaNome, historico, mensagemUsuario: texto, conversaId: conversa.id, clienteId });
+  // Erro no turno (ex.: IA não configurada na empresa) → responde o motivo em vez de silêncio.
+  let result: Awaited<ReturnType<typeof runAgentTurn>>;
+  try {
+    result = await runAgentTurn({ scope, role, empresaNome, historico, mensagemUsuario: texto, conversaId: conversa.id, clienteId });
+  } catch (err) {
+    const motivo = err instanceof Error ? err.message : "erro inesperado";
+    console.error("[telegram] runAgentTurn falhou:", motivo);
+    await sendTelegramText(
+      runtime,
+      chatId,
+      `⚠️ Não consegui processar agora: ${motivo}\n\nSe for configuração, peça ao administrador para revisar em Configurações → IA do ERP.`
+    );
+    return;
+  }
 
   for (const m of result.novasMensagens) {
     await prisma.mensagemAgente.create({
