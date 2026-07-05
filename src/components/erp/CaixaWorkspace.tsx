@@ -47,6 +47,8 @@ type PagamentoLinha = {
   vencimentos?: string[];
   /** BOLETO: valor escolhido de CADA parcela (padrão: divisão igual, resto na última). */
   valoresParcelas?: number[];
+  /** Pix dinâmico JÁ PAGO (retomada de venda interrompida): linha travada, abate do que falta. */
+  pixPagoId?: string;
 };
 const uid = () => Math.random().toString(36).slice(2, 9);
 
@@ -250,8 +252,18 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
     setError("");
     setModelo("NFCE");
     setRetiradaExpedicao(false);
+    // Pix dinâmicos JÁ PAGOS do pedido (venda interrompida no meio): entram travados e abatem
+    // do que falta — o operador completa a diferença e finaliza de onde parou.
+    const pagas: PagamentoLinha[] = p.pixPagos.map((x) => ({
+      uid: uid(), forma: "PIX", valor: x.valor, contaBancariaId: x.contaBancariaId, pixPagoId: x.id
+    }));
+    const jaPago = pagas.reduce((soma, l) => soma + l.valor, 0);
+    const restante = Math.max(Math.round((p.total - jaPago) * 100) / 100, 0);
     // Pré-seleciona a forma que o vendedor já informou no balcão (o operador pode trocar).
-    setPagamentos([{ uid: uid(), forma: formaCaixaFromLabel(p.formaPagamento), valor: p.total }]);
+    setPagamentos([
+      ...pagas,
+      ...(restante > 0 || !pagas.length ? [{ uid: uid(), forma: formaCaixaFromLabel(p.formaPagamento), valor: restante || p.total }] : [])
+    ]);
   }
 
   function addPagamento() { setPagamentos((cur) => [...cur, { uid: uid(), forma: "DINHEIRO", valor: falta }]); }
@@ -363,7 +375,7 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
   // PIX em conta INTEGRADA (chave Pix cadastrada): o caixa AGUARDA a confirmação do pagamento —
   // só libera o receber quando a cobrança dinâmica estiver CONCLUIDA (webhook/poll confirmam).
   const pixIntegradoPendente =
-    pagamentos.some((p) => p.forma === "PIX" && (Number(p.valor) || 0) > 0 && Boolean(data.contas.find((c) => c.id === p.contaBancariaId)?.chavePix)) &&
+    pagamentos.some((p) => !p.pixPagoId && p.forma === "PIX" && (Number(p.valor) || 0) > 0 && Boolean(data.contas.find((c) => c.id === p.contaBancariaId)?.chavePix)) &&
     pixQr?.status !== "CONCLUIDA";
 
   // ---- Caixa fechado: abertura ----
@@ -535,7 +547,12 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
                   ))}
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6, margin: "10px 0" }}>
-                  {pagamentos.map((p) => (
+                  {pagamentos.map((p) => p.pixPagoId ? (
+                    <div key={p.uid} className="alert success" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 10px" }}>
+                      <span>✓ PIX já recebido (QR pago{data.contas.find((c) => c.id === p.contaBancariaId)?.nome ? ` · ${data.contas.find((c) => c.id === p.contaBancariaId)?.nome}` : ""})</span>
+                      <strong>{brl(p.valor)}</strong>
+                    </div>
+                  ) : (
                     <div key={p.uid} style={{ display: "flex", flexDirection: "column", gap: 4, borderBottom: isPixOuTransfer(p.forma) || isCartao(p.forma) || p.forma === "BOLETO" ? "1px dashed var(--erp-line)" : "none", paddingBottom: isPixOuTransfer(p.forma) || isCartao(p.forma) || p.forma === "BOLETO" ? 6 : 0 }}>
                       <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                         <select value={p.forma} onChange={(e) => updPag(p.uid, { forma: e.target.value, contaBancariaId: undefined, maquinaCartaoId: undefined })} style={{ flex: 1, height: 32 }}>

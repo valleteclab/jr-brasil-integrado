@@ -2636,6 +2636,9 @@ model PixCobranca {
   brcode          String?
   descricao       String?
   expiracaoSeg    Int            @default(3600)
+  /// Quando o valor pago foi APROVEITADO num recebimento do caixa/PDV (evita contar 2x e
+  /// permite "retomar de onde parou": cobrança paga e não consumida reaparece na tela do caixa).
+  consumidaEm     DateTime?
   /// endToEndId do pagamento recebido (conciliação).
   e2eid           String?
   pagoEm          DateTime?

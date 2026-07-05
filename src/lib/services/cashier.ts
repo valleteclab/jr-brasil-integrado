@@ -16,6 +16,9 @@ export type PreVendaResumo = {
   /** Forma de pagamento escolhida no balcão (pré-seleciona no caixa). */
   formaPagamento: string | null;
   criadoEm: string;
+  /** Pix DINÂMICOS já PAGOS deste pedido e ainda não aproveitados num recebimento (venda
+   *  interrompida no meio): viram linha travada no caixa e abatem do que falta. */
+  pixPagos: Array<{ id: string; valor: number; contaBancariaId: string }>;
   itens: Array<{
     id: string;
     produtoNome: string;
@@ -99,6 +102,20 @@ export async function getCaixaPageData(): Promise<CaixaPageData> {
     }
   });
 
+  // Pix pagos e não consumidos dos pedidos em aberto (retomada de venda interrompida).
+  const pixPagosRaw = pedidos.length
+    ? await prisma.pixCobranca.findMany({
+        where: {
+          ...scopedByTenantCompany(scope),
+          pedidoVendaId: { in: pedidos.map((p) => p.id) },
+          status: "CONCLUIDA",
+          contaReceberId: null,
+          consumidaEm: null
+        },
+        select: { id: true, pedidoVendaId: true, valor: true, contaBancariaId: true }
+      })
+    : [];
+
   const preVendas: PreVendaResumo[] = pedidos.map((p) => ({
     id: p.id,
     numero: p.numero,
@@ -109,6 +126,9 @@ export async function getCaixaPageData(): Promise<CaixaPageData> {
     qtdItens: p.itens.length,
     formaPagamento: p.formaPagamento ?? null,
     criadoEm: p.criadoEm.toLocaleString("pt-BR"),
+    pixPagos: pixPagosRaw
+      .filter((x) => x.pedidoVendaId === p.id)
+      .map((x) => ({ id: x.id, valor: Number(x.valor), contaBancariaId: x.contaBancariaId })),
     itens: p.itens.map((item) => ({
       id: item.id,
       produtoNome: item.produto.nome,

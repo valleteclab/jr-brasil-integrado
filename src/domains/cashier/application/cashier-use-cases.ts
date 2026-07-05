@@ -300,6 +300,22 @@ export async function registrarRecebimentoPdv(
     );
   }, { maxWait: 15000, timeout: 30000 });
 
+  // Pix dinâmicos pagos deste pedido foram APROVEITADOS neste recebimento — marca consumidos
+  // (não reaparecem como "já recebido" numa próxima venda nem contam duas vezes).
+  if (input.pedidoVendaId) {
+    await prisma.pixCobranca.updateMany({
+      where: {
+        tenantId: scope.tenantId,
+        empresaId: scope.empresaId,
+        pedidoVendaId: input.pedidoVendaId,
+        status: "CONCLUIDA",
+        contaReceberId: null,
+        consumidaEm: null
+      },
+      data: { consumidaEm: new Date() }
+    });
+  }
+
   // Tempo real: o resumo do caixa (e a lista de vendas) refletem o recebimento na hora — inclusive
   // PIX/cartão, não só dinheiro. Sem isto, vendas feitas no PDV não atualizavam o /erp/caixa aberto.
   publishRealtime(scope, "caixa");
