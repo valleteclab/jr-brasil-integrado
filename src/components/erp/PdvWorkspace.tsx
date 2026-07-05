@@ -1096,6 +1096,21 @@ function PagamentoModal({ total, loading, clienteSelecionado, contas, maquinas, 
       setPixBusy(false);
     }
   }
+  // Confirmação AUTOMÁTICA do Pix: enquanto o QR está ativo, consulta o status a cada 4s.
+  // O webhook do banco atualiza o ERP em tempo real; este poll traz a confirmação para a tela.
+  useEffect(() => {
+    if (!pixQr || pixQr.status === "CONCLUIDA") return;
+    const alvoId = pixQr.id;
+    const t = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/erp/pix/cobranca/${alvoId}`);
+        const data = (await res.json().catch(() => ({}))) as { status?: string };
+        if (res.ok && data.status) setPixQr((cur) => (cur && cur.id === alvoId ? { ...cur, status: data.status! } : cur));
+      } catch { /* transitório — o próximo tick tenta de novo */ }
+    }, 4000);
+    return () => clearInterval(t);
+  }, [pixQr]);
+
   const pago = round2(linhas.reduce((s, l) => s + (Number(l.valor) || 0), 0));
   const troco = round2(Math.max(pago - total, 0));
   const falta = round2(Math.max(total - pago, 0));
@@ -1104,6 +1119,11 @@ function PagamentoModal({ total, loading, clienteSelecionado, contas, maquinas, 
   const crediarioSemCliente = (temCrediario || temBoleto) && !clienteSelecionado;
   const somaDinheiro = round2(linhas.filter((l) => l.forma === "DINHEIRO").reduce((s, l) => s + (Number(l.valor) || 0), 0));
   const trocoInvalido = (temCrediario || temBoleto) && troco > somaDinheiro;
+  // PIX em conta INTEGRADA (chave Pix cadastrada): o caixa AGUARDA a confirmação do pagamento —
+  // só libera o finalizar quando a cobrança dinâmica estiver CONCLUIDA (webhook/poll confirmam).
+  const pixIntegradoPendente =
+    linhas.some((l) => l.forma === "PIX" && (Number(l.valor) || 0) > 0 && Boolean(contas.find((c) => c.id === l.contaBancariaId)?.chavePix)) &&
+    pixQr?.status !== "CONCLUIDA";
 
   function set(idx: number, patch: Partial<Pagamento>) {
     setLinhas((cur) => cur.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
@@ -1242,6 +1262,7 @@ function PagamentoModal({ total, loading, clienteSelecionado, contas, maquinas, 
         )}
         {crediarioSemCliente && <div className="alert danger">{temBoleto ? "Venda no boleto exige cliente identificado" : "Crediário exige cliente identificado"} — selecione o cliente antes de finalizar.</div>}
         {trocoInvalido && <div className="alert danger">O troco só pode sair do dinheiro — reduza o valor do crediário/boleto para fechar a conta.</div>}
+        {pixIntegradoPendente && <div className="alert warn">⏳ Pix pela conta integrada: gere o QR (▦ QR Pix) e aguarde — a confirmação do pagamento é automática e libera o finalizar.</div>}
 
         <div className="pdv-pag-resumo">
           <div><span>Pago</span><strong>{brl(pago)}</strong></div>
@@ -1250,7 +1271,7 @@ function PagamentoModal({ total, loading, clienteSelecionado, contas, maquinas, 
 
         <div className="pdv-acoes">
           <button className="pdv-limpar" onClick={onCancel} disabled={loading}>Cancelar</button>
-          <button className="pdv-finalizar" onClick={() => onConfirm(linhas, temCrediario ? condicaoCrediario : "")} disabled={loading || falta > 0 || crediarioSemCliente || trocoInvalido}>
+          <button className="pdv-finalizar" onClick={() => onConfirm(linhas, temCrediario ? condicaoCrediario : "")} disabled={loading || falta > 0 || crediarioSemCliente || trocoInvalido || pixIntegradoPendente}>
             {loading ? "Emitindo..." : "Confirmar e emitir"}
           </button>
         </div>

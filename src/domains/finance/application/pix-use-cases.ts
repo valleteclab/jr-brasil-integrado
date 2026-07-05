@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import QRCode from "qrcode";
 import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
@@ -128,6 +129,11 @@ export async function criarPixCobranca(
     payload: { txid: cob.txid, valor, contaReceberId: input.contaReceberId ?? null, pedidoVendaId: input.pedidoVendaId ?? null }
   }));
 
+  // Tempo real: garante o webhook Pix da conta (fire-and-forget; PUT idempotente no banco).
+  garantirWebhookPix(scope, conta.id).catch((e) => {
+    console.error("[pix] webhook não registrado:", e instanceof Error ? e.message : e);
+  });
+
   const sandboxSemBrcode = !cob.brcode && contaSandbox(conta);
   return {
     id: registro.id,
@@ -240,6 +246,72 @@ export async function devolverPixDoTitulo(scope: TenantScope, contaReceberId: st
   }));
 
   return { status: dev.status ?? "EM_PROCESSAMENTO", estornado, jaDevolvido: false };
+}
+
+/**
+ * Garante o WEBHOOK Pix da conta no banco: o Sicoob chama o ERP a cada Pix recebido na chave —
+ * confirmação em TEMPO REAL no caixa/PDV (o cron fica como rede de segurança). PUT idempotente.
+ * A URL pública carrega um segredo por conta (mesmo campo do webhook de cobrança); o receiver
+ * NUNCA confia no corpo — sempre re-consulta a API do banco antes de baixar/confirmar.
+ */
+export async function garantirWebhookPix(scope: TenantScope, contaBancariaId: string): Promise<void> {
+  const conta = await prisma.contaBancaria.findFirst({ where: { id: contaBancariaId, ...scopedByTenantCompany(scope), ativo: true } });
+  if (!conta?.chavePix?.trim()) return;
+  const baseUrl = (process.env.ERP_BASE ?? process.env.APP_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? "").trim().replace(/\/+$/, "");
+  if (!/^https:\/\//.test(baseUrl)) return; // sem endereço público (dev local) → só cron
+  const provider = await getBankProvider(scope, conta);
+  if (!provider.registrarWebhookPix) return; // banco sem suporte → só cron
+  const secret = conta.sicoobWebhookSecret ?? randomBytes(24).toString("hex");
+  await provider.registrarWebhookPix(conta.chavePix.trim(), `${baseUrl}/api/webhooks/sicoob/pix/${secret}`);
+  if (!conta.sicoobWebhookSecret) {
+    await prisma.contaBancaria.update({ where: { id: conta.id }, data: { sicoobWebhookSecret: secret } });
+  }
+}
+
+/**
+ * Processa o WEBHOOK Pix (rota pública): identifica a conta pelo segredo da URL, coleta os txids
+ * citados no corpo (defensivo — qualquer formato) e re-consulta cada cobrança no banco antes de
+ * confirmar (sincronizarPix faz a baixa + crédito). Corpo sem txid → sincroniza as ATIVAS da conta.
+ */
+export async function processarWebhookPix(secret: string, payload: unknown): Promise<{ processadas: number; pagas: number }> {
+  const conta = await prisma.contaBancaria.findFirst({ where: { sicoobWebhookSecret: secret, ativo: true } });
+  if (!conta) throw new PixError("Webhook desconhecido.");
+
+  const txids = new Set<string>();
+  (function coletar(v: unknown, profundidade = 0): void {
+    if (profundidade > 6 || v == null) return;
+    if (Array.isArray(v)) { v.slice(0, 200).forEach((x) => coletar(x, profundidade + 1)); return; }
+    if (typeof v === "object") {
+      for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+        if (/^txid$/i.test(k) && typeof val === "string") txids.add(val);
+        else coletar(val, profundidade + 1);
+      }
+    }
+  })(payload);
+
+  const cobrancas = await prisma.pixCobranca.findMany({
+    where: {
+      tenantId: conta.tenantId,
+      empresaId: conta.empresaId,
+      contaBancariaId: conta.id,
+      status: "ATIVA",
+      ...(txids.size ? { txid: { in: [...txids] } } : { criadoEm: { gte: new Date(Date.now() - 48 * 3600 * 1000) } })
+    },
+    take: 50,
+    select: { id: true, tenantId: true, empresaId: true, ambiente: true }
+  });
+
+  let pagas = 0;
+  for (const c of cobrancas) {
+    const scope = { tenantId: c.tenantId, empresaId: c.empresaId, ambiente: c.ambiente } as TenantScope;
+    try {
+      const r = await sincronizarPix(scope, c.id);
+      if (r.pago) pagas++;
+    } catch (e) {
+      console.error("[webhook pix] sincronização falhou:", e instanceof Error ? e.message : e);
+    }
+  }
+  return { processadas: cobrancas.length, pagas };
 }
 
 /**

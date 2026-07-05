@@ -345,6 +345,27 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
     }
   }
 
+  // Confirmação AUTOMÁTICA do Pix: enquanto o QR está ativo, consulta o status a cada 4s.
+  // O webhook do banco atualiza o ERP em tempo real; este poll traz a confirmação para a tela.
+  useEffect(() => {
+    if (!pixQr || pixQr.status === "CONCLUIDA") return;
+    const alvoId = pixQr.id;
+    const t = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/erp/pix/cobranca/${alvoId}`);
+        const data = (await res.json().catch(() => ({}))) as { status?: string };
+        if (res.ok && data.status) setPixQr((cur) => (cur && cur.id === alvoId ? { ...cur, status: data.status! } : cur));
+      } catch { /* transitório — o próximo tick tenta de novo */ }
+    }, 4000);
+    return () => clearInterval(t);
+  }, [pixQr]);
+
+  // PIX em conta INTEGRADA (chave Pix cadastrada): o caixa AGUARDA a confirmação do pagamento —
+  // só libera o receber quando a cobrança dinâmica estiver CONCLUIDA (webhook/poll confirmam).
+  const pixIntegradoPendente =
+    pagamentos.some((p) => p.forma === "PIX" && (Number(p.valor) || 0) > 0 && Boolean(data.contas.find((c) => c.id === p.contaBancariaId)?.chavePix)) &&
+    pixQr?.status !== "CONCLUIDA";
+
   // ---- Caixa fechado: abertura ----
   if (!caixa) {
     return (
@@ -626,7 +647,8 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
                     📤 Retirada na expedição (imprime recibo)
                   </label>
                 )}
-                <button type="button" className="btn-erp primary lg" style={{ marginTop: 12, width: "100%" }} disabled={busy || falta > 0} onClick={receber}>
+                {pixIntegradoPendente && <div className="alert warn" style={{ marginTop: 8 }}>⏳ Pix pela conta integrada: gere o QR (▦ QR Pix) e aguarde — a confirmação do pagamento é automática e libera o receber.</div>}
+                <button type="button" className="btn-erp primary lg" style={{ marginTop: 12, width: "100%" }} disabled={busy || falta > 0 || pixIntegradoPendente} onClick={receber}>
                   {busy ? "Processando…" : `${modelo === "RECIBO" ? "Receber (só recibo)" : "Receber e emitir"} · ${brl(sel.total)}`}
                 </button>
                 <button type="button" className="btn-erp ghost sm" style={{ marginTop: 6, width: "100%" }} onClick={() => setSel(null)}>Cancelar</button>

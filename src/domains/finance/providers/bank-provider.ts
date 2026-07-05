@@ -160,6 +160,8 @@ export interface BankProvider {
   criarCobrancaPix(input: PixCobInput): Promise<PixCobCriada>;
   consultarCobrancaPix(txid: string): Promise<PixCobConsulta>;
   devolverPix(e2eId: string, idDevolucao: string, valor: number): Promise<PixDevolucaoResult>;
+  /** Registra o webhook Pix da chave (tempo real). Opcional — bancos sem suporte omitem. */
+  registrarWebhookPix?(chave: string, url: string): Promise<void>;
 
   // Conta-corrente
   consultarSaldo(numeroContaCorrente: string): Promise<SaldoConta>;

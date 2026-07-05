@@ -542,7 +542,14 @@ export async function baixarBoletoNoBanco(scope: TenantScope, contaReceberId: st
   if (boleto.status === "LIQUIDADO") throw new BoletoError("O boleto já foi liquidado no banco — não pode ser baixado.");
   if (boleto.status === "BAIXADO") return boleto;
   const provider = await getBankProvider(scope, boleto.contaBancaria);
-  await provider.baixarBoleto(boleto.nossoNumero);
+  try {
+    await provider.baixarBoleto(boleto.nossoNumero);
+  } catch (e) {
+    // 5002 "Boleto em processo de baixa/liquidação": o banco JÁ está baixando (baixa anterior em
+    // processamento) — idempotente: considera cancelado e alinha o status local.
+    const msg = e instanceof Error ? e.message : String(e);
+    if (!/5002|processo de baixa/i.test(msg)) throw e;
+  }
   const atualizado = await prisma.boletoCobranca.update({ where: { id: boleto.id }, data: { status: "BAIXADO" } });
   await prisma.$transaction(async (tx) => createAuditLog(tx, {
     scope, usuarioId, entidade: "BoletoCobranca", entidadeId: boleto.id, acao: "BAIXA_BANCO",

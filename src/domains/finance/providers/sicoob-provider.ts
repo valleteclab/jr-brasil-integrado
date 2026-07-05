@@ -3,7 +3,7 @@ import {
   cadastrarWebhookCobranca, consultarWebhooksCobranca as consultarWebhooksCobrancaSicoob,
   type SicoobAuth
 } from "./sicoob-cobranca";
-import { criarCobrancaImediata, consultarCobrancaImediata, devolverPix } from "./sicoob-pix";
+import { criarCobrancaImediata, consultarCobrancaImediata, devolverPix, registrarWebhookPix as registrarWebhookPixSicoob } from "./sicoob-pix";
 import { consultarSaldo, consultarExtrato } from "./sicoob-conta";
 import { BANCOS,
   type BankProvider, type BoletoInput, type BoletoRegistrado, type BoletoConsulta,
@@ -82,6 +82,10 @@ export function createSicoobProvider(ctx: SicoobProviderCtx): BankProvider {
 
     devolverPix(e2eId: string, idDevolucao: string, valor: number): Promise<PixDevolucaoResult> {
       return devolverPix(auth, { e2eId, idDevolucao, valor });
+    },
+
+    registrarWebhookPix(chave: string, url: string): Promise<void> {
+      return registrarWebhookPixSicoob(auth, chave, url);
     },
 
     consultarSaldo(numeroContaCorrente: string): Promise<SaldoConta> {
