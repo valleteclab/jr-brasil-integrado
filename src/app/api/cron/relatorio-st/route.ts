@@ -42,7 +42,23 @@ const SEGMENTO: Record<string, string> = {
 export async function GET(request: Request) {
   if (!autorizado(request)) return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
   try {
-    const cnpj = new URL(request.url).searchParams.get("cnpj") ?? "43954482000121";
+    const url = new URL(request.url);
+    // Diagnóstico da tabela CEST: ?probe=8708 → mostra se o capítulo tem CEST e como os NCMs estão gravados.
+    const probe = url.searchParams.get("probe");
+    if (probe) {
+      const dig = probe.replace(/\D/g, "");
+      const seg01 = await prisma.cest.count({ where: { codigo: { startsWith: "01" } } });
+      const todos = await prisma.cest.findMany({ select: { codigo: true, ncms: true } });
+      const comPrefixo = todos.filter((c) => c.ncms.some((n) => n.startsWith(dig)));
+      return NextResponse.json({
+        cestTotal: todos.length,
+        cestSegmento01_autopecas: seg01,
+        cestComNcmPrefixo: comPrefixo.length,
+        exemplos: comPrefixo.slice(0, 15).map((c) => ({ cest: c.codigo, ncms: c.ncms.filter((n) => n.startsWith(dig)).slice(0, 6) })),
+        amostraNcmsGravados: todos.slice(0, 3).map((c) => ({ cest: c.codigo, ncms: c.ncms.slice(0, 5) }))
+      });
+    }
+    const cnpj = url.searchParams.get("cnpj") ?? "43954482000121";
     const empresa = await resolverEmpresa(cnpj);
     if (!empresa) return NextResponse.json({ error: `Empresa com CNPJ ${cnpj} não encontrada.` }, { status: 404 });
 
