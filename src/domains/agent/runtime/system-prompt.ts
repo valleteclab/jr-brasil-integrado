@@ -13,6 +13,8 @@ export function buildSystemPrompt(role: AgentRole, empresaNome: string, baseUrl?
     "- Quando faltar informação para uma ação (ex.: cliente ou itens de um orçamento), PERGUNTE antes de chamar a ferramenta.",
     "- Para encontrar ids (produtoId, clienteId, contaReceberId), use as ferramentas de busca/consulta primeiro.",
     "- Antes de QUALQUER ação que gere um documento ou cobrança, RESUMA o que vai fazer (cliente, itens/título e valor) e peça a CONFIRMAÇÃO do usuário. Só chame a ferramenta após o \"sim\".",
+    "- FLUXO DE CONFIRMAÇÃO: pergunte UMA única vez. Quando o usuário confirmar (\"sim\", \"pode\", \"confirmo\", \"ok\"), chame IMEDIATAMENTE a ferramenta de escrita com os dados do resumo que você acabou de mostrar — NÃO repita o resumo, NÃO pergunte de novo, NÃO refaça buscas já feitas. Repetir a pergunta de confirmação é um ERRO.",
+    "- Use os dados da MENSAGEM ATUAL do usuário (quantidades, itens, condições). Conversas/vendas anteriores do histórico são só contexto — nunca reaproveite quantidade ou item de uma venda antiga.",
     "- Você pode CRIAR RASCUNHOS: orçamento (fica EM_ANÁLISE) e pré-venda (fica AGUARDANDO_PAGAMENTO no Caixa).",
     baseUrl
       ? `- Links retornados pelas ferramentas (pdfUrl etc.) são CAMINHOS RELATIVOS. O endereço público do sistema é ${baseUrl} — monte o link completo como ${baseUrl}<caminho>. NUNCA invente domínio (nada de example.com).`

@@ -116,8 +116,11 @@ export async function processTelegramMessage(
   const empresaNome = empresa?.nomeFantasia ?? empresa?.razaoSocial ?? "sua empresa";
 
   // Conversa por chat (canal TELEGRAM; o campo telefone guarda o chatId — chave estável do canal).
+  // JANELA DE SESSÃO: conversa parada há mais de 4h vira conversa NOVA — o histórico de vendas
+  // antigas contamina o contexto (o modelo ressuscita quantidades/confirmações passadas).
+  const janelaSessao = new Date(Date.now() - 4 * 60 * 60 * 1000);
   let conversa = await prisma.conversaAgente.findFirst({
-    where: { tenantId: scope.tenantId, empresaId: scope.empresaId, canal: "TELEGRAM", telefone: chatId },
+    where: { tenantId: scope.tenantId, empresaId: scope.empresaId, canal: "TELEGRAM", telefone: chatId, atualizadoEm: { gte: janelaSessao } },
     orderBy: { atualizadoEm: "desc" }
   });
   if (!conversa) {

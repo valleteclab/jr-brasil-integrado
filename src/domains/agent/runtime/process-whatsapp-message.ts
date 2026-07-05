@@ -66,9 +66,11 @@ export async function processWhatsappMessage(input: { telefone: string; texto: s
   });
   const empresaNome = empresa?.nomeFantasia ?? empresa?.razaoSocial ?? "sua empresa";
 
-  // Conversa por telefone (reaproveita a última do canal WHATSAPP).
+  // Conversa por telefone (reaproveita a última do canal WHATSAPP dentro da janela de sessão de
+  // 4h — histórico velho contamina o contexto do modelo com vendas/confirmações passadas).
+  const janelaSessao = new Date(Date.now() - 4 * 60 * 60 * 1000);
   let conversa = await prisma.conversaAgente.findFirst({
-    where: { tenantId: scope.tenantId, empresaId: scope.empresaId, canal: "WHATSAPP", telefone },
+    where: { tenantId: scope.tenantId, empresaId: scope.empresaId, canal: "WHATSAPP", telefone, atualizadoEm: { gte: janelaSessao } },
     orderBy: { atualizadoEm: "desc" }
   });
   if (!conversa) {
