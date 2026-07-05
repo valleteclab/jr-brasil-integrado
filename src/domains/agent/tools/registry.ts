@@ -12,6 +12,7 @@ import { consultarContasReceber } from "./read/consultar-contas-receber";
 import { consultarOs } from "./read/consultar-os";
 import { criarOrcamento } from "./write/criar-orcamento";
 import { criarPreVenda } from "./write/criar-pre-venda";
+import { confirmarPedido } from "./write/confirmar-pedido";
 import { emitirBoleto } from "./write/emitir-boleto";
 import { cobrarPix } from "./write/cobrar-pix";
 import { faturarPedido } from "./write/faturar-pedido";
@@ -35,6 +36,7 @@ export const ALL_TOOLS: AgentTool[] = [
   consultarOs,
   criarOrcamento,
   criarPreVenda,
+  confirmarPedido,
   emitirBoleto,
   cobrarPix,
   faturarPedido,

@@ -115,7 +115,10 @@ export async function processWhatsappMessage(input: { telefone: string; texto: s
   let resposta = result.assistantText;
   if (result.draft) {
     const tipoLabel = result.draft.tipo === "ORCAMENTO" ? "Orçamento" : result.draft.tipo === "PEDIDO_VENDA" ? "Pré-venda" : "Cadastro";
-    resposta += `\n\n📝 ${tipoLabel} ${result.draft.numero ?? ""} criado(a) como rascunho. Um responsável vai confirmar no sistema.`;
+    // GESTOR fecha o ciclo pelo próprio chat (confirmar/faturar); os demais dependem de um responsável.
+    resposta += role === "GESTOR"
+      ? `\n\n📝 ${tipoLabel} ${result.draft.numero ?? ""} criado(a).`
+      : `\n\n📝 ${tipoLabel} ${result.draft.numero ?? ""} criado(a) como rascunho. Um responsável vai confirmar no sistema.`;
   }
   await sendWhatsappText(whats, telefone, resposta);
 }

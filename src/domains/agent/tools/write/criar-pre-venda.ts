@@ -27,6 +27,8 @@ export const criarPreVenda: AgentTool = {
           required: ["quantidade"]
         }
       },
+      condicaoPagamento: { type: "string", description: "Condição de pagamento (ex.: 'À vista', '30 dias', '30/60/90') — usada para gerar as parcelas na confirmação. Opcional." },
+      formaPagamento: { type: "string", description: "Forma de pagamento (ex.: 'Pix', 'Dinheiro', 'Boleto', 'Cartão'). BOLETO gera os boletos das parcelas na confirmação. Opcional." },
       observacoes: { type: "string", description: "Observações (opcional)." }
     },
     required: ["itens"],
@@ -52,6 +54,8 @@ export const criarPreVenda: AgentTool = {
       clienteId: cliente.id ?? null,
       canal: "BALCAO",
       statusInicial: "AGUARDANDO_PAGAMENTO",
+      condicaoPagamento: args.condicaoPagamento ? String(args.condicaoPagamento) : undefined,
+      formaPagamento: args.formaPagamento ? String(args.formaPagamento) : undefined,
       observacoes: args.observacoes ? String(args.observacoes) : undefined,
       itens: itensResolvidos
     });
