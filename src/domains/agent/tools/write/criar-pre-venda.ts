@@ -46,13 +46,14 @@ export const criarPreVenda: AgentTool = {
 
     const itens = await resolverItens(scope, itensRef);
     if (itens.erro) return { ok: false, data: null, error: itens.erro };
+    const itensResolvidos = itens.itens ?? [];
 
     const pedido = await createSale(scope, {
-      clienteId: cliente.id,
+      clienteId: cliente.id ?? null,
       canal: "BALCAO",
       statusInicial: "AGUARDANDO_PAGAMENTO",
       observacoes: args.observacoes ? String(args.observacoes) : undefined,
-      itens: itens.itens
+      itens: itensResolvidos
     });
     return {
       ok: true,

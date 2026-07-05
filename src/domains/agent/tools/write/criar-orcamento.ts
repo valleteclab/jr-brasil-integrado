@@ -50,10 +50,11 @@ export const criarOrcamento: AgentTool = {
 
     const itens = await resolverItens(scope, itensRef);
     if (itens.erro) return { ok: false, data: null, error: itens.erro };
+    const itensResolvidos = itens.itens ?? [];
 
     const orcamento = await createQuote(scope, {
-      clienteId: cliente.id,
-      itens: itens.itens,
+      clienteId: cliente.id ?? null,
+      itens: itensResolvidos,
       validadeDias: typeof args.validadeDias === "number" ? args.validadeDias : undefined,
       condicaoPagamento: args.condicaoPagamento ? String(args.condicaoPagamento) : undefined,
       observacaoVendedor: args.observacaoVendedor ? String(args.observacaoVendedor) : undefined
