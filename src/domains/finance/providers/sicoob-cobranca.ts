@@ -136,7 +136,8 @@ export async function baixarBoleto(
   auth: SicoobAuth,
   params: { numeroCliente: number; codigoModalidade: number; nossoNumero: string }
 ): Promise<void> {
-  const res = await api(auth, "PATCH", `/boletos/${params.nossoNumero}/baixar`, {
+  // v3: a baixa é POST (PATCH aqui responde HTTP 405 Method Not Allowed — validado no sandbox, 204).
+  const res = await api(auth, "POST", `/boletos/${params.nossoNumero}/baixar`, {
     numeroCliente: params.numeroCliente,
     codigoModalidade: params.codigoModalidade
   });
