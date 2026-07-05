@@ -17,13 +17,14 @@ export default async function ExtratoBancarioPage() {
   return (
     <>
       <PageHeader
-        eyebrow="Financeiro · Conciliação"
-        title="Extrato do banco (Sicoob)"
+        eyebrow="Financeiro · Banco"
+        title="Extrato e conciliação bancária"
         action={<Button href="/erp/financeiro" variant="light">← Voltar ao financeiro</Button>}
       >
         <p>
-          Extrato real da conta no Sicoob comparado com os movimentos do ERP: o que bateu (conciliado),
-          o que só está no banco (tarifas, crédito de antecipação de recebíveis) e o que só está no ERP.
+          Aba <strong>Extrato do banco</strong>: somente as transações reais da conta (extrato puro do Sicoob).
+          Aba <strong>Conciliação bancária</strong>: banco × ERP — o que bateu, o que só está no banco
+          (tarifas, crédito de antecipação) e o que só está no ERP.
         </p>
       </PageHeader>
       <ExtratoBancarioWorkspace contas={contas.map((c) => ({ id: c.id, nome: c.nome, temContaCorrente: Boolean(c.sicoobContaCorrente) }))} />
