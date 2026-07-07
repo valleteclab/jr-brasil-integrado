@@ -15,8 +15,8 @@ const TIMEOUT_MS = 30_000;
 /** Catálogo dos produtos de crédito (endpoint + slug do `tipo` + chave do documento). */
 export const PRODUTOS_CREDITO = {
   PF: { endpoint: "/api/v2/consulta/cpf/credits", tipo: "boa-vista-acerta-pf", docKey: "cpf" as const },
-  // quod-pj: tipo CONFIRMADO funcionando. Para o SQOD rico, configure endpoint+tipo do painel no /admin.
-  PJ: { endpoint: "/api/v2/quod/cnpj/credits", tipo: "quod-pj", docKey: "cnpj" as const }
+  // quod-restricao-pj: produto RICO (score+CONCESSÃO+faturamento+PDF), com mock de homolog. Validado.
+  PJ: { endpoint: "/api/v2/quod/cnpj/credits", tipo: "quod-restricao-pj", docKey: "cnpj" as const }
 } satisfies Record<"PF" | "PJ", { endpoint: string; tipo: string; docKey: "cpf" | "cnpj" }>;
 
 export type ApiBrasilRuntime = { token: string; endpointPF: string | null; endpointPJ: string | null; tipoPF: string | null; tipoPJ: string | null; sandbox: boolean };
