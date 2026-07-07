@@ -124,6 +124,30 @@ export function normalizarBureau(respBruta: unknown, tipoPessoa: "PF" | "PJ"): C
     base.restricoes = { protestos: conta(r.protesto_sintetico), pendencias: 0, chequesSemFundo: 0, acoesJudiciais: 0, total: 0 };
     base.pdfUrl = typeof r.pdf === "string" ? r.pdf : null;
   }
+  // ── PJ: quod-pj (restrições + resumoConsulta; score/alertas quando produção traz) ─────────
+  else if (isObj(r.quod)) {
+    const q = r.quod as Obj;
+    base.produto = "quod-pj";
+    const rc = isObj(q.resumoConsulta) ? (q.resumoConsulta as Obj) : {};
+    const cnt = (arr: unknown, resumo: unknown) => Math.max(conta(arr), conta(resumo));
+    base.restricoes = {
+      protestos: cnt(q.protestos, rc.protestos),
+      pendencias: cnt(q.pendenciasFinanceiras, rc.pendenciasFinanceiras),
+      chequesSemFundo: cnt(q.chequesSemFundo, rc.chequesSemFundo),
+      acoesJudiciais: cnt(q.acoesCiveis, rc.acoesCiveis), total: 0
+    };
+    // Campos ricos quando o provedor os traz (produção): score e alertas por título.
+    const sc = isObj(q.score) ? (q.score as Obj) : {};
+    base.score = num(sc.score ?? sc.pontuacao ?? q.score);
+    const alertas = isObj(q.informacoes_alertas_restricoes) && Array.isArray((q.informacoes_alertas_restricoes as Obj).ocorrencias)
+      ? ((q.informacoes_alertas_restricoes as Obj).ocorrencias as Obj[]) : [];
+    const concessao = alertas.find((o) => typeof o.titulo === "string" && /concess.*cr[eé]dito/i.test(o.titulo));
+    if (concessao && typeof concessao.observacoes === "string") {
+      base.parecer = concessao.observacoes;
+      base.decisao = /aprovad/i.test(base.parecer) ? "APROVADO" : /reprovad|negad/i.test(base.parecer) ? "REPROVADO" : "ANALISE";
+    }
+    if (typeof (q as Obj).nome === "string") base.nome = (q as Obj).nome as string;
+  }
   // ── PJ: credcadastral (score risco 12m + pend/protestos) ─────────────────
   else if (isObj(r.credcadastral)) {
     const c = r.credcadastral as Obj;
