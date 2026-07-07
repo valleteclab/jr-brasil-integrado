@@ -575,6 +575,90 @@ model PlataformaConfiguracao {
   atualizadoEm        DateTime @updatedAt
 }
 
+/// Config de PLATAFORMA do módulo de CRÉDITO (revenda de consultas de bureau). É a "conta da casa"
+/// (Valleteclab), NÃO por tenant: gateway de cobrança da plataforma (Asaas — recarga dos tenants) +
+/// bureau (ApiBrasil, conta mestre) + preços de revenda. Segredos criptografados (secret-crypto).
+model PlataformaCredito {
+  id                   String   @id @default("default")
+  // Asaas — cobrança da plataforma (tenant paga a Valleteclab a recarga de créditos).
+  asaasApiKeyCripto    String?
+  asaasWalletId        String?
+  asaasSandbox         Boolean  @default(true)
+  asaasWebhookToken    String?
+  // ApiBrasil — bureau de crédito (conta mestre da plataforma).
+  apibrasilTokenCripto String?
+  apibrasilDevicePF    String?
+  apibrasilDevicePJ    String?
+  apibrasilSandbox     Boolean  @default(true)
+  // Preços de REVENDA por consulta (o que o tenant paga; a margem é sobre o custo ApiBrasil).
+  precoConsultaPF      Decimal  @default(0) @db.Decimal(10, 2)
+  precoConsultaPJ      Decimal  @default(0) @db.Decimal(10, 2)
+  // Validade do cache de uma consulta (dias) antes de sugerir reconsultar.
+  validadeConsultaDias Int      @default(60)
+  atualizadoEm         DateTime @updatedAt
+}
+
+/// Carteira de créditos de CONSULTA (pré-pago), em reais, por tenant. Recarrega via Pix (Asaas) e
+/// debita o preço de revenda a cada consulta de crédito. O saldo é da PLATAFORMA (não é banco do tenant).
+model CarteiraCredito {
+  id              String   @id @default(cuid())
+  tenantId        String   @unique
+  saldo           Decimal  @default(0) @db.Decimal(14, 2)
+  /// Cliente do Asaas (pagador) desta carteira — reusado nas recargas.
+  asaasCustomerId String?
+  atualizadoEm    DateTime @updatedAt
+  criadoEm        DateTime @default(now())
+}
+
+/// Pedido de RECARGA da carteira via Pix (Asaas). Confirmação em tempo real pelo webhook credita o saldo.
+model RecargaCredito {
+  id             String    @id @default(cuid())
+  tenantId       String
+  empresaId      String?
+  valor          Decimal   @db.Decimal(14, 2)
+  /// PENDENTE → CONFIRMADA (paga, saldo creditado) | EXPIRADA | CANCELADA
+  status         String    @default("PENDENTE")
+  asaasPaymentId String?   @unique
+  pixPayload     String?
+  pixQrBase64    String?
+  expiraEm       DateTime?
+  pagoEm         DateTime?
+  usuarioId      String?
+  criadoEm       DateTime  @default(now())
+
+  @@index([tenantId, status])
+}
+
+/// Consulta de crédito (bureau ApiBrasil) — HISTÓRICO + CACHE + CUSTO num só lugar. O resultado
+/// normalizado (score/faixa/decisão/limite/restrições) alimenta a tela e o gate de venda a prazo;
+/// dentro de `validoAte` a consulta é reusada sem custo. `bruto` guarda a resposta original.
+model ConsultaCredito {
+  id                         String    @id @default(cuid())
+  tenantId                   String
+  empresaId                  String?
+  clienteId                  String?
+  documento                  String
+  tipoPessoa                 String
+  produto                    String
+  custoRevenda               Decimal   @db.Decimal(10, 2)
+  score                      Int?
+  faixa                      String?
+  probabilidadeInadimplencia Decimal?  @db.Decimal(6, 2)
+  decisao                    String?
+  limiteRecomendado          Decimal?  @db.Decimal(14, 2)
+  temRestricao               Boolean   @default(false)
+  protocolo                  String?
+  pdfUrl                     String?
+  resultado                  Json
+  bruto                      Json?
+  validoAte                  DateTime?
+  usuarioId                  String?
+  consultadoEm               DateTime  @default(now())
+
+  @@index([tenantId, documento])
+  @@index([clienteId])
+}
+
 /// CEST (Código Especificador da Substituição Tributária) — GLOBAL. `ncms` lista os NCMs aos
 /// quais o CEST se aplica (usado para ancorar a sugestão de CEST por NCM, inclusive na IA).
 model Cest {
