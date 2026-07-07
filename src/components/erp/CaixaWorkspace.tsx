@@ -348,6 +348,20 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
     }
   }
 
+  // Vendedor sem permissão: notifica o financeiro pedindo a liberação (sino).
+  async function solicitarLiberacaoCredito() {
+    if (!sel?.clienteId) { setError("Pré-venda sem cliente identificado."); return; }
+    try {
+      const res = await fetch("/api/erp/creditos/solicitar-liberacao", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clienteId: sel.clienteId, motivo: `Venda ${sel.numero}` })
+      });
+      const d = (await res.json().catch(() => ({}))) as { notificados?: number; error?: string };
+      if (!res.ok) throw new Error(d.error || "Falha ao solicitar.");
+      setInfo(d.notificados ? `Solicitação enviada ao financeiro (${d.notificados}).` : "Nenhum usuário do financeiro para notificar.");
+    } catch (e) { setError(e instanceof Error ? e.message : "Falha ao solicitar."); }
+  }
+
   // Libera a venda faturada do cliente da pré-venda atual (financeiro) e retenta o recebimento.
   async function liberarFaturadoInline() {
     if (!sel?.clienteId) { setError("Pré-venda sem cliente identificado."); return; }
@@ -751,7 +765,7 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
                           <button type="button" className="btn-erp primary sm" style={{ marginLeft: 8 }} disabled={busy} onClick={() => receber({ autorizarLimite: true })}>Autorizar e receber mesmo assim</button>
                           <span style={{ marginLeft: 8, fontSize: 12 }} className="block-muted">ou aumente o limite no cadastro do cliente.</span>
                         </div>
-                      : <div style={{ marginTop: 6 }}>A pré-venda <strong>fica salva</strong> — solicite ao <strong>financeiro</strong> autorizar ou aumentar o limite.</div>}
+                      : <div style={{ marginTop: 6 }}>A pré-venda <strong>fica salva</strong> — <button type="button" className="btn-erp light sm" onClick={solicitarLiberacaoCredito}>🔔 Solicitar ao financeiro</button> autorizar ou aumentar o limite.</div>}
                   </div>
                 )}
                 {faturadoBloqueado && (
@@ -774,7 +788,7 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
                           </div>
                         </div>
                       : <div style={{ marginTop: 6 }}>
-                          A pré-venda <strong>fica salva aqui</strong> (não se perde) — solicite a liberação ao <strong>setor financeiro</strong> (no cadastro do cliente) e depois é só receber esta mesma pré-venda.
+                          A pré-venda <strong>fica salva aqui</strong> (não se perde) — <button type="button" className="btn-erp light sm" onClick={solicitarLiberacaoCredito}>🔔 Solicitar ao financeiro</button> e depois é só receber esta mesma pré-venda.
                         </div>}
                   </div>
                 )}

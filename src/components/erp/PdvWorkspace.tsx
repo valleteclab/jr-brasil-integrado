@@ -516,6 +516,18 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
   function autorizarLimitePdv() {
     if (ultimaVenda) void finalizar(ultimaVenda.pagamentos, ultimaVenda.condicao, { autorizarLimite: true });
   }
+  async function solicitarLiberacaoPdv() {
+    if (!clienteId) { setError("Selecione o cliente."); return; }
+    try {
+      const res = await fetch("/api/erp/creditos/solicitar-liberacao", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clienteId, motivo: "Venda no PDV" })
+      });
+      const d = (await res.json().catch(() => ({}))) as { notificados?: number; error?: string };
+      if (!res.ok) throw new Error(d.error || "Falha ao solicitar.");
+      setAviso(d.notificados ? `Solicitação enviada ao financeiro (${d.notificados}).` : "Nenhum usuário do financeiro para notificar.");
+    } catch (e) { setError(e instanceof Error ? e.message : "Falha ao solicitar."); }
+  }
 
   // Atalhos de teclado: F2 busca · F4 pagar · F6 cliente · F8 sangria/suprimento · Esc fecha/limpa.
   useEffect(() => {
@@ -817,7 +829,7 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
                     : <button type="button" className="pdv-finalizar" style={{ padding: "6px 12px" }} disabled={loading} onClick={autorizarLimitePdv}>Autorizar e finalizar mesmo assim</button>}
                 </div>
               ) : (
-                <div style={{ marginTop: 6, fontSize: 13 }}>A venda <strong>não se perde</strong> — solicite ao <strong>financeiro</strong> {bloqueioCredito.tipo === "faturado" ? "a liberação" : "autorizar ou aumentar o limite"}.</div>
+                <div style={{ marginTop: 6, fontSize: 13 }}>A venda <strong>não se perde</strong> — <button type="button" className="pdv-add-forma" style={{ margin: 0 }} onClick={solicitarLiberacaoPdv}>🔔 Solicitar ao financeiro</button> {bloqueioCredito.tipo === "faturado" ? "a liberação" : "autorizar/aumentar o limite"}.</div>
               )}
             </div>
           )}

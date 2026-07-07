@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import type { ErpShellBadges, ErpShellContext } from "@/lib/services/erp-shell";
+import { ComunicacaoWidget } from "@/components/erp/ComunicacaoWidget";
 import { moduloFromPath, moduloVisivelNoTipoNegocio } from "@/lib/auth/modules";
 import { HREF_FLAG, TIPO_VENDA_FLAG } from "@/lib/auth/feature-flags";
 
@@ -229,7 +230,7 @@ export function ErpShell({ children, context, modulos }: ErpShellProps) {
           <div className="erp-top-actions">
             <span className={`erp-env${producao ? "" : " homolog"}`}><span className="dot" />{producao ? "Produção" : "Homologação"}</span>
             <Link className="erp-top-btn" href="/loja">⤴ Ver loja</Link>
-            <Link className="erp-top-btn" href="/erp/configuracoes/ia" aria-label="Notificações">🔔</Link>
+            <ComunicacaoWidget />
             <Link className="erp-top-btn" href="/erp/configuracoes/empresa" aria-label="Configurações">⚙</Link>
           </div>
         </header>

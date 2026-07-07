@@ -663,6 +663,39 @@ model ConsultaCredito {
   @@index([clienteId])
 }
 
+/// Notificação para um usuário (sino no topo do ERP). Notificar um SETOR = uma linha por usuário
+/// do setor (fan-out). Tempo real via canal "notificacoes".
+model Notificacao {
+  id               String   @id @default(cuid())
+  tenantId         String
+  empresaId        String
+  destinoUsuarioId String
+  tipo             String   @default("GERAL")
+  titulo           String
+  mensagem         String
+  link             String?
+  lida             Boolean  @default(false)
+  criadoEm         DateTime @default(now())
+
+  @@index([destinoUsuarioId, lida])
+  @@index([tenantId, empresaId, criadoEm])
+}
+
+/// Chat interno 1-a-1 entre usuários. Tempo real via canal "chat".
+model MensagemInterna {
+  id            String   @id @default(cuid())
+  tenantId      String
+  empresaId     String
+  deUsuarioId   String
+  paraUsuarioId String
+  texto         String
+  lida          Boolean  @default(false)
+  criadoEm      DateTime @default(now())
+
+  @@index([paraUsuarioId, lida])
+  @@index([deUsuarioId, paraUsuarioId, criadoEm])
+}
+
 /// CEST (Código Especificador da Substituição Tributária) — GLOBAL. `ncms` lista os NCMs aos
 /// quais o CEST se aplica (usado para ancorar a sugestão de CEST por NCM, inclusive na IA).
 model Cest {
