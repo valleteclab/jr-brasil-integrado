@@ -19,6 +19,8 @@ export type CreditoPlataformaAdmin = {
   apibrasilSandbox: boolean;
   apibrasilDevicePF: string | null;
   apibrasilDevicePJ: string | null;
+  apibrasilTipoPF: string | null;
+  apibrasilTipoPJ: string | null;
   precoConsultaPF: number;
   precoConsultaPJ: number;
   validadeConsultaDias: number;
@@ -36,6 +38,8 @@ export async function getCreditoPlataformaAdmin(): Promise<CreditoPlataformaAdmi
     apibrasilSandbox: cfg?.apibrasilSandbox ?? true,
     apibrasilDevicePF: cfg?.apibrasilDevicePF ?? null,
     apibrasilDevicePJ: cfg?.apibrasilDevicePJ ?? null,
+    apibrasilTipoPF: cfg?.apibrasilTipoPF ?? null,
+    apibrasilTipoPJ: cfg?.apibrasilTipoPJ ?? null,
     precoConsultaPF: cfg ? Number(cfg.precoConsultaPF) : 0,
     precoConsultaPJ: cfg ? Number(cfg.precoConsultaPJ) : 0,
     validadeConsultaDias: cfg?.validadeConsultaDias ?? 60
@@ -49,6 +53,8 @@ export async function salvarCreditoPlataformaAdmin(input: {
   apibrasilToken?: string;
   apibrasilDevicePF?: string;
   apibrasilDevicePJ?: string;
+  apibrasilTipoPF?: string;
+  apibrasilTipoPJ?: string;
   apibrasilSandbox?: boolean;
   precoConsultaPF?: number;
   precoConsultaPJ?: number;
@@ -75,6 +81,8 @@ export async function salvarCreditoPlataformaAdmin(input: {
       ...(input.apibrasilToken?.trim() ? { apibrasilTokenCripto: encryptSecret(input.apibrasilToken.trim()) } : {}),
       ...(input.apibrasilDevicePF !== undefined ? { apibrasilDevicePF: input.apibrasilDevicePF || null } : {}),
       ...(input.apibrasilDevicePJ !== undefined ? { apibrasilDevicePJ: input.apibrasilDevicePJ || null } : {}),
+      ...(input.apibrasilTipoPF !== undefined ? { apibrasilTipoPF: input.apibrasilTipoPF || null } : {}),
+      ...(input.apibrasilTipoPJ !== undefined ? { apibrasilTipoPJ: input.apibrasilTipoPJ || null } : {}),
       ...(input.apibrasilSandbox !== undefined ? { apibrasilSandbox: input.apibrasilSandbox } : {}),
       ...(input.precoConsultaPF !== undefined ? { precoConsultaPF: input.precoConsultaPF } : {}),
       ...(input.precoConsultaPJ !== undefined ? { precoConsultaPJ: input.precoConsultaPJ } : {}),
@@ -86,6 +94,8 @@ export async function salvarCreditoPlataformaAdmin(input: {
       apibrasilTokenCripto: input.apibrasilToken?.trim() ? encryptSecret(input.apibrasilToken.trim()) : null,
       apibrasilDevicePF: input.apibrasilDevicePF || null,
       apibrasilDevicePJ: input.apibrasilDevicePJ || null,
+      apibrasilTipoPF: input.apibrasilTipoPF || null,
+      apibrasilTipoPJ: input.apibrasilTipoPJ || null,
       apibrasilSandbox: input.apibrasilSandbox ?? true,
       precoConsultaPF: input.precoConsultaPF ?? 0,
       precoConsultaPJ: input.precoConsultaPJ ?? 0,

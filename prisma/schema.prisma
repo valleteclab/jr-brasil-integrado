@@ -587,8 +587,12 @@ model PlataformaCredito {
   asaasWebhookToken    String?
   // ApiBrasil — bureau de crédito (conta mestre da plataforma).
   apibrasilTokenCripto String?
+  /// Endpoint (path ou URL) de cada produto. `apibrasilDevicePF/PJ` reaproveitados como endpoint.
   apibrasilDevicePF    String?
   apibrasilDevicePJ    String?
+  /// Slug do `tipo` (produto) no corpo da requisição — do painel ApiBrasil (ex.: boa-vista-acerta-pf).
+  apibrasilTipoPF      String?
+  apibrasilTipoPJ      String?
   apibrasilSandbox     Boolean  @default(true)
   // Preços de REVENDA por consulta (o que o tenant paga; a margem é sobre o custo ApiBrasil).
   precoConsultaPF      Decimal  @default(0) @db.Decimal(10, 2)

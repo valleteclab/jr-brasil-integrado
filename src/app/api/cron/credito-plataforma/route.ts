@@ -68,8 +68,8 @@ export async function POST(request: Request) {
     }
 
     // ApiBrasil (bureau): token mestre (criptografado) + device tokens PF/PJ + sandbox.
-    const ab = body as { apibrasilToken?: string; apibrasilDevicePF?: string; apibrasilDevicePJ?: string; apibrasilSandbox?: boolean };
-    if (ab.apibrasilToken || ab.apibrasilDevicePF !== undefined || ab.apibrasilDevicePJ !== undefined || ab.apibrasilSandbox !== undefined) {
+    const ab = body as { apibrasilToken?: string; apibrasilDevicePF?: string; apibrasilDevicePJ?: string; apibrasilTipoPF?: string; apibrasilTipoPJ?: string; apibrasilSandbox?: boolean };
+    if (ab.apibrasilToken || ab.apibrasilDevicePF !== undefined || ab.apibrasilDevicePJ !== undefined || ab.apibrasilTipoPF !== undefined || ab.apibrasilTipoPJ !== undefined || ab.apibrasilSandbox !== undefined) {
       const { encryptSecret } = await import("@/lib/security/secret-crypto");
       await prisma.plataformaCredito.upsert({
         where: { id: "default" },
@@ -77,6 +77,8 @@ export async function POST(request: Request) {
           ...(ab.apibrasilToken?.trim() ? { apibrasilTokenCripto: encryptSecret(ab.apibrasilToken.trim()) } : {}),
           ...(ab.apibrasilDevicePF !== undefined ? { apibrasilDevicePF: ab.apibrasilDevicePF || null } : {}),
           ...(ab.apibrasilDevicePJ !== undefined ? { apibrasilDevicePJ: ab.apibrasilDevicePJ || null } : {}),
+          ...(ab.apibrasilTipoPF !== undefined ? { apibrasilTipoPF: ab.apibrasilTipoPF || null } : {}),
+          ...(ab.apibrasilTipoPJ !== undefined ? { apibrasilTipoPJ: ab.apibrasilTipoPJ || null } : {}),
           ...(ab.apibrasilSandbox !== undefined ? { apibrasilSandbox: ab.apibrasilSandbox } : {})
         },
         create: {
@@ -84,6 +86,8 @@ export async function POST(request: Request) {
           apibrasilTokenCripto: ab.apibrasilToken?.trim() ? encryptSecret(ab.apibrasilToken.trim()) : null,
           apibrasilDevicePF: ab.apibrasilDevicePF || null,
           apibrasilDevicePJ: ab.apibrasilDevicePJ || null,
+          apibrasilTipoPF: ab.apibrasilTipoPF || null,
+          apibrasilTipoPJ: ab.apibrasilTipoPJ || null,
           apibrasilSandbox: ab.apibrasilSandbox ?? true
         }
       });

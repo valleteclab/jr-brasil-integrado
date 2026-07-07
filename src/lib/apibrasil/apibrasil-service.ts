@@ -15,11 +15,11 @@ const TIMEOUT_MS = 30_000;
 /** Catálogo dos produtos de crédito (endpoint + slug do `tipo` + chave do documento). */
 export const PRODUTOS_CREDITO = {
   PF: { endpoint: "/api/v2/consulta/cpf/credits", tipo: "boa-vista-acerta-pf", docKey: "cpf" as const },
-  // SQOD (produção): score + faturamento presumido + CONCESSÃO DE CRÉDITO + capacidade + PDF.
-  PJ: { endpoint: "/api/v2/consulta/cnpj/credits", tipo: "sqod-cnpj", docKey: "cnpj" as const }
+  // quod-pj: tipo CONFIRMADO funcionando. Para o SQOD rico, configure endpoint+tipo do painel no /admin.
+  PJ: { endpoint: "/api/v2/quod/cnpj/credits", tipo: "quod-pj", docKey: "cnpj" as const }
 } satisfies Record<"PF" | "PJ", { endpoint: string; tipo: string; docKey: "cpf" | "cnpj" }>;
 
-export type ApiBrasilRuntime = { token: string; endpointPF: string | null; endpointPJ: string | null; sandbox: boolean };
+export type ApiBrasilRuntime = { token: string; endpointPF: string | null; endpointPJ: string | null; tipoPF: string | null; tipoPJ: string | null; sandbox: boolean };
 
 export type ConsultaCreditoRequest = { tipo: string; homolog: boolean } & ({ cpf: string } | { cnpj: string });
 export type ConsultaCreditoEnvelope = {
@@ -40,6 +40,8 @@ export async function getApiBrasilRuntime(): Promise<ApiBrasilRuntime | null> {
     token: decryptSecret(cfg.apibrasilTokenCripto),
     endpointPF: cfg.apibrasilDevicePF,
     endpointPJ: cfg.apibrasilDevicePJ,
+    tipoPF: cfg.apibrasilTipoPF,
+    tipoPJ: cfg.apibrasilTipoPJ,
     sandbox: cfg.apibrasilSandbox
   };
 }
@@ -61,9 +63,10 @@ export async function consultarCreditoApiBrasil(
 ): Promise<ConsultaResposta> {
   const prod = PRODUTOS_CREDITO[tipoPessoa];
   const endpoint = opts?.path ?? (tipoPessoa === "PF" ? rt.endpointPF : rt.endpointPJ) ?? prod.endpoint;
+  const tipoProduto = opts?.tipo ?? (tipoPessoa === "PF" ? rt.tipoPF : rt.tipoPJ) ?? prod.tipo;
   const doc = documento.replace(/\D/g, "");
   const homolog = opts?.homolog ?? rt.sandbox;
-  const body = opts?.body ?? { tipo: opts?.tipo ?? prod.tipo, [prod.docKey]: doc, homolog };
+  const body = opts?.body ?? { tipo: tipoProduto, [prod.docKey]: doc, homolog };
 
   const url = montarUrl(endpoint);
   const req = {

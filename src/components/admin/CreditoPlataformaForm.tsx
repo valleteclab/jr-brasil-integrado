@@ -12,6 +12,8 @@ export function CreditoPlataformaForm({ dados }: { dados: CreditoPlataformaAdmin
   const [apiToken, setApiToken] = useState("");
   const [devicePF, setDevicePF] = useState(dados.apibrasilDevicePF ?? "");
   const [devicePJ, setDevicePJ] = useState(dados.apibrasilDevicePJ ?? "");
+  const [tipoPF, setTipoPF] = useState(dados.apibrasilTipoPF ?? "");
+  const [tipoPJ, setTipoPJ] = useState(dados.apibrasilTipoPJ ?? "");
   const [apiSandbox, setApiSandbox] = useState(dados.apibrasilSandbox);
   const [precoPF, setPrecoPF] = useState(dados.precoConsultaPF);
   const [precoPJ, setPrecoPJ] = useState(dados.precoConsultaPJ);
@@ -71,6 +73,8 @@ export function CreditoPlataformaForm({ dados }: { dados: CreditoPlataformaAdmin
           apibrasilToken: apiToken || undefined,
           apibrasilDevicePF: devicePF,
           apibrasilDevicePJ: devicePJ,
+          apibrasilTipoPF: tipoPF,
+          apibrasilTipoPJ: tipoPJ,
           apibrasilSandbox: apiSandbox,
           precoConsultaPF: precoPF,
           precoConsultaPJ: precoPJ,
@@ -136,12 +140,25 @@ export function CreditoPlataformaForm({ dados }: { dados: CreditoPlataformaAdmin
           <label style={campo}>Bearer Token (aba Credenciais) — vazio p/ manter
             <input type="password" value={apiToken} onChange={(e) => setApiToken(e.target.value)} style={{ height: 34 }} />
           </label>
-          <label style={campo}>Endpoint — produto PF (acerta)
-            <input value={devicePF} onChange={(e) => setDevicePF(e.target.value)} placeholder="/api/v2/credito/... ou URL completa" style={{ height: 34 }} />
-          </label>
-          <label style={campo}>Endpoint — produto PJ (sqod)
-            <input value={devicePJ} onChange={(e) => setDevicePJ(e.target.value)} placeholder="/api/v2/credito/... ou URL completa" style={{ height: 34 }} />
-          </label>
+          <p className="block-muted" style={{ margin: "2px 0", fontSize: 12 }}>
+            Copie do painel ApiBrasil (aba do produto → “testar requisição”): a <strong>URL</strong> e o campo <strong>tipo</strong> do corpo.
+          </p>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <label style={{ ...campo, flex: "2 1 260px" }}>Endpoint PF (CPF)
+              <input value={devicePF} onChange={(e) => setDevicePF(e.target.value)} placeholder="https://gateway.apibrasil.io/api/v2/consulta/cpf/credits" style={{ height: 34 }} />
+            </label>
+            <label style={{ ...campo, flex: "1 1 180px" }}>tipo PF
+              <input value={tipoPF} onChange={(e) => setTipoPF(e.target.value)} placeholder="boa-vista-acerta-pf" style={{ height: 34 }} />
+            </label>
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <label style={{ ...campo, flex: "2 1 260px" }}>Endpoint PJ (CNPJ)
+              <input value={devicePJ} onChange={(e) => setDevicePJ(e.target.value)} placeholder="https://gateway.apibrasil.io/api/v2/quod/cnpj/credits" style={{ height: 34 }} />
+            </label>
+            <label style={{ ...campo, flex: "1 1 180px" }}>tipo PJ
+              <input value={tipoPJ} onChange={(e) => setTipoPJ(e.target.value)} placeholder="quod-pj (ou o do SQOD)" style={{ height: 34 }} />
+            </label>
+          </div>
           <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13 }}>
             <input type="checkbox" checked={apiSandbox} onChange={(e) => setApiSandbox(e.target.checked)} /> Sandbox (homologação)
           </label>
