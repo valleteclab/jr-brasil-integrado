@@ -89,6 +89,17 @@ export async function POST(request: Request) {
       });
     }
 
+    // Teste do fluxo COMPLETO (consultarCredito: cache+débito+SALVA ConsultaCredito) p/ um CNPJ.
+    const tcc = body as { testarConsultaCompletaCnpj?: string; documento?: string; tipoTeste?: "PF" | "PJ" };
+    if (tcc.testarConsultaCompletaCnpj) {
+      const empresa = await prisma.empresa.findFirst({ where: { cnpj: tcc.testarConsultaCompletaCnpj.replace(/\D/g, "") }, select: { id: true, tenantId: true } });
+      if (!empresa) throw new Error("Empresa não encontrada.");
+      const { consultarCredito } = await import("@/domains/credito/application/consulta-credito-use-cases");
+      const r = await consultarCredito({ tenantId: empresa.tenantId, empresaId: empresa.id }, { documento: tcc.documento ?? "00000000000", forcar: true });
+      const total = await prisma.consultaCredito.count({ where: { tenantId: empresa.tenantId } });
+      return NextResponse.json({ ok: true, salvouId: r.id, emCache: r.emCache, custo: r.custo, decisao: r.normalizado.decisao, score: r.normalizado.score, totalConsultasSalvas: total });
+    }
+
     // Normaliza um JSON cru colado (sem consultar/gastar): valida o normalizador contra dado real.
     const nb = body as { normalizarBruto?: { tipo: "PF" | "PJ"; body: unknown } };
     if (nb.normalizarBruto) {
