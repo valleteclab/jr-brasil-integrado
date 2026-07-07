@@ -67,6 +67,44 @@ export async function POST(request: Request) {
       });
     }
 
+    // ApiBrasil (bureau): token mestre (criptografado) + device tokens PF/PJ + sandbox.
+    const ab = body as { apibrasilToken?: string; apibrasilDevicePF?: string; apibrasilDevicePJ?: string; apibrasilSandbox?: boolean };
+    if (ab.apibrasilToken || ab.apibrasilDevicePF !== undefined || ab.apibrasilDevicePJ !== undefined || ab.apibrasilSandbox !== undefined) {
+      const { encryptSecret } = await import("@/lib/security/secret-crypto");
+      await prisma.plataformaCredito.upsert({
+        where: { id: "default" },
+        update: {
+          ...(ab.apibrasilToken?.trim() ? { apibrasilTokenCripto: encryptSecret(ab.apibrasilToken.trim()) } : {}),
+          ...(ab.apibrasilDevicePF !== undefined ? { apibrasilDevicePF: ab.apibrasilDevicePF || null } : {}),
+          ...(ab.apibrasilDevicePJ !== undefined ? { apibrasilDevicePJ: ab.apibrasilDevicePJ || null } : {}),
+          ...(ab.apibrasilSandbox !== undefined ? { apibrasilSandbox: ab.apibrasilSandbox } : {})
+        },
+        create: {
+          id: "default",
+          apibrasilTokenCripto: ab.apibrasilToken?.trim() ? encryptSecret(ab.apibrasilToken.trim()) : null,
+          apibrasilDevicePF: ab.apibrasilDevicePF || null,
+          apibrasilDevicePJ: ab.apibrasilDevicePJ || null,
+          apibrasilSandbox: ab.apibrasilSandbox ?? true
+        }
+      });
+    }
+
+    // Teste de consulta ao bureau (RAW, sem debitar carteira): calibra endpoint/body contra o painel.
+    const tc = body as { testarConsulta?: { tipo: "PF" | "PJ"; documento: string; path?: string; body?: Record<string, unknown>; normalizar?: boolean } };
+    if (tc.testarConsulta) {
+      const { getApiBrasilRuntime, consultarCreditoApiBrasil } = await import("@/lib/apibrasil/apibrasil-service");
+      const rt = await getApiBrasilRuntime();
+      if (!rt) throw new Error("ApiBrasil não configurado.");
+      const t = tc.testarConsulta;
+      const resp = await consultarCreditoApiBrasil(rt, t.tipo, t.documento, { path: t.path, body: t.body });
+      let normalizado: unknown = undefined;
+      if (t.normalizar && resp.ok) {
+        const { normalizarBureau } = await import("@/domains/credito/application/bureau-normalizer");
+        normalizado = normalizarBureau(resp.body, t.tipo);
+      }
+      return NextResponse.json({ status: resp.status, ok: resp.ok, normalizado, body: resp.body });
+    }
+
     // Limpeza: remove recargas de TESTE pendentes de um tenant (após validar o sandbox).
     const limpar = body as { limparRecargasPendentesCnpj?: string };
     if (limpar.limparRecargasPendentesCnpj) {
