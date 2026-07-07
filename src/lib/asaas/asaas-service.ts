@@ -96,11 +96,11 @@ export async function asaasStatusPagamento(rt: AsaasRuntime, paymentId: string):
 }
 
 /** Registra o webhook de pagamentos no Asaas (idempotente-ish; ignora se já existir). */
-export async function asaasRegistrarWebhook(rt: AsaasRuntime, url: string, token: string): Promise<void> {
+export async function asaasRegistrarWebhook(rt: AsaasRuntime, url: string, token: string, email: string): Promise<void> {
   await asaas(rt, "POST", "/webhooks", {
     name: "XERP recarga creditos",
     url,
-    email: undefined,
+    email,
     enabled: true,
     interrupted: false,
     authToken: token,

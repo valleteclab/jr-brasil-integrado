@@ -42,6 +42,7 @@ export async function POST(request: Request) {
       precoPJ?: number;
       registrarWebhook?: boolean;
       baseUrl?: string;
+      webhookEmail?: string;
     };
 
     // Garante um webhookToken estável (usado na URL do webhook e no header do Asaas).
@@ -86,7 +87,7 @@ export async function POST(request: Request) {
       const base = (body.baseUrl ?? (host ? `${proto}://${host}` : "")).replace(/\/+$/, "");
       if (!/^https:\/\//.test(base)) throw new Error("baseUrl público (https) indeterminado para o webhook.");
       webhook = `${base}/api/webhooks/asaas/${webhookToken}`;
-      await asaasRegistrarWebhook(rt, webhook, webhookToken);
+      await asaasRegistrarWebhook(rt, webhook, webhookToken, body.webhookEmail?.trim() || "loamesilva@valleteclab.com.br");
     }
 
     return NextResponse.json({ ok: true, webhook });
