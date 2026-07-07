@@ -20,6 +20,7 @@ import { emitirNfse } from "./write/emitir-nfse";
 import { cancelarBoleto } from "./write/cancelar-boleto";
 import { cancelarNota } from "./write/cancelar-nota";
 import { enviarDocumento } from "./write/enviar-documento";
+import { consultarCreditoTool } from "./write/consultar-credito";
 
 /** Fonte única de verdade das ferramentas do agente — usada pelo chat web e pelo MCP. */
 export const ALL_TOOLS: AgentTool[] = [
@@ -37,6 +38,7 @@ export const ALL_TOOLS: AgentTool[] = [
   criarOrcamento,
   criarPreVenda,
   confirmarPedido,
+  consultarCreditoTool,
   emitirBoleto,
   cobrarPix,
   faturarPedido,

@@ -120,6 +120,25 @@ async function creditarEstorno(scope: TenantScope, valor: number, motivo: string
   void motivo; void usuarioId;
 }
 
+/**
+ * GATE CONSULTIVO: compara o limite de crédito aprovado do cliente com os recebíveis em aberto
+ * (+ o valor da venda em curso). Consultivo — só informa; quem decide bloquear é a tela/config.
+ */
+export async function avaliarCredito(scope: TenantScope, clienteId: string, valorAdicional = 0) {
+  const cliente = await prisma.cliente.findFirst({ where: { id: clienteId, ...scopedByTenantCompany(scope) }, select: { limiteCredito: true } });
+  const limite = Number(cliente?.limiteCredito ?? 0);
+  const agg = await prisma.contaReceber.aggregate({
+    where: { clienteId, ...scopedByTenantCompany(scope), status: { in: ["ABERTO", "PARCIAL", "VENCIDO"] } },
+    _sum: { valor: true, valorPago: true }
+  });
+  const emAberto = Math.round((Number(agg._sum.valor ?? 0) - Number(agg._sum.valorPago ?? 0)) * 100) / 100;
+  const adicional = Math.round((Number(valorAdicional) || 0) * 100) / 100;
+  const disponivel = Math.round((limite - emAberto) * 100) / 100;
+  const temLimite = limite > 0;
+  const excede = temLimite && adicional > 0 && emAberto + adicional > limite;
+  return { limite, emAberto, disponivel, adicional, temLimite, excede };
+}
+
 /** Última consulta (cache OU vencida) de um cliente — para exibir no cadastro. */
 export async function ultimaConsultaCliente(scope: TenantScope, clienteId: string) {
   const reg = await prisma.consultaCredito.findFirst({

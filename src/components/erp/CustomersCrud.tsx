@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { CustomerDetail, CustomerDetailedSummary, TabelaPrecoOption } from "@/lib/services/customers-admin";
 import { useCadastroLookup } from "./useCadastroLookup";
+import { ConsultaCreditoCliente } from "./ConsultaCreditoCliente";
 import { formatDocumento } from "@/lib/fiscal/documento";
 
 // ---------------------------------------------------------------------------
@@ -732,6 +733,13 @@ export function CustomersCrud({ initialCustomers, tabelasPreco }: CustomersCrudP
           Limite de crédito (R$)
           <input type="number" min="0" step="0.01" value={form.limiteCredito} onChange={(e) => updateField("limiteCredito", e.target.value)} />
         </label>
+        {form.id && (
+          <ConsultaCreditoCliente
+            clienteId={form.id}
+            documento={form.documento}
+            onLimiteSugerido={(v) => updateField("limiteCredito", String(v))}
+          />
+        )}
         <label className="full">
           Tabela de preço
           <select value={form.tabelaPrecoId} onChange={(e) => updateField("tabelaPrecoId", e.target.value)}>
