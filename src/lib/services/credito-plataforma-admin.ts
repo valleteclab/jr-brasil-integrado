@@ -96,6 +96,22 @@ export async function salvarCreditoPlataformaAdmin(input: {
   return getCreditoPlataformaAdmin();
 }
 
+/** Carteiras de créditos de todos os tenants (saldo atual) — para o dono liberar cortesia. */
+export async function listCarteirasTenants(): Promise<Array<{ tenantId: string; nome: string; saldo: number }>> {
+  await requirePlatformAdmin();
+  const tenants = await prisma.tenant.findMany({ select: { id: true, nome: true }, orderBy: { nome: "asc" } });
+  const carteiras = await prisma.carteiraCredito.findMany({ select: { tenantId: true, saldo: true } });
+  const saldoPor = new Map(carteiras.map((c) => [c.tenantId, Number(c.saldo)]));
+  return tenants.map((t) => ({ tenantId: t.id, nome: t.nome, saldo: saldoPor.get(t.id) ?? 0 }));
+}
+
+/** Libera créditos de CORTESIA na carteira de um tenant (sem Pix). */
+export async function liberarCreditosAdmin(tenantId: string, valor: number, motivo: string): Promise<{ saldo: number }> {
+  const admin = await requirePlatformAdmin();
+  const { liberarCreditosCortesia } = await import("@/domains/credito/application/carteira-use-cases");
+  return liberarCreditosCortesia(tenantId, valor, motivo, admin.usuarioId);
+}
+
 /** Registra o webhook de recarga no Asaas usando a URL pública informada. */
 export async function registrarWebhookAsaasAdmin(baseUrl: string, email: string): Promise<string> {
   await requirePlatformAdmin();

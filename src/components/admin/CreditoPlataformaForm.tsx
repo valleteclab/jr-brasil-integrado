@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { CreditoPlataformaAdmin } from "@/lib/services/credito-plataforma-admin";
 
 /** Config de plataforma do módulo de crédito: Asaas (recargas) + ApiBrasil (bureau) + preços. */
@@ -20,6 +20,43 @@ export function CreditoPlataformaForm({ dados }: { dados: CreditoPlataformaAdmin
   const [msg, setMsg] = useState("");
   const [erro, setErro] = useState("");
   const [webhook, setWebhook] = useState("");
+  // Cortesia: liberar créditos na carteira de um tenant (sem Pix).
+  const [carteiras, setCarteiras] = useState<Array<{ tenantId: string; nome: string; saldo: number }>>([]);
+  const [tenantSel, setTenantSel] = useState("");
+  const [valorCortesia, setValorCortesia] = useState(50);
+  const [motivoCortesia, setMotivoCortesia] = useState("");
+  const [liberando, setLiberando] = useState(false);
+
+  async function carregarCarteiras() {
+    try {
+      const res = await fetch("/api/admin/credito?carteiras=1");
+      const d = (await res.json().catch(() => ({}))) as { carteiras?: Array<{ tenantId: string; nome: string; saldo: number }> };
+      if (res.ok && d.carteiras) setCarteiras(d.carteiras);
+    } catch { /* ignora */ }
+  }
+  useEffect(() => { void carregarCarteiras(); }, []);
+
+  async function liberarCreditos() {
+    if (!tenantSel) { setErro("Escolha o cliente."); return; }
+    if (!(valorCortesia > 0)) { setErro("Informe um valor maior que zero."); return; }
+    setLiberando(true); setErro(""); setMsg("");
+    try {
+      const res = await fetch("/api/admin/credito", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ acao: "liberar-creditos", tenantId: tenantSel, valor: valorCortesia, motivo: motivoCortesia || "Cortesia" })
+      });
+      const d = (await res.json().catch(() => ({}))) as { saldo?: number; error?: string };
+      if (!res.ok) throw new Error(d.error || "Falha ao liberar créditos.");
+      setMsg(`Créditos liberados. Novo saldo do cliente: R$ ${(d.saldo ?? 0).toFixed(2)}.`);
+      setMotivoCortesia("");
+      await carregarCarteiras();
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Falha ao liberar créditos.");
+    } finally {
+      setLiberando(false);
+    }
+  }
 
   async function salvar() {
     setSalvando(true); setMsg(""); setErro("");
@@ -66,6 +103,7 @@ export function CreditoPlataformaForm({ dados }: { dados: CreditoPlataformaAdmin
   }
 
   const campo = { display: "flex", flexDirection: "column" as const, gap: 4, fontSize: 13 };
+  const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
   return (
     <div style={{ display: "grid", gap: 16, maxWidth: 720 }}>
@@ -122,6 +160,28 @@ export function CreditoPlataformaForm({ dados }: { dados: CreditoPlataformaAdmin
           <label style={campo}>Validade do cache (dias)
             <input type="number" min={1} value={validade} onChange={(e) => setValidade(Number(e.target.value) || 60)} style={{ width: 130, height: 34, textAlign: "right" }} />
           </label>
+        </div>
+      </div>
+
+      <div className="erp-card" style={{ padding: 16 }}>
+        <h3 style={{ marginTop: 0 }}>Liberar créditos (cortesia)</h3>
+        <p className="block-muted" style={{ marginTop: 0, fontSize: 13 }}>
+          Adiciona créditos de consulta na carteira de um cliente <strong>sem Pix</strong> (bônus, plano incluso, teste). Aparece no histórico dele como recarga confirmada.
+        </p>
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "end" }}>
+          <label style={{ ...campo, flex: "2 1 240px" }}>Cliente
+            <select value={tenantSel} onChange={(e) => setTenantSel(e.target.value)} style={{ height: 34 }}>
+              <option value="">Escolha o cliente…</option>
+              {carteiras.map((c) => <option key={c.tenantId} value={c.tenantId}>{c.nome} — saldo {brl(c.saldo)}</option>)}
+            </select>
+          </label>
+          <label style={campo}>Valor (R$)
+            <input type="number" min={1} step="0.01" value={valorCortesia} onChange={(e) => setValorCortesia(Number(e.target.value) || 0)} style={{ width: 120, height: 34, textAlign: "right" }} />
+          </label>
+          <label style={{ ...campo, flex: "1 1 200px" }}>Motivo (opcional)
+            <input value={motivoCortesia} onChange={(e) => setMotivoCortesia(e.target.value)} placeholder="Ex.: bônus de boas-vindas" style={{ height: 34 }} />
+          </label>
+          <button type="button" className="btn-erp primary sm" disabled={liberando} onClick={liberarCreditos}>{liberando ? "Liberando…" : "Liberar créditos"}</button>
         </div>
       </div>
 

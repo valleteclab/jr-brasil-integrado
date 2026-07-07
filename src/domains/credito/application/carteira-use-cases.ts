@@ -148,6 +148,33 @@ export async function confirmarRecargaPorPagamento(asaasPaymentId: string): Prom
   });
 }
 
+/**
+ * CORTESIA: o dono do SaaS credita créditos de consulta na carteira de um tenant SEM Pix (bônus,
+ * plano incluso, teste). Registra como recarga CONFIRMADA (aparece no histórico do tenant) + auditoria.
+ */
+export async function liberarCreditosCortesia(
+  tenantId: string,
+  valor: number,
+  motivo: string,
+  usuarioId?: string
+): Promise<{ saldo: number }> {
+  const v = round2(valor);
+  if (!(v > 0)) throw new CreditoError("Informe um valor maior que zero.");
+  return prisma.$transaction(async (tx) => {
+    const carteira = await tx.carteiraCredito.upsert({ where: { tenantId }, update: {}, create: { tenantId, saldo: 0 } });
+    const novo = round2(Number(carteira.saldo) + v);
+    await tx.carteiraCredito.update({ where: { tenantId }, data: { saldo: novo } });
+    // Recarga CONFIRMADA sem asaasPaymentId = cortesia (transparente no histórico do tenant).
+    await tx.recargaCredito.create({ data: { tenantId, valor: v, status: "CONFIRMADA", pagoEm: new Date(), usuarioId: usuarioId ?? null } });
+    await createAuditLog(tx, {
+      scope: { tenantId, empresaId: (null as unknown as string) },
+      usuarioId, entidade: "CarteiraCredito", entidadeId: tenantId, acao: "CORTESIA",
+      payload: { valor: v, motivo, saldo: novo }
+    });
+    return { saldo: novo };
+  });
+}
+
 /** Histórico de recargas do tenant. */
 export async function listarRecargas(scope: TenantScope, limite = 20) {
   return prisma.recargaCredito.findMany({
