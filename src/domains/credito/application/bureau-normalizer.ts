@@ -121,7 +121,14 @@ export function normalizarBureau(respBruta: unknown, tipoPessoa: "PF" | "PJ"): C
     base.rendaOuFaturamento = typeof fat.faturamento_anual === "string" ? fat.faturamento_anual : null;
     const scores = isObj(r.scores) && Array.isArray((r.scores as Obj).ocorrencias) ? ((r.scores as Obj).ocorrencias as Obj[]) : [];
     base.score = num(scores[0]?.score);
-    base.restricoes = { protestos: conta(r.protesto_sintetico), pendencias: 0, chequesSemFundo: 0, acoesJudiciais: 0, total: 0 };
+    base.faixa = typeof scores[0]?.classif_abc === "string" && scores[0].classif_abc !== "NULO" ? (scores[0].classif_abc as string) : null;
+    if (base.probabilidadeInadimplencia == null) base.probabilidadeInadimplencia = num(scores[0]?.probabilidade_inadimplencia);
+    base.restricoes = {
+      protestos: conta(r.protesto_sintetico) + conta(r.protestos),
+      pendencias: conta(r.pend_financeiras) + conta(r.pendencias_financeiras),
+      chequesSemFundo: conta(r.cheques_sem_fundo) + conta(r.ch_sem_fundos_bacen) + conta(r.ch_sem_fundos_varejo),
+      acoesJudiciais: conta(r.acoes_judiciais) + conta(r.acoes_civeis), total: 0
+    };
     base.pdfUrl = typeof r.pdf === "string" ? r.pdf : null;
   }
   // ── PJ: quod-pj (restrições + resumoConsulta; score/alertas quando produção traz) ─────────
