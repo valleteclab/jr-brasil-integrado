@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import type { PdvData, PdvProduto, PdvServico, PdvCliente, PdvContaRecebedora, PdvMaquinaCartao } from "@/lib/services/pdv";
 import { correspondeBusca } from "@/lib/search/normalize";
@@ -200,6 +200,10 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [aviso, setAviso] = useState("");
+  // Gate de crédito no PDV: bloqueio (faturada/limite) + análise inline (financeiro).
+  const [bloqueioCredito, setBloqueioCredito] = useState<{ tipo: "faturado" | "limite"; msg: string } | null>(null);
+  const [ultimaVenda, setUltimaVenda] = useState<{ pagamentos: Pagamento[]; condicao: string } | null>(null);
+  const [analisePdv, setAnalisePdv] = useState<{ decisao: string | null; score: number | null; temRestricao: boolean; pdf: string | null } | null>(null);
   const [resultado, setResultado] = useState<{
     notas: NotaResultado[];
     troco: number;
@@ -393,10 +397,12 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
     setPagamentoAberto(true);
   }
 
-  async function finalizar(pagamentos: Pagamento[], condicaoCrediario: string) {
+  async function finalizar(pagamentos: Pagamento[], condicaoCrediario: string, opts?: { autorizarLimite?: boolean }) {
     setLoading(true);
     setError("");
     setResultado(null);
+    if (!opts?.autorizarLimite) setBloqueioCredito(null);
+    setUltimaVenda({ pagamentos, condicao: condicaoCrediario });
     try {
       // Converte % de linha para R$ no payload (o servidor persiste em R$ por compatibilidade).
       const payload = {
@@ -426,7 +432,8 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
         descontoGlobal: descontoGlobalVal,
         // Senha de admin (qualquer admin do tenant) — o servidor revalida e exige se desconto > limite.
         senhaAdmin: senhaAdmin || undefined,
-        retiradaExpedicao: retiradaExpedicao && cart.some((i) => i.kind === "produto")
+        retiradaExpedicao: retiradaExpedicao && cart.some((i) => i.kind === "produto"),
+        autorizarLimite: opts?.autorizarLimite === true
       };
       const res = await fetch("/api/erp/pdv/checkout", {
         method: "POST",
@@ -465,10 +472,49 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
         window.open(`/api/erp/expedicao/${dataRes.retirada.id}/recibo`, "_blank", "noopener,noreferrer");
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Falha ao finalizar.");
+      const msg = e instanceof Error ? e.message : "Falha ao finalizar.";
+      setError(msg);
+      if (/não está liberado para venda faturada|liberação ao financeiro/i.test(msg)) setBloqueioCredito({ tipo: "faturado", msg });
+      else if (/limite de cr[eé]dito/i.test(msg)) setBloqueioCredito({ tipo: "limite", msg });
     } finally {
       setLoading(false);
     }
+  }
+
+  // ── Gate de crédito no PDV (financeiro): liberar faturada, analisar bureau, autorizar limite ──
+  async function liberarFaturadaPdv() {
+    if (!clienteId) { setError("Selecione o cliente."); return; }
+    setLoading(true); setError("");
+    try {
+      const res = await fetch(`/api/erp/clientes/${clienteId}/liberar-faturado`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ liberada: true, obs: "Liberado no PDV" })
+      });
+      const d = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(d.error || "Falha ao liberar.");
+      setBloqueioCredito(null);
+      setAviso("Cliente liberado para venda faturada. Finalize a venda.");
+    } catch (e) { setError(e instanceof Error ? e.message : "Falha ao liberar."); }
+    finally { setLoading(false); }
+  }
+  async function analisarCreditoPdv() {
+    if (!clienteSelecionado) { setError("Selecione o cliente."); return; }
+    if (!window.confirm("Consultar o crédito deste cliente no bureau? Debita 1 consulta da carteira.")) return;
+    setLoading(true); setError("");
+    try {
+      const res = await fetch("/api/erp/creditos/consultar", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ documento: (clienteSelecionado.documento ?? "").replace(/\D/g, ""), clienteId })
+      });
+      const d = (await res.json().catch(() => ({}))) as { normalizado?: { decisao: string | null; score: number | null; temRestricao: boolean; pdfUrl: string | null }; error?: string };
+      if (!res.ok || !d.normalizado) throw new Error(d.error || "Falha na consulta.");
+      const n = d.normalizado;
+      setAnalisePdv({ decisao: n.decisao, score: n.score, temRestricao: n.temRestricao, pdf: n.pdfUrl });
+    } catch (e) { setError(e instanceof Error ? e.message : "Falha na consulta."); }
+    finally { setLoading(false); }
+  }
+  function autorizarLimitePdv() {
+    if (ultimaVenda) void finalizar(ultimaVenda.pagamentos, ultimaVenda.condicao, { autorizarLimite: true });
   }
 
   // Atalhos de teclado: F2 busca · F4 pagar · F6 cliente · F8 sangria/suprimento · Esc fecha/limpa.
@@ -750,7 +796,32 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
       </div>
 
       {pagamentoAberto && (
-        <PagamentoModal total={total} loading={loading} clienteSelecionado={Boolean(clienteId)} contas={data.contas} maquinas={data.maquinas} formas={data.formas} contasCobranca={data.contasCobranca} onCancel={() => setPagamentoAberto(false)} onConfirm={finalizar} />
+        <PagamentoModal total={total} loading={loading} clienteSelecionado={Boolean(clienteId)} contas={data.contas} maquinas={data.maquinas} formas={data.formas} contasCobranca={data.contasCobranca} onCancel={() => setPagamentoAberto(false)} onConfirm={finalizar}
+          creditoSlot={bloqueioCredito && (
+            <div className="alert danger" style={{ display: "block" }}>
+              <div className="lead">{bloqueioCredito.tipo === "faturado" ? "Venda faturada não liberada para este cliente" : "Cliente acima do limite de crédito"}</div>
+              <div style={{ marginTop: 4, fontSize: 13 }}>{bloqueioCredito.msg}</div>
+              {analisePdv && (
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", fontSize: 13, marginTop: 6 }}>
+                  <span className={`pill ${analisePdv.decisao === "APROVADO" ? "success" : analisePdv.decisao === "REPROVADO" ? "danger" : "warn"}`}><span className="dot" />{analisePdv.decisao ?? "Consultado"}</span>
+                  {analisePdv.score != null && <span>Score {analisePdv.score}</span>}
+                  <span className={analisePdv.temRestricao ? "pill danger" : "pill success"} style={{ fontSize: 11 }}><span className="dot" />{analisePdv.temRestricao ? "com restrição" : "sem restrição"}</span>
+                  {analisePdv.pdf && <a href={analisePdv.pdf} target="_blank" rel="noreferrer" className="btn-erp ghost xs">📄 laudo</a>}
+                </div>
+              )}
+              {data.podeFinanceiro ? (
+                <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button type="button" className="pdv-add-forma" style={{ margin: 0 }} disabled={loading} onClick={analisarCreditoPdv}>🔍 Analisar crédito</button>
+                  {bloqueioCredito.tipo === "faturado"
+                    ? <button type="button" className="pdv-finalizar" style={{ padding: "6px 12px" }} disabled={loading} onClick={liberarFaturadaPdv}>✅ Liberar venda faturada</button>
+                    : <button type="button" className="pdv-finalizar" style={{ padding: "6px 12px" }} disabled={loading} onClick={autorizarLimitePdv}>Autorizar e finalizar mesmo assim</button>}
+                </div>
+              ) : (
+                <div style={{ marginTop: 6, fontSize: 13 }}>A venda <strong>não se perde</strong> — solicite ao <strong>financeiro</strong> {bloqueioCredito.tipo === "faturado" ? "a liberação" : "autorizar ou aumentar o limite"}.</div>
+              )}
+            </div>
+          )}
+        />
       )}
       {movimentoAberto && (
         <MovimentoModal onClose={() => setMovimentoAberto(false)} />
@@ -1040,7 +1111,7 @@ function DescontoPctModal({
 
 // ─── Modal de pagamento (múltiplas formas + troco) ──────────────────────────────
 
-function PagamentoModal({ total, loading, clienteSelecionado, contas, maquinas, formas, contasCobranca, onCancel, onConfirm }: { total: number; loading: boolean; clienteSelecionado: boolean; contas: PdvContaRecebedora[]; maquinas: PdvMaquinaCartao[]; formas: Array<{ id: string; nome: string; tipo: string }>; contasCobranca: Array<{ id: string; nome: string }>; onCancel: () => void; onConfirm: (p: Pagamento[], condicaoCrediario: string) => void }) {
+function PagamentoModal({ total, loading, clienteSelecionado, contas, maquinas, formas, contasCobranca, onCancel, onConfirm, creditoSlot }: { total: number; loading: boolean; clienteSelecionado: boolean; contas: PdvContaRecebedora[]; maquinas: PdvMaquinaCartao[]; formas: Array<{ id: string; nome: string; tipo: string }>; contasCobranca: Array<{ id: string; nome: string }>; onCancel: () => void; onConfirm: (p: Pagamento[], condicaoCrediario: string) => void; creditoSlot?: ReactNode }) {
   // 1º vencimento padrão do boleto: hoje + 30 dias. Demais parcelas: +1 mês cada (editáveis).
   const vencPadraoBoleto = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
   const datasBoleto = (l: Pagamento): string[] => {
@@ -1284,6 +1355,7 @@ function PagamentoModal({ total, loading, clienteSelecionado, contas, maquinas, 
         {crediarioSemCliente && <div className="alert danger">{temBoleto ? "Venda no boleto exige cliente identificado" : "Crediário exige cliente identificado"} — selecione o cliente antes de finalizar.</div>}
         {trocoInvalido && <div className="alert danger">O troco só pode sair do dinheiro — reduza o valor do crediário/boleto para fechar a conta.</div>}
         {pixIntegradoPendente && <div className="alert warn">⏳ Pix pela conta integrada: gere o QR (▦ QR Pix) e aguarde — a confirmação do pagamento é automática e libera o finalizar.</div>}
+        {creditoSlot}
 
         <div className="pdv-pag-resumo">
           <div><span>Pago</span><strong>{brl(pago)}</strong></div>

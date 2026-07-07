@@ -36,6 +36,8 @@ export type PdvData = {
   formas: Array<{ id: string; nome: string; tipo: string }>;
   /** Contas com cobrança de boleto ativa (escolha do banco na venda em boleto). */
   contasCobranca: Array<{ id: string; nome: string }>;
+  /** Usuário tem o módulo financeiro (libera venda faturada e autoriza acima do limite no PDV). */
+  podeFinanceiro: boolean;
 };
 
 /**
@@ -158,6 +160,7 @@ export async function getPdvData(): Promise<PdvData> {
     contas,
     maquinas,
     formas,
-    contasCobranca: await listContasComCobranca(scope)
+    contasCobranca: await listContasComCobranca(scope),
+    podeFinanceiro: Boolean(sessao?.modulos.includes("financeiro"))
   };
 }
