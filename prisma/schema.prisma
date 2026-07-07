@@ -829,6 +829,12 @@ model Cliente {
   segmento          String?
   limiteCredito     Decimal           @default(0) @db.Decimal(14, 2)
   creditoUsado      Decimal           @default(0) @db.Decimal(14, 2)
+  /// Venda FATURADA (boleto/crediário) liberada para este cliente. Só o perfil FINANCEIRO libera;
+  /// sem isso, o caixa/PDV bloqueia venda a prazo e pede liberação ao financeiro.
+  vendaFaturadaLiberada   Boolean   @default(false)
+  vendaFaturadaLiberadaPor String?
+  vendaFaturadaLiberadaEm DateTime?
+  vendaFaturadaObs        String?
   condicaoPagamento String?
   tabelaPrecoId     String?
   tabelaPreco       TabelaPreco?      @relation(fields: [tabelaPrecoId], references: [id])

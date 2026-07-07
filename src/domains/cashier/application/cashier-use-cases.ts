@@ -9,6 +9,7 @@ import { criarRetiradaExpedicao } from "@/domains/sales/application/expedicao-us
 import { classificacaoReceitaPadraoId } from "@/domains/finance/application/classificacao-use-cases";
 import { processarVendaBoleto, type VendaBoletoResultado } from "@/domains/finance/application/boleto-use-cases";
 import { publishRealtime } from "@/lib/realtime/broker";
+import { assertVendaFaturadaLiberada } from "@/domains/credito/application/venda-faturada-use-cases";
 
 /**
  * Caixa (PDV) — turno do operador, movimentos de dinheiro e recebimento de pré-vendas.
@@ -572,6 +573,10 @@ export async function receberPagamentoEEmitir(
   );
   if (valorBoleto > 0 && !pedido.clienteId) {
     throw new CaixaError("Venda no boleto exige um cliente identificado — identifique o cliente na pré-venda.");
+  }
+  // GATE: venda faturada (boleto) exige liberação do financeiro para o cliente.
+  if (valorBoleto > 0 && pedido.clienteId) {
+    await assertVendaFaturadaLiberada(scope, pedido.clienteId);
   }
 
   // 1) Estoque + pagamentos + movimento de caixa — antes de emitir (o dinheiro já foi recebido).

@@ -8,6 +8,7 @@ import { listContasComCobranca } from "@/domains/finance/application/boleto-use-
 export type PreVendaResumo = {
   id: string;
   numero: string;
+  clienteId: string | null;
   clienteNome: string | null;
   clienteDocumento: string | null;
   temCliente: boolean;
@@ -38,6 +39,8 @@ export type CaixaPageData = {
   caixa: { id: string; operador: string; abertoEm: string; resumo: ResumoCaixa } | null;
   /** Nome do usuário logado — é ele quem abre o caixa (não se digita mais o operador). */
   usuarioNome: string;
+  /** Usuário tem o módulo financeiro (pode liberar venda faturada direto na tela). */
+  podeFinanceiro: boolean;
   preVendas: PreVendaResumo[];
   /** Contas recebedoras (PIX/transferência) e maquininhas (cartão) para detalhar o recebimento. */
   contas: ContaRecebedora[];
@@ -121,6 +124,7 @@ export async function getCaixaPageData(): Promise<CaixaPageData> {
     numero: p.numero,
     clienteNome: p.cliente ? (p.cliente.nomeFantasia ?? p.cliente.razaoSocial) : null,
     clienteDocumento: p.cliente?.documento ?? null,
+    clienteId: p.clienteId ?? null,
     temCliente: Boolean(p.clienteId),
     total: Number(p.total),
     qtdItens: p.itens.length,
@@ -149,6 +153,7 @@ export async function getCaixaPageData(): Promise<CaixaPageData> {
         }
       : null,
     usuarioNome: sessao?.nome ?? "",
+    podeFinanceiro: Boolean(sessao?.modulos.includes("financeiro")),
     preVendas,
     contas: contasRaw,
     maquinas: maquinasRaw,

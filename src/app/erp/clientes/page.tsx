@@ -2,10 +2,14 @@ import { CustomersCrud } from "@/components/erp/CustomersCrud";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { listCustomersDetailed, listTabelasPrecoOptions } from "@/lib/services/customers-admin";
 import type { CustomerDetailedSummary, TabelaPrecoOption } from "@/lib/services/customers-admin";
+import { getSession } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
 
 export default async function ErpCustomersPage() {
+  const session = await getSession();
+  // Perfil FINANCEIRO consulta crédito e libera venda faturada (o servidor também valida).
+  const podeFinanceiro = Boolean(session?.modulos.includes("financeiro"));
   let customers: CustomerDetailedSummary[] = [];
   let tabelasPreco: TabelaPrecoOption[] = [];
   let loadError = "";
@@ -34,7 +38,7 @@ export default async function ErpCustomersPage() {
         </div>
       )}
 
-      <CustomersCrud initialCustomers={customers} tabelasPreco={tabelasPreco} />
+      <CustomersCrud initialCustomers={customers} tabelasPreco={tabelasPreco} podeFinanceiro={podeFinanceiro} />
     </>
   );
 }

@@ -20,6 +20,7 @@ import { criarComissaoVenda, cancelarComissaoPedido } from "./comissao-use-cases
 import { classificacaoReceitaPadraoId } from "@/domains/finance/application/classificacao-use-cases";
 import { cancelarCobrancasDoPedido, gerarBoletosDoPedido, parcelasBoletoPorDatas } from "@/domains/finance/application/boleto-use-cases";
 import { publishRealtime } from "@/lib/realtime/broker";
+import { assertVendaFaturadaLiberada } from "@/domains/credito/application/venda-faturada-use-cases";
 
 const TX_OPTIONS = { maxWait: 15000, timeout: 30000 };
 
@@ -223,6 +224,13 @@ export async function confirmSale(scope: TenantScope, id: string, options?: Conf
   }
 
   const modoContasReceber = options?.contasReceber ?? "AUTO";
+
+  // GATE: se a confirmação gera venda faturada a prazo (boleto ou condição de pagamento) para um
+  // cliente identificado, exige liberação do financeiro.
+  const ehFaturada = modoContasReceber === "AUTO" && (/boleto/i.test(pedido.formaPagamento ?? "") || Boolean(pedido.condicaoPagamento));
+  if (pedido.clienteId && ehFaturada) {
+    await assertVendaFaturadaLiberada(scope, pedido.clienteId);
+  }
 
   const confirmado = await runInTransaction(async (tx) => {
     // Efetiva saída de estoque commitando as reservas

@@ -87,6 +87,7 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
+  const [faturadoBloqueado, setFaturadoBloqueado] = useState(false);
 
   const [saldoInicial, setSaldoInicial] = useState(0);
 
@@ -311,8 +312,34 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
         window.open(`/api/erp/expedicao/${r.retirada.id}/recibo`, "_blank", "noopener,noreferrer");
       }
       router.refresh();
-    } catch (e) { setError(e instanceof Error ? e.message : "Erro ao receber."); }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Erro ao receber.";
+      setError(msg);
+      // Venda faturada bloqueada: sinaliza para oferecer a liberação inline (ao financeiro).
+      setFaturadoBloqueado(/venda faturada|liberad[oa] para venda/i.test(msg));
+    }
     finally { setBusy(false); }
+  }
+
+  // Libera a venda faturada do cliente da pré-venda atual (financeiro) e retenta o recebimento.
+  async function liberarFaturadoInline() {
+    if (!sel?.clienteId) { setError("Pré-venda sem cliente identificado."); return; }
+    setBusy(true); setError("");
+    try {
+      const res = await fetch(`/api/erp/clientes/${sel.clienteId}/liberar-faturado`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ liberada: true, obs: "Liberado no caixa" })
+      });
+      const d = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(d.error || "Falha ao liberar.");
+      setFaturadoBloqueado(false);
+      setInfo("Cliente liberado para venda faturada. Pode finalizar a venda.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Falha ao liberar.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   // QR Pix dinâmico (Sicoob) da linha PIX: o cliente paga na hora; "Verificar" consulta o banco.
@@ -687,6 +714,17 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
                   </label>
                 )}
                 {pixIntegradoPendente && <div className="alert warn" style={{ marginTop: 8 }}>⏳ Pix pela conta integrada: gere o QR (▦ QR Pix) e aguarde — a confirmação do pagamento é automática e libera o receber.</div>}
+                {faturadoBloqueado && (
+                  <div className="alert danger" style={{ marginTop: 8, display: "block" }}>
+                    <div className="lead">Venda faturada não liberada para este cliente</div>
+                    {data.podeFinanceiro
+                      ? <div style={{ marginTop: 6 }}>
+                          Você tem permissão financeira — pode liberar agora:
+                          <button type="button" className="btn-erp primary sm" style={{ marginLeft: 8 }} disabled={busy || !sel.clienteId} onClick={liberarFaturadoInline}>✅ Liberar venda faturada</button>
+                        </div>
+                      : <div style={{ marginTop: 6 }}>Solicite a liberação ao <strong>setor financeiro</strong> (no cadastro do cliente) antes de vender a prazo.</div>}
+                  </div>
+                )}
                 <button type="button" className="btn-erp primary lg" style={{ marginTop: 12, width: "100%" }} disabled={busy || falta > 0 || pixIntegradoPendente} onClick={receber}>
                   {busy ? "Processando…" : `${modelo === "RECIBO" ? "Receber (só recibo)" : "Receber e emitir"} · ${brl(sel.total)}`}
                 </button>

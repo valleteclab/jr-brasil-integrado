@@ -11,6 +11,7 @@ import { getCaixaAberto, registrarRecebimentoPdv, type PagamentoDetalhado } from
 import { assertModuloLiberado } from "@/lib/auth/tenant-features";
 import { classificacaoReceitaPadraoId } from "@/domains/finance/application/classificacao-use-cases";
 import { processarVendaBoleto } from "@/domains/finance/application/boleto-use-cases";
+import { assertVendaFaturadaLiberada } from "@/domains/credito/application/venda-faturada-use-cases";
 
 const FORMA_CREDIARIO = "CREDIARIO";
 const FORMA_BOLETO = "BOLETO";
@@ -162,6 +163,8 @@ export async function pdvCheckout(scope: TenantScope, input: PdvCheckoutInput): 
     if (!input.clienteId) {
       throw new Error(valorBoleto > 0 ? "Venda no boleto exige um cliente identificado." : "Crediário (venda a prazo) exige um cliente identificado.");
     }
+    // GATE: venda faturada (boleto/crediário) exige liberação do financeiro para o cliente.
+    await assertVendaFaturadaLiberada(scope, input.clienteId);
     if (valorAPrazo > total + 0.0001) {
       throw new Error(`Crediário/boleto (${valorAPrazo.toFixed(2)}) não pode ser maior que o total da venda (${total.toFixed(2)}).`);
     }

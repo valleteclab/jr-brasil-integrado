@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { CustomerDetail, CustomerDetailedSummary, TabelaPrecoOption } from "@/lib/services/customers-admin";
 import { useCadastroLookup } from "./useCadastroLookup";
 import { ConsultaCreditoCliente } from "./ConsultaCreditoCliente";
+import { FaturadoLiberacaoCliente } from "./FaturadoLiberacaoCliente";
 import { formatDocumento } from "@/lib/fiscal/documento";
 
 // ---------------------------------------------------------------------------
@@ -58,6 +59,8 @@ type CustomerTab = "dados" | "contatos" | "enderecos" | "comercial";
 type CustomersCrudProps = {
   initialCustomers: CustomerDetailedSummary[];
   tabelasPreco: TabelaPrecoOption[];
+  /** Usuário tem o módulo financeiro (consulta crédito e libera venda faturada). */
+  podeFinanceiro?: boolean;
 };
 
 // ---------------------------------------------------------------------------
@@ -131,7 +134,7 @@ function parseCurrency(value: string): number {
 // Component
 // ---------------------------------------------------------------------------
 
-export function CustomersCrud({ initialCustomers, tabelasPreco }: CustomersCrudProps) {
+export function CustomersCrud({ initialCustomers, tabelasPreco, podeFinanceiro = false }: CustomersCrudProps) {
   const [customers, setCustomers] = useState<CustomerDetailedSummary[]>(initialCustomers);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("todos");
@@ -734,11 +737,16 @@ export function CustomersCrud({ initialCustomers, tabelasPreco }: CustomersCrudP
           <input type="number" min="0" step="0.01" value={form.limiteCredito} onChange={(e) => updateField("limiteCredito", e.target.value)} />
         </label>
         {form.id && (
-          <ConsultaCreditoCliente
-            clienteId={form.id}
-            documento={form.documento}
-            onLimiteSugerido={(v) => updateField("limiteCredito", String(v))}
-          />
+          <>
+            {podeFinanceiro && (
+              <ConsultaCreditoCliente
+                clienteId={form.id}
+                documento={form.documento}
+                onLimiteSugerido={(v) => updateField("limiteCredito", String(v))}
+              />
+            )}
+            <FaturadoLiberacaoCliente clienteId={form.id} podeFinanceiro={podeFinanceiro} />
+          </>
         )}
         <label className="full">
           Tabela de preço
