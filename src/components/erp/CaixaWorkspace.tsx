@@ -88,6 +88,7 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const [faturadoBloqueado, setFaturadoBloqueado] = useState(false);
+  const [analise, setAnalise] = useState<{ decisao: string | null; score: number | null; temRestricao: boolean; limiteRecomendado: number | null; pdf: string | null } | null>(null);
 
   const [saldoInicial, setSaldoInicial] = useState(0);
 
@@ -319,6 +320,28 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
       setFaturadoBloqueado(/venda faturada|liberad[oa] para venda/i.test(msg));
     }
     finally { setBusy(false); }
+  }
+
+  // Consulta o crédito do cliente da pré-venda (bureau) direto no caixa — apoio à liberação.
+  async function analisarCreditoInline() {
+    if (!sel?.clienteId) { setError("Pré-venda sem cliente identificado."); return; }
+    if (!window.confirm("Consultar o crédito deste cliente no bureau? Isso debita 1 consulta da carteira de créditos.")) return;
+    setBusy(true); setError("");
+    try {
+      const res = await fetch("/api/erp/creditos/consultar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ documento: (sel.clienteDocumento ?? "").replace(/\D/g, ""), clienteId: sel.clienteId })
+      });
+      const d = (await res.json().catch(() => ({}))) as { normalizado?: { decisao: string | null; score: number | null; temRestricao: boolean; limiteRecomendado: number | null; pdfUrl: string | null }; error?: string };
+      if (!res.ok || !d.normalizado) throw new Error(d.error || "Falha na consulta.");
+      const n = d.normalizado;
+      setAnalise({ decisao: n.decisao, score: n.score, temRestricao: n.temRestricao, limiteRecomendado: n.limiteRecomendado, pdf: n.pdfUrl });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Falha na consulta.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   // Libera a venda faturada do cliente da pré-venda atual (financeiro) e retenta o recebimento.
@@ -718,11 +741,24 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
                   <div className="alert danger" style={{ marginTop: 8, display: "block" }}>
                     <div className="lead">Venda faturada não liberada para este cliente</div>
                     {data.podeFinanceiro
-                      ? <div style={{ marginTop: 6 }}>
-                          Você tem permissão financeira — pode liberar agora:
-                          <button type="button" className="btn-erp primary sm" style={{ marginLeft: 8 }} disabled={busy || !sel.clienteId} onClick={liberarFaturadoInline}>✅ Liberar venda faturada</button>
+                      ? <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 6 }}>
+                          <span>Você tem permissão financeira — analise e libere aqui mesmo:</span>
+                          {analise && (
+                            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", fontSize: 13 }}>
+                              <span className={`pill ${analise.decisao === "APROVADO" ? "success" : analise.decisao === "REPROVADO" ? "danger" : "warn"}`}><span className="dot" />{analise.decisao ?? "Consultado"}</span>
+                              {analise.score != null && <span>Score {analise.score}</span>}
+                              <span className={analise.temRestricao ? "pill danger" : "pill success"} style={{ fontSize: 11 }}><span className="dot" />{analise.temRestricao ? "com restrição" : "sem restrição"}</span>
+                              {analise.pdf && <a href={analise.pdf} target="_blank" rel="noreferrer" className="btn-erp ghost xs">📄 laudo</a>}
+                            </div>
+                          )}
+                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                            <button type="button" className="btn-erp light sm" disabled={busy || !sel.clienteId} onClick={analisarCreditoInline}>🔍 Analisar crédito</button>
+                            <button type="button" className="btn-erp primary sm" disabled={busy || !sel.clienteId} onClick={liberarFaturadoInline}>✅ Liberar venda faturada</button>
+                          </div>
                         </div>
-                      : <div style={{ marginTop: 6 }}>Solicite a liberação ao <strong>setor financeiro</strong> (no cadastro do cliente) antes de vender a prazo.</div>}
+                      : <div style={{ marginTop: 6 }}>
+                          A pré-venda <strong>fica salva aqui</strong> (não se perde) — solicite a liberação ao <strong>setor financeiro</strong> (no cadastro do cliente) e depois é só receber esta mesma pré-venda.
+                        </div>}
                   </div>
                 )}
                 <button type="button" className="btn-erp primary lg" style={{ marginTop: 12, width: "100%" }} disabled={busy || falta > 0 || pixIntegradoPendente} onClick={receber}>

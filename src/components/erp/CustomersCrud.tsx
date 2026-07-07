@@ -243,7 +243,7 @@ export function CustomersCrud({ initialCustomers, tabelasPreco, podeFinanceiro =
     setDrawerOpen(true);
   }
 
-  async function openEdit(c: CustomerDetailedSummary) {
+  async function openEdit(c: CustomerDetailedSummary, tab: CustomerTab = "dados") {
     setLoadingDetail(c.id);
     setError("");
     try {
@@ -292,7 +292,7 @@ export function CustomersCrud({ initialCustomers, tabelasPreco, podeFinanceiro =
             }))
           : [emptyEndereco()]
       });
-      setActiveTab("dados");
+      setActiveTab(tab);
       setDrawerOpen(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível carregar os dados do cliente.");
@@ -861,6 +861,9 @@ export function CustomersCrud({ initialCustomers, tabelasPreco, podeFinanceiro =
                   <td className="actions">
                     <button type="button" className="btn-erp ghost xs" disabled={loadingDetail === c.id} onClick={() => openEdit(c)}>
                       {loadingDetail === c.id ? "Abrindo..." : "Editar"}
+                    </button>
+                    <button type="button" className="btn-erp ghost xs" disabled={loadingDetail === c.id} onClick={() => openEdit(c, "comercial")} title={podeFinanceiro ? "Analisar crédito e liberar venda faturada" : "Ver crédito e liberação (só financeiro libera)"}>
+                      💳 Crédito
                     </button>
                     {c.status === "PENDENTE_APROVACAO" && (
                       <button
