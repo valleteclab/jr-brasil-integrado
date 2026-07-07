@@ -65,26 +65,37 @@ export async function consultarCreditoApiBrasil(
   const homolog = opts?.homolog ?? rt.sandbox;
   const body = opts?.body ?? { tipo: opts?.tipo ?? prod.tipo, [prod.docKey]: doc, homolog };
 
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
-  try {
-    const res = await fetch(montarUrl(endpoint), {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${rt.token}`,
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        "User-Agent": "XERP"
-      },
-      body: JSON.stringify(body),
-      signal: ctrl.signal
-    });
-    const data = (await res.json().catch(() => ({}))) as ConsultaCreditoEnvelope;
-    return { ok: res.ok && data?.error !== true, status: res.status, body: data };
-  } catch (e) {
-    if (e instanceof Error && e.name === "AbortError") throw new Error("Bureau não respondeu no tempo (timeout de 30s).");
-    throw e;
-  } finally {
-    clearTimeout(timer);
+  const url = montarUrl(endpoint);
+  const req = {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${rt.token}`,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      "User-Agent": "Mozilla/5.0 (XERP)"
+    },
+    body: JSON.stringify(body)
+  } as const;
+
+  // Retry: blips de rede (fetch failed / reset) até 3 tentativas com backoff. Timeout por tentativa.
+  let ultimoErro: unknown;
+  for (let tentativa = 1; tentativa <= 3; tentativa++) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+    try {
+      const res = await fetch(url, { ...req, signal: ctrl.signal });
+      const data = (await res.json().catch(() => ({}))) as ConsultaCreditoEnvelope;
+      return { ok: res.ok && data?.error !== true, status: res.status, body: data };
+    } catch (e) {
+      ultimoErro = e;
+      if (e instanceof Error && e.name === "AbortError") { ultimoErro = new Error(`timeout de ${TIMEOUT_MS / 1000}s`); }
+      if (tentativa < 3) await new Promise((r) => setTimeout(r, 400 * tentativa));
+    } finally {
+      clearTimeout(timer);
+    }
   }
+  // Expõe a CAUSA real da falha de rede (ENOTFOUND, ECONNRESET, cert, timeout…).
+  const err = ultimoErro as (Error & { cause?: { code?: string; message?: string } }) | undefined;
+  const causa = err?.cause?.code ?? err?.cause?.message ?? err?.message ?? "desconhecida";
+  throw new Error(`Falha de rede ao chamar o bureau (${causa}). Tente de novo em instantes.`);
 }
