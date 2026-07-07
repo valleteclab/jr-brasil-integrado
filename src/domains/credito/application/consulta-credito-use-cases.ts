@@ -78,7 +78,14 @@ export async function consultarCredito(
   let bruto: unknown;
   try {
     const resp = await consultarCreditoApiBrasil(rt, tipo, documento);
-    if (!resp.ok) throw new CreditoError(`Bureau retornou erro (HTTP ${resp.status}).`);
+    if (!resp.ok) {
+      const msg = resp.body?.message;
+      // PJ (SQOD) só responde em produção — em homolog dá "Tipo não suportado em homolog".
+      const dica = tipo === "PJ" && rt.sandbox && /homolog/i.test(msg ?? "")
+        ? " (o produto PJ só funciona em produção — desmarque Sandbox em Admin → Crédito & bureau)"
+        : "";
+      throw new CreditoError(msg ? `Bureau: ${msg}${dica}` : `Bureau retornou erro (HTTP ${resp.status}).`);
+    }
     bruto = resp.body;
   } catch (e) {
     // Estorna o débito quando a consulta não completa (o cliente não pode pagar por consulta falha).
