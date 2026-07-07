@@ -67,6 +67,16 @@ export async function POST(request: Request) {
       });
     }
 
+    // Limpeza: remove recargas de TESTE pendentes de um tenant (após validar o sandbox).
+    const limpar = body as { limparRecargasPendentesCnpj?: string };
+    if (limpar.limparRecargasPendentesCnpj) {
+      const cnpj = limpar.limparRecargasPendentesCnpj.replace(/\D/g, "");
+      const empresa = await prisma.empresa.findFirst({ where: { cnpj }, select: { tenantId: true } });
+      if (!empresa) throw new Error(`Empresa CNPJ ${cnpj} não encontrada.`);
+      const r = await prisma.recargaCredito.deleteMany({ where: { tenantId: empresa.tenantId, status: "PENDENTE" } });
+      return NextResponse.json({ ok: true, removidas: r.count });
+    }
+
     // Diagnóstico: QR Pix cru de uma recarga (mostra o erro do Asaas, ex.: falta chave Pix).
     const diag = body as { diagRecargaId?: string };
     if (diag.diagRecargaId) {

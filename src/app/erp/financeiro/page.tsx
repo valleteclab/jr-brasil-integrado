@@ -69,6 +69,7 @@ export default async function FinanceiroPage() {
             <Button href="/erp/financeiro/emprestimos" variant="light">Empréstimos</Button>
             <Button href="/erp/financeiro/extrato" variant="light">Extrato do banco</Button>
             <Button href="/erp/financeiro/antecipacao" variant="light">Antecipação de recebíveis</Button>
+            <Button href="/erp/financeiro/creditos" variant="light">Créditos de consulta</Button>
             <Button href="/erp/financeiro/classificacoes" variant="light">Plano de classificações</Button>
           </span>
         }
