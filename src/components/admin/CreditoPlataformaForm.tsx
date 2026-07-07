@@ -95,14 +95,14 @@ export function CreditoPlataformaForm({ dados }: { dados: CreditoPlataformaAdmin
       <div className="erp-card" style={{ padding: 16 }}>
         <h3 style={{ marginTop: 0 }}>ApiBrasil — bureau de crédito {estado.apibrasilConfigurado ? <span className="pill success"><span className="dot" />configurado</span> : <span className="pill warn"><span className="dot" />não configurado</span>}</h3>
         <div style={{ display: "grid", gap: 10 }}>
-          <label style={campo}>Token mestre (Bearer) — vazio p/ manter
+          <label style={campo}>Bearer Token (aba Credenciais) — vazio p/ manter
             <input type="password" value={apiToken} onChange={(e) => setApiToken(e.target.value)} style={{ height: 34 }} />
           </label>
-          <label style={campo}>Device token — produto PF (acerta)
-            <input value={devicePF} onChange={(e) => setDevicePF(e.target.value)} style={{ height: 34 }} />
+          <label style={campo}>Endpoint — produto PF (acerta)
+            <input value={devicePF} onChange={(e) => setDevicePF(e.target.value)} placeholder="/api/v2/credito/... ou URL completa" style={{ height: 34 }} />
           </label>
-          <label style={campo}>Device token — produto PJ (sqod)
-            <input value={devicePJ} onChange={(e) => setDevicePJ(e.target.value)} style={{ height: 34 }} />
+          <label style={campo}>Endpoint — produto PJ (sqod)
+            <input value={devicePJ} onChange={(e) => setDevicePJ(e.target.value)} placeholder="/api/v2/credito/... ou URL completa" style={{ height: 34 }} />
           </label>
           <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13 }}>
             <input type="checkbox" checked={apiSandbox} onChange={(e) => setApiSandbox(e.target.checked)} /> Sandbox (homologação)
