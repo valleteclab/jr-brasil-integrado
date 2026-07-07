@@ -31,6 +31,37 @@ export async function POST(request: Request) {
     const empresa = await prisma.empresa.findFirst({ where: { cnpj }, select: { id: true, tenantId: true, razaoSocial: true } });
     if (!empresa) return NextResponse.json({ error: `Empresa CNPJ ${cnpj} não encontrada.` }, { status: 404 });
 
+    // MODO ZERAR ICMS: itens já em MATERIAL_SERVICO_ISS que ainda têm ICMS recuperável (creditando).
+    // Setar recuperavel=false → o SPED gera CST 90 e ICMS zero (material p/ serviço ISS não credita).
+    const modo = body as { zerarIcms?: boolean };
+    if (modo.zerarIcms) {
+      const impostos = await prisma.entradaFiscalItemImposto.findMany({
+        where: {
+          empresaId: empresa.id, tenantId: empresa.tenantId, tributo: "ICMS", recuperavel: true,
+          entradaFiscalItem: { finalidade: PARA }
+        },
+        select: {
+          id: true, valor: true, baseCalculo: true, cst: true,
+          entradaFiscalItem: { select: { itemNumero: true, descricaoFornecedor: true, entradaFiscal: { select: { numero: true } } } }
+        }
+      });
+      const totalIcms = impostos.reduce((s, i) => s + Number(i.valor ?? 0), 0);
+      const amostraZ = impostos.slice(0, 40).map((i) => ({
+        nota: i.entradaFiscalItem.entradaFiscal?.numero ?? "—",
+        item: i.entradaFiscalItem.itemNumero,
+        descricao: i.entradaFiscalItem.descricaoFornecedor?.slice(0, 45),
+        cst: i.cst, icms: Number(i.valor ?? 0)
+      }));
+      if (!body.aplicar) {
+        return NextResponse.json({ dryRun: true, modo: "zerarIcms", empresa: empresa.razaoSocial, itensComIcms: impostos.length, icmsQueDeixaDeCreditar: Math.round(totalIcms * 100) / 100, amostra: amostraZ });
+      }
+      const r = await prisma.entradaFiscalItemImposto.updateMany({
+        where: { id: { in: impostos.map((i) => i.id) } },
+        data: { recuperavel: false }
+      });
+      return NextResponse.json({ aplicado: true, modo: "zerarIcms", empresa: empresa.razaoSocial, impostosAtualizados: r.count, icmsQueDeixouDeCreditar: Math.round(totalIcms * 100) / 100 });
+    }
+
     // Itens de entrada com a finalidade a corrigir.
     const itens = await prisma.entradaFiscalItem.findMany({
       where: { empresaId: empresa.id, tenantId: empresa.tenantId, finalidade: DE },
