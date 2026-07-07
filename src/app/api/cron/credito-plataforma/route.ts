@@ -90,13 +90,13 @@ export async function POST(request: Request) {
     }
 
     // Teste de consulta ao bureau (RAW, sem debitar carteira): calibra endpoint/body contra o painel.
-    const tc = body as { testarConsulta?: { tipo: "PF" | "PJ"; documento: string; path?: string; body?: Record<string, unknown>; normalizar?: boolean } };
+    const tc = body as { testarConsulta?: { tipo: "PF" | "PJ"; documento: string; path?: string; tipoProduto?: string; homolog?: boolean; body?: Record<string, unknown>; normalizar?: boolean } };
     if (tc.testarConsulta) {
       const { getApiBrasilRuntime, consultarCreditoApiBrasil } = await import("@/lib/apibrasil/apibrasil-service");
       const rt = await getApiBrasilRuntime();
       if (!rt) throw new Error("ApiBrasil não configurado.");
       const t = tc.testarConsulta;
-      const resp = await consultarCreditoApiBrasil(rt, t.tipo, t.documento, { path: t.path, body: t.body });
+      const resp = await consultarCreditoApiBrasil(rt, t.tipo, t.documento, { path: t.path, tipo: t.tipoProduto, homolog: t.homolog, body: t.body });
       let normalizado: unknown = undefined;
       if (t.normalizar && resp.ok) {
         const { normalizarBureau } = await import("@/domains/credito/application/bureau-normalizer");
