@@ -65,14 +65,16 @@ export async function consultarCredito(
 
   const cfg = await prisma.plataformaCredito.findUnique({ where: { id: "default" } });
   if (!cfg) throw new CreditoError("Módulo de crédito não configurado pela plataforma.");
-  const preco = Number(tipo === "PF" ? cfg.precoConsultaPF : cfg.precoConsultaPJ);
   const validadeDias = cfg.validadeConsultaDias ?? 60;
 
   const rt = await getApiBrasilRuntime();
   if (!rt) throw new CreditoError("Bureau (ApiBrasil) não configurado pela plataforma.");
 
-  // 2) Debita ANTES de chamar (garante saldo); se a chamada falhar, estorna.
-  await debitarCarteira(scope, preco, `Consulta de crédito ${tipo} ${documento}`, usuarioId);
+  // Em HOMOLOGAÇÃO a ApiBrasil não tarifa e devolve dado fictício → NÃO debita a carteira do tenant
+  // (custo 0). Em produção, debita o preço de revenda ANTES de chamar (garante saldo) e estorna se falhar.
+  const preco = rt.sandbox ? 0 : Number(tipo === "PF" ? cfg.precoConsultaPF : cfg.precoConsultaPJ);
+
+  if (preco > 0) await debitarCarteira(scope, preco, `Consulta de crédito ${tipo} ${documento}`, usuarioId);
   let bruto: unknown;
   try {
     const resp = await consultarCreditoApiBrasil(rt, tipo, documento);
@@ -80,7 +82,7 @@ export async function consultarCredito(
     bruto = resp.body;
   } catch (e) {
     // Estorna o débito quando a consulta não completa (o cliente não pode pagar por consulta falha).
-    await creditarEstorno(scope, preco, `Estorno — consulta ${tipo} ${documento} falhou`, usuarioId);
+    if (preco > 0) await creditarEstorno(scope, preco, `Estorno — consulta ${tipo} ${documento} falhou`, usuarioId);
     throw e instanceof CreditoError ? e : new CreditoError(e instanceof Error ? e.message : "Falha na consulta ao bureau.");
   }
 
