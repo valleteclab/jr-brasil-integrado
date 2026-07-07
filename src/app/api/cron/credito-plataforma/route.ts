@@ -67,6 +67,18 @@ export async function POST(request: Request) {
       });
     }
 
+    // Diagnóstico: QR Pix cru de uma recarga (mostra o erro do Asaas, ex.: falta chave Pix).
+    const diag = body as { diagRecargaId?: string };
+    if (diag.diagRecargaId) {
+      const rec = await prisma.recargaCredito.findUnique({ where: { id: diag.diagRecargaId }, select: { asaasPaymentId: true } });
+      if (!rec?.asaasPaymentId) throw new Error("Recarga sem asaasPaymentId.");
+      const rt = await getAsaasRuntime();
+      if (!rt) throw new Error("Asaas não configurado.");
+      const { asaasPixQrCodeRaw } = await import("@/lib/asaas/asaas-service");
+      const raw = await asaasPixQrCodeRaw(rt, rec.asaasPaymentId);
+      return NextResponse.json(raw);
+    }
+
     // Teste ponta a ponta no sandbox: cria uma recarga Pix para a empresa do CNPJ informado.
     const teste = body as { testarRecargaCnpj?: string; testarValor?: number };
     if (teste.testarRecargaCnpj) {

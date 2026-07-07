@@ -89,6 +89,15 @@ export async function asaasCriarPix(
   };
 }
 
+/** DIAGNÓSTICO: QR Pix cru de um pagamento (devolve o erro do Asaas, se houver). */
+export async function asaasPixQrCodeRaw(rt: AsaasRuntime, paymentId: string): Promise<{ ok: boolean; status: number; body: unknown }> {
+  const res = await fetch(`${baseUrl(rt)}/payments/${paymentId}/pixQrCode`, {
+    headers: { access_token: rt.apiKey, "User-Agent": "XERP" }
+  });
+  const body = await res.json().catch(() => ({}));
+  return { ok: res.ok, status: res.status, body };
+}
+
 /** Consulta o status de um pagamento (fallback do webhook). */
 export async function asaasStatusPagamento(rt: AsaasRuntime, paymentId: string): Promise<string> {
   const pay = await asaas<{ status: string }>(rt, "GET", `/payments/${paymentId}`);
