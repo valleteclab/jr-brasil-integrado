@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
-import { requireModulo } from "@/lib/auth/session";
+import { getSession, requireModulo } from "@/lib/auth/session";
 import { authErrorStatus } from "@/lib/auth/http";
 import { receberPagamentoEEmitir, CaixaError, type PagamentoDetalhado } from "@/domains/cashier/application/cashier-use-cases";
 
@@ -8,6 +8,7 @@ export async function POST(request: Request) {
   try {
     await requireModulo("caixa");
     const scope = await getDevelopmentTenantScope();
+    const session = await getSession();
     const body = (await request.json()) as {
       pedidoId?: string;
       modelo?: "NFE" | "NFCE";
@@ -15,15 +16,19 @@ export async function POST(request: Request) {
       retiradaExpedicao?: boolean;
       emitirFiscal?: boolean;
       boletoOpcoes?: { contaBancariaId?: string | null; parcelas?: number | null; primeiroVencimento?: string | null; datas?: string[] | null; valores?: number[] | null } | null;
+      autorizarLimite?: boolean;
     };
     if (!body.pedidoId) return NextResponse.json({ error: "Pré-venda não informada." }, { status: 400 });
+    // Só o perfil FINANCEIRO autoriza venda a prazo acima do limite.
+    const podeFinanceiro = Boolean(session?.modulos.includes("financeiro"));
     const result = await receberPagamentoEEmitir(scope, {
       pedidoId: body.pedidoId,
       modelo: body.modelo === "NFE" ? "NFE" : "NFCE",
       pagamentos: body.pagamentos ?? [],
       retiradaExpedicao: body.retiradaExpedicao,
       emitirFiscal: body.emitirFiscal,
-      boletoOpcoes: body.boletoOpcoes ?? null
+      boletoOpcoes: body.boletoOpcoes ?? null,
+      autorizarLimite: body.autorizarLimite === true && podeFinanceiro
     });
     return NextResponse.json(result);
   } catch (error) {

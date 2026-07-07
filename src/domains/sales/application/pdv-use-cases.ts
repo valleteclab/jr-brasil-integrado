@@ -12,6 +12,7 @@ import { assertModuloLiberado } from "@/lib/auth/tenant-features";
 import { classificacaoReceitaPadraoId } from "@/domains/finance/application/classificacao-use-cases";
 import { processarVendaBoleto } from "@/domains/finance/application/boleto-use-cases";
 import { assertVendaFaturadaLiberada } from "@/domains/credito/application/venda-faturada-use-cases";
+import { assertLimiteCredito } from "@/domains/credito/application/consulta-credito-use-cases";
 
 const FORMA_CREDIARIO = "CREDIARIO";
 const FORMA_BOLETO = "BOLETO";
@@ -40,6 +41,8 @@ export type PdvCheckoutInput = {
   senhaAdmin?: string;
   /** Gera recibo de retirada na expedição (exige módulo habilitado e venda com produtos). */
   retiradaExpedicao?: boolean;
+  /** Financeiro autorizou a venda a prazo ACIMA do limite de crédito (pula o gate de limite). */
+  autorizarLimite?: boolean;
 };
 
 export type PdvNotaResultado = {
@@ -165,6 +168,8 @@ export async function pdvCheckout(scope: TenantScope, input: PdvCheckoutInput): 
     }
     // GATE: venda faturada (boleto/crediário) exige liberação do financeiro para o cliente.
     await assertVendaFaturadaLiberada(scope, input.clienteId);
+    // GATE de LIMITE: a venda a prazo não pode ultrapassar o limite (financeiro pode autorizar).
+    await assertLimiteCredito(scope, input.clienteId, valorAPrazo, input.autorizarLimite === true);
     if (valorAPrazo > total + 0.0001) {
       throw new Error(`Crediário/boleto (${valorAPrazo.toFixed(2)}) não pode ser maior que o total da venda (${total.toFixed(2)}).`);
     }

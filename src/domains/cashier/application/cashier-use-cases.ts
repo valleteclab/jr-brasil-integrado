@@ -10,6 +10,7 @@ import { classificacaoReceitaPadraoId } from "@/domains/finance/application/clas
 import { processarVendaBoleto, type VendaBoletoResultado } from "@/domains/finance/application/boleto-use-cases";
 import { publishRealtime } from "@/lib/realtime/broker";
 import { assertVendaFaturadaLiberada } from "@/domains/credito/application/venda-faturada-use-cases";
+import { assertLimiteCredito } from "@/domains/credito/application/consulta-credito-use-cases";
 
 /**
  * Caixa (PDV) — turno do operador, movimentos de dinheiro e recebimento de pré-vendas.
@@ -497,6 +498,8 @@ export type ReceberPagamentoInput = {
   emitirFiscal?: boolean;
   /** Opções do BOLETO escolhidas no caixa: conta de cobrança, parcelas e vencimentos (ISO). */
   boletoOpcoes?: { contaBancariaId?: string | null; parcelas?: number | null; primeiroVencimento?: string | null; datas?: string[] | null; valores?: number[] | null } | null;
+  /** Financeiro autorizou a venda a prazo ACIMA do limite de crédito (pula o gate de limite). */
+  autorizarLimite?: boolean;
 };
 
 export type ReceberPagamentoResult = {
@@ -577,6 +580,8 @@ export async function receberPagamentoEEmitir(
   // GATE: venda faturada (boleto) exige liberação do financeiro para o cliente.
   if (valorBoleto > 0 && pedido.clienteId) {
     await assertVendaFaturadaLiberada(scope, pedido.clienteId);
+    // GATE de LIMITE: a venda a prazo não pode ultrapassar o limite (financeiro pode autorizar).
+    await assertLimiteCredito(scope, pedido.clienteId, valorBoleto, input.autorizarLimite === true);
   }
 
   // 1) Estoque + pagamentos + movimento de caixa — antes de emitir (o dinheiro já foi recebido).

@@ -148,6 +148,27 @@ export async function avaliarCredito(scope: TenantScope, clienteId: string, valo
   return { limite, emAberto, disponivel, adicional, temLimite, excede };
 }
 
+/** Erro do gate de LIMITE — o front detecta pelo code para oferecer autorização do financeiro. */
+export class LimiteCreditoExcedidoError extends Error {
+  code = "LIMITE_CREDITO_EXCEDIDO" as const;
+  constructor(public limite: number, public emAberto: number, public disponivel: number, public valor: number) {
+    super(`Venda a prazo (R$ ${valor.toFixed(2)}) ultrapassa o limite de crédito do cliente — limite R$ ${limite.toFixed(2)}, já em aberto R$ ${emAberto.toFixed(2)}, disponível R$ ${disponivel.toFixed(2)}.`);
+  }
+}
+
+/**
+ * GATE de LIMITE: bloqueia venda a prazo que ultrapasse o limite de crédito (em aberto + venda >
+ * limite). Cliente com limite 0 = "sem teto definido" (o controle é a liberação de venda faturada);
+ * não bloqueia por limite. `autorizado` (financeiro) pula o bloqueio nesta venda.
+ */
+export async function assertLimiteCredito(scope: TenantScope, clienteId: string, valor: number, autorizado = false): Promise<void> {
+  if (autorizado) return;
+  const av = await avaliarCredito(scope, clienteId, valor);
+  if (av.temLimite && av.excede) {
+    throw new LimiteCreditoExcedidoError(av.limite, av.emAberto, av.disponivel, Math.round((Number(valor) || 0) * 100) / 100);
+  }
+}
+
 /** Última consulta (cache OU vencida) de um cliente — para exibir no cadastro. */
 export async function ultimaConsultaCliente(scope: TenantScope, clienteId: string) {
   const reg = await prisma.consultaCredito.findFirst({

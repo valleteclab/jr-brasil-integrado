@@ -88,6 +88,7 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const [faturadoBloqueado, setFaturadoBloqueado] = useState(false);
+  const [limiteBloqueado, setLimiteBloqueado] = useState(false);
   const [analise, setAnalise] = useState<{ decisao: string | null; score: number | null; temRestricao: boolean; limiteRecomendado: number | null; pdf: string | null } | null>(null);
 
   const [saldoInicial, setSaldoInicial] = useState(0);
@@ -272,7 +273,7 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
   const updPag = (id: string, patch: Partial<PagamentoLinha>) => setPagamentos((cur) => cur.map((p) => (p.uid === id ? { ...p, ...patch } : p)));
   const rmPag = (id: string) => setPagamentos((cur) => cur.filter((p) => p.uid !== id));
 
-  async function receber() {
+  async function receber(opts?: { autorizarLimite?: boolean }) {
     if (!sel) return;
     if (somaPago + 0.0001 < sel.total) { setError(`Pagamento insuficiente: faltam ${brl(falta)}.`); return; }
     if (modelo === "NFE" && !sel.temCliente) { setError("NF-e exige cliente identificado. Use NFC-e para consumidor anônimo."); return; }
@@ -281,6 +282,7 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
     try {
       const r = await post("/api/erp/caixa/receber", {
         pedidoId: sel.id,
+        autorizarLimite: opts?.autorizarLimite === true,
         // Modelo "RECIBO" vira NFCE+emitirFiscal=false no servidor (placeholder ignorado).
         modelo: isRecibo ? "NFCE" : modelo,
         emitirFiscal: !isRecibo,
@@ -317,7 +319,9 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
       const msg = e instanceof Error ? e.message : "Erro ao receber.";
       setError(msg);
       // Venda faturada bloqueada: sinaliza para oferecer a liberação inline (ao financeiro).
-      setFaturadoBloqueado(/venda faturada|liberad[oa] para venda/i.test(msg));
+      setFaturadoBloqueado(/não está liberado para venda faturada|liberação ao financeiro/i.test(msg));
+      // Limite de crédito estourado: financeiro pode autorizar mesmo assim.
+      setLimiteBloqueado(/limite de cr[eé]dito/i.test(msg));
     }
     finally { setBusy(false); }
   }
@@ -737,6 +741,19 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
                   </label>
                 )}
                 {pixIntegradoPendente && <div className="alert warn" style={{ marginTop: 8 }}>⏳ Pix pela conta integrada: gere o QR (▦ QR Pix) e aguarde — a confirmação do pagamento é automática e libera o receber.</div>}
+                {limiteBloqueado && !faturadoBloqueado && (
+                  <div className="alert danger" style={{ marginTop: 8, display: "block" }}>
+                    <div className="lead">Cliente acima do limite de crédito</div>
+                    <div style={{ marginTop: 4, fontSize: 13 }}>{error}</div>
+                    {data.podeFinanceiro
+                      ? <div style={{ marginTop: 6 }}>
+                          Você tem permissão financeira:
+                          <button type="button" className="btn-erp primary sm" style={{ marginLeft: 8 }} disabled={busy} onClick={() => receber({ autorizarLimite: true })}>Autorizar e receber mesmo assim</button>
+                          <span style={{ marginLeft: 8, fontSize: 12 }} className="block-muted">ou aumente o limite no cadastro do cliente.</span>
+                        </div>
+                      : <div style={{ marginTop: 6 }}>A pré-venda <strong>fica salva</strong> — solicite ao <strong>financeiro</strong> autorizar ou aumentar o limite.</div>}
+                  </div>
+                )}
                 {faturadoBloqueado && (
                   <div className="alert danger" style={{ marginTop: 8, display: "block" }}>
                     <div className="lead">Venda faturada não liberada para este cliente</div>
@@ -761,7 +778,7 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
                         </div>}
                   </div>
                 )}
-                <button type="button" className="btn-erp primary lg" style={{ marginTop: 12, width: "100%" }} disabled={busy || falta > 0 || pixIntegradoPendente} onClick={receber}>
+                <button type="button" className="btn-erp primary lg" style={{ marginTop: 12, width: "100%" }} disabled={busy || falta > 0 || pixIntegradoPendente} onClick={() => receber()}>
                   {busy ? "Processando…" : `${modelo === "RECIBO" ? "Receber (só recibo)" : "Receber e emitir"} · ${brl(sel.total)}`}
                 </button>
                 <button type="button" className="btn-erp ghost sm" style={{ marginTop: 6, width: "100%" }} onClick={() => setSel(null)}>Cancelar</button>
