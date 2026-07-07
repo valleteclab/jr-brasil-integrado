@@ -13,7 +13,8 @@ const navItems: AdminNavItem[] = [
   { label: "Usuários", href: "/admin/usuarios", icon: "👤" },
   { label: "Emissões fiscais", href: "/admin/emissoes", icon: "🧾" },
   { label: "Status dos serviços", href: "/admin/status-fiscal", icon: "📡" },
-  { label: "Provedor fiscal", href: "/admin/provedor-fiscal", icon: "⚙️" }
+  { label: "Provedor fiscal", href: "/admin/provedor-fiscal", icon: "⚙️" },
+  { label: "Crédito & bureau", href: "/admin/credito", icon: "💳" }
 ];
 
 type AdminShellProps = { children: ReactNode; usuarioNome: string; usuarioIniciais: string };
