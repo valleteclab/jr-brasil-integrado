@@ -20,11 +20,24 @@ export async function POST(request: Request, { params }: { params: { token: stri
     }
     const payload = (await request.json().catch(() => ({}))) as {
       event?: string;
-      payment?: { id?: string; status?: string };
+      payment?: { id?: string; status?: string; subscription?: string | null };
     };
     const pago = ["PAYMENT_RECEIVED", "PAYMENT_CONFIRMED"].includes(payload.event ?? "");
     if (pago && payload.payment?.id) {
-      await confirmarRecargaPorPagamento(payload.payment.id);
+      // Mensalidade (pagamento de ASSINATURA): libera o tenant — limpa o trial.
+      if (payload.payment.subscription) {
+        const tenant = await prisma.tenant.findFirst({
+          where: { assinaturaAsaasId: payload.payment.subscription },
+          select: { id: true, trialFimEm: true }
+        });
+        if (tenant) {
+          await prisma.tenant.update({ where: { id: tenant.id }, data: { trialFimEm: null } });
+          console.info("[webhook asaas] mensalidade confirmada — tenant liberado:", tenant.id);
+        }
+      } else {
+        // Recarga avulsa de créditos de consulta.
+        await confirmarRecargaPorPagamento(payload.payment.id);
+      }
     }
   } catch (error) {
     console.error("[webhook asaas]", error instanceof Error ? error.message : error);

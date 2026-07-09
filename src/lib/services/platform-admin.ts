@@ -301,6 +301,58 @@ export async function getClienteDetail(tenantId: string): Promise<ClienteDetail 
 }
 
 // ---------------------------------------------------------------------------
+// Planos comerciais (tabela editável — preço/limite/trial NUNCA hardcoded)
+// ---------------------------------------------------------------------------
+
+export type PlanoSaasRow = {
+  codigo: string;
+  nome: string;
+  descricao: string | null;
+  precoMensal: number;
+  limiteNotasMes: number | null;
+  trialDias: number;
+  ativo: boolean;
+};
+
+export async function listPlanosSaas(): Promise<PlanoSaasRow[]> {
+  await requirePlatformAdmin();
+  const planos = await prisma.plataformaPlano.findMany({ orderBy: { codigo: "asc" } });
+  return planos.map((p) => ({
+    codigo: p.codigo,
+    nome: p.nome,
+    descricao: p.descricao,
+    precoMensal: Number(p.precoMensal),
+    limiteNotasMes: p.limiteNotasMes,
+    trialDias: p.trialDias,
+    ativo: p.ativo
+  }));
+}
+
+export async function salvarPlanoSaas(codigo: string, input: { nome?: string; descricao?: string | null; precoMensal?: number; limiteNotasMes?: number | null; trialDias?: number; ativo?: boolean }): Promise<PlanoSaasRow> {
+  const admin = await requirePlatformAdmin();
+  assertDb();
+  const atual = await prisma.plataformaPlano.findUnique({ where: { codigo } });
+  if (!atual) throw new PlatformAdminError("Plano não encontrado.");
+  const p = await prisma.plataformaPlano.update({
+    where: { codigo },
+    data: {
+      ...(input.nome !== undefined ? { nome: input.nome } : {}),
+      ...(input.descricao !== undefined ? { descricao: input.descricao } : {}),
+      ...(input.precoMensal !== undefined ? { precoMensal: input.precoMensal } : {}),
+      ...(input.limiteNotasMes !== undefined ? { limiteNotasMes: input.limiteNotasMes } : {}),
+      ...(input.trialDias !== undefined ? { trialDias: Math.max(0, Math.floor(input.trialDias)) } : {}),
+      ...(input.ativo !== undefined ? { ativo: input.ativo } : {})
+    }
+  });
+  // Edição de plano é GLOBAL (sem tenant) — a Auditoria exige tenantId; registra no log do servidor.
+  console.info("[admin] plano editado:", codigo, "por", admin.usuarioId, JSON.stringify(input));
+  return {
+    codigo: p.codigo, nome: p.nome, descricao: p.descricao, precoMensal: Number(p.precoMensal),
+    limiteNotasMes: p.limiteNotasMes, trialDias: p.trialDias, ativo: p.ativo
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Plano comercial + trial
 // ---------------------------------------------------------------------------
 
@@ -635,7 +687,18 @@ function gerarSenhaTemporaria(): string {
 export async function criarCliente(input: CriarClienteInput): Promise<CriarClienteResult> {
   const admin = await requirePlatformAdmin();
   assertDb();
+  return criarClienteCore(input, { criadoPorUsuarioId: admin.usuarioId });
+}
 
+/**
+ * Núcleo da criação de cliente (tenant + empresa + perfis RBAC + usuário admin) — usado pelo
+ * painel /admin E pelo cadastro self-service público do plano Emissor (que passa plano/trial).
+ * NÃO valida sessão: cada chamador cuida do seu gate.
+ */
+export async function criarClienteCore(
+  input: CriarClienteInput,
+  opts: { criadoPorUsuarioId?: string | null; plano?: "COMPLETO" | "EMISSOR"; trialDias?: number | null } = {}
+): Promise<CriarClienteResult> {
   const nomeCliente = input.nomeCliente?.trim();
   const razaoSocial = input.razaoSocial?.trim();
   const cnpj = input.cnpj?.trim();
@@ -664,8 +727,21 @@ export async function criarCliente(input: CriarClienteInput): Promise<CriarClien
   const senhaInicial = input.senhaInicial?.trim() || gerarSenhaTemporaria();
   if (senhaInicial.length < 8) throw new PlatformAdminError("A senha inicial deve ter ao menos 8 caracteres.");
 
+  const { PRESET_FLAGS_EMISSOR } = await import("@/lib/auth/feature-flags");
+  const plano = opts.plano ?? "COMPLETO";
+  const trialFimEm = opts.trialDias ? new Date(Date.now() + opts.trialDias * 86400000) : null;
+
   const result = await prisma.$transaction(async (tx) => {
-    const tenant = await tx.tenant.create({ data: { nome: nomeCliente, slug } });
+    const tenant = await tx.tenant.create({
+      data: {
+        nome: nomeCliente,
+        slug,
+        plano,
+        trialFimEm,
+        // Plano Emissor já nasce com o preset (só o fiscal ligado).
+        ...(plano === "EMISSOR" ? PRESET_FLAGS_EMISSOR : {})
+      }
+    });
 
     const empresa = await tx.empresa.create({
       data: {
@@ -708,10 +784,10 @@ export async function criarCliente(input: CriarClienteInput): Promise<CriarClien
       data: {
         tenantId: tenant.id,
         empresaId: empresa.id,
-        usuarioId: admin.usuarioId,
+        usuarioId: opts.criadoPorUsuarioId ?? null,
         entidade: "Tenant",
         entidadeId: tenant.id,
-        acao: "plataforma.criar_cliente",
+        acao: opts.criadoPorUsuarioId ? "plataforma.criar_cliente" : "plataforma.cadastro_self_service",
         payload: { slug, razaoSocial, cnpj, adminEmail }
       }
     });

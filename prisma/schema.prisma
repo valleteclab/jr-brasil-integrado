@@ -300,6 +300,8 @@ model Tenant {
   /// Fim do período de teste (trial). null = sem trial (assinante). Vencido → o ERP bloqueia
   /// com aviso até o dono do SaaS estender/limpar.
   trialFimEm               DateTime?
+  /// Assinatura recorrente no Asaas (mensalidade). Pagamento confirmado limpa o trial (webhook).
+  assinaturaAsaasId        String?
   // Módulo Loja Virtual liberado pelo dono do SaaS (painel /admin). Quando false, as lojas das
   // empresas deste cliente não ficam acessíveis publicamente.
   lojaHabilitada           Boolean                  @default(false)
@@ -573,6 +575,20 @@ model PlataformaProvedorFiscal {
   atualizadoEm              DateTime       @updatedAt
 
   @@id([provedor, ambiente])
+}
+
+/// Planos comerciais do SaaS, EDITÁVEIS pelo dono em /admin/planos (nada de preço hardcoded).
+/// O `codigo` casa com Tenant.plano; o limite de notas é aplicado na emissão fiscal.
+model PlataformaPlano {
+  codigo         String   @id
+  nome           String
+  descricao      String?
+  precoMensal    Decimal  @default(0) @db.Decimal(10, 2)
+  /// Notas fiscais (emissões aceitas na SEFAZ/SEFIN) por mês. null = ilimitado.
+  limiteNotasMes Int?
+  trialDias      Int      @default(7)
+  ativo          Boolean  @default(true)
+  atualizadoEm   DateTime @updatedAt
 }
 
 /// Configuração única (global) da plataforma. Hoje guarda qual provedor de emissão está ativo.

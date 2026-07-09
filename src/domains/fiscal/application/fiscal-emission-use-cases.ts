@@ -1,5 +1,6 @@
 import type { ModeloFiscal, NotaFiscalItem, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
+import { assertLimiteNotasDoPlano } from "./plano-emissao-gate";
 import { runInTransaction } from "@/lib/db/with-tx-retry";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import { createAuditLog } from "@/lib/audit/audit-service";
@@ -501,6 +502,9 @@ export async function emitFiscalDocument(
   if (!document.itens.length) {
     throw new Error("Documento fiscal sem itens.");
   }
+
+  // Gate do PLANO comercial (ex.: Emissor de Notas = N notas/mês, editável em /admin/planos).
+  await assertLimiteNotasDoPlano(scope);
 
   const config = await getFiscalRuntimeConfig(scope);
   await enrichMunicipioIbge(document);

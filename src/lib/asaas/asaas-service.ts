@@ -98,6 +98,28 @@ export async function asaasPixQrCodeRaw(rt: AsaasRuntime, paymentId: string): Pr
   return { ok: res.ok, status: res.status, body };
 }
 
+/**
+ * Cria uma ASSINATURA mensal (mensalidade do plano). billingType UNDEFINED deixa o cliente
+ * escolher Pix/boleto/cartão na fatura. Devolve o id e o link da primeira fatura.
+ */
+export async function asaasCriarAssinatura(
+  rt: AsaasRuntime,
+  input: { customerId: string; valor: number; descricao: string; externalReference: string }
+): Promise<{ id: string; invoiceUrl: string | null }> {
+  const sub = await asaas<{ id: string }>(rt, "POST", "/subscriptions", {
+    customer: input.customerId,
+    billingType: "UNDEFINED",
+    value: Math.round(input.valor * 100) / 100,
+    nextDueDate: new Date().toISOString().slice(0, 10),
+    cycle: "MONTHLY",
+    description: input.descricao.slice(0, 500),
+    externalReference: input.externalReference
+  });
+  // Primeira fatura da assinatura (link para o cliente pagar já).
+  const pays = await asaas<{ data?: Array<{ invoiceUrl?: string }> }>(rt, "GET", `/subscriptions/${sub.id}/payments`).catch(() => ({ data: [] as Array<{ invoiceUrl?: string }> }));
+  return { id: sub.id, invoiceUrl: pays.data?.[0]?.invoiceUrl ?? null };
+}
+
 /** Consulta o status de um pagamento (fallback do webhook). */
 export async function asaasStatusPagamento(rt: AsaasRuntime, paymentId: string): Promise<string> {
   const pay = await asaas<{ status: string }>(rt, "GET", `/payments/${paymentId}`);
