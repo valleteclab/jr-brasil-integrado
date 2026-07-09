@@ -1,4 +1,6 @@
 import { getDashboardData } from "@/lib/services/dashboard";
+import { EmissorHome } from "@/components/erp/EmissorHome";
+import { getEmissorHomeData, planoDoTenantAtual } from "@/lib/services/emissor-home";
 
 export const dynamic = "force-dynamic";
 
@@ -91,6 +93,13 @@ function Donut({
 }
 
 export default async function ErpDashboardPage() {
+  // Plano EMISSOR DE NOTAS: a home é o painel do emissor (atalhos de emissão + certificado +
+  // limite MEI/Simples), não o dashboard completo do ERP.
+  if ((await planoDoTenantAtual()) === "EMISSOR") {
+    const emissor = await getEmissorHomeData();
+    return <EmissorHome data={emissor} />;
+  }
+
   let data;
   let loadError = "";
 
