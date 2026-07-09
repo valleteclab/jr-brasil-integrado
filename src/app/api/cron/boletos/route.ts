@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { sincronizarBoletosCron } from "@/domains/finance/application/boleto-use-cases";
 import { sincronizarPixCron } from "@/domains/finance/application/pix-use-cases";
+import { rodarAlertasEmissor } from "@/domains/fiscal/application/emissor-alertas-use-cases";
 import { gerarOcorrenciasRecorrentes } from "@/domains/finance/application/recorrencia-use-cases";
 
 // Disparado pelo crontab da VPS (mesmo esquema do /api/cron/distribuicao): consulta os boletos
@@ -25,9 +26,11 @@ async function handle(request: Request) {
   try {
     const result = await sincronizarBoletosCron();
     const pix = await sincronizarPixCron().catch((e) => ({ pendentes: 0, pagos: 0, erros: [e instanceof Error ? e.message : String(e)] }));
+    // Alertas do plano Emissor (idempotentes — deduplicam por janela; pega carona neste cron).
+    const alertas = await rodarAlertasEmissor().catch((e) => ({ tenants: 0, notificacoes: 0, erro: e instanceof Error ? e.message : String(e) }));
     // Despesas recorrentes (folha, aluguel...): materializa as competências devidas (idempotente).
     const recorrentes = await gerarOcorrenciasRecorrentes().catch((e) => ({ geradas: 0, erros: [e instanceof Error ? e.message : String(e)] }));
-    return NextResponse.json({ ok: true, ...result, pix, recorrentes });
+    return NextResponse.json({ ok: true, ...result, pix, recorrentes, alertas });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Falha na sincronização de boletos.";
     return NextResponse.json({ error: message }, { status: 500 });

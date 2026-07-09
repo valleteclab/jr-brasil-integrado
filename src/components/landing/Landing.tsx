@@ -28,6 +28,7 @@ export function Landing() {
             <a href="#recursos">Recursos</a>
             <a href="#whatsapp">IA no WhatsApp</a>
             <a href="#segmentos">Para quem</a>
+            <Link href="/emissor">Emissor de Notas</Link>
             <Link href="/manual">Manual</Link>
           </div>
           <Link className={`${s.btn} ${s.btnPrimary}`} href="/erp">Acessar o sistema</Link>
@@ -147,6 +148,25 @@ export function Landing() {
               <span>{seg.desc}</span>
             </div>
           ))}
+        </div>
+      </section>
+
+      {/* Divulgação do plano Emissor de Notas */}
+      <section className={s.section} id="emissor" style={{ paddingTop: 0 }}>
+        <div className={s.ctaInner} style={{ textAlign: "left", display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 24, padding: "40px 40px" }}>
+          <div>
+            <span className={s.tag} style={{ color: "#ffc107" }}>Novo · para MEI e pequenas do Simples</span>
+            <h2 style={{ fontSize: "clamp(24px, 3vw, 34px)", margin: "10px 0 8px" }}>Só precisa emitir notas? Tem plano para isso.</h2>
+            <p style={{ margin: 0, maxWidth: 640, textAlign: "left" }}>
+              O <strong>Emissor de Notas</strong> é o XERP enxuto: NF-e e NFS-e direto na SEFAZ, painel do
+              Simples/MEI e pacote de XMLs para o contador. Teste grátis — e faça upgrade para o sistema
+              completo quando a empresa crescer.
+            </p>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <Link className={`${s.btn} ${s.btnPrimary} ${s.btnLg}`} href="/emissor">Conhecer o Emissor →</Link>
+            <Link className={`${s.btn} ${s.btnGhost}`} href="/cadastro" style={{ justifyContent: "center" }}>Testar grátis</Link>
+          </div>
         </div>
       </section>
 

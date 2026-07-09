@@ -68,6 +68,10 @@ export async function getEmissorHomeData(): Promise<EmissorHomeData> {
       emitidaEm: n.emitidaEm?.toISOString() ?? null
     })),
     certificado: { configurado: Boolean(certificado), validade: certificado?.validade?.toISOString() ?? null, diasParaVencer },
+    mesAnterior: (() => {
+      const d = new Date(agora.getFullYear(), agora.getMonth() - 1, 1);
+      return { mes: d.getMonth() + 1, ano: d.getFullYear(), label: d.toLocaleDateString("pt-BR", { month: "long" }) };
+    })(),
     simples
   };
 }

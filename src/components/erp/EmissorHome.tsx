@@ -12,6 +12,8 @@ export type EmissorHomeData = {
   notasMes: { quantidade: number; valor: number };
   ultimasNotas: Array<{ id: string; numero: string; modelo: string; status: string; total: number; emitidaEm: string | null }>;
   certificado: { configurado: boolean; validade: string | null; diasParaVencer: number | null };
+  /** Mês anterior pronto pro link do pacote do contador. */
+  mesAnterior: { mes: number; ano: number; label: string };
   simples: {
     regime: string;
     receitaMes: number;
@@ -109,6 +111,18 @@ export function EmissorHome({ data }: { data: EmissorHomeData }) {
           {data.simples.alertas.slice(0, 2).map((a, i) => <div key={i} className="alert warn" style={{ marginTop: 8 }}>{a}</div>)}
         </div>
       )}
+
+      {/* Pacote do contador */}
+      <div className="erp-card" style={{ padding: 16, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+        <span>
+          <strong>📦 Pacote do contador</strong>
+          <br /><span className="block-muted" style={{ fontSize: 12 }}>Baixe o ZIP com todos os XMLs do mês para enviar à contabilidade.</span>
+        </span>
+        <span style={{ display: "flex", gap: 8 }}>
+          <a className="btn-erp light sm" href={`/api/erp/fiscal/pacote-contador?mes=${data.mesAnterior.mes}&ano=${data.mesAnterior.ano}`}>⬇ {data.mesAnterior.label}</a>
+          <a className="btn-erp primary sm" href="/api/erp/fiscal/pacote-contador">⬇ Mês atual</a>
+        </span>
+      </div>
 
       {/* Últimas notas */}
       <div className="erp-table-wrap">
