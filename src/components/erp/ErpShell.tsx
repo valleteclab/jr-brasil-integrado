@@ -6,7 +6,7 @@ import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import type { ErpShellBadges, ErpShellContext } from "@/lib/services/erp-shell";
 import { ComunicacaoWidget } from "@/components/erp/ComunicacaoWidget";
 import { moduloFromPath, moduloVisivelNoTipoNegocio } from "@/lib/auth/modules";
-import { HREF_FLAG, TIPO_VENDA_FLAG } from "@/lib/auth/feature-flags";
+import { HREF_FLAG, TIPO_VENDA_FLAG, rotaPermitidaNoEmissor } from "@/lib/auth/feature-flags";
 
 // Escurece um hex #rrggbb (para a variante "dark" usada em hovers/bordas da cor de destaque).
 function darken(hex: string, amount = 0.14): string {
@@ -113,6 +113,35 @@ const groups: ErpNavGroup[] = [
   }
 ];
 
+/** Menu do plano EMISSOR DE NOTAS: foco total em emitir NF-e/NFS-e (MEI e Simples). */
+const groupsEmissor: ErpNavGroup[] = [
+  {
+    group: "Emissor de Notas",
+    items: [
+      { label: "Início", href: "/erp", icon: "▦" },
+      { label: "Emitir NF-e", href: "/erp/fiscal/emitir", icon: "🧾", accent: true },
+      { label: "Emitir NFS-e", href: "/erp/fiscal/emitir/nfse", icon: "📑", accent: true },
+      { label: "Notas emitidas", href: "/erp/fiscal", icon: "🗂" },
+      { label: "Simples / MEI", href: "/erp/fiscal/simples", icon: "📊" }
+    ]
+  },
+  {
+    group: "Cadastros",
+    items: [
+      { label: "Clientes", href: "/erp/clientes", icon: "👥" },
+      { label: "Produtos / Serviços", href: "/erp/produtos", icon: "📦" }
+    ]
+  },
+  {
+    group: "Configurações",
+    items: [
+      { label: "Dados da empresa", href: "/erp/configuracoes/empresa", icon: "🏢" },
+      { label: "Emissão fiscal (certificado)", href: "/erp/configuracoes/fiscal", icon: "⚙" },
+      { label: "E-mail (envio)", href: "/erp/configuracoes/email", icon: "✉" }
+    ]
+  }
+];
+
 type ErpShellProps = { children: ReactNode; context: ErpShellContext; modulos: string[] };
 
 function isActive(pathname: string, href: string) {
@@ -143,9 +172,16 @@ export function ErpShell({ children, context, modulos }: ErpShellProps) {
     if (!modulo) return true;
     return modulos.includes(modulo) && moduloVisivelNoTipoNegocio(modulo, context.tipoNegocio);
   };
-  const gruposVisiveis = groups
+  const emissor = context.plano === "EMISSOR";
+  const gruposVisiveis = (emissor ? groupsEmissor : groups)
     .map((g) => ({ ...g, items: g.items.filter((i) => podeVer(i.href)) }))
     .filter((g) => g.items.length > 0);
+
+  // Guard do plano EMISSOR: URLs fora do escopo do emissor voltam para o início (o menu já não
+  // as mostra; isto cobre o acesso direto por URL/rota antiga).
+  useEffect(() => {
+    if (emissor && !rotaPermitidaNoEmissor(pathname)) router.replace("/erp");
+  }, [emissor, pathname, router]);
 
   async function sair() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -208,6 +244,21 @@ export function ErpShell({ children, context, modulos }: ErpShellProps) {
             </div>
           ))}
         </div>
+        {(emissor || context.trialFimEm) && (
+          <div style={{ padding: "8px 14px", fontSize: 11, lineHeight: 1.5, borderTop: "1px solid rgba(255,255,255,.08)" }}>
+            {emissor && (
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span aria-hidden="true">🧾</span>
+                <span><strong>Plano Emissor de Notas</strong><br />Quer PDV, financeiro, IA e WhatsApp? Fale com o suporte para fazer upgrade.</span>
+              </div>
+            )}
+            {context.trialFimEm && !context.trialVencido && (
+              <div style={{ marginTop: emissor ? 6 : 0, color: "#fbbf24" }}>
+                ⏳ Teste grátis até {new Date(context.trialFimEm).toLocaleDateString("pt-BR")}
+              </div>
+            )}
+          </div>
+        )}
         <div className="erp-side-foot">
           <div className="avatar-sm">{context.usuarioIniciais}</div>
           <div style={{ flex: 1, minWidth: 0 }}>

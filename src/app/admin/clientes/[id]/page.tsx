@@ -13,6 +13,7 @@ import { EmpresaStatusActions } from "@/components/admin/EmpresaStatusActions";
 import { ResetarSenhaButton } from "@/components/admin/ResetarSenhaButton";
 import { ClientePerfisManager } from "@/components/admin/ClientePerfisManager";
 import { ClienteEditForm } from "@/components/admin/ClienteEditForm";
+import { PlanoCard } from "@/components/admin/PlanoCard";
 import { getClienteDetail, listPerfisCliente } from "@/lib/services/platform-admin";
 import type { ClienteDetail, PerfilClienteRow } from "@/lib/services/platform-admin";
 
@@ -65,6 +66,16 @@ export default async function AdminClienteDetalhePage({ params }: { params: { id
       <Card>
         <div className="erp-card-head"><div><h3>Dados do cliente</h3><span>Nome e identificador (slug) do cliente.</span></div></div>
         <ClienteEditForm clienteId={cliente.id} nome={cliente.nome} slug={cliente.slug} />
+      </Card>
+
+      <Card>
+        <div className="erp-card-head">
+          <div>
+            <h3>Plano &amp; período de teste</h3>
+            <span>Plano comercial do cliente (aplica o preset de módulos) e controle do trial.</span>
+          </div>
+        </div>
+        <PlanoCard clienteId={cliente.id} plano={cliente.plano} trialFimEm={cliente.trialFimEm} />
       </Card>
 
       <Card>

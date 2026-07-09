@@ -181,6 +181,9 @@ export type ClienteDetail = {
   nome: string;
   slug: string;
   ativo: boolean;
+  /** Plano comercial (COMPLETO | EMISSOR) + fim do trial (null = sem trial). */
+  plano: string;
+  trialFimEm: string | null;
   lojaHabilitada: boolean;
   iaHabilitada: boolean;
   spedFiscalHabilitado: boolean;
@@ -270,6 +273,8 @@ export async function getClienteDetail(tenantId: string): Promise<ClienteDetail 
     nome: tenant.nome,
     slug: tenant.slug,
     ativo: tenant.ativo,
+    plano: tenant.plano,
+    trialFimEm: tenant.trialFimEm?.toISOString() ?? null,
     lojaHabilitada: tenant.lojaHabilitada,
     iaHabilitada: tenant.iaHabilitada,
     spedFiscalHabilitado: tenant.spedFiscalHabilitado,
@@ -293,6 +298,53 @@ export async function getClienteDetail(tenantId: string): Promise<ClienteDetail 
     })),
     usuarios: Array.from(usuariosMap.values()).sort((a, b) => a.nome.localeCompare(b.nome))
   };
+}
+
+// ---------------------------------------------------------------------------
+// Plano comercial + trial
+// ---------------------------------------------------------------------------
+
+/**
+ * Define o PLANO comercial do cliente e aplica o preset de módulos correspondente:
+ * EMISSOR = só emissão fiscal (NF-e/NFS-e + cadastros); COMPLETO = religa os módulos de série.
+ * É o mesmo sistema — upgrade/downgrade a qualquer momento.
+ */
+export async function setTenantPlano(tenantId: string, plano: "COMPLETO" | "EMISSOR") {
+  const admin = await requirePlatformAdmin();
+  assertDb();
+  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { id: true, plano: true } });
+  if (!tenant) throw new PlatformAdminError("Cliente não encontrado.");
+  const { PRESET_FLAGS_EMISSOR, PRESET_FLAGS_COMPLETO } = await import("@/lib/auth/feature-flags");
+  const preset = plano === "EMISSOR" ? PRESET_FLAGS_EMISSOR : PRESET_FLAGS_COMPLETO;
+  const atualizado = await prisma.tenant.update({ where: { id: tenantId }, data: { plano, ...preset } });
+  await audit({
+    tenantId,
+    usuarioId: admin.usuarioId,
+    entidade: "Tenant",
+    entidadeId: tenantId,
+    acao: "plataforma.definir_plano",
+    payload: { planoAnterior: tenant.plano, planoNovo: plano }
+  });
+  return { id: atualizado.id, plano: atualizado.plano };
+}
+
+/** Define/estende/remove o TRIAL do cliente. dias=null limpa (vira assinante sem prazo). */
+export async function setTenantTrial(tenantId: string, dias: number | null) {
+  const admin = await requirePlatformAdmin();
+  assertDb();
+  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { id: true, trialFimEm: true } });
+  if (!tenant) throw new PlatformAdminError("Cliente não encontrado.");
+  const trialFimEm = dias == null ? null : new Date(Date.now() + Math.max(1, Math.floor(dias)) * 86400000);
+  const atualizado = await prisma.tenant.update({ where: { id: tenantId }, data: { trialFimEm } });
+  await audit({
+    tenantId,
+    usuarioId: admin.usuarioId,
+    entidade: "Tenant",
+    entidadeId: tenantId,
+    acao: "plataforma.definir_trial",
+    payload: { anterior: tenant.trialFimEm?.toISOString() ?? null, novo: trialFimEm?.toISOString() ?? null }
+  });
+  return { id: atualizado.id, trialFimEm: atualizado.trialFimEm };
 }
 
 // ---------------------------------------------------------------------------

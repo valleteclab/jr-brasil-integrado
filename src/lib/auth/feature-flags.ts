@@ -62,3 +62,50 @@ export function flagDoHref(href: string): TenantFeatureKey | null {
 export function allFeaturesEnabled(): TenantFeatures {
   return Object.fromEntries(TENANT_FEATURE_FLAGS.map((f) => [f, true])) as TenantFeatures;
 }
+
+// ─── Planos comerciais ────────────────────────────────────────────────────────
+
+/** Planos do SaaS. EMISSOR = "Emissor de Notas" (NF-e/NFS-e + clientes/produtos) p/ MEI e Simples. */
+export type TenantPlano = "COMPLETO" | "EMISSOR";
+
+/**
+ * Preset de flags aplicado ao colocar um cliente no plano EMISSOR: liga só o fiscal; o resto
+ * desliga. O upgrade para COMPLETO religa os módulos de série (loja/SPED/expedição continuam
+ * opt-in do dono, como sempre foram).
+ */
+export const PRESET_FLAGS_EMISSOR: TenantFeatures = {
+  lojaHabilitada: false,
+  iaHabilitada: false,
+  spedFiscalHabilitado: false,
+  expedicaoHabilitada: false,
+  pdvTelaCheiaHabilitado: false,
+  vendaBalcaoHabilitada: false,
+  pedidoFaturadoHabilitado: false,
+  ordemServicoHabilitada: false,
+  orcamentoHabilitado: false,
+  financeiroHabilitado: false,
+  fiscalHabilitado: true,
+  gastosHabilitado: false,
+  cosmosHabilitado: false,
+  whatsappHabilitado: false
+};
+
+/** Preset do plano COMPLETO (padrões de novo cliente: módulos de série ligados; loja/SPED/expedição opt-in). */
+export const PRESET_FLAGS_COMPLETO: TenantFeatures = {
+  ...allFeaturesEnabled(),
+  lojaHabilitada: false,
+  spedFiscalHabilitado: false,
+  expedicaoHabilitada: false
+};
+
+/**
+ * Rotas permitidas no plano EMISSOR (whitelist por prefixo, aplicada ALÉM dos gates de flag/RBAC).
+ * Foco: emitir NF-e/NFS-e, acompanhar o Simples/MEI e manter cadastros mínimos.
+ */
+export const EMISSOR_ROUTE_PREFIXES = ["/erp/fiscal", "/erp/nfse-recebidas", "/erp/clientes", "/erp/produtos", "/erp/configuracoes"] as const;
+
+/** Um pathname do ERP é acessível no plano EMISSOR? ("/erp" exato = dashboard sempre pode). */
+export function rotaPermitidaNoEmissor(pathname: string): boolean {
+  if (pathname === "/erp" || pathname === "/erp/") return true;
+  return EMISSOR_ROUTE_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+}

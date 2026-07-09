@@ -293,6 +293,13 @@ model Tenant {
   nome                     String
   slug                     String                   @unique
   ativo                    Boolean                  @default(true)
+  /// Plano comercial do cliente: COMPLETO (ERP inteiro) ou EMISSOR (só emissão de NF-e/NFS-e +
+  /// clientes/produtos — MEI e Simples que querem um emissor de notas). É o MESMO sistema: o
+  /// upgrade religa os módulos. O preset de flags é aplicado ao trocar o plano (platform-admin).
+  plano                    String                   @default("COMPLETO")
+  /// Fim do período de teste (trial). null = sem trial (assinante). Vencido → o ERP bloqueia
+  /// com aviso até o dono do SaaS estender/limpar.
+  trialFimEm               DateTime?
   // Módulo Loja Virtual liberado pelo dono do SaaS (painel /admin). Quando false, as lojas das
   // empresas deste cliente não ficam acessíveis publicamente.
   lojaHabilitada           Boolean                  @default(false)

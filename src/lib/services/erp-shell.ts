@@ -30,6 +30,11 @@ export type ErpShellContext = {
   expedicaoHabilitada: boolean;
   /** Flags de módulo liberadas pelo dono do SaaS (esconde itens do menu e bloqueia URLs). */
   features: TenantFeatures;
+  /** Plano comercial do tenant (COMPLETO | EMISSOR) — muda o menu e o foco da UI. */
+  plano: "COMPLETO" | "EMISSOR";
+  /** Fim do trial (ISO) e se já venceu — o layout do ERP bloqueia quando vencido. */
+  trialFimEm: string | null;
+  trialVencido: boolean;
   badges: ErpShellBadges;
 };
 
@@ -53,6 +58,9 @@ const SHELL_FALLBACK: ErpShellContext = {
   expedicaoHabilitada: false,
   // Fail-open: em fallback (banco indisponível) não escondemos módulos.
   features: allFeaturesEnabled(),
+  plano: "COMPLETO",
+  trialFimEm: null,
+  trialVencido: false,
   badges: { vendas: 0, orcamentos: 0, os: 0, compras: 0, estoque: 0, financeiro: 0 }
 };
 
@@ -74,6 +82,7 @@ export async function getErpShellContext(): Promise<ErpShellContext> {
       empresa,
       session,
       features,
+      tenantPlano,
       configFiscal,
       vendas,
       orcamentos,
@@ -91,6 +100,8 @@ export async function getErpShellContext(): Promise<ErpShellContext> {
       getSession(),
       // Todas as flags de módulo liberadas pelo dono do SaaS (gate de menu + URL).
       getTenantFeatures(scope.tenantId),
+      // Plano comercial + trial (Emissor de Notas × Completo; trial vencido bloqueia o ERP).
+      prisma.tenant.findUnique({ where: { id: scope.tenantId }, select: { plano: true, trialFimEm: true } }),
       prisma.configuracaoFiscal.findUnique({
         where: { empresaId: scope.empresaId },
         select: { ambiente: true, ativo: true }
@@ -148,6 +159,9 @@ export async function getErpShellContext(): Promise<ErpShellContext> {
       spedFiscalHabilitado: features.spedFiscalHabilitado,
       expedicaoHabilitada: features.expedicaoHabilitada,
       features,
+      plano: tenantPlano?.plano === "EMISSOR" ? "EMISSOR" : "COMPLETO",
+      trialFimEm: tenantPlano?.trialFimEm?.toISOString() ?? null,
+      trialVencido: Boolean(tenantPlano?.trialFimEm && tenantPlano.trialFimEm < new Date()),
       badges: {
         vendas,
         orcamentos,
