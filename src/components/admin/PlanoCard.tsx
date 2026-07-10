@@ -12,8 +12,12 @@ export function PlanoCard({ clienteId, plano, trialFimEm }: { clienteId: string;
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState("");
+  // Data escolhida no calendário (padrão: a data atual do trial, se houver).
+  const [dataTrial, setDataTrial] = useState(trialFimEm ? trialFimEm.slice(0, 10) : "");
+  const [faturaUrl, setFaturaUrl] = useState<string | null>(null);
+  const [assinouMsg, setAssinouMsg] = useState("");
 
-  async function post(body: { plano?: "COMPLETO" | "EMISSOR"; trialDias?: number | null }) {
+  async function post(body: { plano?: "COMPLETO" | "EMISSOR"; trialDias?: number | null; trialAte?: string | null }) {
     setBusy(true);
     setErro("");
     try {
@@ -27,6 +31,29 @@ export function PlanoCard({ clienteId, plano, trialFimEm }: { clienteId: string;
       router.refresh();
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Falha ao atualizar o plano.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function criarAssinatura() {
+    if (!window.confirm("Gerar a cobrança (assinatura mensal) deste cliente no Asaas? Um link de fatura será criado para enviar ao cliente.")) return;
+    setBusy(true);
+    setErro("");
+    setAssinouMsg("");
+    setFaturaUrl(null);
+    try {
+      const res = await fetch(`/api/admin/clientes/${clienteId}/plano`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ acao: "criar-assinatura" })
+      });
+      const d = (await res.json().catch(() => ({}))) as { error?: string; invoiceUrl?: string | null; valor?: number };
+      if (!res.ok) throw new Error(d.error || "Falha ao gerar a assinatura.");
+      setFaturaUrl(d.invoiceUrl ?? null);
+      setAssinouMsg(`Assinatura criada${d.valor ? ` — R$ ${d.valor.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}/mês` : ""}. Quando o cliente pagar, o acesso libera sozinho.`);
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Falha ao gerar a assinatura.");
     } finally {
       setBusy(false);
     }
@@ -71,16 +98,59 @@ export function PlanoCard({ clienteId, plano, trialFimEm }: { clienteId: string;
         ) : (
           <span className="pill success"><span className="dot" />Sem trial (liberado)</span>
         )}
-        <button type="button" className="btn-erp light xs" disabled={busy} onClick={() => post({ trialDias: 7 })}>Iniciar/renovar 7 dias</button>
+        <button type="button" className="btn-erp light xs" disabled={busy} onClick={() => post({ trialDias: 7 })}>+7 dias</button>
+        <button type="button" className="btn-erp light xs" disabled={busy} onClick={() => post({ trialDias: 15 })}>+15 dias</button>
+        <button type="button" className="btn-erp light xs" disabled={busy} onClick={() => post({ trialDias: 30 })}>+30 dias</button>
         {trialAtivo && (
-          <button type="button" className="btn-erp ghost xs" disabled={busy} onClick={() => post({ trialDias: null })} title="Remove o prazo — cliente vira assinante liberado">
-            ✓ Virar assinante (remover trial)
+          <button type="button" className="btn-erp ghost xs" disabled={busy} onClick={() => post({ trialDias: null })} title="Remove o prazo — cliente vira assinante liberado (SEM cobrança)">
+            Remover trial (liberar grátis)
           </button>
         )}
       </div>
+
+      {/* Data específica de fim do teste (calendário) */}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <span className="block-muted" style={{ fontSize: 12 }}>Ou escolha a data de fim:</span>
+        <input
+          type="date"
+          value={dataTrial}
+          disabled={busy}
+          onChange={(e) => setDataTrial(e.target.value)}
+          style={{ height: 30, border: "1px solid var(--erp-line)", borderRadius: 6, padding: "0 8px", fontSize: 13 }}
+        />
+        <button type="button" className="btn-erp primary xs" disabled={busy || !dataTrial} onClick={() => post({ trialAte: dataTrial })}>
+          Aplicar data
+        </button>
+        <span className="block-muted" style={{ fontSize: 11 }}>
+          (defina uma data passada para bloquear o cliente agora e forçar a assinatura)
+        </span>
+      </div>
+
       <p className="block-muted" style={{ margin: 0, fontSize: 12 }}>
-        Trial vencido bloqueia o ERP do cliente com um aviso para falar com o suporte — os dados ficam intactos.
+        Trial vencido bloqueia o ERP do cliente com o aviso e o botão &ldquo;Assinar agora&rdquo; — os dados ficam intactos.
       </p>
+
+      {/* Cobrança: gera a assinatura mensal no Asaas para o dono enviar ao cliente */}
+      <div style={{ borderTop: "1px solid var(--erp-line)", paddingTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <strong style={{ fontSize: 13 }}>Cobrança:</strong>
+          <button type="button" className="btn-erp primary sm" disabled={busy} onClick={criarAssinatura}>
+            💳 Gerar cobrança (assinatura mensal)
+          </button>
+          <span className="block-muted" style={{ fontSize: 11 }}>Cria a mensalidade no Asaas e um link de fatura para enviar ao cliente.</span>
+        </div>
+        {assinouMsg && (
+          <div className="alert success" style={{ margin: 0 }}>
+            <span>{assinouMsg}</span>
+            {faturaUrl && (
+              <div style={{ marginTop: 6, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                <a href={faturaUrl} target="_blank" rel="noreferrer" className="btn-erp light xs">Abrir fatura</a>
+                <button type="button" className="btn-erp ghost xs" onClick={() => { void navigator.clipboard?.writeText(faturaUrl); }}>Copiar link</button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

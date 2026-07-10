@@ -382,11 +382,31 @@ export async function setTenantPlano(tenantId: string, plano: "COMPLETO" | "EMIS
 
 /** Define/estende/remove o TRIAL do cliente. dias=null limpa (vira assinante sem prazo). */
 export async function setTenantTrial(tenantId: string, dias: number | null) {
+  const trialFimEm = dias == null ? null : new Date(Date.now() + Math.max(1, Math.floor(dias)) * 86400000);
+  return aplicarTrial(tenantId, trialFimEm);
+}
+
+/**
+ * Define o fim do trial por DATA explícita (o dono escolhe o dia no calendário).
+ * A data é fixada no fim do dia (23:59:59) para o cliente ter o dia inteiro.
+ * `ateISO` vazio/null limpa o trial (vira assinante liberado).
+ */
+export async function setTenantTrialAte(tenantId: string, ateISO: string | null) {
+  let trialFimEm: Date | null = null;
+  if (ateISO) {
+    // Aceita "YYYY-MM-DD" (input date) ou ISO completo; fixa no fim do dia informado.
+    const base = /^\d{4}-\d{2}-\d{2}$/.test(ateISO) ? new Date(`${ateISO}T23:59:59`) : new Date(ateISO);
+    if (Number.isNaN(base.getTime())) throw new PlatformAdminError("Data de fim do teste inválida.");
+    trialFimEm = base;
+  }
+  return aplicarTrial(tenantId, trialFimEm);
+}
+
+async function aplicarTrial(tenantId: string, trialFimEm: Date | null) {
   const admin = await requirePlatformAdmin();
   assertDb();
   const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { id: true, trialFimEm: true } });
   if (!tenant) throw new PlatformAdminError("Cliente não encontrado.");
-  const trialFimEm = dias == null ? null : new Date(Date.now() + Math.max(1, Math.floor(dias)) * 86400000);
   const atualizado = await prisma.tenant.update({ where: { id: tenantId }, data: { trialFimEm } });
   await audit({
     tenantId,
@@ -397,6 +417,54 @@ export async function setTenantTrial(tenantId: string, dias: number | null) {
     payload: { anterior: tenant.trialFimEm?.toISOString() ?? null, novo: trialFimEm?.toISOString() ?? null }
   });
   return { id: atualizado.id, trialFimEm: atualizado.trialFimEm };
+}
+
+/**
+ * ASSINATURA pelo ADMIN: cria a mensalidade (Asaas) do tenant e devolve o link da primeira fatura
+ * — para o dono enviar ao cliente (WhatsApp/e-mail). Mesmo motor da /api/erp/assinatura, mas
+ * disparado pelo painel. O webhook de pagamento confirma e libera o acesso (limpa o trial).
+ */
+export async function criarAssinaturaTenantAdmin(tenantId: string): Promise<{ assinaturaId: string; invoiceUrl: string | null; valor: number }> {
+  const admin = await requirePlatformAdmin();
+  assertDb();
+  const { asaasCriarAssinatura, asaasGarantirCliente, getAsaasRuntime } = await import("@/lib/asaas/asaas-service");
+
+  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { id: true, nome: true, plano: true } });
+  if (!tenant) throw new PlatformAdminError("Cliente não encontrado.");
+  const plano = await prisma.plataformaPlano.findUnique({ where: { codigo: tenant.plano } });
+  if (!plano || Number(plano.precoMensal) <= 0) {
+    throw new PlatformAdminError("O plano deste cliente não tem mensalidade (defina o preço em /admin/planos).");
+  }
+  const rt = await getAsaasRuntime();
+  if (!rt) throw new PlatformAdminError("Cobrança indisponível — configure o Asaas em /admin/credito.");
+
+  const empresa = await prisma.empresa.findFirst({
+    where: { tenantId, matriz: true },
+    orderBy: { criadoEm: "asc" },
+    select: { razaoSocial: true, cnpj: true, email: true }
+  });
+  const customerId = await asaasGarantirCliente(rt, {
+    nome: tenant.nome || empresa?.razaoSocial || "Cliente",
+    cpfCnpj: empresa?.cnpj ?? null,
+    email: empresa?.email ?? null,
+    externalReference: tenantId
+  });
+  const sub = await asaasCriarAssinatura(rt, {
+    customerId,
+    valor: Number(plano.precoMensal),
+    descricao: `Assinatura ${plano.nome} — XERP`,
+    externalReference: tenantId
+  });
+  await prisma.tenant.update({ where: { id: tenantId }, data: { assinaturaAsaasId: sub.id } });
+  await audit({
+    tenantId,
+    usuarioId: admin.usuarioId,
+    entidade: "Tenant",
+    entidadeId: tenantId,
+    acao: "plataforma.criar_assinatura",
+    payload: { assinaturaId: sub.id, valor: Number(plano.precoMensal) }
+  });
+  return { assinaturaId: sub.id, invoiceUrl: sub.invoiceUrl, valor: Number(plano.precoMensal) };
 }
 
 // ---------------------------------------------------------------------------

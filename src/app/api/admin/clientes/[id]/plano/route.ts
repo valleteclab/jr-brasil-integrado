@@ -1,11 +1,24 @@
 import { NextResponse } from "next/server";
-import { setTenantPlano, setTenantTrial, PlatformAdminError } from "@/lib/services/platform-admin";
+import { setTenantPlano, setTenantTrial, setTenantTrialAte, criarAssinaturaTenantAdmin, PlatformAdminError } from "@/lib/services/platform-admin";
 import { SessionError, ForbiddenError } from "@/lib/auth/session";
 
-/** Define o plano comercial e/ou o trial do cliente. Body: { plano? , trialDias? (null limpa) }. */
+/**
+ * Define o plano/trial do cliente ou cria a assinatura. Body:
+ *  - { plano? } troca o plano comercial (aplica preset de módulos)
+ *  - { trialDias? } (null limpa) OU { trialAte?: "YYYY-MM-DD" } (null limpa) define o fim do teste
+ *  - { acao: "criar-assinatura" } gera a mensalidade no Asaas e devolve o link da fatura
+ */
 export async function POST(request: Request, { params }: { params: { id: string } }) {
   try {
-    const body = (await request.json()) as { plano?: "COMPLETO" | "EMISSOR"; trialDias?: number | null };
+    const body = (await request.json()) as {
+      plano?: "COMPLETO" | "EMISSOR"; trialDias?: number | null; trialAte?: string | null; acao?: string;
+    };
+
+    if (body.acao === "criar-assinatura") {
+      const r = await criarAssinaturaTenantAdmin(params.id);
+      return NextResponse.json({ ok: true, ...r });
+    }
+
     let plano: string | undefined;
     let trialFimEm: string | null | undefined;
     if (body.plano) {
@@ -14,7 +27,10 @@ export async function POST(request: Request, { params }: { params: { id: string 
       }
       plano = (await setTenantPlano(params.id, body.plano)).plano;
     }
-    if (body.trialDias !== undefined) {
+    if (body.trialAte !== undefined) {
+      const r = await setTenantTrialAte(params.id, body.trialAte);
+      trialFimEm = r.trialFimEm?.toISOString() ?? null;
+    } else if (body.trialDias !== undefined) {
       const r = await setTenantTrial(params.id, body.trialDias);
       trialFimEm = r.trialFimEm?.toISOString() ?? null;
     }
