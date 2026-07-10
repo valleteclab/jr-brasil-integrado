@@ -302,6 +302,12 @@ model Tenant {
   trialFimEm               DateTime?
   /// Assinatura recorrente no Asaas (mensalidade). Pagamento confirmado limpa o trial (webhook).
   assinaturaAsaasId        String?
+  /// Mensalidade em atraso: vencimento da fatura vencida (webhook PAYMENT_OVERDUE). Aviso ao
+  /// cliente a partir de 3 dias e bloqueio a partir de 7 dias de atraso (derivado ao vivo).
+  /// Pagamento confirmado limpa este campo (volta a ficar em dia).
+  mensalidadeVencidaEm     DateTime?
+  /// Link da fatura vencida (para o cliente pagar direto do aviso/tela de bloqueio).
+  mensalidadeFaturaUrl     String?
   // Módulo Loja Virtual liberado pelo dono do SaaS (painel /admin). Quando false, as lojas das
   // empresas deste cliente não ficam acessíveis publicamente.
   lojaHabilitada           Boolean                  @default(false)

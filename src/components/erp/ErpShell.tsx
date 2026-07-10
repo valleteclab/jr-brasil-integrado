@@ -285,6 +285,19 @@ export function ErpShell({ children, context, modulos }: ErpShellProps) {
             <Link className="erp-top-btn" href="/erp/configuracoes/empresa" aria-label="Configurações">⚙</Link>
           </div>
         </header>
+        {context.mensalidade.aviso && (
+          <div style={{ background: "#fef3c7", borderBottom: "1px solid #fcd34d", color: "#92400e", padding: "10px 18px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", fontSize: 13.5 }}>
+            <span>
+              ⚠️ <strong>Mensalidade em atraso.</strong> Regularize para não perder o acesso
+              {context.mensalidade.diasAteBloqueio != null ? ` — bloqueio em ${context.mensalidade.diasAteBloqueio} dia(s).` : "."}
+            </span>
+            {context.mensalidade.faturaUrl && (
+              <a href={context.mensalidade.faturaUrl} target="_blank" rel="noreferrer" style={{ background: "#2563eb", color: "#fff", padding: "6px 14px", borderRadius: 6, fontWeight: 700, textDecoration: "none", whiteSpace: "nowrap" }}>
+                💳 Pagar mensalidade
+              </a>
+            )}
+          </div>
+        )}
         <div className="erp-page">{children}</div>
       </div>
     </div>

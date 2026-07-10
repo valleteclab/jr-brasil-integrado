@@ -117,3 +117,48 @@ export async function rodarAlertasEmissor(): Promise<{ tenants: number; notifica
 
   return { tenants: tenants.length, notificacoes };
 }
+
+/**
+ * AVISO de mensalidade em atraso pelo SINO: a partir de 3 dias de atraso (o bloqueio em si é
+ * derivado ao vivo no shell/layout a partir de 7 dias). Dedupe DIÁRIO — o cliente recebe no
+ * máximo um aviso por dia com o link da fatura. Vale para qualquer plano com assinatura.
+ */
+export async function notificarMensalidadeAtraso(): Promise<{ tenants: number; notificacoes: number }> {
+  const AVISO_DIAS = 3;
+  const tenants = await prisma.tenant.findMany({
+    where: { ativo: true, mensalidadeVencidaEm: { not: null } },
+    select: { id: true, mensalidadeVencidaEm: true, mensalidadeFaturaUrl: true }
+  });
+  const inicioHoje = new Date();
+  inicioHoje.setHours(0, 0, 0, 0);
+  let notificacoes = 0;
+
+  for (const t of tenants) {
+    try {
+      const venc = t.mensalidadeVencidaEm;
+      if (!venc) continue;
+      const diasAtraso = Math.floor((Date.now() - venc.getTime()) / 86400000);
+      if (diasAtraso < AVISO_DIAS) continue;
+
+      const empresa = await prisma.empresa.findFirst({
+        where: { tenantId: t.id, status: "ATIVA" },
+        orderBy: { matriz: "desc" },
+        select: { id: true }
+      });
+      if (!empresa) continue;
+      const scope: TenantScope = { tenantId: t.id, empresaId: empresa.id };
+
+      const diasAteBloqueio = Math.max(0, 7 - diasAtraso);
+      const msg = diasAteBloqueio > 0
+        ? `Sua mensalidade está ${diasAtraso} dia(s) em atraso. Regularize para não perder o acesso — bloqueio em ${diasAteBloqueio} dia(s).`
+        : `Sua mensalidade está ${diasAtraso} dia(s) em atraso e o acesso pode ser suspenso a qualquer momento. Pague para regularizar.`;
+      // Dedupe diário: só notifica se ainda não houve aviso hoje.
+      notificacoes += await alertar(scope, "MENSALIDADE_ATRASO", inicioHoje,
+        "Mensalidade em atraso", msg, t.mensalidadeFaturaUrl ?? "/erp");
+    } catch (e) {
+      console.error("[mensalidade-atraso] tenant", t.id, e instanceof Error ? e.message : e);
+    }
+  }
+
+  return { tenants: tenants.length, notificacoes };
+}

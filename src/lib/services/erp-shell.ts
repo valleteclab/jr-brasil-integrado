@@ -35,8 +35,40 @@ export type ErpShellContext = {
   /** Fim do trial (ISO) e se já venceu — o layout do ERP bloqueia quando vencido. */
   trialFimEm: string | null;
   trialVencido: boolean;
+  /** Mensalidade em atraso (assinatura Asaas): aviso ≥3 dias, bloqueio ≥7 dias. */
+  mensalidade: MensalidadeEstado;
   badges: ErpShellBadges;
 };
+
+export type MensalidadeEstado = {
+  diasAtraso: number | null;
+  faturaUrl: string | null;
+  /** ≥ 3 e < 7 dias: aviso não bloqueante com link de pagamento. */
+  aviso: boolean;
+  /** ≥ 7 dias: bloqueia o ERP (tela de mensalidade em atraso). */
+  bloqueado: boolean;
+  /** Dias que ainda restam antes do bloqueio (quando em aviso). */
+  diasAteBloqueio: number | null;
+};
+
+/** Tolerância antes de bloquear e a partir de quando avisar o cliente (dias de atraso). */
+export const MENSALIDADE_TOLERANCIA_DIAS = 7;
+export const MENSALIDADE_AVISO_DIAS = 3;
+
+/** Deriva o estado da mensalidade em atraso a partir do vencimento da fatura vencida. */
+export function derivarMensalidade(vencidaEm: Date | null, faturaUrl: string | null): MensalidadeEstado {
+  if (!vencidaEm) return { diasAtraso: null, faturaUrl: null, aviso: false, bloqueado: false, diasAteBloqueio: null };
+  const diasAtraso = Math.floor((Date.now() - vencidaEm.getTime()) / 86400000);
+  const bloqueado = diasAtraso >= MENSALIDADE_TOLERANCIA_DIAS;
+  const aviso = diasAtraso >= MENSALIDADE_AVISO_DIAS && !bloqueado;
+  return {
+    diasAtraso,
+    faturaUrl: faturaUrl ?? null,
+    aviso,
+    bloqueado,
+    diasAteBloqueio: bloqueado ? 0 : Math.max(0, MENSALIDADE_TOLERANCIA_DIAS - diasAtraso)
+  };
+}
 
 function iniciais(nome: string) {
   const partes = nome.trim().split(/\s+/).filter(Boolean);
@@ -61,6 +93,7 @@ const SHELL_FALLBACK: ErpShellContext = {
   plano: "COMPLETO",
   trialFimEm: null,
   trialVencido: false,
+  mensalidade: { diasAtraso: null, faturaUrl: null, aviso: false, bloqueado: false, diasAteBloqueio: null },
   badges: { vendas: 0, orcamentos: 0, os: 0, compras: 0, estoque: 0, financeiro: 0 }
 };
 
@@ -101,7 +134,7 @@ export async function getErpShellContext(): Promise<ErpShellContext> {
       // Todas as flags de módulo liberadas pelo dono do SaaS (gate de menu + URL).
       getTenantFeatures(scope.tenantId),
       // Plano comercial + trial (Emissor de Notas × Completo; trial vencido bloqueia o ERP).
-      prisma.tenant.findUnique({ where: { id: scope.tenantId }, select: { plano: true, trialFimEm: true } }),
+      prisma.tenant.findUnique({ where: { id: scope.tenantId }, select: { plano: true, trialFimEm: true, mensalidadeVencidaEm: true, mensalidadeFaturaUrl: true } }),
       prisma.configuracaoFiscal.findUnique({
         where: { empresaId: scope.empresaId },
         select: { ambiente: true, ativo: true }
@@ -162,6 +195,7 @@ export async function getErpShellContext(): Promise<ErpShellContext> {
       plano: tenantPlano?.plano === "EMISSOR" ? "EMISSOR" : "COMPLETO",
       trialFimEm: tenantPlano?.trialFimEm?.toISOString() ?? null,
       trialVencido: Boolean(tenantPlano?.trialFimEm && tenantPlano.trialFimEm < new Date()),
+      mensalidade: derivarMensalidade(tenantPlano?.mensalidadeVencidaEm ?? null, tenantPlano?.mensalidadeFaturaUrl ?? null),
       badges: {
         vendas,
         orcamentos,

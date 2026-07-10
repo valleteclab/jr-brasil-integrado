@@ -136,7 +136,9 @@ export async function asaasRegistrarWebhook(rt: AsaasRuntime, url: string, token
     interrupted: false,
     authToken: token,
     sendType: "SEQUENTIALLY",
-    events: ["PAYMENT_RECEIVED", "PAYMENT_CONFIRMED"]
+    // RECEIVED/CONFIRMED liberam; OVERDUE marca inadimplência (aviso 3d / bloqueio 7d);
+    // DELETED/REFUNDED limpam a mensalidade em atraso.
+    events: ["PAYMENT_RECEIVED", "PAYMENT_CONFIRMED", "PAYMENT_OVERDUE", "PAYMENT_DELETED", "PAYMENT_REFUNDED"]
   }).catch((e) => {
     // Já existe um webhook para essa URL → não é erro fatal.
     if (!/already|existe|duplicat/i.test(e instanceof Error ? e.message : "")) throw e;

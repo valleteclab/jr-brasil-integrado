@@ -20,23 +20,59 @@ export async function POST(request: Request, { params }: { params: { token: stri
     }
     const payload = (await request.json().catch(() => ({}))) as {
       event?: string;
-      payment?: { id?: string; status?: string; subscription?: string | null };
+      payment?: { id?: string; status?: string; subscription?: string | null; dueDate?: string | null; invoiceUrl?: string | null };
     };
-    const pago = ["PAYMENT_RECEIVED", "PAYMENT_CONFIRMED"].includes(payload.event ?? "");
+    const evento = payload.event ?? "";
+    const pago = ["PAYMENT_RECEIVED", "PAYMENT_CONFIRMED"].includes(evento);
+    // Fatura de assinatura vencida / removida → marca (ou limpa) a inadimplência da mensalidade.
+    const atrasada = ["PAYMENT_OVERDUE"].includes(evento);
+    const cancelada = ["PAYMENT_DELETED", "PAYMENT_REFUNDED"].includes(evento);
+
     if (pago && payload.payment?.id) {
-      // Mensalidade (pagamento de ASSINATURA): libera o tenant — limpa o trial.
+      // Mensalidade (pagamento de ASSINATURA): libera o tenant — limpa o trial e a inadimplência.
       if (payload.payment.subscription) {
         const tenant = await prisma.tenant.findFirst({
           where: { assinaturaAsaasId: payload.payment.subscription },
-          select: { id: true, trialFimEm: true }
+          select: { id: true }
         });
         if (tenant) {
-          await prisma.tenant.update({ where: { id: tenant.id }, data: { trialFimEm: null } });
+          await prisma.tenant.update({
+            where: { id: tenant.id },
+            data: { trialFimEm: null, mensalidadeVencidaEm: null, mensalidadeFaturaUrl: null }
+          });
           console.info("[webhook asaas] mensalidade confirmada — tenant liberado:", tenant.id);
         }
       } else {
         // Recarga avulsa de créditos de consulta.
         await confirmarRecargaPorPagamento(payload.payment.id);
+      }
+    } else if (atrasada && payload.payment?.subscription) {
+      // Mensalidade venceu sem pagamento: guarda o vencimento + link da fatura. O aviso (≥3 dias)
+      // e o bloqueio (≥7 dias) são derivados ao vivo a partir desta data no shell/layout.
+      const tenant = await prisma.tenant.findFirst({
+        where: { assinaturaAsaasId: payload.payment.subscription },
+        select: { id: true, mensalidadeVencidaEm: true }
+      });
+      if (tenant) {
+        const vencimento = payload.payment.dueDate ? new Date(`${payload.payment.dueDate}T12:00:00`) : new Date();
+        await prisma.tenant.update({
+          where: { id: tenant.id },
+          data: {
+            // Mantém o vencimento MAIS ANTIGO em aberto (não empurra o prazo a cada nova fatura).
+            mensalidadeVencidaEm: tenant.mensalidadeVencidaEm ?? vencimento,
+            mensalidadeFaturaUrl: payload.payment.invoiceUrl ?? undefined
+          }
+        });
+        console.info("[webhook asaas] mensalidade em atraso — tenant:", tenant.id);
+      }
+    } else if (cancelada && payload.payment?.subscription) {
+      // Fatura removida/estornada: limpa a inadimplência (nova fatura reabrirá se for o caso).
+      const tenant = await prisma.tenant.findFirst({
+        where: { assinaturaAsaasId: payload.payment.subscription },
+        select: { id: true }
+      });
+      if (tenant) {
+        await prisma.tenant.update({ where: { id: tenant.id }, data: { mensalidadeVencidaEm: null, mensalidadeFaturaUrl: null } });
       }
     }
   } catch (error) {
