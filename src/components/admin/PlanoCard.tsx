@@ -17,7 +17,7 @@ export function PlanoCard({ clienteId, plano, trialFimEm }: { clienteId: string;
   const [faturaUrl, setFaturaUrl] = useState<string | null>(null);
   const [assinouMsg, setAssinouMsg] = useState("");
 
-  async function post(body: { plano?: "COMPLETO" | "EMISSOR"; trialDias?: number | null; trialAte?: string | null }) {
+  async function post(body: { plano?: "COMPLETO" | "EMISSOR"; trialDias?: number | null; trialAte?: string | null; acao?: string; dias?: number | null }) {
     setBusy(true);
     setErro("");
     try {
@@ -48,10 +48,13 @@ export function PlanoCard({ clienteId, plano, trialFimEm }: { clienteId: string;
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ acao: "criar-assinatura" })
       });
-      const d = (await res.json().catch(() => ({}))) as { error?: string; invoiceUrl?: string | null; valor?: number };
+      const d = (await res.json().catch(() => ({}))) as { error?: string; invoiceUrl?: string | null; valor?: number; atualizada?: boolean };
       if (!res.ok) throw new Error(d.error || "Falha ao gerar a assinatura.");
       setFaturaUrl(d.invoiceUrl ?? null);
-      setAssinouMsg(`Assinatura criada${d.valor ? ` — R$ ${d.valor.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}/mês` : ""}. Quando o cliente pagar, o acesso libera sozinho.`);
+      const preco = d.valor ? ` — R$ ${d.valor.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}/mês` : "";
+      setAssinouMsg(d.atualizada
+        ? `Assinatura atualizada${preco}. O novo valor já vale para as próximas cobranças (e as faturas em aberto).`
+        : `Assinatura criada${preco}. Quando o cliente pagar, o acesso libera sozinho.`);
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Falha ao gerar a assinatura.");
     } finally {
@@ -150,6 +153,20 @@ export function PlanoCard({ clienteId, plano, trialFimEm }: { clienteId: string;
             )}
           </div>
         )}
+      </div>
+
+      {/* QA: simular inadimplência para testar aviso (3d) / bloqueio (7d) — reversível */}
+      <div style={{ borderTop: "1px dashed var(--erp-line)", paddingTop: 12, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <span className="block-muted" style={{ fontSize: 11 }}>🧪 Teste de inadimplência:</span>
+        <button type="button" className="btn-erp ghost xs" disabled={busy} onClick={() => post({ acao: "simular-atraso", dias: 3 })} title="Marca a mensalidade vencida há 3 dias — mostra o AVISO">
+          Simular atraso 3d (aviso)
+        </button>
+        <button type="button" className="btn-erp ghost xs" disabled={busy} onClick={() => post({ acao: "simular-atraso", dias: 8 })} title="Marca a mensalidade vencida há 8 dias — BLOQUEIA o acesso">
+          Simular atraso 8d (bloqueio)
+        </button>
+        <button type="button" className="btn-erp light xs" disabled={busy} onClick={() => post({ acao: "simular-atraso", dias: null })} title="Limpa a inadimplência — volta ao normal">
+          Limpar atraso
+        </button>
       </div>
     </div>
   );

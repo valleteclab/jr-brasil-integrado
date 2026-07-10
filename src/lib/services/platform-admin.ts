@@ -420,16 +420,53 @@ async function aplicarTrial(tenantId: string, trialFimEm: Date | null) {
 }
 
 /**
+ * SIMULAÇÃO de mensalidade em atraso (QA): marca a fatura como vencida há `dias` dias para testar
+ * o aviso (≥3 dias) e o bloqueio (≥7 dias) sem esperar uma fatura vencer de verdade. `dias=null`
+ * limpa (volta a ficar em dia). Puxa o link real da fatura da assinatura do tenant, quando houver.
+ */
+export async function simularAtrasoMensalidade(tenantId: string, dias: number | null) {
+  const admin = await requirePlatformAdmin();
+  assertDb();
+  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { id: true, assinaturaAsaasId: true } });
+  if (!tenant) throw new PlatformAdminError("Cliente não encontrado.");
+
+  if (dias == null) {
+    await prisma.tenant.update({ where: { id: tenantId }, data: { mensalidadeVencidaEm: null, mensalidadeFaturaUrl: null } });
+    return { ok: true, vencidaEm: null as string | null };
+  }
+
+  const vencidaEm = new Date(Date.now() - Math.max(0, Math.floor(dias)) * 86400000);
+  let faturaUrl: string | null = null;
+  if (tenant.assinaturaAsaasId) {
+    try {
+      const { getAsaasRuntime, asaasLinkFaturaAssinatura } = await import("@/lib/asaas/asaas-service");
+      const rt = await getAsaasRuntime();
+      if (rt) faturaUrl = await asaasLinkFaturaAssinatura(rt, tenant.assinaturaAsaasId);
+    } catch { /* link é opcional no teste */ }
+  }
+  await prisma.tenant.update({ where: { id: tenantId }, data: { mensalidadeVencidaEm: vencidaEm, mensalidadeFaturaUrl: faturaUrl } });
+  await audit({
+    tenantId,
+    usuarioId: admin.usuarioId,
+    entidade: "Tenant",
+    entidadeId: tenantId,
+    acao: "plataforma.simular_atraso_mensalidade",
+    payload: { dias, vencidaEm: vencidaEm.toISOString() }
+  });
+  return { ok: true, vencidaEm: vencidaEm.toISOString() };
+}
+
+/**
  * ASSINATURA pelo ADMIN: cria a mensalidade (Asaas) do tenant e devolve o link da primeira fatura
  * — para o dono enviar ao cliente (WhatsApp/e-mail). Mesmo motor da /api/erp/assinatura, mas
  * disparado pelo painel. O webhook de pagamento confirma e libera o acesso (limpa o trial).
  */
-export async function criarAssinaturaTenantAdmin(tenantId: string): Promise<{ assinaturaId: string; invoiceUrl: string | null; valor: number }> {
+export async function criarAssinaturaTenantAdmin(tenantId: string): Promise<{ assinaturaId: string; invoiceUrl: string | null; valor: number; atualizada: boolean }> {
   const admin = await requirePlatformAdmin();
   assertDb();
-  const { asaasCriarAssinatura, asaasGarantirCliente, getAsaasRuntime } = await import("@/lib/asaas/asaas-service");
+  const { asaasCriarAssinatura, asaasAtualizarAssinatura, asaasGarantirCliente, getAsaasRuntime } = await import("@/lib/asaas/asaas-service");
 
-  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { id: true, nome: true, plano: true } });
+  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { id: true, nome: true, plano: true, assinaturaAsaasId: true } });
   if (!tenant) throw new PlatformAdminError("Cliente não encontrado.");
   const plano = await prisma.plataformaPlano.findUnique({ where: { codigo: tenant.plano } });
   if (!plano || Number(plano.precoMensal) <= 0) {
@@ -437,6 +474,23 @@ export async function criarAssinaturaTenantAdmin(tenantId: string): Promise<{ as
   }
   const rt = await getAsaasRuntime();
   if (!rt) throw new PlatformAdminError("Cobrança indisponível — configure o Asaas em /admin/credito.");
+  const valor = Number(plano.precoMensal);
+  const descricao = `Assinatura ${plano.nome} — XERP`;
+
+  // Já tem assinatura → ATUALIZA o valor (não cria duplicada, evita cobrança dobrada). Se a
+  // assinatura antiga não existir mais no Asaas, cai no create abaixo.
+  if (tenant.assinaturaAsaasId) {
+    try {
+      const upd = await asaasAtualizarAssinatura(rt, tenant.assinaturaAsaasId, { valor, descricao });
+      await audit({
+        tenantId, usuarioId: admin.usuarioId, entidade: "Tenant", entidadeId: tenantId,
+        acao: "plataforma.atualizar_assinatura", payload: { assinaturaId: upd.id, valor }
+      });
+      return { assinaturaId: upd.id, invoiceUrl: upd.invoiceUrl, valor, atualizada: true };
+    } catch (e) {
+      console.warn("[assinatura] atualização falhou, criando nova:", e instanceof Error ? e.message : e);
+    }
+  }
 
   const empresa = await prisma.empresa.findFirst({
     where: { tenantId, matriz: true },
@@ -449,22 +503,13 @@ export async function criarAssinaturaTenantAdmin(tenantId: string): Promise<{ as
     email: empresa?.email ?? null,
     externalReference: tenantId
   });
-  const sub = await asaasCriarAssinatura(rt, {
-    customerId,
-    valor: Number(plano.precoMensal),
-    descricao: `Assinatura ${plano.nome} — XERP`,
-    externalReference: tenantId
-  });
+  const sub = await asaasCriarAssinatura(rt, { customerId, valor, descricao, externalReference: tenantId });
   await prisma.tenant.update({ where: { id: tenantId }, data: { assinaturaAsaasId: sub.id } });
   await audit({
-    tenantId,
-    usuarioId: admin.usuarioId,
-    entidade: "Tenant",
-    entidadeId: tenantId,
-    acao: "plataforma.criar_assinatura",
-    payload: { assinaturaId: sub.id, valor: Number(plano.precoMensal) }
+    tenantId, usuarioId: admin.usuarioId, entidade: "Tenant", entidadeId: tenantId,
+    acao: "plataforma.criar_assinatura", payload: { assinaturaId: sub.id, valor }
   });
-  return { assinaturaId: sub.id, invoiceUrl: sub.invoiceUrl, valor: Number(plano.precoMensal) };
+  return { assinaturaId: sub.id, invoiceUrl: sub.invoiceUrl, valor, atualizada: false };
 }
 
 // ---------------------------------------------------------------------------

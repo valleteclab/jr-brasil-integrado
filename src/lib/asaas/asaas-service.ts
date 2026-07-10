@@ -126,6 +126,31 @@ export async function asaasStatusPagamento(rt: AsaasRuntime, paymentId: string):
   return pay.status;
 }
 
+/** Link da última fatura de uma assinatura (para exibir no aviso/tela de mensalidade em atraso). */
+export async function asaasLinkFaturaAssinatura(rt: AsaasRuntime, subscriptionId: string): Promise<string | null> {
+  const pays = await asaas<{ data?: Array<{ invoiceUrl?: string }> }>(rt, "GET", `/subscriptions/${subscriptionId}/payments`).catch(() => ({ data: [] as Array<{ invoiceUrl?: string }> }));
+  return pays.data?.[0]?.invoiceUrl ?? null;
+}
+
+/**
+ * Atualiza o VALOR/descrição de uma assinatura existente (Asaas usa POST no /subscriptions/{id}).
+ * `updatePendingPayments` reflete o novo valor também nas faturas já geradas e ainda em aberto —
+ * assim o cliente passa a pagar o valor novo já na próxima cobrança. Devolve o link da fatura atual.
+ */
+export async function asaasAtualizarAssinatura(
+  rt: AsaasRuntime,
+  subscriptionId: string,
+  input: { valor: number; descricao: string }
+): Promise<{ id: string; invoiceUrl: string | null }> {
+  await asaas(rt, "POST", `/subscriptions/${subscriptionId}`, {
+    value: Math.round(input.valor * 100) / 100,
+    description: input.descricao.slice(0, 500),
+    updatePendingPayments: true
+  });
+  const invoiceUrl = await asaasLinkFaturaAssinatura(rt, subscriptionId);
+  return { id: subscriptionId, invoiceUrl };
+}
+
 /** Registra o webhook de pagamentos no Asaas (idempotente-ish; ignora se já existir). */
 export async function asaasRegistrarWebhook(rt: AsaasRuntime, url: string, token: string, email: string): Promise<void> {
   await asaas(rt, "POST", "/webhooks", {

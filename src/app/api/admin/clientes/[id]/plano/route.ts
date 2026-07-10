@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { setTenantPlano, setTenantTrial, setTenantTrialAte, criarAssinaturaTenantAdmin, PlatformAdminError } from "@/lib/services/platform-admin";
+import { setTenantPlano, setTenantTrial, setTenantTrialAte, criarAssinaturaTenantAdmin, simularAtrasoMensalidade, PlatformAdminError } from "@/lib/services/platform-admin";
 import { SessionError, ForbiddenError } from "@/lib/auth/session";
 
 /**
@@ -11,12 +11,16 @@ import { SessionError, ForbiddenError } from "@/lib/auth/session";
 export async function POST(request: Request, { params }: { params: { id: string } }) {
   try {
     const body = (await request.json()) as {
-      plano?: "COMPLETO" | "EMISSOR"; trialDias?: number | null; trialAte?: string | null; acao?: string;
+      plano?: "COMPLETO" | "EMISSOR"; trialDias?: number | null; trialAte?: string | null; acao?: string; dias?: number | null;
     };
 
     if (body.acao === "criar-assinatura") {
       const r = await criarAssinaturaTenantAdmin(params.id);
       return NextResponse.json({ ok: true, ...r });
+    }
+    if (body.acao === "simular-atraso") {
+      const r = await simularAtrasoMensalidade(params.id, body.dias === undefined ? 8 : body.dias);
+      return NextResponse.json(r);
     }
 
     let plano: string | undefined;
