@@ -126,10 +126,24 @@ export async function asaasStatusPagamento(rt: AsaasRuntime, paymentId: string):
   return pay.status;
 }
 
-/** Link da última fatura de uma assinatura (para exibir no aviso/tela de mensalidade em atraso). */
+// Status de pagamento Asaas que significam "já quitado" — nunca devemos mandar o cliente pagar.
+const ASAAS_PAGO = new Set(["RECEIVED", "CONFIRMED", "RECEIVED_IN_CASH", "REFUNDED", "REFUND_REQUESTED", "CHARGEBACK_REQUESTED", "CHARGEBACK_DISPUTE"]);
+
+/**
+ * Link da fatura EM ABERTO de uma assinatura (para o aviso/tela de mensalidade em atraso e o
+ * "Gerar cobrança"). Ignora faturas já pagas e prioriza a mais antiga em aberto (vencida primeiro),
+ * que reflete o valor atual (updatePendingPayments reajusta as pendentes). Null se não há fatura a pagar.
+ */
 export async function asaasLinkFaturaAssinatura(rt: AsaasRuntime, subscriptionId: string): Promise<string | null> {
-  const pays = await asaas<{ data?: Array<{ invoiceUrl?: string }> }>(rt, "GET", `/subscriptions/${subscriptionId}/payments`).catch(() => ({ data: [] as Array<{ invoiceUrl?: string }> }));
-  return pays.data?.[0]?.invoiceUrl ?? null;
+  const resp = await asaas<{ data?: Array<{ invoiceUrl?: string; status?: string; dueDate?: string }> }>(
+    rt, "GET", `/subscriptions/${subscriptionId}/payments`
+  ).catch(() => ({ data: [] as Array<{ invoiceUrl?: string; status?: string; dueDate?: string }> }));
+  const pays = resp.data ?? [];
+  const abertas = pays
+    .filter((p) => p.invoiceUrl && !ASAAS_PAGO.has(p.status ?? ""))
+    // Vencidas/pendentes mais antigas primeiro (é a que o cliente deve pagar).
+    .sort((a, b) => (a.dueDate ?? "").localeCompare(b.dueDate ?? ""));
+  return abertas[0]?.invoiceUrl ?? null;
 }
 
 /**
