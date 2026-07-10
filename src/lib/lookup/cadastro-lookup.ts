@@ -32,6 +32,8 @@ export type CnpjLookupResult = {
   inscricaoEstadual: string | null;
   email: string | null;
   telefone: string | null;
+  /** Regime detectado pela opção Simples/MEI da Receita (null = a fonte não informou). */
+  regimeDetectado: "MEI" | "SIMPLES_NACIONAL" | null;
   endereco: LookupEndereco;
 };
 
@@ -106,6 +108,8 @@ type BrasilApiCnpjResponse = {
   codigo_municipio_ibge?: string;
   ddd_telefone_1?: string;
   email?: string;
+  opcao_pelo_simples?: boolean | null;
+  opcao_pelo_mei?: boolean | null;
   message?: string;
 };
 
@@ -128,6 +132,7 @@ function mapBrasilApiShape(d: BrasilApiCnpjResponse, digits: string): CnpjLookup
     inscricaoEstadual: null,
     email: d.email || null,
     telefone: formatPhone(d.ddd_telefone_1),
+    regimeDetectado: d.opcao_pelo_mei ? "MEI" : d.opcao_pelo_simples ? "SIMPLES_NACIONAL" : null,
     endereco: {
       logradouro: d.logradouro || null,
       numero: d.numero || null,

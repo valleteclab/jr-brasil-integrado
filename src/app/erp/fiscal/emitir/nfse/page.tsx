@@ -1,5 +1,6 @@
 import { PageHeader } from "@/components/shared/PageHeader";
 import { NfseWizard } from "@/components/erp/NfseWizard";
+import { EmissorSetupAviso } from "@/components/erp/EmissorSetupAviso";
 import { getEmissaoFormData } from "@/lib/services/fiscal-emit";
 import type { EmissaoFormData } from "@/lib/services/fiscal-emit";
 import { getNotaFiscalPrefill, type EmissaoPrefill } from "@/lib/services/fiscal";
@@ -34,6 +35,8 @@ export default async function EmitirNfsePage({ searchParams }: { searchParams?: 
       <PageHeader eyebrow="Fiscal / Emitir NFS-e" title={initial?.modo === "SUBSTITUICAO" ? "Substituir NFS-e" : initial ? "Clonar NFS-e" : "Emitir NFS-e"}>
         Emissão de Nota Fiscal de Serviço em etapas, no padrão do Emissor Nacional.
       </PageHeader>
+
+      <EmissorSetupAviso />
 
       {prefillError && (
         <div className="alert danger" style={{ marginBottom: 14 }}>

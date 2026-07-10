@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { EmissaoAvulsaWorkspace } from "@/components/erp/EmissaoAvulsaWorkspace";
+import { EmissorSetupAviso } from "@/components/erp/EmissorSetupAviso";
 import { getEmissaoFormData } from "@/lib/services/fiscal-emit";
 import type { EmissaoFormData } from "@/lib/services/fiscal-emit";
 import { getNotaFiscalPrefill, type EmissaoPrefill } from "@/lib/services/fiscal";
@@ -49,6 +50,7 @@ export default async function EmitirNotaPage({
 
   return (
     <>
+      <EmissorSetupAviso />
       {prefillError && (
         <div className="alert danger" style={{ marginBottom: 14 }}>
           <strong>Não foi possível preparar a operação</strong>

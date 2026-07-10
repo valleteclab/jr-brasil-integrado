@@ -40,9 +40,11 @@ const PDV_RECOMENDADO: Record<string, string> = {
 
 type Props = {
   initialSettings: CompanySettings;
+  /** Plano EMISSOR: esconde o perfil de operação (PDV, margens, descontos) — só cadastro fiscal. */
+  simplificado?: boolean;
 };
 
-export function CompanySettingsForm({ initialSettings }: Props) {
+export function CompanySettingsForm({ initialSettings, simplificado = false }: Props) {
   const [form, setForm] = useState<CompanySettings>(initialSettings);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -149,12 +151,12 @@ export function CompanySettingsForm({ initialSettings }: Props) {
         </label>
 
         <label>
-          Inscrição estadual
+          Inscrição estadual{simplificado ? " (para NF-e de produto)" : ""}
           <input value={form.inscricaoEstadual} onChange={(event) => update("inscricaoEstadual", event.target.value)} />
         </label>
 
         <label>
-          Inscrição municipal
+          Inscrição municipal{simplificado ? " (para NFS-e de serviço)" : ""}
           <input value={form.inscricaoMunicipal} onChange={(event) => update("inscricaoMunicipal", event.target.value)} />
         </label>
 
@@ -177,6 +179,7 @@ export function CompanySettingsForm({ initialSettings }: Props) {
           <input type="email" value={form.email} onChange={(event) => update("email", event.target.value)} />
         </label>
 
+        {!simplificado && (
         <fieldset className="sub-fieldset">
           <legend>Perfil de operação</legend>
           <div className="erp-form">
@@ -284,9 +287,10 @@ export function CompanySettingsForm({ initialSettings }: Props) {
             </p>
           </div>
         </fieldset>
+        )}
 
         <fieldset className="sub-fieldset">
-          <legend>Endereço</legend>
+          <legend>Endereço{simplificado ? " (obrigatório para emitir NF-e)" : ""}</legend>
           <div className="erp-form">
             <label className="span-2">
               Logradouro

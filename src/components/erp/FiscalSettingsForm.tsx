@@ -25,7 +25,14 @@ const REGIMES = [
   { value: "MEI", label: "MEI" }
 ];
 
-export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalConfigSummary }) {
+export function FiscalSettingsForm({
+  initialConfig,
+  simplificado = false
+}: {
+  initialConfig: FiscalConfigSummary;
+  /** Plano EMISSOR (NF-e + NFS-e direto): esconde NFC-e/CSC, credenciais de provedor e afins. */
+  simplificado?: boolean;
+}) {
   const [config, setConfig] = useState(initialConfig);
   const [token, setToken] = useState("");
   const [cscToken, setCscToken] = useState("");
@@ -278,8 +285,14 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
       {error && <div className="alert danger"><strong>Atenção</strong><span>{error}</span></div>}
 
       <div className="erp-card">
-        <div className="erp-card-head"><h3>Provedor e ambiente</h3></div>
+        <div className="erp-card-head"><h3>{simplificado ? "Ambiente de emissão" : "Provedor e ambiente"}</h3></div>
+        {simplificado && (
+          <p className="muted" style={{ margin: "0 16px 8px", fontSize: 13 }}>
+            Use <b>Homologação</b> para testar (a nota não vale) e mude para <b>Produção</b> quando for emitir de verdade.
+          </p>
+        )}
         <div className="erp-form">
+          {!simplificado && (
           <label>
             Provedor de emissão
             {/* O provedor (e suas credenciais) é definido pela PLATAFORMA, em /admin/provedor-fiscal.
@@ -291,6 +304,8 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
               title="O provedor de emissão é definido pelo administrador da plataforma."
             />
           </label>
+          )}
+          {!simplificado && (
           <label>
             Provedor da NFS-e (serviços)
             {/* Permite NF-e/NFC-e pelo provedor padrão (ACBr) e NFS-e direto no Sistema Nacional. */}
@@ -302,6 +317,7 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
               <option value="NACIONAL">Nacional — direto na SEFIN (sem intermediário)</option>
             </select>
           </label>
+          )}
           <label>
             Ambiente
             <select value={config.environment} onChange={(e) => update("environment", e.target.value as FiscalConfigSummary["environment"])}>
@@ -322,7 +338,7 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
         </div>
       </div>
 
-      {externalProvider && (
+      {externalProvider && !simplificado && (
         <div className="erp-card">
           <div className="erp-card-head"><h3>Credenciais do provedor</h3></div>
           <p className="muted">As credenciais são criptografadas. Exibimos apenas os últimos dígitos.</p>
@@ -405,7 +421,7 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
         </div>
       )}
 
-      {(isSefaz || isAcbr) && (
+      {(isSefaz || isAcbr) && !simplificado && (
         <div className="erp-card">
           <div className="erp-card-head"><h3>CSC da NFC-e</h3></div>
           <div className="erp-card-body">
@@ -465,6 +481,7 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
             Próximo número NF-e (produção)
             <input type="number" min={1} value={config.proximoNumeroNfe} onChange={(e) => update("proximoNumeroNfe", Math.max(1, Number(e.target.value) || 1))} />
           </label>
+          {!simplificado && (<>
           <label className="check-row">
             <input type="checkbox" checked={config.emitNfce} onChange={(e) => update("emitNfce", e.target.checked)} />
             Emitir NFC-e (modelo 65)
@@ -477,6 +494,7 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
             Próximo número NFC-e (produção)
             <input type="number" min={1} value={config.proximoNumeroNfce} onChange={(e) => update("proximoNumeroNfce", Math.max(1, Number(e.target.value) || 1))} />
           </label>
+          </>)}
           <label className="check-row">
             <input type="checkbox" checked={config.emitNfse} onChange={(e) => update("emitNfse", e.target.checked)} />
             Emitir NFS-e (serviços)
@@ -522,10 +540,12 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
               <option value="padrao">Padrão do município — informar alíquota</option>
             </select>
           </label>
+          {!simplificado && (
           <label>
             Certificado digital (referência)
             <input value={config.certificadoInfo} onChange={(e) => update("certificadoInfo", e.target.value)} placeholder="Apelido/validade do A1 (sem o arquivo)" />
           </label>
+          )}
         </div>
       </div>
 
@@ -550,7 +570,7 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
         </div>
       )}
 
-      {aceitaCertificado && (
+      {aceitaCertificado && !simplificado && (
         <div className="erp-card">
           <div className="erp-card-head"><h3>Certificado digital A1</h3></div>
           <div className="erp-card-body">
@@ -580,7 +600,7 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
 
       <div className="erp-card">
         <div className="erp-card-head">
-          <h3>Certificado A1 — emissão direta{isSefaz ? " (SEFAZ / NFS-e Nacional)" : " NFS-e Nacional"}</h3>
+          <h3>{simplificado ? "Certificado digital A1 (obrigatório para emitir)" : `Certificado A1 — emissão direta${isSefaz ? " (SEFAZ / NFS-e Nacional)" : " NFS-e Nacional"}`}</h3>
         </div>
         <div className="erp-card-body">
           {isSefaz && (
@@ -669,6 +689,7 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
         </div>
       )}
 
+      {!simplificado && (
       <div className="erp-card">
         <div className="erp-card-head"><h3>Observações</h3></div>
         <div className="erp-form">
@@ -678,6 +699,7 @@ export function FiscalSettingsForm({ initialConfig }: { initialConfig: FiscalCon
           </label>
         </div>
       </div>
+      )}
 
       <div className="erp-toolbar">
         <div className="toolbar-grow" />

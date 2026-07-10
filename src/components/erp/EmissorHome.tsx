@@ -12,6 +12,8 @@ export type EmissorHomeData = {
   notasMes: { quantidade: number; valor: number };
   ultimasNotas: Array<{ id: string; numero: string; modelo: string; status: string; total: number; emitidaEm: string | null }>;
   certificado: { configurado: boolean; validade: string | null; diasParaVencer: number | null };
+  /** Checklist do que falta configurar para emitir (endereço, A1, IE/IM). */
+  setup: { completo: boolean; pendencias: Array<{ titulo: string; descricao: string; link: string; obrigatorio: boolean }> };
   /** Mês anterior pronto pro link do pacote do contador. */
   mesAnterior: { mes: number; ano: number; label: string };
   simples: {
@@ -46,6 +48,33 @@ export function EmissorHome({ data }: { data: EmissorHomeData }) {
         </div>
       </div>
 
+      {/* Checklist de configuração: aparece até a empresa estar pronta para emitir */}
+      {!data.setup.completo && (
+        <div className="erp-card" style={{ padding: 18, border: "2px solid #f59e0b", background: "#fffbeb" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+            <span style={{ fontSize: 26 }} aria-hidden="true">🚀</span>
+            <div>
+              <strong style={{ fontSize: 16 }}>Complete a configuração para emitir suas notas</strong>
+              <div className="block-muted" style={{ fontSize: 12.5 }}>
+                A SEFAZ exige o cadastro completo da empresa. Falta pouco — resolva os itens abaixo:
+              </div>
+            </div>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
+            {data.setup.pendencias.map((p) => (
+              <div key={p.titulo} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", background: "#fff", border: "1px solid #fde68a", borderRadius: 10, padding: "10px 12px" }}>
+                <span style={{ flex: 1, minWidth: 220 }}>
+                  <strong style={{ fontSize: 13.5 }}>{p.obrigatorio ? "⬜" : "▫️"} {p.titulo}</strong>
+                  {!p.obrigatorio && <span style={{ marginLeft: 6, fontSize: 11, background: "#f1f5f9", borderRadius: 999, padding: "1px 8px", color: "#475569" }}>recomendado</span>}
+                  <br /><span className="block-muted" style={{ fontSize: 12 }}>{p.descricao}</span>
+                </span>
+                <Link href={p.link} className="btn-erp primary sm">Resolver →</Link>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Atalhos grandes de emissão */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
         <Link href="/erp/fiscal/emitir/nfse" className="erp-card" style={{ padding: 22, textDecoration: "none", color: "inherit", display: "flex", alignItems: "center", gap: 14 }}>
@@ -71,11 +100,13 @@ export function EmissorHome({ data }: { data: EmissorHomeData }) {
         </Link>
       </div>
 
-      {/* Certificado A1 */}
-      <div className={`alert ${certTone === "success" ? "success" : certTone === "warn" ? "warn" : "danger"}`} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-        <span>🔐 {certLabel}</span>
-        <Link href="/erp/configuracoes/fiscal" className="btn-erp light xs">Gerenciar certificado</Link>
-      </div>
+      {/* Certificado A1 (o checklist acima já cobre quando a configuração está incompleta) */}
+      {data.setup.completo && (
+        <div className={`alert ${certTone === "success" ? "success" : certTone === "warn" ? "warn" : "danger"}`} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+          <span>🔐 {certLabel}</span>
+          <Link href="/erp/configuracoes/fiscal" className="btn-erp light xs">Gerenciar certificado</Link>
+        </div>
+      )}
 
       {/* KPIs do mês */}
       <div className="kpi-row">

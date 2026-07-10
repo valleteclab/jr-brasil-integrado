@@ -659,6 +659,23 @@ export type CriarClienteInput = {
   senhaInicial?: string;
 };
 
+/** Dados extras da empresa (vindos do lookup de CNPJ no cadastro self-service). */
+export type EmpresaDadosExtra = {
+  inscricaoEstadual?: string | null;
+  inscricaoMunicipal?: string | null;
+  regimeTributario?: "MEI" | "SIMPLES_NACIONAL" | null;
+  telefone?: string | null;
+  email?: string | null;
+  enderecoLogradouro?: string | null;
+  enderecoNumero?: string | null;
+  enderecoComplemento?: string | null;
+  enderecoBairro?: string | null;
+  enderecoCidade?: string | null;
+  enderecoUf?: string | null;
+  enderecoCep?: string | null;
+  codigoMunicipioIbge?: string | null;
+};
+
 export type CriarClienteResult = {
   tenantId: string;
   empresaId: string;
@@ -697,7 +714,7 @@ export async function criarCliente(input: CriarClienteInput): Promise<CriarClien
  */
 export async function criarClienteCore(
   input: CriarClienteInput,
-  opts: { criadoPorUsuarioId?: string | null; plano?: "COMPLETO" | "EMISSOR"; trialDias?: number | null } = {}
+  opts: { criadoPorUsuarioId?: string | null; plano?: "COMPLETO" | "EMISSOR"; trialDias?: number | null; empresaDados?: EmpresaDadosExtra } = {}
 ): Promise<CriarClienteResult> {
   const nomeCliente = input.nomeCliente?.trim();
   const razaoSocial = input.razaoSocial?.trim();
@@ -743,6 +760,8 @@ export async function criarClienteCore(
       }
     });
 
+    const extra = opts.empresaDados ?? {};
+    const limpo = (v: string | null | undefined) => (typeof v === "string" && v.trim() ? v.trim() : null);
     const empresa = await tx.empresa.create({
       data: {
         tenantId: tenant.id,
@@ -750,7 +769,21 @@ export async function criarClienteCore(
         nomeFantasia: input.nomeFantasia?.trim() || null,
         cnpj,
         matriz: true,
-        status: "ATIVA"
+        status: "ATIVA",
+        // Dados do lookup de CNPJ (cadastro self-service): já deixam a empresa pronta para emitir.
+        inscricaoEstadual: limpo(extra.inscricaoEstadual),
+        inscricaoMunicipal: limpo(extra.inscricaoMunicipal),
+        ...(extra.regimeTributario ? { regimeTributario: extra.regimeTributario } : {}),
+        telefone: limpo(extra.telefone),
+        email: limpo(extra.email),
+        enderecoLogradouro: limpo(extra.enderecoLogradouro),
+        enderecoNumero: limpo(extra.enderecoNumero),
+        enderecoComplemento: limpo(extra.enderecoComplemento),
+        enderecoBairro: limpo(extra.enderecoBairro),
+        enderecoCidade: limpo(extra.enderecoCidade),
+        enderecoUf: limpo(extra.enderecoUf),
+        enderecoCep: limpo(extra.enderecoCep),
+        codigoMunicipioIbge: limpo(extra.codigoMunicipioIbge)
       }
     });
 
