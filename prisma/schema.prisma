@@ -308,6 +308,9 @@ model Tenant {
   mensalidadeVencidaEm     DateTime?
   /// Link da fatura vencida (para o cliente pagar direto do aviso/tela de bloqueio).
   mensalidadeFaturaUrl     String?
+  /// Valor personalizado da mensalidade deste cliente (desconto/acordo específico). null = usa o
+  /// preço do plano. É o valor efetivo cobrado na assinatura Asaas.
+  mensalidadeValor         Decimal?                 @db.Decimal(10, 2)
   // Módulo Loja Virtual liberado pelo dono do SaaS (painel /admin). Quando false, as lojas das
   // empresas deste cliente não ficam acessíveis publicamente.
   lojaHabilitada           Boolean                  @default(false)

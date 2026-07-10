@@ -17,13 +17,13 @@ export async function GET() {
   }
 }
 
-/** Edita um plano. Body: { codigo, nome?, descricao?, precoMensal?, limiteNotasMes?, trialDias?, ativo? }. */
+/** Edita um plano. Body: { codigo, nome?, descricao?, precoMensal?, limiteNotasMes?, trialDias?, ativo?, aplicarAssinantes? }. */
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as { codigo: string } & Record<string, unknown>;
+    const body = (await request.json()) as { codigo: string; aplicarAssinantes?: boolean } & Record<string, unknown>;
     if (!body.codigo) return NextResponse.json({ error: "Informe o código do plano." }, { status: 400 });
-    const { codigo, ...dados } = body;
-    const plano = await salvarPlanoSaas(codigo, dados as Parameters<typeof salvarPlanoSaas>[1]);
+    const { codigo, aplicarAssinantes, ...dados } = body;
+    const plano = await salvarPlanoSaas(codigo, dados as Parameters<typeof salvarPlanoSaas>[1], { aplicarAssinantes: Boolean(aplicarAssinantes) });
     return NextResponse.json({ ok: true, plano });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Erro." }, { status: statusFor(error) });

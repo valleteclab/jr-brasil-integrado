@@ -19,9 +19,11 @@ function PlanoCardEdit({ plano }: { plano: PlanoSaasRow }) {
   const [limite, setLimite] = useState<string>(plano.limiteNotasMes == null ? "" : String(plano.limiteNotasMes));
   const [trial, setTrial] = useState(plano.trialDias);
   const [ativo, setAtivo] = useState(plano.ativo);
+  const [aplicarAssinantes, setAplicarAssinantes] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [erro, setErro] = useState("");
+  const precoMudou = Number(preco) !== plano.precoMensal;
 
   async function salvar() {
     setBusy(true); setMsg(""); setErro("");
@@ -36,12 +38,15 @@ function PlanoCardEdit({ plano }: { plano: PlanoSaasRow }) {
           precoMensal: Number(preco) || 0,
           limiteNotasMes: limite.trim() === "" ? null : Math.max(1, Number(limite) || 0),
           trialDias: Number(trial) || 0,
-          ativo
+          ativo,
+          aplicarAssinantes: aplicarAssinantes && precoMudou
         })
       });
-      const d = (await res.json().catch(() => ({}))) as { error?: string };
+      const d = (await res.json().catch(() => ({}))) as { error?: string; plano?: { assinantesAtualizados?: number } };
       if (!res.ok) throw new Error(d.error || "Falha ao salvar.");
-      setMsg("Plano salvo.");
+      const n = d.plano?.assinantesAtualizados;
+      setMsg(n != null ? `Plano salvo. ${n} assinatura(s) reajustada(s) no Asaas.` : "Plano salvo.");
+      setAplicarAssinantes(false);
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Falha ao salvar.");
     } finally {
@@ -78,6 +83,15 @@ function PlanoCardEdit({ plano }: { plano: PlanoSaasRow }) {
           <input type="number" min={0} value={trial} onChange={(e) => setTrial(Number(e.target.value) || 0)} style={{ width: 100, height: 34, textAlign: "right" }} />
         </label>
       </div>
+      {precoMudou && (
+        <label style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 12.5, background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8, padding: "8px 10px" }}>
+          <input type="checkbox" checked={aplicarAssinantes} onChange={(e) => setAplicarAssinantes(e.target.checked)} style={{ marginTop: 2 }} />
+          <span>
+            <strong>Aplicar o novo preço aos assinantes atuais</strong><br />
+            Atualiza as assinaturas ativas deste plano no Asaas. Quem tem <strong>valor personalizado</strong> (desconto) mantém o valor dele. Deixe desmarcado para o preço novo valer só para novos clientes.
+          </span>
+        </label>
+      )}
       <div>
         <button type="button" className="btn-erp primary sm" disabled={busy} onClick={salvar}>{busy ? "Salvando…" : "Salvar plano"}</button>
       </div>

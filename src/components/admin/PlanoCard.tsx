@@ -8,7 +8,7 @@ import { useRouter } from "next/navigation";
  * o fiscal; Completo religa os de série) — os toggles individuais continuam valendo depois, para
  * ajustes finos. Trial vencido bloqueia o ERP do cliente com aviso (o dono estende/limpa aqui).
  */
-export function PlanoCard({ clienteId, plano, trialFimEm }: { clienteId: string; plano: string; trialFimEm: string | null }) {
+export function PlanoCard({ clienteId, plano, trialFimEm, mensalidadeValor }: { clienteId: string; plano: string; trialFimEm: string | null; mensalidadeValor: number | null }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState("");
@@ -16,6 +16,33 @@ export function PlanoCard({ clienteId, plano, trialFimEm }: { clienteId: string;
   const [dataTrial, setDataTrial] = useState(trialFimEm ? trialFimEm.slice(0, 10) : "");
   const [faturaUrl, setFaturaUrl] = useState<string | null>(null);
   const [assinouMsg, setAssinouMsg] = useState("");
+  // Valor personalizado da mensalidade (desconto/acordo). Vazio = usa o preço do plano.
+  const [valorCustom, setValorCustom] = useState(mensalidadeValor != null ? String(mensalidadeValor) : "");
+  const [valorMsg, setValorMsg] = useState("");
+
+  async function salvarValorCustom(limpar = false) {
+    setBusy(true); setErro(""); setValorMsg("");
+    try {
+      const valor = limpar ? null : Number(valorCustom.replace(",", ".")) || null;
+      const res = await fetch(`/api/admin/clientes/${clienteId}/plano`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ acao: "definir-valor-mensalidade", valor })
+      });
+      const d = (await res.json().catch(() => ({}))) as { error?: string; valor?: number | null; assinaturaAtualizada?: boolean };
+      if (!res.ok) throw new Error(d.error || "Falha ao salvar o valor.");
+      if (limpar) setValorCustom("");
+      setValorMsg(
+        (d.valor != null ? `Valor personalizado: R$ ${d.valor.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}/mês.` : "Voltou ao preço do plano.") +
+        (d.assinaturaAtualizada ? " Assinatura no Asaas já atualizada." : "")
+      );
+      router.refresh();
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Falha ao salvar o valor.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function post(body: { plano?: "COMPLETO" | "EMISSOR"; trialDias?: number | null; trialAte?: string | null; acao?: string; dias?: number | null }) {
     setBusy(true);
@@ -135,6 +162,26 @@ export function PlanoCard({ clienteId, plano, trialFimEm }: { clienteId: string;
 
       {/* Cobrança: gera a assinatura mensal no Asaas para o dono enviar ao cliente */}
       <div style={{ borderTop: "1px solid var(--erp-line)", paddingTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+        {/* Valor personalizado da mensalidade (desconto/acordo específico deste cliente) */}
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <strong style={{ fontSize: 13 }}>Valor da mensalidade:</strong>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+            R$ <input
+              type="number" min={0} step="0.01" value={valorCustom}
+              onChange={(e) => setValorCustom(e.target.value)} placeholder="preço do plano"
+              style={{ width: 110, height: 30, border: "1px solid var(--erp-line)", borderRadius: 6, padding: "0 8px", textAlign: "right", fontSize: 13 }}
+            />
+          </span>
+          <button type="button" className="btn-erp light xs" disabled={busy} onClick={() => salvarValorCustom(false)}>Salvar valor</button>
+          {mensalidadeValor != null && (
+            <button type="button" className="btn-erp ghost xs" disabled={busy} onClick={() => salvarValorCustom(true)} title="Volta a usar o preço do plano">Usar preço do plano</button>
+          )}
+          <span className="block-muted" style={{ fontSize: 11, flexBasis: "100%" }}>
+            Vazio = usa o preço do plano. Preenchido = desconto/acordo só deste cliente (atualiza a assinatura na hora, se houver).
+          </span>
+        </div>
+        {valorMsg && <div className="alert success" style={{ margin: 0 }}><span>{valorMsg}</span></div>}
+
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
           <strong style={{ fontSize: 13 }}>Cobrança:</strong>
           <button type="button" className="btn-erp primary sm" disabled={busy} onClick={criarAssinatura}>

@@ -75,7 +75,7 @@ export default async function AdminClienteDetalhePage({ params }: { params: { id
             <span>Plano comercial do cliente (aplica o preset de módulos) e controle do trial.</span>
           </div>
         </div>
-        <PlanoCard clienteId={cliente.id} plano={cliente.plano} trialFimEm={cliente.trialFimEm} />
+        <PlanoCard clienteId={cliente.id} plano={cliente.plano} trialFimEm={cliente.trialFimEm} mensalidadeValor={cliente.mensalidadeValor} />
       </Card>
 
       <Card>

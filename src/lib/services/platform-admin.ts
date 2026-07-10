@@ -184,6 +184,8 @@ export type ClienteDetail = {
   /** Plano comercial (COMPLETO | EMISSOR) + fim do trial (null = sem trial). */
   plano: string;
   trialFimEm: string | null;
+  /** Valor personalizado da mensalidade (null = usa o preço do plano). */
+  mensalidadeValor: number | null;
   lojaHabilitada: boolean;
   iaHabilitada: boolean;
   spedFiscalHabilitado: boolean;
@@ -275,6 +277,7 @@ export async function getClienteDetail(tenantId: string): Promise<ClienteDetail 
     ativo: tenant.ativo,
     plano: tenant.plano,
     trialFimEm: tenant.trialFimEm?.toISOString() ?? null,
+    mensalidadeValor: tenant.mensalidadeValor != null ? Number(tenant.mensalidadeValor) : null,
     lojaHabilitada: tenant.lojaHabilitada,
     iaHabilitada: tenant.iaHabilitada,
     spedFiscalHabilitado: tenant.spedFiscalHabilitado,
@@ -328,7 +331,16 @@ export async function listPlanosSaas(): Promise<PlanoSaasRow[]> {
   }));
 }
 
-export async function salvarPlanoSaas(codigo: string, input: { nome?: string; descricao?: string | null; precoMensal?: number; limiteNotasMes?: number | null; trialDias?: number; ativo?: boolean }): Promise<PlanoSaasRow> {
+/** Valor efetivo da mensalidade de um cliente: o personalizado do tenant ou, na falta, o do plano. */
+export function precoMensalEfetivo(mensalidadeValor: number | null | undefined, precoPlano: number): number {
+  return mensalidadeValor != null && mensalidadeValor > 0 ? mensalidadeValor : precoPlano;
+}
+
+export async function salvarPlanoSaas(
+  codigo: string,
+  input: { nome?: string; descricao?: string | null; precoMensal?: number; limiteNotasMes?: number | null; trialDias?: number; ativo?: boolean },
+  opts: { aplicarAssinantes?: boolean } = {}
+): Promise<PlanoSaasRow & { assinantesAtualizados?: number }> {
   const admin = await requirePlatformAdmin();
   assertDb();
   const atual = await prisma.plataformaPlano.findUnique({ where: { codigo } });
@@ -346,10 +358,70 @@ export async function salvarPlanoSaas(codigo: string, input: { nome?: string; de
   });
   // Edição de plano é GLOBAL (sem tenant) — a Auditoria exige tenantId; registra no log do servidor.
   console.info("[admin] plano editado:", codigo, "por", admin.usuarioId, JSON.stringify(input));
+
+  // Reajuste opcional dos ASSINANTES ATUAIS: reflete o novo preço nas assinaturas Asaas já ativas.
+  // Cada cliente é atualizado para o seu valor EFETIVO (personalizado do tenant vence o do plano),
+  // então quem tem desconto específico mantém o desconto.
+  let assinantesAtualizados: number | undefined;
+  if (opts.aplicarAssinantes && input.precoMensal !== undefined) {
+    const { getAsaasRuntime, asaasAtualizarAssinatura } = await import("@/lib/asaas/asaas-service");
+    const rt = await getAsaasRuntime();
+    if (rt) {
+      const assinantes = await prisma.tenant.findMany({
+        where: { plano: codigo, assinaturaAsaasId: { not: null } },
+        select: { id: true, assinaturaAsaasId: true, mensalidadeValor: true }
+      });
+      assinantesAtualizados = 0;
+      for (const t of assinantes) {
+        const valor = precoMensalEfetivo(t.mensalidadeValor != null ? Number(t.mensalidadeValor) : null, Number(p.precoMensal));
+        try {
+          await asaasAtualizarAssinatura(rt, t.assinaturaAsaasId!, { valor, descricao: `Assinatura ${p.nome} — XERP` });
+          assinantesAtualizados++;
+        } catch (e) {
+          console.warn("[admin] reajuste assinatura falhou tenant", t.id, e instanceof Error ? e.message : e);
+        }
+      }
+    }
+  }
+
   return {
     codigo: p.codigo, nome: p.nome, descricao: p.descricao, precoMensal: Number(p.precoMensal),
-    limiteNotasMes: p.limiteNotasMes, trialDias: p.trialDias, ativo: p.ativo
+    limiteNotasMes: p.limiteNotasMes, trialDias: p.trialDias, ativo: p.ativo, assinantesAtualizados
   };
+}
+
+/**
+ * Define o VALOR PERSONALIZADO da mensalidade de um cliente (desconto/acordo). null limpa (volta
+ * ao preço do plano). Se o cliente já tem assinatura no Asaas, atualiza o valor na hora.
+ */
+export async function definirValorMensalidadeTenant(tenantId: string, valor: number | null): Promise<{ ok: true; valor: number | null; assinaturaAtualizada: boolean }> {
+  const admin = await requirePlatformAdmin();
+  assertDb();
+  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { id: true, plano: true, assinaturaAsaasId: true } });
+  if (!tenant) throw new PlatformAdminError("Cliente não encontrado.");
+  const limpo = valor != null && valor > 0 ? Math.round(valor * 100) / 100 : null;
+  await prisma.tenant.update({ where: { id: tenantId }, data: { mensalidadeValor: limpo } });
+
+  let assinaturaAtualizada = false;
+  if (tenant.assinaturaAsaasId) {
+    try {
+      const { getAsaasRuntime, asaasAtualizarAssinatura } = await import("@/lib/asaas/asaas-service");
+      const rt = await getAsaasRuntime();
+      const plano = await prisma.plataformaPlano.findUnique({ where: { codigo: tenant.plano } });
+      const efetivo = precoMensalEfetivo(limpo, Number(plano?.precoMensal ?? 0));
+      if (rt && efetivo > 0) {
+        await asaasAtualizarAssinatura(rt, tenant.assinaturaAsaasId, { valor: efetivo, descricao: `Assinatura ${plano?.nome ?? "XERP"} — XERP` });
+        assinaturaAtualizada = true;
+      }
+    } catch (e) {
+      console.warn("[admin] atualizar valor da assinatura falhou:", e instanceof Error ? e.message : e);
+    }
+  }
+  await audit({
+    tenantId, usuarioId: admin.usuarioId, entidade: "Tenant", entidadeId: tenantId,
+    acao: "plataforma.definir_valor_mensalidade", payload: { valor: limpo }
+  });
+  return { ok: true, valor: limpo, assinaturaAtualizada };
 }
 
 // ---------------------------------------------------------------------------
@@ -466,16 +538,17 @@ export async function criarAssinaturaTenantAdmin(tenantId: string): Promise<{ as
   assertDb();
   const { asaasCriarAssinatura, asaasAtualizarAssinatura, asaasGarantirCliente, getAsaasRuntime } = await import("@/lib/asaas/asaas-service");
 
-  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { id: true, nome: true, plano: true, assinaturaAsaasId: true } });
+  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { id: true, nome: true, plano: true, assinaturaAsaasId: true, mensalidadeValor: true } });
   if (!tenant) throw new PlatformAdminError("Cliente não encontrado.");
   const plano = await prisma.plataformaPlano.findUnique({ where: { codigo: tenant.plano } });
-  if (!plano || Number(plano.precoMensal) <= 0) {
-    throw new PlatformAdminError("O plano deste cliente não tem mensalidade (defina o preço em /admin/planos).");
+  // Valor efetivo: personalizado do cliente (desconto) vence o preço do plano.
+  const valor = precoMensalEfetivo(tenant.mensalidadeValor != null ? Number(tenant.mensalidadeValor) : null, Number(plano?.precoMensal ?? 0));
+  if (valor <= 0) {
+    throw new PlatformAdminError("Este cliente não tem mensalidade definida (defina o preço em /admin/planos ou um valor personalizado).");
   }
   const rt = await getAsaasRuntime();
   if (!rt) throw new PlatformAdminError("Cobrança indisponível — configure o Asaas em /admin/credito.");
-  const valor = Number(plano.precoMensal);
-  const descricao = `Assinatura ${plano.nome} — XERP`;
+  const descricao = `Assinatura ${plano?.nome ?? "XERP"} — XERP`;
 
   // Já tem assinatura → ATUALIZA o valor (não cria duplicada, evita cobrança dobrada). Se a
   // assinatura antiga não existir mais no Asaas, cai no create abaixo.
