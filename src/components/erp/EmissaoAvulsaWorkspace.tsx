@@ -1126,7 +1126,7 @@ export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormDat
           onClose={() => setCadastroAberto(false)}
           onCreated={(c: ClienteCriado) => {
             setClientes((cur) => [
-              { id: c.id, label: c.label, documento: c.documento, inscricaoEstadual: null, email: null, uf: c.uf, cidade: null },
+              { id: c.id, label: c.label, documento: c.documento, inscricaoEstadual: c.inscricaoEstadual, email: c.email, uf: c.uf, cidade: c.cidade },
               ...cur
             ]);
             setClienteId(c.id);

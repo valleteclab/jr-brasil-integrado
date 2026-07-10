@@ -3,7 +3,15 @@
 import { useState } from "react";
 import { useCadastroLookup } from "./useCadastroLookup";
 
-export type ClienteCriado = { id: string; label: string; documento: string | null; uf: string | null };
+export type ClienteCriado = {
+  id: string;
+  label: string;
+  documento: string | null;
+  uf: string | null;
+  inscricaoEstadual: string | null;
+  email: string | null;
+  cidade: string | null;
+};
 
 /**
  * Drawer de cadastro rápido de cliente, reaproveitado pelo Atendimento e pela Emissão fiscal.
@@ -27,8 +35,10 @@ export function ClienteCadastroDrawer({
   const [nomeFantasia, setNomeFantasia] = useState("");
   const [email, setEmail] = useState("");
   const [telefone, setTelefone] = useState("");
+  const [inscricaoEstadual, setInscricaoEstadual] = useState("");
   const [cep, setCep] = useState("");
   const [logradouro, setLogradouro] = useState("");
+  const [complemento, setComplemento] = useState("");
   const [numero, setNumero] = useState("");
   const [bairro, setBairro] = useState("");
   const [cidade, setCidade] = useState("");
@@ -44,9 +54,11 @@ export function ClienteCadastroDrawer({
     if (d.nomeFantasia) setNomeFantasia(d.nomeFantasia);
     if (d.email) setEmail(d.email);
     if (d.telefone) setTelefone(d.telefone);
+    if (d.inscricaoEstadual) setInscricaoEstadual(d.inscricaoEstadual);
     if (d.endereco.cep) setCep(d.endereco.cep);
     if (d.endereco.logradouro) setLogradouro(d.endereco.logradouro);
     if (d.endereco.numero) setNumero(d.endereco.numero);
+    if (d.endereco.complemento) setComplemento(d.endereco.complemento);
     if (d.endereco.bairro) setBairro(d.endereco.bairro);
     if (d.endereco.cidade) setCidade(d.endereco.cidade);
     if (d.endereco.uf) setUf(d.endereco.uf);
@@ -74,6 +86,7 @@ export function ClienteCadastroDrawer({
         razaoSocial: razaoSocial.trim(),
         nomeFantasia: nomeFantasia.trim() || null,
         documento: documento.trim(),
+        inscricaoEstadual: inscricaoEstadual.trim() || null,
         status: "ATIVO",
         contatos: (email.trim() || telefone.trim())
           ? [{ nome: nomeFantasia.trim() || razaoSocial.trim(), email: email.trim() || null, telefone: telefone.trim() || null, principal: true }]
@@ -81,6 +94,7 @@ export function ClienteCadastroDrawer({
         enderecos: enderecoValido
           ? [{
               apelido: "Principal", cep: cep.trim(), logradouro: logradouro.trim(), numero: numero.trim() || null,
+              complemento: complemento.trim() || null,
               bairro: bairro.trim() || null, cidade: cidade.trim(), uf: uf.trim().toUpperCase(),
               codigoMunicipioIbge: ibge.trim() || null, padrao: true
             }]
@@ -92,7 +106,15 @@ export function ClienteCadastroDrawer({
       const data = await res.json() as { id?: string; error?: string };
       if (!res.ok) throw new Error(data.error || "Não foi possível cadastrar o cliente.");
       const label = nomeFantasia.trim() ? `${nomeFantasia.trim()} (${razaoSocial.trim()})` : razaoSocial.trim();
-      onCreated({ id: data.id ?? `tmp-${Date.now()}`, label, documento: documento.replace(/\D/g, "") || null, uf: uf.trim().toUpperCase() || null });
+      onCreated({
+        id: data.id ?? `tmp-${Date.now()}`,
+        label,
+        documento: documento.replace(/\D/g, "") || null,
+        uf: uf.trim().toUpperCase() || null,
+        inscricaoEstadual: inscricaoEstadual.trim() || null,
+        email: email.trim() || null,
+        cidade: cidade.trim() || null
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Não foi possível cadastrar o cliente.");
     } finally {
@@ -125,6 +147,12 @@ export function ClienteCadastroDrawer({
             </label>
             <label className="full">{isPj ? "Razão social" : "Nome completo"}<input value={razaoSocial} onChange={(e) => setRazaoSocial(e.target.value)} /></label>
             {isPj && <label className="full">Nome fantasia<input value={nomeFantasia} onChange={(e) => setNomeFantasia(e.target.value)} /></label>}
+            {isPj && (
+              <label className="full">
+                Inscrição estadual <span style={{ color: "var(--erp-mute)", fontWeight: 400 }}>(para NF-e: nº ou ISENTO)</span>
+                <input value={inscricaoEstadual} onChange={(e) => setInscricaoEstadual(e.target.value)} placeholder="ISENTO ou número" />
+              </label>
+            )}
             <label>E-mail<input type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></label>
             <label>Telefone<input value={telefone} onChange={(e) => setTelefone(e.target.value)} /></label>
             <label>
@@ -136,6 +164,7 @@ export function ClienteCadastroDrawer({
             </label>
             <label>Número<input value={numero} onChange={(e) => setNumero(e.target.value)} /></label>
             <label className="full">Logradouro<input value={logradouro} onChange={(e) => setLogradouro(e.target.value)} /></label>
+            <label>Complemento<input value={complemento} onChange={(e) => setComplemento(e.target.value)} /></label>
             <label>Bairro<input value={bairro} onChange={(e) => setBairro(e.target.value)} /></label>
             <label>Cidade<input value={cidade} onChange={(e) => setCidade(e.target.value)} /></label>
             <label>UF<input value={uf} maxLength={2} onChange={(e) => setUf(e.target.value.toUpperCase())} /></label>

@@ -7,6 +7,7 @@ import type { EmissaoPrefill } from "@/lib/services/fiscal";
 import { sugerirPorLc116 } from "@/domains/fiscal/nbs";
 import { exigeGrupoObra } from "@/domains/fiscal/codigo-tributacao-nacional";
 import { useCadastroLookup } from "./useCadastroLookup";
+import { ClienteCadastroDrawer, type ClienteCriado } from "./ClienteCadastroDrawer";
 import { correspondeBusca } from "@/lib/search/normalize";
 
 /**
@@ -167,6 +168,9 @@ export function NfseWizard({ data, initial = null }: { data: EmissaoFormData; in
   const [dataCompetencia, setDataCompetencia] = useState(hoje);
   const [tomadorModo, setTomadorModo] = useState<TomadorModo>(iniTomadorModo);
   const [clienteId, setClienteId] = useState(ini?.clienteId ?? "");
+  // Atalho "+ Cadastrar": cliente criado no drawer entra no topo da lista e já fica selecionado.
+  const [cadastroAberto, setCadastroAberto] = useState(false);
+  const [clientesExtra, setClientesExtra] = useState<Cliente[]>([]);
   const [tNome, setTNome] = useState(ini?.destinatario.nome ?? "");
   const [tDocumento, setTDocumento] = useState(ini?.destinatario.documento ?? "");
   const [tIe, setTIe] = useState(ini?.destinatario.inscricaoEstadual ?? "");
@@ -236,9 +240,13 @@ export function NfseWizard({ data, initial = null }: { data: EmissaoFormData; in
   const [condicaoPagamento, setCondicaoPagamento] = useState(ini?.condicaoPagamento ?? "");
   const [observacoes, setObservacoes] = useState(ini?.observacoes ?? "");
 
+  const clientes: Cliente[] = useMemo(
+    () => [...clientesExtra, ...data.clientes],
+    [clientesExtra, data.clientes]
+  );
   const cliente: Cliente | null = useMemo(
-    () => data.clientes.find((c) => c.id === clienteId) ?? null,
-    [data.clientes, clienteId]
+    () => clientes.find((c) => c.id === clienteId) ?? null,
+    [clientes, clienteId]
   );
 
   // Busca de CNPJ/CEP (mesmo serviço dos demais cadastros) para autopreencher o tomador manual.
@@ -566,10 +574,13 @@ export function NfseWizard({ data, initial = null }: { data: EmissaoFormData; in
                 <div className="erp-form">
                   <label className="full">
                     Tomador
-                    <select value={clienteId} onChange={(e) => setClienteId(e.target.value)}>
-                      <option value="">Selecione o cliente…</option>
-                      {data.clientes.map((c) => <option key={c.id} value={c.id}>{c.label}{c.documento ? ` · ${c.documento}` : ""}</option>)}
-                    </select>
+                    <span style={{ display: "flex", gap: 6 }}>
+                      <select value={clienteId} onChange={(e) => setClienteId(e.target.value)} style={{ flex: 1 }}>
+                        <option value="">Selecione o cliente…</option>
+                        {clientes.map((c) => <option key={c.id} value={c.id}>{c.label}{c.documento ? ` · ${c.documento}` : ""}</option>)}
+                      </select>
+                      <button type="button" className="btn-erp light sm" style={{ flexShrink: 0, whiteSpace: "nowrap" }} onClick={() => setCadastroAberto(true)}>+ Cadastrar</button>
+                    </span>
                   </label>
                   {cliente && (
                     <p className="full" style={{ fontSize: 12, color: "var(--erp-mute)", margin: 0 }}>
@@ -843,6 +854,21 @@ export function NfseWizard({ data, initial = null }: { data: EmissaoFormData; in
           <button type="button" className="btn-erp primary lg" onClick={emitir} disabled={saving}>{saving ? "Emitindo…" : "Emitir NFS-e"}</button>
         )}
       </div>
+
+      {cadastroAberto && (
+        <ClienteCadastroDrawer
+          onClose={() => setCadastroAberto(false)}
+          onCreated={(c: ClienteCriado) => {
+            setClientesExtra((cur) => [
+              { id: c.id, label: c.label, documento: c.documento, inscricaoEstadual: c.inscricaoEstadual, email: c.email, uf: c.uf, cidade: c.cidade },
+              ...cur
+            ]);
+            setClienteId(c.id);
+            setTomadorModo("cadastrado");
+            setCadastroAberto(false);
+          }}
+        />
+      )}
     </>
   );
 }
