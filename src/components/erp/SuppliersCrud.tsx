@@ -192,7 +192,7 @@ export function SuppliersCrud({ initialSuppliers }: Props) {
             id: data.id ?? `tmp-${Date.now()}`,
             razaoSocial: form.razaoSocial,
             nomeFantasia: form.nomeFantasia,
-            documento: form.documento.replace(/\D/g, ""),
+            documento: normalizeDocumento(form.documento),
             inscricaoEstadual: form.inscricaoEstadual,
             email: form.email,
             telefone: form.telefone,

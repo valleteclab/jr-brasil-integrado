@@ -14,6 +14,7 @@ import { enviarManifestacao } from "@/domains/fiscal/providers/sefaz/eventos";
 import { cUFFromUF } from "@/domains/fiscal/providers/sefaz/endpoints";
 import { pfxToPem } from "@/domains/fiscal/providers/sefaz/sign";
 import { gerarDanfePdf } from "@/domains/fiscal/providers/sefaz/danfe-pdf";
+import { normalizeDfeKey } from "@/domains/fiscal/providers/sefaz/chave";
 
 const ACBR_AUTH_URL = "https://auth.acbr.api.br/realms/ACBrAPI/protocol/openid-connect/token";
 const ACBR_BASE_URL: Record<AmbienteFiscal, string> = {
@@ -114,13 +115,13 @@ function dateOrNull(value?: string | null) {
 }
 
 function accessKeyNumber(chave?: string | null) {
-  const digits = onlyDigits(chave);
-  return digits.length >= 34 ? digits.slice(25, 34).replace(/^0+/, "") || digits.slice(25, 34) : "";
+  const key = normalizeDfeKey(chave);
+  return key.length >= 34 ? key.slice(25, 34).replace(/^0+/, "") || key.slice(25, 34) : "";
 }
 
 function accessKeySeries(chave?: string | null) {
-  const digits = onlyDigits(chave);
-  return digits.length >= 25 ? digits.slice(22, 25).replace(/^0+/, "") || digits.slice(22, 25) : "";
+  const key = normalizeDfeKey(chave);
+  return key.length >= 25 ? key.slice(22, 25).replace(/^0+/, "") || key.slice(22, 25) : "";
 }
 
 function statusLabel(status: string, entradaFiscalId: string | null, manifestacaoStatus: string | null) {
@@ -1047,7 +1048,7 @@ export async function processarDistribuicaoEmpresa(
     const cert = sefazCert(runtime);
     const pem = pfxToPem(cert.pfx, cert.senha);
     for (const doc of pendentes) {
-      const chave = onlyDigits(doc.chaveAcesso as string);
+      const chave = normalizeDfeKey(doc.chaveAcesso as string);
       try {
         const man = await enviarManifestacao({ ambiente: AMBIENTE_DISTRIBUICAO, cnpj, chNFe: chave, tipoEvento: "210210", cert, pem });
         await prisma.distribuicaoNfeDocumento.update({

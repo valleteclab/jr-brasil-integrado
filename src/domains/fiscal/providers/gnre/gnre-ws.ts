@@ -2,6 +2,7 @@ import https from "node:https";
 import { rootCertificates } from "node:tls";
 import { ICP_BRASIL_ROOT_V10 } from "../sefaz/icp-brasil-ca";
 import { pfxTlsOptions } from "../pfx-utils";
+import { normalizeDfeKey } from "../sefaz/chave";
 
 /**
  * WEBSERVICE GNRE ONLINE (Portal GNRE, SEFAZ-PE) — emissão da guia de recolhimento estadual por
@@ -108,7 +109,7 @@ export function buildLoteGnreXml(g: GuiaGnreInput): string {
     `<receita>${g.receita}</receita>` +
     (g.detalhamento ? `<detalhamentoReceita>${dig(g.detalhamento).padStart(6, "0")}</detalhamentoReceita>` : "") +
     // chaveNfe vazia = UF que NÃO usa documento de origem na receita (ex.: MT 100048).
-    (dig(g.chaveNfe) ? `<documentoOrigem tipo="${(g.tipoDocOrigem ?? "10").padStart(2, "0")}">${dig(g.chaveNfe)}</documentoOrigem>` : "") +
+    (normalizeDfeKey(g.chaveNfe) ? `<documentoOrigem tipo="${(g.tipoDocOrigem ?? "10").padStart(2, "0")}">${normalizeDfeKey(g.chaveNfe)}</documentoOrigem>` : "") +
     (g.produto ? `<produto>${dig(g.produto)}</produto>` : "") +
     `<referencia><periodo>0</periodo><mes>${String(competencia.getMonth() + 1).padStart(2, "0")}</mes><ano>${competencia.getFullYear()}</ano></referencia>` +
     `<dataVencimento>${iso(g.dataVencimento)}</dataVencimento>` +

@@ -5,6 +5,7 @@ import { createAuditLog } from "@/lib/audit/audit-service";
 import { saveFiscalConfig } from "./fiscal-config-use-cases";
 import { getProvedorFiscalAtivo } from "./plataforma-provedor-use-cases";
 import { applyNationalTaxBaseline, PREFIXO_BASE_NACIONAL, UFS } from "../national-tax-baseline";
+import { isValidCnpj, normalizeDocumento } from "@/lib/fiscal/documento";
 
 export type FiscalOnboardingInput = {
   // Identificação da empresa emitente
@@ -160,7 +161,8 @@ function required(value: string | undefined, label: string): string {
  */
 export async function completeFiscalOnboarding(scope: TenantScope, input: FiscalOnboardingInput) {
   const razaoSocial = required(input.razaoSocial, "Razão social");
-  const cnpj = required(input.cnpj, "CNPJ");
+  const cnpj = normalizeDocumento(required(input.cnpj, "CNPJ"));
+  if (!isValidCnpj(cnpj)) throw new FiscalOnboardingError("CNPJ inválido. Confira os caracteres e os dígitos verificadores.");
   const uf = required(input.enderecoUf, "UF").toUpperCase();
 
   if (!UFS.includes(uf as (typeof UFS)[number])) {

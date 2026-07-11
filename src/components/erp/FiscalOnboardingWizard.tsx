@@ -211,7 +211,7 @@ export function FiscalOnboardingWizard({
           <label>
             CNPJ*
             <span style={{ display: "flex", gap: 6 }}>
-              <input value={form.cnpj} onChange={(e) => update("cnpj", e.target.value)} placeholder="00.000.000/0001-00" maxLength={18} style={{ flex: 1 }} />
+              <input value={form.cnpj} onChange={(e) => update("cnpj", e.target.value.toUpperCase())} placeholder="00.000.000/0001-00" maxLength={18} style={{ flex: 1 }} />
               <button type="button" className="btn-erp light sm" onClick={preencherPorCnpj} disabled={buscandoCnpj} style={{ flexShrink: 0, whiteSpace: "nowrap" }}>
                 {buscandoCnpj ? "Buscando…" : "Buscar CNPJ"}
               </button>

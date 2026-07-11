@@ -10,6 +10,7 @@ import { resolveFiscalProvider } from "@/domains/fiscal/providers";
 import { formatBrl } from "@/lib/formatters/currency";
 import { PERFIS_PADRAO, TODOS_MODULOS, isAdminPerfil, type ModuloKey } from "@/lib/auth/modules";
 import { TENANT_FEATURE_FLAGS, type TenantFeatureKey, type TenantFeatures } from "@/lib/auth/feature-flags";
+import { isValidCnpj, normalizeDocumento } from "@/lib/fiscal/documento";
 
 /**
  * Camada de serviço do PAINEL DA PLATAFORMA (dono do SaaS).
@@ -904,12 +905,15 @@ export async function criarClienteCore(
 ): Promise<CriarClienteResult> {
   const nomeCliente = input.nomeCliente?.trim();
   const razaoSocial = input.razaoSocial?.trim();
-  const cnpj = input.cnpj?.trim();
+  const cnpj = normalizeDocumento(input.cnpj);
   const adminNome = input.adminNome?.trim();
   const adminEmail = input.adminEmail?.trim().toLowerCase();
 
   if (!nomeCliente || !razaoSocial || !cnpj || !adminNome || !adminEmail) {
     throw new PlatformAdminError("Preencha nome do cliente, razão social, CNPJ, nome e e-mail do administrador.");
+  }
+  if (!isValidCnpj(cnpj)) {
+    throw new PlatformAdminError("CNPJ inválido. Confira os 14 caracteres e os dígitos verificadores.");
   }
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(adminEmail)) {
     throw new PlatformAdminError("E-mail do administrador inválido.");

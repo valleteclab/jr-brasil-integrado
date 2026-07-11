@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { isValidDocumento, normalizeDocumento } from "@/lib/fiscal/documento";
 
 /**
  * Painel de crédito no cadastro do cliente: consulta o bureau (PF Boa Vista / PJ SQOD), mostra a
@@ -58,8 +59,8 @@ export function ConsultaCreditoCliente({
   useEffect(() => { void carregar(); }, [carregar]);
 
   async function consultar(forcar: boolean) {
-    const doc = (documento || "").replace(/\D/g, "");
-    if (doc.length !== 11 && doc.length !== 14) { setErro("Preencha um CPF ou CNPJ válido no cadastro antes de consultar."); return; }
+    const doc = normalizeDocumento(documento);
+    if (!isValidDocumento(doc)) { setErro("Preencha um CPF ou CNPJ válido no cadastro antes de consultar."); return; }
     const tipo = doc.length === 11 ? "PF" : "PJ";
     if (!window.confirm(`Consultar o crédito ${tipo} deste cliente no bureau? Isso debita 1 consulta da sua carteira de créditos.`)) return;
     setBusy(true); setErro("");

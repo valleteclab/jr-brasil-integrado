@@ -17,6 +17,8 @@
  * helpers locais mais ricos aqui, sem editar `soap.ts`.
  */
 import { qrCodeSvg } from "../_shared/qrcode-svg";
+import { normalizeDocumento } from "@/lib/fiscal/documento";
+import { normalizeDfeKey } from "./chave";
 
 const onlyDigits = (s: string | number | null | undefined) => String(s ?? "").replace(/\D/g, "");
 
@@ -84,7 +86,7 @@ function chaveFormatada(chave: string): string {
 
 /** CNPJ/CPF formatado para exibição. */
 function docFmt(label: string, value: string): string {
-  const d = onlyDigits(value);
+  const d = label === "CNPJ" ? normalizeDocumento(value) : onlyDigits(value);
   if (label === "CNPJ" && d.length === 14) {
     return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`;
   }
@@ -174,8 +176,8 @@ export function parseNfeProc(nfeProcXml: string): DanfeData {
   const xml = nfeProcXml ?? "";
 
   // Chave: atributo Id="NFe<44 dígitos>" do infNFe (fonte canônica). Fallback: tags da chave.
-  const idMatch = /Id\s*=\s*"NFe(\d{44})"/.exec(xml);
-  const chave = idMatch?.[1] ?? onlyDigits(pick(xml, "chNFe")).slice(0, 44);
+  const idMatch = /Id\s*=\s*"NFe([A-Z0-9]{44})"/i.exec(xml);
+  const chave = normalizeDfeKey(idMatch?.[1] ?? pick(xml, "chNFe")).slice(0, 44);
 
   const ide = pickBlock(xml, "ide");
   const emitBlock = pickBlock(xml, "emit");
@@ -311,13 +313,34 @@ const CODE128_STOP = 106;
  * adicionada pelo SVG (margem). Retorna também a sequência de valores para auditoria/teste.
  */
 export function code128cValues(chave44: string): { values: number[]; checksum: number } {
-  const d = onlyDigits(chave44);
-  // Garante 44 dígitos (par). Se vier curto/ímpar, faz padding à esquerda com zeros até 44.
-  const norm = d.length === 44 ? d : d.padStart(44, "0").slice(-44);
+  const norm = normalizeDfeKey(chave44);
+  if (norm.length !== 44) throw new Error(`Chave de acesso deve ter 44 caracteres (recebi ${norm.length}).`);
 
+  // NT Conjunta DFe 2025.001: inicia em Code Set C e alterna para A quando houver letras;
+  // retorna a C quando houver ao menos um par numérico. Code A: ASCII 32..95 => valor ASCII-32.
+  const CODE128_CODE_C = 99;
+  const CODE128_CODE_A = 101;
   const values: number[] = [CODE128_START_C];
-  for (let i = 0; i < norm.length; i += 2) {
-    values.push(Number(norm.slice(i, i + 2)));
+  let set: "A" | "C" = "C";
+  let i = 0;
+  while (i < norm.length) {
+    if (set === "C") {
+      if (/^\d{2}$/.test(norm.slice(i, i + 2))) {
+        values.push(Number(norm.slice(i, i + 2)));
+        i += 2;
+      } else {
+        values.push(CODE128_CODE_A);
+        set = "A";
+      }
+    } else if (/^\d{4}/.test(norm.slice(i))) {
+      values.push(CODE128_CODE_C);
+      set = "C";
+    } else {
+      const code = norm.charCodeAt(i) - 32;
+      if (code < 0 || code > 95) throw new Error(`Caractere inválido na chave de acesso: ${norm[i]}`);
+      values.push(code);
+      i++;
+    }
   }
 
   // Checksum módulo 103: start (peso implícito 1) + cada dado * posição (1-based).
@@ -373,7 +396,7 @@ export function code128cBars(chave44: string, opts?: { height?: number; module?:
  */
 export function consultaNfeNacionalUrl(chave: string, tpAmb: string): string {
   const amb = tpAmb === "2" ? "2" : "1";
-  return `https://www.nfe.fazenda.gov.br/portal/consultaResumo.aspx?chNFe=${onlyDigits(chave)}&tpAmb=${amb}`;
+  return `https://www.nfe.fazenda.gov.br/portal/consultaResumo.aspx?chNFe=${normalizeDfeKey(chave)}&tpAmb=${amb}`;
 }
 
 // --------------------------------------------------------------------------------------------------

@@ -52,7 +52,13 @@ print('VALIDO' if x.validate(etree.parse('/tmp/nfe.xml')) else [str(e) for e in 
 **Portal NF-e → Documentos → Esquemas XML**. Mirror confiável que espelha os XSD: repositório
 `akretion/nfelib` no GitHub. Salvar em `docs/xsd-nt2025002/` (ou `docs/xsd-<nt>/`) e, se for validar
 uma NF-e isolada, replicar o truque do `wrap-nfe.xsd` (`<xs:include>` do leiaute + `<xs:element
-name="NFe" type="TNFe"/>`).
+  name="NFe" type="TNFe"/>`).
+
+- **XSD da NF-e/NFC-e com CNPJ alfanumérico:** `docs/xsd-nt2026004/`
+  - pacote oficial `PL_010d_v1.02`, NT 2026.004 v1.01, publicado em 26/06/2026;
+  - `NFe/tiposBasico_v4.00.xsd` aceita CNPJ `[0-9A-Z]{12}[0-9]{2}` e chave de acesso
+    `[0-9]{6}[0-9A-Z]{12}[0-9]{26}`;
+  - validar uma NF-e isolada contra `docs/xsd-nt2026004/NFe/nfe_v4.00.xsd`.
 
 > ⚠️ **NÃO confie no validador da SEFAZ-RS** (`sefaz.rs.gov.br/nfe/NFE-VAL.aspx`) para campos NOVOS:
 > ele roda um schema desatualizado e acusa `invalid child element 'IBSCBS'` em XML correto. Serve só

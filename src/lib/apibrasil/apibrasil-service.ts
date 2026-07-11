@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db/prisma";
 import { decryptSecret } from "@/lib/security/secret-crypto";
+import { normalizeDocumento } from "@/lib/fiscal/documento";
 
 /**
  * Bureau de crédito ApiBrasil (conta MESTRE da plataforma) — CONSUMO AVULSO: autentica SÓ com o
@@ -64,7 +65,7 @@ export async function consultarCreditoApiBrasil(
   const prod = PRODUTOS_CREDITO[tipoPessoa];
   const endpoint = opts?.path ?? (tipoPessoa === "PF" ? rt.endpointPF : rt.endpointPJ) ?? prod.endpoint;
   const tipoProduto = opts?.tipo ?? (tipoPessoa === "PF" ? rt.tipoPF : rt.tipoPJ) ?? prod.tipo;
-  const doc = documento.replace(/\D/g, "");
+  const doc = normalizeDocumento(documento);
   const homolog = opts?.homolog ?? rt.sandbox;
   const body = opts?.body ?? { tipo: tipoProduto, [prod.docKey]: doc, homolog };
 

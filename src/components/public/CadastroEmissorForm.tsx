@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { isValidCnpj, normalizeDocumento } from "@/lib/fiscal/documento";
 
 /**
  * Cadastro self-service do Emissor de Notas em 2 PASSOS:
@@ -31,12 +32,12 @@ type LookupDados = {
 };
 
 const formatCnpj = (v: string) => {
-  const d = v.replace(/\D/g, "").slice(0, 14);
+  const d = normalizeDocumento(v).slice(0, 14);
   return d
-    .replace(/^(\d{2})(\d)/, "$1.$2")
-    .replace(/^(\d{2})\.(\d{3})(\d)/, "$1.$2.$3")
-    .replace(/\.(\d{3})(\d)/, ".$1/$2")
-    .replace(/(\d{4})(\d)/, "$1-$2");
+    .replace(/^(.{2})(.)/, "$1.$2")
+    .replace(/^(.{2})\.(.{3})(.)/, "$1.$2.$3")
+    .replace(/\.(.{3})(.)/, ".$1/$2")
+    .replace(/(.{4})(.)/, "$1-$2");
 };
 
 const campo = { display: "flex", flexDirection: "column" as const, gap: 4, fontSize: 13, marginBottom: 10 };
@@ -168,7 +169,8 @@ export function CadastroEmissorForm() {
             value={cnpj}
             onChange={(e) => setCnpj(formatCnpj(e.target.value))}
             required
-            inputMode="numeric"
+            inputMode="text"
+            autoCapitalize="characters"
             autoFocus
             placeholder="00.000.000/0000-00"
             style={{ ...input, fontSize: 16, height: 44, textAlign: "center", letterSpacing: "0.03em" }}
@@ -179,7 +181,7 @@ export function CadastroEmissorForm() {
         </p>
         {/* honeypot — escondido de humanos */}
         <input value={site} onChange={(e) => setSite(e.target.value)} tabIndex={-1} autoComplete="off" style={{ position: "absolute", left: -9999, top: -9999 }} aria-hidden="true" />
-        <button type="submit" disabled={busy || cnpj.replace(/\D/g, "").length !== 14} style={{ ...btnPrimario, opacity: cnpj.replace(/\D/g, "").length === 14 ? 1 : 0.6 }}>
+        <button type="submit" disabled={busy || !isValidCnpj(cnpj)} style={{ ...btnPrimario, opacity: isValidCnpj(cnpj) ? 1 : 0.6 }}>
           {busy ? "Buscando na Receita…" : "Buscar minha empresa →"}
         </button>
       </form>

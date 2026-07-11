@@ -2,6 +2,7 @@ import type { AgentTool } from "../../types";
 import { prisma } from "@/lib/db/prisma";
 import { scopedByTenantCompany } from "@/lib/auth/dev-session";
 import { consultarCredito } from "@/domains/credito/application/consulta-credito-use-cases";
+import { normalizeDocumento } from "@/lib/fiscal/documento";
 
 /**
  * Consulta de crédito (bureau) de um cliente PF/PJ. DEBITA 1 consulta da carteira de créditos (ou
@@ -23,7 +24,7 @@ export const consultarCreditoTool: AgentTool = {
     additionalProperties: false
   },
   handler: async (scope, args) => {
-    let documento = String(args.documento ?? "").replace(/\D/g, "");
+    let documento = normalizeDocumento(String(args.documento ?? ""));
     let clienteId: string | null = null;
 
     const busca = args.clienteBusca ? String(args.clienteBusca).trim() : "";
@@ -42,7 +43,7 @@ export const consultarCreditoTool: AgentTool = {
       });
       if (!cli) return { ok: false, data: null, error: `Cliente "${busca}" não encontrado no cadastro.` };
       clienteId = cli.id;
-      if (!documento) documento = (cli.documento ?? "").replace(/\D/g, "");
+      if (!documento) documento = normalizeDocumento(cli.documento);
     }
 
     if (documento.length !== 11 && documento.length !== 14) {

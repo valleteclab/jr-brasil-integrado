@@ -6,6 +6,7 @@ import type { CaixaPageData, PreVendaResumo } from "@/lib/services/cashier";
 import { useRealtime } from "@/lib/realtime/useRealtime";
 import { ClienteCadastroDrawer, type ClienteCriado } from "./ClienteCadastroDrawer";
 import { correspondeBusca } from "@/lib/search/normalize";
+import { normalizeDocumento } from "@/lib/fiscal/documento";
 
 const brl = (v: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
 
@@ -335,7 +336,7 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
       const res = await fetch("/api/erp/creditos/consultar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ documento: (sel.clienteDocumento ?? "").replace(/\D/g, ""), clienteId: sel.clienteId })
+        body: JSON.stringify({ documento: normalizeDocumento(sel.clienteDocumento), clienteId: sel.clienteId })
       });
       const d = (await res.json().catch(() => ({}))) as { normalizado?: { decisao: string | null; score: number | null; temRestricao: boolean; limiteRecomendado: number | null; pdfUrl: string | null }; error?: string };
       if (!res.ok || !d.normalizado) throw new Error(d.error || "Falha na consulta.");
@@ -895,7 +896,7 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
 
       {showNovoCli && (
         <ClienteCadastroDrawer
-          documentoInicial={cliQuery.replace(/\D/g, "").length >= 11 ? cliQuery.replace(/\D/g, "") : ""}
+          documentoInicial={normalizeDocumento(cliQuery).length >= 11 ? normalizeDocumento(cliQuery) : ""}
           onClose={() => setShowNovoCli(false)}
           onCreated={onClienteCriado}
         />

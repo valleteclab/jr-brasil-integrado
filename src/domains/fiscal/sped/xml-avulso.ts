@@ -8,6 +8,8 @@
  */
 
 import { XMLParser } from "fast-xml-parser";
+import { normalizeDocumento } from "@/lib/fiscal/documento";
+import { normalizeDfeKey } from "@/domains/fiscal/providers/sefaz/chave";
 
 export class SpedXmlError extends Error {}
 
@@ -145,8 +147,8 @@ export function dadosDaChave(chave: string): {
   mes: number;
   emitenteDocumento: string;
 } {
-  const c = chave.replace(/\D/g, "");
-  if (c.length !== 44) throw new SpedXmlError("Chave de acesso inválida (esperados 44 dígitos).");
+  const c = normalizeDfeKey(chave);
+  if (c.length !== 44) throw new SpedXmlError("Chave de acesso inválida (esperados 44 caracteres).");
   return {
     emitenteDocumento: c.slice(6, 20),
     modelo: c.slice(20, 22),
@@ -164,7 +166,7 @@ function parseParticipante(no: Record<string, unknown> | undefined, ender: strin
   const nome = texto(no.xNome);
   if (!documento && !nome) return null;
   return {
-    documento: documento.replace(/\D/g, ""),
+    documento: normalizeDocumento(documento),
     nome,
     inscricaoEstadual: texto(no.IE) || null,
     uf: texto(end.UF).toUpperCase() || null,
@@ -190,7 +192,7 @@ export function parseXmlSped(xmlText: string): XmlSpedParseado {
     (raiz as any)?.procEventoNFe?.evento?.infEvento ?? (raiz as any)?.evento?.infEvento ?? null;
   if (evento) {
     const tpEvento = texto(evento.tpEvento);
-    const chave = texto(evento.chNFe).replace(/\D/g, "");
+    const chave = normalizeDfeKey(texto(evento.chNFe));
     if (tpEvento !== "110111") {
       throw new SpedXmlError(`Evento ${tpEvento || "desconhecido"} não suportado (apenas cancelamento 110111).`);
     }
@@ -205,8 +207,8 @@ export function parseXmlSped(xmlText: string): XmlSpedParseado {
   const ide = infNfe.ide ?? {};
   const total = infNfe.total?.ICMSTot ?? {};
   const chave =
-    texto(infNfe["@_Id"]).replace(/^NFe/i, "").replace(/\D/g, "") ||
-    texto((raiz as any)?.nfeProc?.protNFe?.infProt?.chNFe).replace(/\D/g, "");
+    normalizeDfeKey(texto(infNfe["@_Id"]).replace(/^NFe/i, "")) ||
+    normalizeDfeKey(texto((raiz as any)?.nfeProc?.protNFe?.infProt?.chNFe));
   if (chave.length !== 44) throw new SpedXmlError("XML sem chave de acesso (infNFe Id / protNFe).");
 
   const modelo = texto(ide.mod) === "65" ? "65" : "55";

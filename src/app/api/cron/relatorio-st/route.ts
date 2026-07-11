@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { applyCest, ncmPrefixos } from "@/domains/fiscal/cest-baseline";
+import { normalizeDocumento } from "@/lib/fiscal/documento";
 
 /**
  * RELATÓRIO DE ST (read-only, rota de operação protegida por CRON_SECRET). Cruza os NCMs dos
@@ -23,10 +24,10 @@ function autorizado(request: Request): boolean {
 }
 
 async function resolverEmpresa(cnpj: string) {
-  const digitos = cnpj.replace(/\D/g, "");
-  if (!digitos) return null;
+  const documento = normalizeDocumento(cnpj);
+  if (!documento) return null;
   const empresas = await prisma.empresa.findMany({ select: { id: true, tenantId: true, cnpj: true, razaoSocial: true } });
-  return empresas.find((e) => (e.cnpj ?? "").replace(/\D/g, "") === digitos) ?? null;
+  return empresas.find((e) => normalizeDocumento(e.cnpj) === documento) ?? null;
 }
 
 /** POST → recarrega a tabela CEST da fonte oficial (agora com NCMs de 2–8 dígitos como prefixos). */

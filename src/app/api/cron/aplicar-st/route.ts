@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
+import { normalizeDocumento } from "@/lib/fiscal/documento";
 
 /**
  * CLASSIFICAÇÃO DE ST/CEST do catálogo de autopeças (rota de operação, CRON_SECRET). Mapeia cada
@@ -24,10 +25,10 @@ function autorizado(request: Request): boolean {
 }
 
 async function resolverEmpresa(cnpj: string) {
-  const digitos = cnpj.replace(/\D/g, "");
-  if (!digitos) return null;
+  const documento = normalizeDocumento(cnpj);
+  if (!documento) return null;
   const empresas = await prisma.empresa.findMany({ select: { id: true, tenantId: true, cnpj: true, razaoSocial: true } });
-  return empresas.find((e) => (e.cnpj ?? "").replace(/\D/g, "") === digitos) ?? null;
+  return empresas.find((e) => normalizeDocumento(e.cnpj) === documento) ?? null;
 }
 
 /**

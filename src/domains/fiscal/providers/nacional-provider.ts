@@ -18,6 +18,8 @@ import type {
   CancelInput, CancelResult, CorrectionInput, CorrectionResult,
   EmitInput, EmitResult, FiscalProvider, ProviderContext, TestConnectionResult
 } from "./types";
+import { normalizeDocumento } from "@/lib/fiscal/documento";
+import { normalizeDfeKey } from "./sefaz/chave";
 
 export { consultaPublicaNfseUrl };
 
@@ -70,7 +72,7 @@ function buildDpsXml(input: EmitInput, ctx: ProviderContext): { xml: string; id:
   const doc = input.document;
   const e = input.emitter;
   const cMun = pad(e.codigoMunicipioIbge ?? "", 7);
-  const cnpjEmit = onlyDigits(e.cnpj);
+  const cnpjEmit = normalizeDocumento(e.cnpj);
   const serie = doc.serie?.trim() || "1";
   const nDPS = String(input.numero);
   const id = dpsId(cMun, cnpjEmit, serie, nDPS);
@@ -129,7 +131,7 @@ function buildDpsXml(input: EmitInput, ctx: ProviderContext): { xml: string; id:
   // Tomador (opcional no nacional, mas mandamos quando há documento). Endereço é OBRIGATÓRIO
   // quando o ISS é retido pelo tomador (E0237) — então o incluímos sempre que houver.
   const dest = doc.destinatario;
-  const docToma = onlyDigits(dest.documento);
+  const docToma = normalizeDocumento(dest.documento);
   const endT = dest.endereco;
   const cepT = onlyDigits(endT?.cep);
   const tomaEnd =
@@ -153,7 +155,7 @@ function buildDpsXml(input: EmitInput, ctx: ProviderContext): { xml: string; id:
   // SUBSTITUIÇÃO: quando o documento aponta uma NFS-e a substituir, emite-se a nova DPS com o grupo
   // <subst> (chave substituída + motivo). A SEFIN cancela a anterior por substituição e gera a nova.
   const sub = doc.substituicao;
-  const chSubstda = onlyDigits(sub?.chaveSubstituida);
+  const chSubstda = normalizeDfeKey(sub?.chaveSubstituida);
   const substituindo = chSubstda.length === 50;
   const subst = substituindo
     ? `<subst><chSubstda>${chSubstda}</chSubstda><cMotivo>${pad(sub!.cMotivo || "99", 2)}</cMotivo>` +
@@ -221,7 +223,7 @@ const signDps = (xml: string, privateKeyPem: string, certPem: string) => signInf
  * infPedReg (59 chars) = "PRE" + chNFSe(50) + tpEvento(6). nPedRegEvento foi removido do leiaute.
  */
 function buildCancelEventoXml(chave: string, ambiente: AmbienteFiscal, justificativa: string): { xml: string } {
-  const ch = onlyDigits(chave);
+  const ch = normalizeDfeKey(chave);
   // chNFSe: cMun(0-6) + tpAmbGerador[7] + tpInsc[8] + inscFed(9..). CPF=11, CNPJ=14 dígitos.
   const tpInsc = ch.charAt(8);
   const inscFed = ch.slice(9, tpInsc === "1" ? 20 : 23);
@@ -242,7 +244,7 @@ function buildCancelEventoXml(chave: string, ambiente: AmbienteFiscal, justifica
 
 /** POST do pedido de registro de evento (cancelamento) — body { pedidoRegistroEventoXmlGZipB64 }. */
 function postEventoNfse(baseUrl: string, chave: string, eventoGZipB64: string, cert: { pfx: Buffer; senha: string }): Promise<SefinResp> {
-  const url = new URL(`${baseUrl}/nfse/${onlyDigits(chave)}/eventos`);
+  const url = new URL(`${baseUrl}/nfse/${normalizeDfeKey(chave)}/eventos`);
   const payload = JSON.stringify({ pedidoRegistroEventoXmlGZipB64: eventoGZipB64 });
   return new Promise((resolve, reject) => {
     const req = https.request(
@@ -331,7 +333,7 @@ function parseNfseRetorno(nfseXmlGZipB64: string | undefined): { chave?: string;
   if (!nfseXmlGZipB64) return {};
   try {
     const xml = gunzipSync(Buffer.from(nfseXmlGZipB64, "base64")).toString("utf8");
-    const chave = /Id="NFS([0-9]{50})"/.exec(xml)?.[1] ?? /<chNFSe>(\d{50})<\/chNFSe>/.exec(xml)?.[1];
+    const chave = /Id="NFS([A-Z0-9]{50})"/i.exec(xml)?.[1] ?? /<chNFSe>([A-Z0-9]{50})<\/chNFSe>/i.exec(xml)?.[1];
     const nNFSe = /<nNFSe>(\d+)<\/nNFSe>/.exec(xml)?.[1];
     return { chave, nNFSe };
   } catch {
@@ -344,7 +346,7 @@ function chaveFromNfseB64(nfseXmlGZipB64: string | undefined): string | undefine
   if (!nfseXmlGZipB64) return undefined;
   try {
     const xml = gunzipSync(Buffer.from(nfseXmlGZipB64, "base64")).toString("utf8");
-    return /Id="NFS([0-9]{50})"/.exec(xml)?.[1] ?? /<chNFSe>(\d{50})<\/chNFSe>/.exec(xml)?.[1];
+    return /Id="NFS([A-Z0-9]{50})"/i.exec(xml)?.[1] ?? /<chNFSe>([A-Z0-9]{50})<\/chNFSe>/i.exec(xml)?.[1];
   } catch {
     return undefined;
   }
@@ -429,7 +431,7 @@ export class NacionalFiscalProvider implements FiscalProvider {
     if (!ctx.certificado?.pfx) return input.numero;
     const cert = { pfx: ctx.certificado.pfx, senha: ctx.certificado.senha };
     const cMun = pad(input.emitter.codigoMunicipioIbge ?? "", 7);
-    const cnpj = onlyDigits(input.emitter.cnpj);
+    const cnpj = normalizeDocumento(input.emitter.cnpj);
     const serie = input.document.serie?.trim() || "1";
     let n = input.numero;
     for (let i = 0; i < 30; i++) {
@@ -503,7 +505,7 @@ export class NacionalFiscalProvider implements FiscalProvider {
     if (!ctx.certificado?.pfx) {
       return { status: "ERRO", motivo: "Certificado A1 não disponível para assinar/transmitir o cancelamento da NFS-e." };
     }
-    const chave = onlyDigits(input.chaveAcesso || input.providerRef || "");
+    const chave = normalizeDfeKey(input.chaveAcesso || input.providerRef || "");
     if (chave.length !== 50) {
       return { status: "ERRO", motivo: "Chave de acesso da NFS-e ausente/inválida (50 dígitos) — necessária para cancelar." };
     }
@@ -551,7 +553,7 @@ export class NacionalFiscalProvider implements FiscalProvider {
     if (!ctx.certificado?.pfx) {
       return { status: "PROCESSANDO", motivo: "Certificado A1 não disponível para consultar a NFS-e nacional." };
     }
-    const chave = onlyDigits(chaveAcesso);
+    const chave = normalizeDfeKey(chaveAcesso);
     if (chave.length !== 50) {
       return { status: "PROCESSANDO", motivo: "Chave da NFS-e ausente/inválida para consulta." };
     }

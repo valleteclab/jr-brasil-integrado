@@ -9,6 +9,7 @@
 import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import { createAuditLog } from "@/lib/audit/audit-service";
+import { isValidCnpj } from "@/lib/fiscal/documento";
 
 export class PaymentConfigError extends Error {}
 
@@ -75,7 +76,7 @@ export function validarChavePix(chave: string, tipo: string): void {
       if (soDigitos.length !== 11) throw new PaymentConfigError("Chave Pix CPF deve ter 11 dígitos.");
       break;
     case "CNPJ":
-      if (soDigitos.length !== 14) throw new PaymentConfigError("Chave Pix CNPJ deve ter 14 dígitos.");
+      if (!isValidCnpj(c)) throw new PaymentConfigError("Chave Pix CNPJ deve ser um CNPJ válido com 14 caracteres.");
       break;
     case "EMAIL":
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c)) throw new PaymentConfigError("Chave Pix e-mail inválida.");

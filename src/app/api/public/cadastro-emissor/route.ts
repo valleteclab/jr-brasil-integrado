@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { criarClienteCore, PlatformAdminError, type EmpresaDadosExtra } from "@/lib/services/platform-admin";
+import { isValidCnpj, normalizeDocumento } from "@/lib/fiscal/documento";
 
 /**
  * CADASTRO PÚBLICO do plano EMISSOR DE NOTAS (self-service): cria tenant já no plano Emissor com
@@ -17,13 +18,13 @@ export async function POST(request: Request) {
       empresaDados?: EmpresaDadosExtra & { nomeFantasia?: string | null };
     };
     if (body.site) return NextResponse.json({ ok: true }); // bot: finge sucesso
-    const cnpj = (body.cnpj ?? "").replace(/\D/g, "");
+    const cnpj = normalizeDocumento(body.cnpj);
     const empresa = (body.empresa ?? "").trim();
     const nome = (body.nome ?? "").trim();
     const email = (body.email ?? "").trim().toLowerCase();
     const senha = (body.senha ?? "").trim();
     if (!empresa || !nome || !email) return NextResponse.json({ error: "Preencha empresa, seu nome e e-mail." }, { status: 400 });
-    if (cnpj.length !== 14) return NextResponse.json({ error: "Informe um CNPJ válido (14 dígitos)." }, { status: 400 });
+    if (!isValidCnpj(cnpj)) return NextResponse.json({ error: "Informe um CNPJ válido (14 caracteres)." }, { status: 400 });
     if (senha.length < 8) return NextResponse.json({ error: "A senha precisa de pelo menos 8 caracteres." }, { status: 400 });
     if (await prisma.empresa.findFirst({ where: { cnpj }, select: { id: true } })) {
       return NextResponse.json({ error: "Este CNPJ já está cadastrado — faça login ou fale com o suporte." }, { status: 400 });

@@ -1,5 +1,6 @@
 import type { AgentTool } from "../../types";
 import { emitServiceInvoiceAvulsa } from "@/domains/fiscal/application/standalone-emission-use-cases";
+import { normalizeDocumento } from "@/lib/fiscal/documento";
 
 /**
  * Emite uma NFS-e (nota fiscal de serviço) avulsa. Ação IRREVERSÍVEL — exige `confirmar: true`, que o
@@ -53,7 +54,7 @@ export const emitirNfse: AgentTool = {
       const nota = await emitServiceInvoiceAvulsa(scope, {
         receiver: clienteId
           ? { clienteId }
-          : { nome: String(args.nome), documento: String(args.documento).replace(/\D+/g, "") },
+          : { nome: String(args.nome), documento: normalizeDocumento(String(args.documento)) },
         aliquotaIss: args.aliquotaIss != null ? Number(args.aliquotaIss) : null,
         observacoes: args.observacoes ? String(args.observacoes) : null,
         servicos: servicos.map((s) => ({

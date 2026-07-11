@@ -9,6 +9,7 @@ import type {
   FiscalProvider,
   ProviderContext
 } from "./types";
+import { normalizeDocumento } from "@/lib/fiscal/documento";
 
 const UF_CODES: Record<string, string> = {
   AC: "12", AL: "27", AP: "16", AM: "13", BA: "29", CE: "23", DF: "53", ES: "32",
@@ -26,7 +27,7 @@ function mod11Dv(key43: string) {
   let sum = 0;
   let w = 0;
   for (let i = key43.length - 1; i >= 0; i -= 1) {
-    sum += Number(key43[i]) * weights[w % weights.length];
+    sum += (key43.charCodeAt(i) - 48) * weights[w % weights.length];
     w += 1;
   }
   const rest = sum % 11;
@@ -49,7 +50,8 @@ function buildAccessKey(params: {
   const cUF = UF_CODES[(params.uf ?? "BA").toUpperCase()] ?? "29";
   const now = new Date();
   const aamm = `${String(now.getFullYear()).slice(2)}${String(now.getMonth() + 1).padStart(2, "0")}`;
-  const cnpj = onlyDigits(params.cnpj, 14);
+  const cnpj = normalizeDocumento(params.cnpj);
+  if (!/^[A-Z0-9]{12}[0-9]{2}$/.test(cnpj)) throw new Error("CNPJ inválido para gerar chave fiscal.");
   const mod = params.modelo === "NFCE" ? "65" : "55";
   const serie = onlyDigits(params.serie, 3);
   const nNF = String(params.numero).padStart(9, "0");

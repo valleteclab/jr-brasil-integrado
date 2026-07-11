@@ -1,5 +1,5 @@
 /**
- * Chave de acesso da NF-e (44 dígitos) e dígito verificador (módulo 11).
+ * Chave de acesso da NF-e (44 caracteres) e dígito verificador (módulo 11).
  *
  * Layout: cUF(2) + AAMM(4) + CNPJ(14) + mod(2) + serie(3) + nNF(9) + tpEmis(1) + cNF(8) + cDV(1).
  * O cNF (código numérico aleatório) é derivado de forma DETERMINÍSTICA de (CNPJ+mod+serie+nNF):
@@ -7,17 +7,25 @@
  * autorizar duas notas. cNF != nNF é exigido pela SEFAZ (rejeição 539/NT), o que é garantido aqui.
  */
 
+import { normalizeDocumento } from "@/lib/fiscal/documento";
+
 const onlyDigits = (s: string | number | null | undefined) => String(s ?? "").replace(/\D/g, "");
 const padL = (s: string | number, n: number) => onlyDigits(s).padStart(n, "0").slice(-n);
 
+/** Normaliza chave de DFe preservando as letras maiúsculas introduzidas pelo CNPJ alfanumérico. */
+export function normalizeDfeKey(value: string | null | undefined): string {
+  return String(value ?? "").toUpperCase().replace(/[^0-9A-Z]/g, "");
+}
+
 /** Dígito verificador da chave (módulo 11, pesos 2..9 da direita p/ esquerda; resto 0/1 → DV 0). */
 export function calcDV(chave43: string): string {
-  const d = onlyDigits(chave43);
-  if (d.length !== 43) throw new Error(`Chave para DV deve ter 43 dígitos (recebi ${d.length}).`);
+  const d = normalizeDfeKey(chave43);
+  if (d.length !== 43) throw new Error(`Chave para DV deve ter 43 caracteres (recebi ${d.length}).`);
   let soma = 0;
   let peso = 2;
   for (let i = d.length - 1; i >= 0; i--) {
-    soma += Number(d[i]) * peso;
+    // NT Conjunta DFe 2025.001: cada caractere vale ASCII - 48 (0=0, A=17 ... Z=42).
+    soma += (d.charCodeAt(i) - 48) * peso;
     peso = peso === 9 ? 2 : peso + 1;
   }
   const resto = soma % 11;
@@ -27,7 +35,7 @@ export function calcDV(chave43: string): string {
 
 /** cNF determinístico (8 dígitos) a partir dos campos que identificam a nota. Nunca igual ao nNF. */
 export function deterministicCNF(cnpj: string, mod: string, serie: string, nNF: string): string {
-  const seed = `${onlyDigits(cnpj)}|${onlyDigits(mod)}|${onlyDigits(serie)}|${onlyDigits(nNF)}`;
+  const seed = `${normalizeDocumento(cnpj)}|${onlyDigits(mod)}|${onlyDigits(serie)}|${onlyDigits(nNF)}`;
   // Hash FNV-1a 32 bits → 8 dígitos decimais. Estável entre execuções (idempotência de reenvio).
   let h = 0x811c9dc5;
   for (let i = 0; i < seed.length; i++) {
@@ -51,12 +59,16 @@ export type ChaveParts = {
   cNF: string;     // 8
 };
 
-/** Monta a chave de 44 dígitos (43 + DV) a partir das partes. */
+/** Monta a chave de 44 caracteres (43 + DV) a partir das partes. */
 export function montarChave(p: ChaveParts): { chave: string; cDV: string; cNF: string } {
+  const cnpj = normalizeDocumento(p.cnpj);
+  if (!/^[A-Z0-9]{12}[0-9]{2}$/.test(cnpj)) {
+    throw new Error(`CNPJ inválido para chave de acesso: esperado 14 caracteres no padrão alfanumérico.`);
+  }
   const base43 =
-    padL(p.cUF, 2) + padL(p.aamm, 4) + padL(p.cnpj, 14) + padL(p.mod, 2) +
+    padL(p.cUF, 2) + padL(p.aamm, 4) + cnpj + padL(p.mod, 2) +
     padL(p.serie, 3) + padL(p.nNF, 9) + padL(p.tpEmis, 1) + padL(p.cNF, 8);
-  if (base43.length !== 43) throw new Error(`Chave base inválida (${base43.length} dígitos): ${base43}`);
+  if (base43.length !== 43) throw new Error(`Chave base inválida (${base43.length} caracteres): ${base43}`);
   const cDV = calcDV(base43);
   return { chave: base43 + cDV, cDV, cNF: padL(p.cNF, 8) };
 }

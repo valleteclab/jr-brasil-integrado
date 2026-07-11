@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { analisarCatalogo, importarCatalogo } from "@/domains/products/application/catalogo-jr-import";
+import { normalizeDocumento } from "@/lib/fiscal/documento";
 
 /**
  * Importação do catálogo de autopeças (CSV do cliente) na EMPRESA da JR Brasil, rodando dentro do
@@ -29,11 +30,11 @@ function autorizado(request: Request): boolean {
 }
 
 async function resolverEmpresa(cnpj: string) {
-  const digitos = cnpj.replace(/\D/g, "");
-  if (!digitos) return null;
+  const documento = normalizeDocumento(cnpj);
+  if (!documento) return null;
   // Compara por dígitos (o cadastro pode ter máscara).
   const empresas = await prisma.empresa.findMany({ select: { id: true, tenantId: true, cnpj: true, razaoSocial: true } });
-  return empresas.find((e) => (e.cnpj ?? "").replace(/\D/g, "") === digitos) ?? null;
+  return empresas.find((e) => normalizeDocumento(e.cnpj) === documento) ?? null;
 }
 
 export async function POST(request: Request) {

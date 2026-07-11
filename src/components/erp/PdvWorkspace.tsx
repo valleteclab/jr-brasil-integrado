@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { PdvData, PdvProduto, PdvServico, PdvCliente, PdvContaRecebedora, PdvMaquinaCartao } from "@/lib/services/pdv";
 import { correspondeBusca } from "@/lib/search/normalize";
 import { AdminPasswordModal } from "./AdminPasswordModal";
+import { normalizeDocumento } from "@/lib/fiscal/documento";
 
 /** Origem do preço da linha: tabela à vista (padrão), tabela a prazo ou digitado (manual). */
 type TipoPreco = "VISTA" | "PRAZO" | "MANUAL";
@@ -504,7 +505,7 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
     try {
       const res = await fetch("/api/erp/creditos/consultar", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ documento: (clienteSelecionado.documento ?? "").replace(/\D/g, ""), clienteId })
+        body: JSON.stringify({ documento: normalizeDocumento(clienteSelecionado.documento), clienteId })
       });
       const d = (await res.json().catch(() => ({}))) as { normalizado?: { decisao: string | null; score: number | null; temRestricao: boolean; pdfUrl: string | null }; error?: string };
       if (!res.ok || !d.normalizado) throw new Error(d.error || "Falha na consulta.");
@@ -911,7 +912,7 @@ function ClienteModal({
   const filtrados = useMemo(() => {
     const termo = q.trim().toLowerCase();
     const base = termo
-      ? clientes.filter((c) => c.label.toLowerCase().includes(termo) || (c.documento ?? "").includes(termo.replace(/\D/g, "")))
+      ? clientes.filter((c) => c.label.toLowerCase().includes(termo) || normalizeDocumento(c.documento).includes(normalizeDocumento(termo)))
       : clientes;
     return base.slice(0, 50);
   }, [q, clientes]);
@@ -966,7 +967,7 @@ function NovoClientePdvModal({ onCriado, onClose }: { onCriado: (c: PdvCliente) 
     try {
       const payload = {
         razaoSocial: nome.trim(),
-        documento: documento.replace(/\D/g, ""),
+        documento: normalizeDocumento(documento),
         status: "ATIVO",
         contatos: telefone.trim() ? [{ nome: nome.trim(), telefone: telefone.trim(), principal: true }] : [],
         enderecos: []
@@ -978,7 +979,7 @@ function NovoClientePdvModal({ onCriado, onClose }: { onCriado: (c: PdvCliente) 
       });
       const d = (await res.json()) as { id?: string; error?: string };
       if (!res.ok) throw new Error(d.error || "Não foi possível cadastrar o cliente.");
-      onCriado({ id: d.id ?? `tmp-${Date.now()}`, label: nome.trim(), documento: documento.replace(/\D/g, "") || null });
+      onCriado({ id: d.id ?? `tmp-${Date.now()}`, label: nome.trim(), documento: normalizeDocumento(documento) || null });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Não foi possível cadastrar o cliente.");
       setLoading(false);

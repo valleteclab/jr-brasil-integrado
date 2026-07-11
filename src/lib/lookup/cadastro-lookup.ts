@@ -37,7 +37,7 @@ export type CnpjLookupResult = {
   endereco: LookupEndereco;
 };
 
-import { normalizeDocumento } from "@/lib/fiscal/documento";
+import { isValidCnpj, normalizeDocumento } from "@/lib/fiscal/documento";
 
 export class CadastroLookupError extends Error {}
 
@@ -156,7 +156,7 @@ export async function lookupCnpj(cnpj: string): Promise<CnpjLookupResult> {
   // Preserva letras: o CNPJ pode ser alfanumérico (novo formato). As APIs públicas podem ainda
   // não suportá-lo — nesse caso caem no fallback "preencha manualmente" mais abaixo.
   const doc = normalizeDocumento(cnpj);
-  if (doc.length !== 14) throw new CadastroLookupError("CNPJ deve ter 14 caracteres.");
+  if (!isValidCnpj(doc)) throw new CadastroLookupError("CNPJ inválido. Confira os 14 caracteres e os dígitos verificadores.");
 
   const sources = [
     `https://brasilapi.com.br/api/cnpj/v1/${doc}`,

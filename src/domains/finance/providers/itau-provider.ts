@@ -5,6 +5,7 @@ import {
   type PixCobInput, type PixCobCriada, type PixCobConsulta, type PixDevolucaoResult,
   type SaldoConta, type ExtratoConta, type ExtratoParams, type WebhookInfo
 } from "./bank-provider";
+import { normalizeDocumento } from "@/lib/fiscal/documento";
 
 /**
  * Provedor ITAÚ. Autenticação única: OAuth2 client_credentials + mTLS (certificado dinâmico/A1) em
@@ -84,7 +85,7 @@ export function createItauProvider(creds: ItauCreds): BankProvider {
     caps: BANCOS.ITAU.caps,
 
     async incluirBoleto(input: BoletoInput): Promise<BoletoRegistrado> {
-      const doc = input.pagador.numeroCpfCnpj.replace(/\D+/g, "");
+      const doc = normalizeDocumento(input.pagador.numeroCpfCnpj);
       const payload = {
         etapa_processo_boleto: "efetivacao",
         beneficiario: { id_beneficiario: creds.beneficiario.trim() },

@@ -9,6 +9,7 @@ import type {
   FiscalProvider,
   ProviderContext
 } from "./types";
+import { normalizeDocumento } from "@/lib/fiscal/documento";
 
 /**
  * Adapter HTTP genérico para provedores REST de emissão (Focus NFe, NFe.io, PlugNotas,
@@ -53,9 +54,9 @@ export class HttpFiscalProvider implements FiscalProvider {
       numero: input.numero,
       tipo_documento: 1,
       finalidade_emissao: input.document.finalidade === "NORMAL" ? 1 : input.document.finalidade === "COMPLEMENTAR" ? 2 : input.document.finalidade === "AJUSTE" ? 3 : 4,
-      cnpj_emitente: input.emitter.cnpj.replace(/\D/g, ""),
+      cnpj_emitente: normalizeDocumento(input.emitter.cnpj),
       nome_destinatario: input.document.destinatario.nome,
-      cpf_cnpj_destinatario: input.document.destinatario.documento?.replace(/\D/g, "") ?? null,
+      cpf_cnpj_destinatario: normalizeDocumento(input.document.destinatario.documento) || null,
       inscricao_estadual_destinatario: input.document.destinatario.inscricaoEstadual,
       email_destinatario: input.document.destinatario.email,
       valor_frete: input.document.valorFrete,

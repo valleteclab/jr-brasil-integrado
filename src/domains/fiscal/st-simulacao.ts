@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db/prisma";
 import { emitProductInvoiceAvulsa } from "@/domains/fiscal/application/standalone-emission-use-cases";
 import type { TenantScope } from "@/lib/auth/dev-session";
+import { isValidCnpj, normalizeDocumento } from "@/lib/fiscal/documento";
 
 /**
  * SIMULAÇÃO ponta a ponta do ST INTERESTADUAL (remetente substituto, Conv. ICMS 142/2018):
@@ -65,10 +66,10 @@ export async function simularStInterestadual(params: SimulacaoStParams): Promise
   log: string[];
 }> {
   const log: string[] = [];
-  const clienteCnpj = dig(params.clienteCnpj);
+  const clienteCnpj = normalizeDocumento(params.clienteCnpj);
   const clienteIe = dig(params.clienteIe);
   const clienteUf = (params.clienteUf ?? "").toUpperCase();
-  if (!params.empresa || !clienteCnpj || !clienteIe || !clienteUf) {
+  if (!params.empresa || !isValidCnpj(clienteCnpj) || !clienteIe || !clienteUf) {
     throw new Error("Obrigatórios: empresa, clienteCnpj, clienteIe e clienteUf (cliente REAL de outra UF, com IE ativa).");
   }
   const mva = Number(params.mva ?? 71.78);
@@ -78,7 +79,7 @@ export async function simularStInterestadual(params: SimulacaoStParams): Promise
   const provedores = (params.provedores?.length ? params.provedores : ["SEFAZ", "ACBR"]).map((p) => p.toUpperCase());
 
   // ── Empresa + trava de ambiente ──
-  const cnpjEmpresa = dig(params.empresa);
+  const cnpjEmpresa = normalizeDocumento(params.empresa);
   const empresa = await prisma.empresa.findFirst({
     where: cnpjEmpresa.length === 14
       ? { cnpj: cnpjEmpresa }

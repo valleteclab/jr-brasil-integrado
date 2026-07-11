@@ -13,6 +13,8 @@ import { sugerirPorLc116 } from "@/domains/fiscal/nbs";
 import type { ObraInfo, TaxationTypeIss } from "@/domains/fiscal/types";
 import { computeRetencoes, issPorServico } from "@/domains/fiscal/nfse-tax";
 import type { RetencoesInput } from "@/domains/fiscal/nfse-tax";
+import { normalizeDocumento } from "@/lib/fiscal/documento";
+import { normalizeDfeKey } from "@/domains/fiscal/providers/sefaz/chave";
 
 function round2(value: number) {
   return Math.round((value + Number.EPSILON) * 100) / 100;
@@ -183,7 +185,7 @@ async function resolveReceiver(
     if (modelo === "NFCE") {
       return {
         razaoSocial: "Consumidor não identificado",
-        documento: receiver.documento?.replace(/\D/g, "") || null,
+        documento: normalizeDocumento(receiver.documento) || null,
         inscricaoEstadual: null,
         enderecos: [],
         contatos: receiver.email?.trim() ? [{ email: receiver.email.trim(), principal: true }] : []
@@ -194,7 +196,7 @@ async function resolveReceiver(
   const end = receiver.endereco ?? null;
   return {
     razaoSocial: nome,
-    documento: receiver.documento?.replace(/\D/g, "") || null,
+    documento: normalizeDocumento(receiver.documento) || null,
     inscricaoEstadual: receiver.inscricaoEstadual?.trim() || null,
     enderecos: end
       ? [
@@ -461,7 +463,7 @@ export async function emitServiceInvoiceAvulsa(scope: TenantScope, input: Servic
   // e os repassa, para a substituta repeti-los idênticos.
   let camposImutaveisSubst: ReturnType<typeof extrairCamposImutaveisSubstituicao> | null = null;
   if (input.substituicao) {
-    const chave = input.substituicao.chaveSubstituida.replace(/\D/g, "");
+    const chave = normalizeDfeKey(input.substituicao.chaveSubstituida);
     const original = await prisma.notaFiscal.findFirst({
       where: {
         ...scopedByTenantCompany(scope),

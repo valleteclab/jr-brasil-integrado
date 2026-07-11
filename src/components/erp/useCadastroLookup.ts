@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { isValidCnpj, normalizeDocumento } from "@/lib/fiscal/documento";
 
 export type LookupEndereco = {
   logradouro: string | null;
@@ -55,15 +56,15 @@ export function useCadastroLookup() {
   }
 
   async function buscarCnpj(cnpj: string): Promise<CnpjLookup | null> {
-    const digits = cnpj.replace(/\D/g, "");
-    if (digits.length !== 14) {
-      setErro("Informe um CNPJ com 14 dígitos para buscar.");
+    const documento = normalizeDocumento(cnpj);
+    if (!isValidCnpj(documento)) {
+      setErro("Informe um CNPJ válido com 14 caracteres para buscar.");
       return null;
     }
     setBuscandoCnpj(true);
     setErro("");
     try {
-      const res = await fetch(`/api/erp/lookup/cnpj/${digits}`);
+      const res = await fetch(`/api/erp/lookup/cnpj/${encodeURIComponent(documento)}`);
       const data = (await res.json()) as CnpjLookup & { error?: string };
       if (!res.ok) throw new Error(data.error || "CNPJ não encontrado.");
       return data;

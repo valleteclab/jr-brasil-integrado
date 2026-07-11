@@ -12,6 +12,8 @@
  * mesmo espírito de soap.ts/danfe.ts.
  */
 import { qrCodeSvg } from "../_shared/qrcode-svg";
+import { normalizeDocumento } from "@/lib/fiscal/documento";
+import { normalizeDfeKey } from "../sefaz/chave";
 
 const onlyDigits = (s: string | number | null | undefined) => String(s ?? "").replace(/\D/g, "");
 
@@ -57,7 +59,7 @@ function competFmt(d: string): string {
 
 /** CNPJ/CPF formatado. */
 function docFmt(value: string): string {
-  const d = onlyDigits(value);
+  const d = normalizeDocumento(value);
   if (d.length === 14) return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`;
   if (d.length === 11) return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
   return value;
@@ -76,7 +78,7 @@ function cepFmt(v: string): string {
 
 /** URL de consulta pública da NFS-e nacional pela chave (verificação de autenticidade). */
 export function consultaPublicaNfseUrl(chave: string): string {
-  return `https://www.nfse.gov.br/consultapublica/?tpc=1&chave=${onlyDigits(chave)}`;
+  return `https://www.nfse.gov.br/consultapublica/?tpc=1&chave=${normalizeDfeKey(chave)}`;
 }
 
 /** Endereço de uma linha a partir de um bloco enderNac/end. */
@@ -122,8 +124,8 @@ export function parseNfse(nfseXml: string): DanfseData {
   const preDps = xml.split(/<DPS[\s>]/)[0] ?? xml;
   const dps = pickBlock(xml, "infDPS");
 
-  const idMatch = /Id\s*=\s*"NFS(\d{40,60})"/.exec(xml);
-  const chave = idMatch?.[1] ?? onlyDigits(pick(xml, "chNFSe"));
+  const idMatch = /Id\s*=\s*"NFS([A-Z0-9]{40,60})"/i.exec(xml);
+  const chave = normalizeDfeKey(idMatch?.[1] ?? pick(xml, "chNFSe"));
 
   const emitBlock = pickBlock(preDps, "emit");
   const emitEnder = pickBlock(emitBlock, "enderNac");

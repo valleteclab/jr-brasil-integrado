@@ -8,6 +8,8 @@ import type { AmbienteFiscal } from "@prisma/client";
 import { AN_RECEPCAO_EVENTO, cUFFromUF, resolveNfceEndpoints, resolveSefazEndpoints } from "./endpoints";
 import { NFE_NS, SOAP_ACTION, WSDL_NS, pickBlock, pickTag, postSoap, soapEnvelope } from "./soap";
 import { signXml } from "./sign";
+import { normalizeDocumento } from "@/lib/fiscal/documento";
+import { normalizeDfeKey } from "./chave";
 
 const onlyDigits = (s: string | number | null | undefined) => String(s ?? "").replace(/\D/g, "");
 
@@ -54,7 +56,7 @@ export type EventoResult = {
 /** Endpoints por MODELO (posições 21-22 da chave): NFC-e (65) → SVRS; NF-e (55) → autorizadora da
  *  UF. Eventos e consulta de protocolo da NFC-e vão para a SVRS, não para a SEFAZ própria da UF. */
 function endpointsForChave(chNFe: string, uf: string, ambiente: AmbienteFiscal) {
-  const modelo = onlyDigits(chNFe).slice(20, 22);
+  const modelo = normalizeDfeKey(chNFe).slice(20, 22);
   return modelo === "65" ? resolveNfceEndpoints(uf, ambiente) : resolveSefazEndpoints(uf, ambiente);
 }
 
@@ -83,8 +85,8 @@ export function buildEventoCancelamento(params: {
     `<infEvento Id="${Id}">` +
     `<cOrgao>${params.cUF}</cOrgao>` +
     `<tpAmb>${tpAmbDe(params.ambiente)}</tpAmb>` +
-    `<CNPJ>${onlyDigits(params.cnpj)}</CNPJ>` +
-    `<chNFe>${onlyDigits(params.chNFe)}</chNFe>` +
+    `<CNPJ>${normalizeDocumento(params.cnpj)}</CNPJ>` +
+    `<chNFe>${normalizeDfeKey(params.chNFe)}</chNFe>` +
     `<dhEvento>${dhEventoBrasilia()}</dhEvento>` +
     `<tpEvento>${tpEvento}</tpEvento>` +
     `<nSeqEvento>${nSeq}</nSeqEvento>` +
@@ -117,8 +119,8 @@ export function buildEventoCCe(params: {
     `<infEvento Id="${Id}">` +
     `<cOrgao>${params.cUF}</cOrgao>` +
     `<tpAmb>${tpAmbDe(params.ambiente)}</tpAmb>` +
-    `<CNPJ>${onlyDigits(params.cnpj)}</CNPJ>` +
-    `<chNFe>${onlyDigits(params.chNFe)}</chNFe>` +
+    `<CNPJ>${normalizeDocumento(params.cnpj)}</CNPJ>` +
+    `<chNFe>${normalizeDfeKey(params.chNFe)}</chNFe>` +
     `<dhEvento>${dhEventoBrasilia()}</dhEvento>` +
     `<tpEvento>${tpEvento}</tpEvento>` +
     `<nSeqEvento>${nSeq}</nSeqEvento>` +
@@ -144,14 +146,14 @@ export async function enviarEvento(
   cert: { pfx: Buffer; senha: string },
   pem: { privateKeyPem: string; certPem: string }
 ): Promise<EventoResult> {
-  const chNFeEvt = /Id="ID\d{6}(\d{44})/.exec(infEventoXml)?.[1] ?? "";
+  const chNFeEvt = /Id="ID\d{6}([A-Z0-9]{44})/.exec(infEventoXml)?.[1] ?? "";
   const endpoints = endpointsForChave(chNFeEvt, uf, ambiente);
   // <evento> assina o infEvento (Reference ao Id do infEvento, Signature logo após).
   const eventoBase = `<evento versao="1.00" xmlns="${NFE_NS}">${infEventoXml}</evento>`;
   const eventoAssinado = signXml(eventoBase, "infEvento", pem.privateKeyPem, pem.certPem);
   // idLote: alguns serviços da SEFAZ rejeitam (object reference) o lote com id curto — usa os 15
   // últimos dígitos da chave do evento (mesmo padrão do enviNFe na emissão).
-  const idLote = (/Id="ID\d{6}(\d{44})/.exec(infEventoXml)?.[1] ?? "1").slice(-15);
+  const idLote = (/Id="ID\d{6}([A-Z0-9]{44})/.exec(infEventoXml)?.[1] ?? "1").slice(-15);
   const envEvento =
     `<envEvento versao="1.00" xmlns="${NFE_NS}">` +
     `<idLote>${idLote}</idLote>` +
@@ -205,7 +207,10 @@ export async function inutilizarNumeracao(
 ): Promise<InutilizacaoResult> {
   const cUF = cUFFromUF(params.uf);
   const ano = String(params.ano % 100).padStart(2, "0");
-  const cnpj = onlyDigits(params.cnpj).padStart(14, "0");
+  const cnpj = normalizeDocumento(params.cnpj);
+  if (!/^[A-Z0-9]{12}[0-9]{2}$/.test(cnpj)) {
+    return { status: "ERRO", motivo: "CNPJ do emitente inválido para inutilização." };
+  }
   const mod = (params.modelo ?? "55").padStart(2, "0");
   const serie = String(params.serie).padStart(3, "0");
   const nIni = String(params.nNFIni).padStart(9, "0");
@@ -269,7 +274,7 @@ export async function consultarProtocolo(
     `<consSitNFe versao="4.00" xmlns="${NFE_NS}">` +
     `<tpAmb>${tpAmbDe(ambiente)}</tpAmb>` +
     `<xServ>CONSULTAR</xServ>` +
-    `<chNFe>${onlyDigits(chNFe)}</chNFe>` +
+    `<chNFe>${normalizeDfeKey(chNFe)}</chNFe>` +
     `</consSitNFe>`;
   const res = await postSoap(endpoints.consultaProtocolo, soapEnvelope(WSDL_NS.consulta, consSitNFe), cert, SOAP_ACTION.consulta);
   const protNFe = pickBlock(res.body, "protNFe");

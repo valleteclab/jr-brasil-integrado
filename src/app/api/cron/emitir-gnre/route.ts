@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db/prisma";
 import { scopedByTenantCompany } from "@/lib/auth/dev-session";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import { GuiaError, emitirGuiaGnre } from "@/domains/fiscal/application/guia-use-cases";
+import { normalizeDocumento } from "@/lib/fiscal/documento";
 
 /**
  * Rota de OPERAÇÃO (CRON_SECRET, como os crons): emite no webservice GNRE a guia pendente
@@ -22,7 +23,7 @@ export async function POST(request: Request) {
   if (!autorizado(request)) return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
   try {
     const body = (await request.json()) as { empresa?: string; guiaId?: string; listarGuias?: boolean; consultarRecibo?: string; incluirPdf?: boolean; incluirNoticias?: boolean; configUf?: string; receita?: string; receitaGuia?: string; versaoDados?: string; tipoDocOrigem?: string; produto?: string; detalhamento?: string; camposExtras?: { codigo: string; valor: string }[]; valorFecp?: number; semDocOrigem?: boolean };
-    const cnpj = (body.empresa ?? "").replace(/\D+/g, "");
+    const cnpj = normalizeDocumento(body.empresa);
     const empresa = await prisma.empresa.findFirst({
       where: cnpj.length === 14 ? { cnpj } : { razaoSocial: { contains: body.empresa ?? "", mode: "insensitive" } }
     });

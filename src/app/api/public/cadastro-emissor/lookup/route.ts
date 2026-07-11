@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { lookupCnpj, CadastroLookupError } from "@/lib/lookup/cadastro-lookup";
+import { isValidCnpj, normalizeDocumento } from "@/lib/fiscal/documento";
 
 /**
  * LOOKUP PÚBLICO de CNPJ do cadastro do Emissor (passo 1 do /cadastro): busca os dados na
@@ -13,8 +14,8 @@ export async function POST(request: Request) {
   try {
     const body = (await request.json()) as { cnpj?: string; site?: string };
     if (body.site) return NextResponse.json({ error: "CNPJ não encontrado." }, { status: 404 }); // bot
-    const cnpj = (body.cnpj ?? "").replace(/\D/g, "");
-    if (cnpj.length !== 14) return NextResponse.json({ error: "Informe um CNPJ válido (14 dígitos)." }, { status: 400 });
+    const cnpj = normalizeDocumento(body.cnpj);
+    if (!isValidCnpj(cnpj)) return NextResponse.json({ error: "Informe um CNPJ válido (14 caracteres)." }, { status: 400 });
 
     if (await prisma.empresa.findFirst({ where: { cnpj }, select: { id: true } })) {
       return NextResponse.json({ jaCadastrado: true });

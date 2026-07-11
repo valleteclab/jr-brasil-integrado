@@ -1,4 +1,5 @@
 import { prisma } from "../src/lib/db/prisma";
+import { normalizeDocumento } from "../src/lib/fiscal/documento";
 import { AcbrFiscalProvider } from "../src/domains/fiscal/providers/acbr-provider";
 import { getFiscalRuntimeConfig } from "../src/domains/fiscal/application/fiscal-config-use-cases";
 import type { ProviderContext } from "../src/domains/fiscal/providers/types";
@@ -31,7 +32,7 @@ async function diagEmpresa(emp: { id: string; tenantId: string; razaoSocial: str
   };
   const { baseUrl } = access.resolveConfig(ctx);
   const token = await access.getAccessToken(ctx);
-  const cnpj = emp.cnpj.replace(/\D/g, "");
+  const cnpj = normalizeDocumento(emp.cnpj);
   const auth = { Authorization: `Bearer ${token}` };
 
   const empRes = await fetch(`${baseUrl}/empresas/${cnpj}`, { headers: { ...auth, Accept: "application/json" } });

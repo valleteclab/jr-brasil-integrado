@@ -10,6 +10,7 @@
  * online cobre o fluxo normal; contingência entra quando necessário).
  */
 import { createHash } from "node:crypto";
+import { normalizeDfeKey } from "./chave";
 import type { AmbienteFiscal } from "@prisma/client";
 
 export type NfceQrUrls = { qrCode: string; urlChave: string };
@@ -59,7 +60,7 @@ export type NfceQrInput = {
 export function buildNfceQrCode(input: NfceQrInput): NfceQrUrls {
   const urls = resolveNfceUrls(input.uf, input.ambiente);
   const idCsc = (String(input.idCsc).replace(/\D/g, "").replace(/^0+/, "")) || "0";
-  const chave = String(input.chave).replace(/\D/g, "");
+  const chave = normalizeDfeKey(input.chave);
   const dados = `${chave}|2|${input.tpAmb}|${idCsc}`;
   const hash = createHash("sha1").update(dados + input.csc, "utf8").digest("hex").toUpperCase();
   return { qrCode: `${urls.qrCode}?p=${dados}|${hash}`, urlChave: urls.urlChave };

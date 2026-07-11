@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useCadastroLookup } from "./useCadastroLookup";
+import { normalizeDocumento } from "@/lib/fiscal/documento";
 
 export type ClienteCriado = { id: string; label: string; documento: string | null };
 type NovoClienteTipo = "PJ" | "PF";
@@ -84,7 +85,7 @@ export function NovoClienteDrawer({ onClose, onCreated }: { onClose: () => void;
       const data = await res.json() as { id?: string; error?: string };
       if (!res.ok) throw new Error(data.error || "Não foi possível cadastrar o cliente.");
       const label = nomeFantasia.trim() ? `${nomeFantasia.trim()} (${razaoSocial.trim()})` : razaoSocial.trim();
-      onCreated({ id: data.id ?? `tmp-${Date.now()}`, label, documento: documento.replace(/\D/g, "") });
+      onCreated({ id: data.id ?? `tmp-${Date.now()}`, label, documento: normalizeDocumento(documento) });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Não foi possível cadastrar o cliente.");
     } finally {

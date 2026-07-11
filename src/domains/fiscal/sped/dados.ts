@@ -18,6 +18,7 @@ import {
   type FinalidadeEntrada
 } from "@/domains/fiscal/finalidade-entrada";
 import { loadFinalidadeRules, pickFinalidadeRule } from "@/domains/fiscal/application/finalidade-regra-use-cases";
+import { normalizeDocumento } from "@/lib/fiscal/documento";
 import { aliquotaInternaIcmsSafe, aliquotaIcmsVendaSafe } from "@/domains/fiscal/national-tax-baseline";
 import { parseXmlSped, type XmlDocumentoSped, type XmlItem, type XmlParticipante } from "./xml-avulso";
 import type {
@@ -256,7 +257,7 @@ export async function carregarSpedInput(scope: TenantScope, params: CarregarSped
       codigoParticipante = nota.cliente.id;
       if (!participantes.has(nota.cliente.id)) {
         const end = nota.cliente.enderecos[0] ?? null;
-        const doc = (nota.cliente.documento ?? "").replace(/\D/g, "");
+        const doc = normalizeDocumento(nota.cliente.documento);
         participantes.set(nota.cliente.id, {
           codigo: nota.cliente.id,
           nome: nota.cliente.razaoSocial,
@@ -386,7 +387,7 @@ export async function carregarSpedInput(scope: TenantScope, params: CarregarSped
     }
 
     if (!participantes.has(entrada.fornecedorId)) {
-      const doc = (entrada.fornecedor.documento ?? "").replace(/\D/g, "");
+      const doc = normalizeDocumento(entrada.fornecedor.documento);
       const emitXml = extrairEmitenteXml(entrada.xmlImportacao?.xmlOriginal);
       participantes.set(entrada.fornecedorId, {
         codigo: entrada.fornecedorId,
@@ -544,7 +545,7 @@ export async function carregarSpedInput(scope: TenantScope, params: CarregarSped
       prisma.fornecedor.findMany({ where: { ...base }, select: { id: true, documento: true } })
     ]);
     const fornecedorPorDocumento = new Map(
-      fornecedoresDocs.map((f) => [(f.documento ?? "").replace(/\D/g, ""), f.id])
+      fornecedoresDocs.map((f) => [normalizeDocumento(f.documento), f.id])
     );
     const participanteXml = (p: XmlParticipante): string => {
       const codigo = `X-${p.documento || p.nome.slice(0, 20)}`;
@@ -893,7 +894,7 @@ export async function carregarSpedInput(scope: TenantScope, params: CarregarSped
     // G130 referencia um participante do 0150 — garante o fornecedor do bem no cadastro.
     let codigoParticipante: string | null = null;
     if (novoNoPeriodo && bem.fornecedorDocumento) {
-      const docForn = bem.fornecedorDocumento.replace(/\D/g, "");
+      const docForn = normalizeDocumento(bem.fornecedorDocumento);
       codigoParticipante = `CB-${docForn}`;
       const jaExiste = Array.from(participantes.values()).find((p) => (p.cnpj ?? p.cpf) === docForn);
       if (jaExiste) {

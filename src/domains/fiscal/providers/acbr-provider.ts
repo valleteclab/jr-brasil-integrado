@@ -13,6 +13,7 @@ import type {
 import { randomBytes } from "node:crypto";
 import type { ItemTaxResult } from "@/domains/fiscal/types";
 import { normalizeDocumento } from "@/lib/fiscal/documento";
+import { normalizeDfeKey } from "./sefaz/chave";
 import { cTribNacFromCodigo } from "@/domains/fiscal/codigo-tributacao-nacional";
 
 /**
@@ -671,7 +672,7 @@ export class AcbrFiscalProvider implements FiscalProvider {
     const cMunFG = input.emitter.codigoMunicipioIbge ?? "";
     const isNfce = modelo === "NFCE";
     const idDest = isNfce ? 1 : ufEmit && ufDest && ufEmit !== ufDest ? 2 : 1;
-    const refChave = onlyDigits(input.document.chaveReferenciada);
+    const refChave = normalizeDfeKey(input.document.chaveReferenciada);
     // Devolução é operação sem pagamento (tPag=90), independente da forma informada.
     const tpPag = input.document.finalidade === "DEVOLUCAO" ? "90" : mapTpPag(input.document.formaPagamento);
     // Consumidor final: NFC-e sempre; NF-e quando o destinatário é não-contribuinte (sem IE),
@@ -850,7 +851,7 @@ export class AcbrFiscalProvider implements FiscalProvider {
     const substInfo = input.document.substituicao;
     const subst = substInfo?.chaveSubstituida?.trim()
       ? {
-          chSubstda: onlyDigits(substInfo.chaveSubstituida),
+          chSubstda: normalizeDfeKey(substInfo.chaveSubstituida),
           cMotivo: substInfo.cMotivo || "99",
           ...(sanitizeTextoNfse(substInfo.xMotivo) ? { xMotivo: sanitizeTextoNfse(substInfo.xMotivo) } : {})
         }

@@ -113,6 +113,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 | 2026-05-26 | `7601655` | Enviado | Versionamento do MVP ERP standalone como referência do projeto integrado. |
 | 2026-05-26 | `ad9eff3` | Enviado | Atualização do histórico após versionamento do MVP ERP standalone. |
 | 2026-05-26 | `425b645` | Enviado | Refatoração do schema Prisma e seed para multiempresa com campos em PT-BR. |
+| 2026-07-10 | A gerar | Em andamento | Adequação integral ao CNPJ alfanumérico: cadastros, chaves DFe, NF-e/NFC-e/NFS-e, eventos, DANFE, SPED, bancos e schemas oficiais da NT 2026.004. |
 | 2026-05-26 | A gerar | Em andamento | Atualização do histórico após refatoração multiempresa do schema Prisma. |
 | 2026-05-26 | A gerar | Em andamento | Instalação de dependências, correção do BOM do schema Prisma, criação do Prisma Client centralizado, services iniciais e conexão da loja ao service de produtos. |
 | 2026-05-26 | A gerar | Em andamento | Criação do shell compartilhado do ERP e das rotas `/erp/produtos` e `/erp/clientes` usando services com escopo multiempresa. |
@@ -463,6 +464,17 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - IMPORTACAO XML (conferencia): bloco "novo SKU" com margem/preco a vista e a prazo (sugeridos pelas margens padrao; itens sem vinculo ja chegam com precos preenchidos), persistidos em `EntradaFiscalItem.precoVendaPrazoDefinido`.
 - CODIGO INTERNO: produto criado pela entrada fiscal agora recebe SKU interno gerado (`PRD-NNNNNN`) em vez do cProd do fornecedor; o codigo do fornecedor fica em `codigoOriginal` e no vinculo `ProdutoFornecedor` (ja gravado no vinculo manual e no processamento), que vincula automaticamente as proximas importacoes do mesmo fornecedor (matchProduct por fornecedor+codigo ja existia). O processamento reusa produto ja vinculado ao fornecedor+codigo antes de criar (evita duplicar entre notas).
 - Validacao: `prisma generate`, `tsc --noEmit` e `next lint` ok.
+
+## Atualizacao operacional - 2026-07-10 - CNPJ alfanumerico
+
+- NUCLEO: validacao oficial do CNPJ alfanumerico consolidada em `src/lib/fiscal/documento.ts`, com normalizacao em maiusculas, formato `[A-Z0-9]{12}[0-9]{2}` e calculo dos DVs por ASCII menos 48. Vetor oficial `12.ABC.345/01DE-35` coberto por teste automatizado.
+- CADASTROS: empresa, onboarding fiscal, cadastro publico do Emissor, clientes, fornecedores, loja, PDV, caixa, assistente e lookup passaram a preservar letras e validar o documento canonico sem mascara.
+- DFE: chave NF-e/NFC-e de 44 caracteres agora preserva o CNPJ alfanumerico e calcula o DV pelo valor ASCII; XML direto SEFAZ, referencias, distribuicao, eventos, consulta, cancelamento, CC-e e inutilizacao foram adaptados.
+- DANFE/NFC-e: parser e URLs preservam chaves alfanumericas; codigo de barras passou de Code-128C puro para alternancia Code-128C/Code-128A conforme a NT Conjunta DFe 2025.001.
+- NFS-E/SPED/FINANCEIRO: campos CNPJ da DPS/NFS-e, importacao XML, participantes SPED, chaves DFe, Pix CNPJ, bancos, Asaas e bureau passaram a usar normalizacao alfanumerica.
+- SCHEMAS: adicionado o pacote oficial `PL_010d_v1.02` da NT 2026.004 v1.01 em `docs/xsd-nt2026004/`.
+- BANCO DE TESTES: conexao local confirmada no PostgreSQL Railway; 12 migrations pendentes foram aplicadas com sucesso por `prisma migrate deploy`; campos de CNPJ/documento permanecem `TEXT`, sem migration adicional necessaria para armazenar letras.
+- VALIDACAO: `npm run test:cnpj`, `npx tsc --noEmit`, `npm run lint`, build Next.js standalone e NF-e assinada validada contra `docs/xsd-nt2026004/NFe/nfe_v4.00.xsd` (`XSD_NT2026004_VALIDO`).
 
 ## Atualizacao operacional - 2026-07-03 - vendedor escolhe o preco na venda (a vista / a prazo / manual)
 

@@ -1,4 +1,5 @@
 import PDFKit from "pdfkit";
+import { formatDocumento } from "@/lib/fiscal/documento";
 
 /**
  * Gerador GENÉRICO de relatório em PDF (A4) com a identidade do cliente: logotipo + razão social/
@@ -57,9 +58,7 @@ function logoBuffer(dataUrl?: string | null): Buffer | undefined {
 }
 
 function formatCnpj(cnpj?: string | null): string {
-  const d = (cnpj ?? "").replace(/\D+/g, "");
-  if (d.length !== 14) return cnpj ?? "";
-  return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`;
+  return formatDocumento(cnpj);
 }
 
 export async function gerarRelatorioPdf(input: RelatorioPdfInput): Promise<Buffer> {

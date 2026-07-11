@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useCadastroLookup } from "./useCadastroLookup";
+import { normalizeDocumento } from "@/lib/fiscal/documento";
 
 export type ClienteCriado = {
   id: string;
@@ -29,7 +30,7 @@ export function ClienteCadastroDrawer({
   documentoInicial?: string;
 }) {
   const { buscarCnpj, buscarCep, buscandoCnpj, buscandoCep, erro: lookupErro } = useCadastroLookup();
-  const [tipoPessoa, setTipoPessoa] = useState<"PJ" | "PF">(documentoInicial.replace(/\D/g, "").length === 11 ? "PF" : "PJ");
+  const [tipoPessoa, setTipoPessoa] = useState<"PJ" | "PF">(normalizeDocumento(documentoInicial).length === 11 ? "PF" : "PJ");
   const [documento, setDocumento] = useState(documentoInicial);
   const [razaoSocial, setRazaoSocial] = useState("");
   const [nomeFantasia, setNomeFantasia] = useState("");
@@ -109,7 +110,7 @@ export function ClienteCadastroDrawer({
       onCreated({
         id: data.id ?? `tmp-${Date.now()}`,
         label,
-        documento: documento.replace(/\D/g, "") || null,
+        documento: normalizeDocumento(documento) || null,
         uf: uf.trim().toUpperCase() || null,
         inscricaoEstadual: inscricaoEstadual.trim() || null,
         email: email.trim() || null,

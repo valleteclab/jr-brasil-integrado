@@ -14,6 +14,7 @@
  */
 import { readFileSync } from "node:fs";
 import { prisma } from "../src/lib/db/prisma";
+import { normalizeDocumento } from "../src/lib/fiscal/documento";
 import { encryptSecret } from "../src/lib/security/secret-crypto";
 import { simularStInterestadual } from "../src/domains/fiscal/st-simulacao";
 
@@ -29,7 +30,7 @@ async function main() {
   if (pfxPath) {
     const senha = arg("pfx-pass") || process.env.PFX_PASS || "";
     if (!senha) throw new Error("Informe --pfx-pass= (ou PFX_PASS) junto com --pfx=.");
-    const cnpj = arg("empresa").replace(/\D+/g, "");
+    const cnpj = normalizeDocumento(arg("empresa"));
     const empresa = await prisma.empresa.findFirst({
       where: cnpj.length === 14 ? { cnpj } : { id: arg("empresa") }
     });

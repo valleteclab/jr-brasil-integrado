@@ -14,6 +14,8 @@ import type { EmitInput } from "../types";
 import type { ItemTaxResult } from "../../types";
 import { aammFromDhEmi, deterministicCNF, montarChave } from "./chave";
 import { cUFFromUF } from "./endpoints";
+import { normalizeDocumento } from "@/lib/fiscal/documento";
+import { normalizeDfeKey } from "./chave";
 
 const onlyDigits = (s: string | number | null | undefined) => String(s ?? "").replace(/\D/g, "");
 
@@ -187,7 +189,7 @@ function enderEmitXml(e: EmitInput["emitter"]): string {
 
 function destXml(input: EmitInput, tpAmb: string): string {
   const d = input.document.destinatario;
-  const doc = onlyDigits(d.documento);
+  const doc = normalizeDocumento(d.documento);
   const docTag = doc.length === 14 ? tag("CNPJ", doc) : doc.length === 11 ? tag("CPF", doc) : "";
   // Homologação: a razão social do destinatário é fixada por exigência da SEFAZ (rejeição sem isso).
   const xNome = tpAmb === "2"
@@ -301,7 +303,7 @@ export function buildNfeXml(input: EmitInput): BuildNfeResult {
   const dhEmi = dhEmiBrasilia();
   const cNF = deterministicCNF(e.cnpj, mod, serie, String(nNF));
   const { chave, cDV } = montarChave({
-    cUF, aamm: aammFromDhEmi(dhEmi), cnpj: onlyDigits(e.cnpj), mod, serie, nNF: String(nNF), tpEmis, cNF
+    cUF, aamm: aammFromDhEmi(dhEmi), cnpj: normalizeDocumento(e.cnpj), mod, serie, nNF: String(nNF), tpEmis, cNF
   });
 
   // idDest: 1=interna, 2=interestadual, 3=exterior. indFinal: 1 quando destinatário não-contribuinte.
@@ -309,7 +311,7 @@ export function buildNfeXml(input: EmitInput): BuildNfeResult {
   const idDest = isNfce ? "1" : ufEmit && ufDest && ufEmit !== ufDest ? "2" : "1";
   const indFinal = isNfce || !doc.destinatario.inscricaoEstadual ? "1" : "0";
   const tpNF = !isNfce && doc.finalidade === "DEVOLUCAO" ? "0" : "1";
-  const refChave = onlyDigits(doc.chaveReferenciada);
+  const refChave = normalizeDfeKey(doc.chaveReferenciada);
 
   const ide =
     `<ide>` +
@@ -328,7 +330,7 @@ export function buildNfeXml(input: EmitInput): BuildNfeResult {
 
   const emit =
     `<emit>` +
-    tag("CNPJ", onlyDigits(e.cnpj)) +
+    tag("CNPJ", normalizeDocumento(e.cnpj)) +
     tag("xNome", esc(sanitize(e.razaoSocial))) +
     (e.nomeFantasia ? tag("xFant", esc(sanitize(e.nomeFantasia))) : "") +
     enderEmitXml(e) +
@@ -338,7 +340,7 @@ export function buildNfeXml(input: EmitInput): BuildNfeResult {
     `</emit>`;
 
   // NFC-e: destinatário é OPCIONAL (consumidor não identificado) — só inclui quando há CPF/CNPJ.
-  const temDocDest = onlyDigits(doc.destinatario.documento).length >= 11;
+  const temDocDest = normalizeDocumento(doc.destinatario.documento).length >= 11;
   const dest = isNfce && !temDocDest ? "" : destXml(input, tpAmb);
 
   // autXML: grupo de autorização de download do XML, exigido por algumas UFs (BA rejeita sem ele).

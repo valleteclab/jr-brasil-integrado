@@ -1,6 +1,6 @@
 /**
  * Validação e normalização de documentos (CNPJ e CPF), com suporte ao CNPJ ALFANUMÉRICO
- * da Receita Federal (produção a partir de 06/07/2026).
+ * da Receita Federal (implantação progressiva a partir de 31/07/2026).
  *
  * Novo CNPJ: 14 posições no formato [A-Z0-9]{12}[0-9]{2} — as 12 primeiras (raiz + ordem)
  * aceitam letras e números; os 2 dígitos verificadores continuam numéricos. O DV é calculado

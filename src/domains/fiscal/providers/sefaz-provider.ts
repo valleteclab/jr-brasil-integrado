@@ -23,12 +23,13 @@ import {
   buildEventoCCe, buildEventoCancelamento, consultarProtocolo, enviarEvento,
   inutilizarNumeracao, type InutilizacaoResult
 } from "./sefaz/eventos";
+import { normalizeDfeKey } from "./sefaz/chave";
 
 const onlyDigitsStr = (s: string | null | undefined) => String(s ?? "").replace(/\D/g, "");
 /** cUF embutido na chave de acesso (2 primeiros dígitos). */
-const cUFFromChave = (chave: string) => onlyDigitsStr(chave).slice(0, 2);
+const cUFFromChave = (chave: string) => normalizeDfeKey(chave).slice(0, 2);
 /** CNPJ do emitente embutido na chave de acesso (dígitos 7–20, 14 chars). */
-const cnpjFromChave = (chave: string) => onlyDigitsStr(chave).slice(6, 20);
+const cnpjFromChave = (chave: string) => normalizeDfeKey(chave).slice(6, 20);
 
 /** cStat de autorização → status interno. 100/150 = autorizada; 110/301/302/303 = denegada. */
 function statusFromCStat(cStat: string): StatusNotaFiscal {
@@ -147,7 +148,7 @@ export class SefazFiscalProvider implements FiscalProvider {
     if (!ctx.certificado?.pfx) {
       return { status: "ERRO", motivo: "Certificado A1 não disponível para assinar/transmitir o cancelamento." };
     }
-    const chave = onlyDigitsStr(input.chaveAcesso);
+    const chave = normalizeDfeKey(input.chaveAcesso);
     if (chave.length !== 44) {
       return { status: "ERRO", motivo: "Chave de acesso da NF-e ausente/inválida — necessária para o cancelamento." };
     }
@@ -193,7 +194,7 @@ export class SefazFiscalProvider implements FiscalProvider {
     if (!ctx.certificado?.pfx) {
       return { status: "ERRO", motivo: "Certificado A1 não disponível para assinar/transmitir a carta de correção." };
     }
-    const chave = onlyDigitsStr(input.chaveAcesso);
+    const chave = normalizeDfeKey(input.chaveAcesso);
     if (chave.length !== 44) {
       return { status: "ERRO", motivo: "Chave de acesso da NF-e ausente/inválida — necessária para a carta de correção." };
     }
@@ -226,7 +227,7 @@ export class SefazFiscalProvider implements FiscalProvider {
     if (!ctx.certificado?.pfx) {
       return { status: "PROCESSANDO", motivo: "Certificado A1 não disponível para consultar a NF-e na SEFAZ." };
     }
-    const chave = onlyDigitsStr(chaveAcesso);
+    const chave = normalizeDfeKey(chaveAcesso);
     if (chave.length !== 44) {
       return { status: "PROCESSANDO", motivo: "Chave de acesso inválida para consulta de protocolo." };
     }

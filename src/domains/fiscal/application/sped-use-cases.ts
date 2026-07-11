@@ -21,6 +21,8 @@ import {
   type FinalidadeEntrada
 } from "@/domains/fiscal/finalidade-entrada";
 import { loadFinalidadeRules, pickFinalidadeRule } from "@/domains/fiscal/application/finalidade-regra-use-cases";
+import { normalizeDocumento } from "@/lib/fiscal/documento";
+import { normalizeDfeKey } from "@/domains/fiscal/providers/sefaz/chave";
 
 export { SpedError };
 
@@ -237,7 +239,7 @@ export async function getSpedArquivoConteudo(scope: TenantScope, id: string): Pr
     select: { ano: true, mes: true, conteudo: true, empresa: { select: { cnpj: true } } }
   });
   if (!a) throw new SpedError("Arquivo SPED não encontrado.");
-  const cnpj = (a.empresa.cnpj ?? "").replace(/\D/g, "") || "EMPRESA";
+  const cnpj = normalizeDocumento(a.empresa.cnpj) || "EMPRESA";
   const nomeArquivo = `EFD_ICMS_IPI_${cnpj}_${String(a.mes).padStart(2, "0")}${a.ano}.txt`;
   return { nomeArquivo, conteudo: a.conteudo };
 }
@@ -436,7 +438,7 @@ export async function importarSpedXmls(
     select: { cnpj: true }
   });
   if (!empresa) throw new SpedError("Empresa não encontrada para o escopo atual.");
-  const cnpjEmpresa = (empresa.cnpj ?? "").replace(/\D/g, "");
+  const cnpjEmpresa = normalizeDocumento(empresa.cnpj);
 
   const resultados: ImportarXmlResultado[] = [];
   let importados = 0;
@@ -929,7 +931,7 @@ export async function criarCiapBem(scope: TenantScope, input: CriarCiapBemInput,
         imobilizadoEm,
         fornecedorNome: input.fornecedorNome?.trim() || null,
         docNumero: input.docNumero?.trim() || null,
-        chaveAcesso: input.chaveAcesso?.replace(/\D/g, "") || null,
+        chaveAcesso: normalizeDfeKey(input.chaveAcesso) || null,
         observacoes: "Cadastrado manualmente."
       }
     });

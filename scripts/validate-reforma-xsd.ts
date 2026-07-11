@@ -21,7 +21,7 @@ function selfSigned() {
 const input: EmitInput = {
   numero: 123, total: 250.0, integrationId: "val-1",
   emitter: {
-    cnpj: "15130181000148", razaoSocial: "Empresa Teste LTDA", inscricaoEstadual: "1234567",
+    cnpj: process.env.CNPJ_TESTE || "15130181000148", razaoSocial: "Empresa Teste LTDA", inscricaoEstadual: "1234567",
     inscricaoMunicipal: null, uf: "BA", codigoMunicipioIbge: "2927408", regime: "LUCRO_PRESUMIDO",
     nomeFantasia: "Teste", logradouro: "Rua das Flores", numero: "100", complemento: null,
     bairro: "Centro", cidade: "Salvador", cep: "40010000", telefone: "7122223333"
@@ -31,7 +31,7 @@ const input: EmitInput = {
   document: {
     modelo: "NFE", finalidade: "NORMAL", naturezaOperacao: "VENDA DE MERCADORIA",
     ambiente: "HOMOLOGACAO", provedor: "SEFAZ", serie: "1", chaveReferenciada: null,
-    destinatario: { nome: "Cliente Teste", documento: "11444777000161", inscricaoEstadual: null, email: null, uf: "BA",
+    destinatario: { nome: "Cliente Teste", documento: process.env.CNPJ_DEST_TESTE || "11444777000161", inscricaoEstadual: null, email: null, uf: "BA",
       endereco: { logradouro: "Av Sete de Setembro", numero: "200", complemento: null, bairro: "Centro", cep: "40010000", cidade: "Salvador", uf: "BA", codigoMunicipioIbge: "2927408" } },
     formaPagamento: "Dinheiro", condicaoPagamento: null, pagamentos: null,
     informacoesComplementares: null, valorFrete: 0, modalidadeFrete: 9, valorSeguro: 0, valorDesconto: 0, outrasDespesas: 0,

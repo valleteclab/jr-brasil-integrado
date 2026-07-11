@@ -4,6 +4,7 @@ import { scopedByTenantCompany } from "@/lib/auth/dev-session";
 import { debitarCarteira, CreditoError } from "./carteira-use-cases";
 import { normalizarBureau, type CreditoNormalizado } from "./bureau-normalizer";
 import { consultarCreditoApiBrasil, getApiBrasilRuntime } from "@/lib/apibrasil/apibrasil-service";
+import { isValidDocumento, normalizeDocumento } from "@/lib/fiscal/documento";
 
 /**
  * Consulta de crédito de um cliente (PF/PJ) no bureau, com CACHE e COBRANÇA:
@@ -23,12 +24,12 @@ export type ResultadoConsulta = {
 };
 
 function tipoDoDocumento(documento: string): "PF" | "PJ" {
-  return documento.replace(/\D/g, "").length > 11 ? "PJ" : "PF";
+  return normalizeDocumento(documento).length > 11 ? "PJ" : "PF";
 }
 
 /** Última consulta válida (cache) para um documento neste tenant. */
 export async function consultaValida(scope: TenantScope, documento: string) {
-  const doc = documento.replace(/\D/g, "");
+  const doc = normalizeDocumento(documento);
   return prisma.consultaCredito.findFirst({
     where: { tenantId: scope.tenantId, documento: doc, validoAte: { gt: new Date() } },
     orderBy: { consultadoEm: "desc" }
@@ -53,8 +54,8 @@ export async function consultarCredito(
   input: { documento: string; clienteId?: string | null; forcar?: boolean },
   usuarioId?: string
 ): Promise<ResultadoConsulta> {
-  const documento = input.documento.replace(/\D/g, "");
-  if (documento.length !== 11 && documento.length !== 14) throw new CreditoError("Informe um CPF (11) ou CNPJ (14) válido.");
+  const documento = normalizeDocumento(input.documento);
+  if (!isValidDocumento(documento)) throw new CreditoError("Informe um CPF ou CNPJ válido.");
   const tipo = tipoDoDocumento(documento);
 
   // 1) Cache (a menos que forçado a reconsultar).

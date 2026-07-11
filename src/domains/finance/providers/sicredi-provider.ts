@@ -5,6 +5,7 @@ import {
   type PixCobInput, type PixCobCriada, type PixCobConsulta, type PixDevolucaoResult,
   type SaldoConta, type ExtratoConta, type ExtratoParams, type WebhookInfo
 } from "./bank-provider";
+import { normalizeDocumento } from "@/lib/fiscal/documento";
 
 /**
  * Provedor SICREDI. Duas APIs distintas (autenticações diferentes):
@@ -125,7 +126,7 @@ export function createSicrediProvider(creds: SicrediCreds): BankProvider {
     caps: BANCOS.SICREDI.caps,
 
     async incluirBoleto(input: BoletoInput): Promise<BoletoRegistrado> {
-      const doc = input.pagador.numeroCpfCnpj.replace(/\D+/g, "");
+      const doc = normalizeDocumento(input.pagador.numeroCpfCnpj);
       const payload = {
         tipoCobranca: "NORMAL",
         codigoBeneficiario: creds.beneficiario.trim(),

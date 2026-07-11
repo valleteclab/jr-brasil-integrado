@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { randomBytes } from "node:crypto";
 import { prisma } from "@/lib/db/prisma";
 import { salvarAsaasConfig, getAsaasRuntime, asaasRegistrarWebhook } from "@/lib/asaas/asaas-service";
+import { normalizeDocumento } from "@/lib/fiscal/documento";
 
 /**
  * CONFIG de plataforma do módulo de crédito via CRON_SECRET (enquanto a tela /admin não existe):
@@ -96,7 +97,7 @@ export async function POST(request: Request) {
     // Teste do fluxo COMPLETO (consultarCredito: cache+débito+SALVA ConsultaCredito) p/ um CNPJ.
     const tcc = body as { testarConsultaCompletaCnpj?: string; documento?: string; tipoTeste?: "PF" | "PJ" };
     if (tcc.testarConsultaCompletaCnpj) {
-      const empresa = await prisma.empresa.findFirst({ where: { cnpj: tcc.testarConsultaCompletaCnpj.replace(/\D/g, "") }, select: { id: true, tenantId: true } });
+      const empresa = await prisma.empresa.findFirst({ where: { cnpj: normalizeDocumento(tcc.testarConsultaCompletaCnpj) }, select: { id: true, tenantId: true } });
       if (!empresa) throw new Error("Empresa não encontrada.");
       const { consultarCredito } = await import("@/domains/credito/application/consulta-credito-use-cases");
       const r = await consultarCredito({ tenantId: empresa.tenantId, empresaId: empresa.id }, { documento: tcc.documento ?? "00000000000", forcar: true });
@@ -130,7 +131,7 @@ export async function POST(request: Request) {
     // Limpeza: remove recargas de TESTE pendentes de um tenant (após validar o sandbox).
     const limpar = body as { limparRecargasPendentesCnpj?: string };
     if (limpar.limparRecargasPendentesCnpj) {
-      const cnpj = limpar.limparRecargasPendentesCnpj.replace(/\D/g, "");
+      const cnpj = normalizeDocumento(limpar.limparRecargasPendentesCnpj);
       const empresa = await prisma.empresa.findFirst({ where: { cnpj }, select: { tenantId: true } });
       if (!empresa) throw new Error(`Empresa CNPJ ${cnpj} não encontrada.`);
       const r = await prisma.recargaCredito.deleteMany({ where: { tenantId: empresa.tenantId, status: "PENDENTE" } });
@@ -152,7 +153,7 @@ export async function POST(request: Request) {
     // Teste ponta a ponta no sandbox: cria uma recarga Pix para a empresa do CNPJ informado.
     const teste = body as { testarRecargaCnpj?: string; testarValor?: number };
     if (teste.testarRecargaCnpj) {
-      const cnpj = teste.testarRecargaCnpj.replace(/\D/g, "");
+      const cnpj = normalizeDocumento(teste.testarRecargaCnpj);
       const empresa = await prisma.empresa.findFirst({ where: { cnpj }, select: { id: true, tenantId: true } });
       if (!empresa) throw new Error(`Empresa CNPJ ${cnpj} não encontrada.`);
       const { criarRecarga } = await import("@/domains/credito/application/carteira-use-cases");

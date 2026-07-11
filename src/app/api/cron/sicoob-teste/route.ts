@@ -4,6 +4,7 @@ import type { TenantScope } from "@/lib/auth/dev-session";
 import { authDaConta, contaTemCobranca, BoletoError } from "@/domains/finance/application/boleto-use-cases";
 import { consultarSaldo } from "@/domains/finance/providers/sicoob-conta";
 import { testarTokenSicoob } from "@/domains/finance/providers/sicoob-http";
+import { normalizeDocumento } from "@/lib/fiscal/documento";
 
 /**
  * Rota de DIAGNÓSTICO (CRON_SECRET, como os crons): testa a autenticação Sicoob de PRODUÇÃO
@@ -24,7 +25,7 @@ export async function POST(request: Request) {
   if (!autorizado(request)) return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
   try {
     const body = (await request.json()) as { empresa?: string; conta?: string; contaCorrente?: string; testarEscopos?: string[]; consultarBoleto?: string };
-    const cnpj = (body.empresa ?? "").replace(/\D+/g, "");
+    const cnpj = normalizeDocumento(body.empresa);
     const empresa = await prisma.empresa.findFirst({
       where: cnpj.length === 14 ? { cnpj } : { razaoSocial: { contains: body.empresa ?? "", mode: "insensitive" } }
     });

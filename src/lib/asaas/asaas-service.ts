@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db/prisma";
 import { decryptSecret, encryptSecret } from "@/lib/security/secret-crypto";
+import { normalizeDocumento } from "@/lib/fiscal/documento";
 
 /**
  * Gateway de cobrança da PLATAFORMA (Asaas — conta da Valleteclab). Usado só no plano da
@@ -53,7 +54,7 @@ export async function asaasGarantirCliente(
 ): Promise<string> {
   const cli = await asaas<{ id: string }>(rt, "POST", "/customers", {
     name: input.nome.slice(0, 100),
-    cpfCnpj: input.cpfCnpj ? input.cpfCnpj.replace(/\D/g, "") : undefined,
+    cpfCnpj: input.cpfCnpj ? normalizeDocumento(input.cpfCnpj) : undefined,
     email: input.email ?? undefined,
     externalReference: input.externalReference,
     notificationDisabled: true

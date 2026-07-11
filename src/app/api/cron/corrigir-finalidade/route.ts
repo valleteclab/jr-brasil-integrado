@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
+import { isValidCnpj, normalizeDocumento } from "@/lib/fiscal/documento";
 
 /**
  * CORREÇÃO PONTUAL (CRON_SECRET): muda a finalidade de itens de NF-e de ENTRADA de
@@ -25,8 +26,8 @@ export async function POST(request: Request) {
   if (!autorizado(request)) return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
   try {
     const body = (await request.json()) as { cnpj: string; aplicar?: boolean };
-    const cnpj = (body.cnpj ?? "").replace(/\D/g, "");
-    if (cnpj.length !== 14) return NextResponse.json({ error: "Informe o CNPJ (14 dígitos)." }, { status: 400 });
+    const cnpj = normalizeDocumento(body.cnpj);
+    if (!isValidCnpj(cnpj)) return NextResponse.json({ error: "Informe um CNPJ válido (14 caracteres)." }, { status: 400 });
 
     const empresa = await prisma.empresa.findFirst({ where: { cnpj }, select: { id: true, tenantId: true, razaoSocial: true } });
     if (!empresa) return NextResponse.json({ error: `Empresa CNPJ ${cnpj} não encontrada.` }, { status: 404 });

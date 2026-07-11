@@ -2,6 +2,7 @@ import type { RegimeTributario, TipoNegocio, SegmentoEmpresa } from "@prisma/cli
 import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import { createAuditLog } from "@/lib/audit/audit-service";
+import { isValidCnpj, normalizeDocumento } from "@/lib/fiscal/documento";
 
 export const REGIMES_TRIBUTARIOS: RegimeTributario[] = [
   "SIMPLES_NACIONAL",
@@ -155,7 +156,8 @@ export async function saveCompanySettings(
   usuarioId?: string
 ): Promise<CompanySettings> {
   const razaoSocial = required(input.razaoSocial, "Razão social");
-  const cnpj = required(input.cnpj, "CNPJ");
+  const cnpj = normalizeDocumento(required(input.cnpj, "CNPJ"));
+  if (!isValidCnpj(cnpj)) throw new CompanySettingsError("CNPJ inválido. Confira os caracteres e os dígitos verificadores.");
   const regimeTributario = normalizeRegime(input.regimeTributario);
   const tipoNegocio = normalizeTipoNegocio(input.tipoNegocio);
   const segmento = normalizeSegmento(input.segmento);

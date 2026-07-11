@@ -21,6 +21,8 @@ import { gunzipSync } from "node:zlib";
 import type { AmbienteFiscal } from "@prisma/client";
 import { AN_DISTRIBUICAO } from "./endpoints";
 import { NFE_NS, pickTag, postSoap } from "./soap";
+import { normalizeDocumento } from "@/lib/fiscal/documento";
+import { normalizeDfeKey } from "./chave";
 
 /** Versão do leiaute da mensagem distDFeInt (atributo `versao`). */
 const DIST_VERSAO = "1.35";
@@ -85,7 +87,7 @@ function buildDistDFeInt(params: {
     `<distDFeInt versao="${DIST_VERSAO}" xmlns="${NFE_NS}">` +
     `<tpAmb>${tpAmbDe(params.ambiente)}</tpAmb>` +
     `<cUFAutor>${onlyDigits(params.cUFAutor)}</cUFAutor>` +
-    `<CNPJ>${onlyDigits(params.cnpj)}</CNPJ>` +
+    `<CNPJ>${normalizeDocumento(params.cnpj)}</CNPJ>` +
     params.consulta +
     `</distDFeInt>`
   );
@@ -130,7 +132,7 @@ function classificarDoc(nsu: string, schema: string, xml: string): DistDoc {
   if (s.includes("procnfe") || /<procNFe[\s>]/.test(xml) || /<nfeProc[\s>]/.test(xml)) {
     // chave = Id do infNFe ("NFe" + 44 dígitos)
     const id = /<infNFe[^>]*\bId="([^"]+)"/.exec(xml)?.[1];
-    const chave = id ? onlyDigits(id) : pickTag(xml, "chNFe");
+    const chave = id ? normalizeDfeKey(id.replace(/^NFe/i, "")) : pickTag(xml, "chNFe");
     // No XML completo o <emit> vem antes do <dest>, então a 1ª ocorrência de xNome/CNPJ é a do
     // emitente; dhEmi está só no <ide> e vNF só no <total><ICMSTot>.
     return {
@@ -252,7 +254,7 @@ export async function consultarDistribuicaoPorChave(params: {
   ambiente: AmbienteFiscal;
   cert: { pfx: Buffer; senha: string };
 }): Promise<DistResult> {
-  const consulta = `<consChNFe><chNFe>${onlyDigits(params.chNFe)}</chNFe></consChNFe>`;
+  const consulta = `<consChNFe><chNFe>${normalizeDfeKey(params.chNFe)}</chNFe></consChNFe>`;
   const distDFeInt = buildDistDFeInt({
     ambiente: params.ambiente,
     cUFAutor: params.cUFAutor,

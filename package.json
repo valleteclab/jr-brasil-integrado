@@ -12,7 +12,8 @@
     "prisma:studio": "prisma studio",
     "mcp:stdio": "tsx scripts/mcp-stdio.ts",
     "reset-senha": "tsx scripts/reset-senha.ts",
-    "admin-plataforma": "tsx scripts/conceder-admin-plataforma.ts"
+    "admin-plataforma": "tsx scripts/conceder-admin-plataforma.ts",
+    "test:cnpj": "tsx scripts/test-cnpj-alfanumerico.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
