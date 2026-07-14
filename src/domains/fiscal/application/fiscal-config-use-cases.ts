@@ -362,8 +362,10 @@ export async function getFiscalRuntimeConfig(scope: TenantScope) {
     : config?.cscId ?? null;
 
   // Provedor de SERVIÇOS (NFS-e): pode ser distinto do de PRODUTOS (NF-e/NFC-e). Quando a empresa
-  // não define `provedorServicos`, usa o provedor de produtos resolvido acima (retrocompatível).
-  const providerServicos = (config?.provedorServicos ?? provider) as ProvedorFiscal;
+  // não define `provedorServicos`, usa o provedor de produtos resolvido acima (retrocompatível) —
+  // EXCETO SEFAZ, que só emite NF-e/NFC-e: nesse caso a NFS-e cai no NACIONAL (direto na SEFIN, com
+  // o mesmo A1). É o par natural do modo direto (SEFAZ p/ NF-e, NACIONAL p/ NFS-e).
+  const providerServicos = (config?.provedorServicos ?? (provider === "SEFAZ" ? "NACIONAL" : provider)) as ProvedorFiscal;
 
   // Os provedores diretos assinam + fazem TLS-mútuo com o certificado A1 da empresa: NACIONAL
   // (NFS-e na SEFIN) e SEFAZ (NF-e nos web services). Só carregamos o certificado quando um deles
