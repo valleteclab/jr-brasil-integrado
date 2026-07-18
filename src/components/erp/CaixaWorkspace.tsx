@@ -7,6 +7,7 @@ import { useRealtime } from "@/lib/realtime/useRealtime";
 import { ClienteCadastroDrawer, type ClienteCriado } from "./ClienteCadastroDrawer";
 import { correspondeBusca } from "@/lib/search/normalize";
 import { normalizeDocumento } from "@/lib/fiscal/documento";
+import { imprimirCupom, impressaoAutoAtiva, setImpressaoAuto } from "./util-impressao";
 
 const brl = (v: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
 
@@ -98,6 +99,9 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
   const [pagamentos, setPagamentos] = useState<PagamentoLinha[]>([]);
   // RECIBO = venda não fiscal (só recibo HTML). Só disponível se a empresa permitir.
   const [modelo, setModelo] = useState<"NFCE" | "NFE" | "RECIBO">("NFCE");
+  // Preferência de impressão automática (por máquina, localStorage). Lida no cliente após montar.
+  const [impressaoAuto, setImpressaoAutoState] = useState(true);
+  useEffect(() => { setImpressaoAutoState(impressaoAutoAtiva()); }, []);
   const [query, setQuery] = useState("");
   const [pedidoAbertoId, setPedidoAbertoId] = useState<string | null>(null);
   const [retiradaExpedicao, setRetiradaExpedicao] = useState(false);
@@ -305,15 +309,17 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
         })()
       });
       setResultado({ pedidoNumero: r.pedidoNumero, troco: r.troco, notaId: r.nota?.id ?? null, notaStatus: r.nota?.status ?? null, emitErro: r.emitErro ?? null, boleto: r.boleto ?? null, retirada: r.retirada ?? null });
-      // Impressão automática: DANFE/DANFCE quando fiscal; recibo HTML do pedido quando não fiscal.
+      // Impressão automática: cupom NFC-e/recibo saem direto na impressora (modo quiosque) ou abrem
+      // o diálogo. NF-e (modelo 55, A4) continua abrindo em nova aba (não é cupom de balcão).
       if (isRecibo) {
-        window.open(`/api/erp/vendas/${sel.id}/recibo`, "_blank", "noopener,noreferrer");
+        imprimirCupom(`/api/erp/vendas/${sel.id}/recibo`);
       } else if (r.nota?.status === "AUTORIZADA" && r.nota?.id) {
-        window.open(`/api/erp/fiscal/${r.nota.id}/pdf`, "_blank", "noopener,noreferrer");
+        if (modelo === "NFCE") imprimirCupom(`/api/erp/fiscal/${r.nota.id}/pdf`);
+        else window.open(`/api/erp/fiscal/${r.nota.id}/pdf`, "_blank", "noopener,noreferrer");
       }
-      // Recibo de retirada: abre para imprimir junto com o cupom.
+      // Recibo de retirada: imprime junto com o cupom.
       if (r.retirada?.id) {
-        window.open(`/api/erp/expedicao/${r.retirada.id}/recibo`, "_blank", "noopener,noreferrer");
+        imprimirCupom(`/api/erp/expedicao/${r.retirada.id}/recibo`);
       }
       router.refresh();
     } catch (e) {
@@ -749,6 +755,10 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
                     <button type="button" className={`btn-erp ${modelo === "RECIBO" ? "primary" : "ghost"} sm`} style={{ flex: 1 }} onClick={() => setModelo("RECIBO")} title="Fechar a venda só com recibo (sem NF). Estoque e financeiro rodam normalmente.">Recibo</button>
                   )}
                 </div>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, fontSize: 12, color: "var(--erp-mute)" }} title="Nesta máquina: imprime o cupom direto (modo quiosque) ou abre o diálogo. Desligue em máquinas sem impressora térmica.">
+                  <input type="checkbox" checked={impressaoAuto} onChange={(e) => { setImpressaoAuto(e.target.checked); setImpressaoAutoState(e.target.checked); }} style={{ width: "auto" }} />
+                  🖨️ Imprimir cupom automaticamente (nesta máquina)
+                </label>
                 {data.expedicaoHabilitada && (
                   <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, fontSize: 13 }}>
                     <input type="checkbox" checked={retiradaExpedicao} onChange={(e) => setRetiradaExpedicao(e.target.checked)} />

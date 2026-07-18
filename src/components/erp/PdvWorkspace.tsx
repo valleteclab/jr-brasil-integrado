@@ -6,6 +6,7 @@ import type { PdvData, PdvProduto, PdvServico, PdvCliente, PdvContaRecebedora, P
 import { correspondeBusca } from "@/lib/search/normalize";
 import { AdminPasswordModal } from "./AdminPasswordModal";
 import { normalizeDocumento } from "@/lib/fiscal/documento";
+import { imprimirCupom, impressaoAutoAtiva, setImpressaoAuto } from "./util-impressao";
 
 /** Origem do preço da linha: tabela à vista (padrão), tabela a prazo ou digitado (manual). */
 type TipoPreco = "VISTA" | "PRAZO" | "MANUAL";
@@ -177,6 +178,9 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
   const [vendedorId, setVendedorId] = useState(data.vendedorLogadoId ?? "");
   // RECIBO = venda não fiscal (só recibo HTML). Só disponível se a empresa permitir.
   const [modeloProduto, setModeloProduto] = useState<"NFCE" | "NFE" | "RECIBO">("NFCE");
+  // Preferência de impressão automática (por máquina, localStorage). Lida no cliente após montar.
+  const [impressaoAuto, setImpressaoAutoState] = useState(true);
+  useEffect(() => { setImpressaoAutoState(impressaoAutoAtiva()); }, []);
   /** Senha de admin validada (vai junto no checkout — o servidor revalida). */
   const [senhaAdmin, setSenhaAdmin] = useState<string>("");
   /** Desconto global em % da venda (igual ao atendimento). */
@@ -459,18 +463,19 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
       setClienteId("");
       setRetiradaExpedicao(false);
       setPagamentoAberto(false);
-      // Impressão automática: abre o cupom/DANFE de cada nota autorizada. Para venda RECIBO
-      // (modelo "RECIBO"), abre o recibo HTML do pedido (não há nota fiscal).
+      // Impressão automática: cupom NFC-e/recibo saem direto na impressora (modo quiosque) ou abrem
+      // o diálogo. NF-e (modelo 55, A4) continua abrindo em nova aba (não é cupom de balcão).
       for (const n of notas) {
         if (n.ok && n.modelo === "RECIBO" && dataRes.pedidoVendaId) {
-          window.open(`/api/erp/vendas/${dataRes.pedidoVendaId}/recibo`, "_blank", "noopener,noreferrer");
+          imprimirCupom(`/api/erp/vendas/${dataRes.pedidoVendaId}/recibo`);
         } else if (n.ok && n.id) {
-          window.open(`/api/erp/fiscal/${n.id}/pdf`, "_blank", "noopener,noreferrer");
+          if (n.modelo === "NFCE") imprimirCupom(`/api/erp/fiscal/${n.id}/pdf`);
+          else window.open(`/api/erp/fiscal/${n.id}/pdf`, "_blank", "noopener,noreferrer");
         }
       }
-      // Recibo de retirada: abre para imprimir junto com o cupom.
+      // Recibo de retirada: imprime junto com o cupom.
       if (dataRes.retirada?.id) {
-        window.open(`/api/erp/expedicao/${dataRes.retirada.id}/recibo`, "_blank", "noopener,noreferrer");
+        imprimirCupom(`/api/erp/expedicao/${dataRes.retirada.id}/recibo`);
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Falha ao finalizar.";
@@ -732,6 +737,10 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
                 <button className={modeloProduto === "RECIBO" ? "active" : ""} onClick={() => setModeloProduto("RECIBO")} title="Fechar a venda só com recibo (sem NF). Estoque e financeiro rodam normalmente.">Recibo (não fiscal)</button>
               )}
             </div>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: "var(--erp-mute)" }} title="Nesta máquina: imprime o cupom direto (modo quiosque) ou abre o diálogo. Desligue em máquinas sem impressora térmica.">
+              <input type="checkbox" checked={impressaoAuto} onChange={(e) => { setImpressaoAuto(e.target.checked); setImpressaoAutoState(e.target.checked); }} style={{ width: "auto" }} />
+              🖨️ Imprimir cupom automaticamente (nesta máquina)
+            </label>
             <label className="pdv-cliente" style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <span style={{ flex: 1 }}>Desconto global (%)</span>
               <input
