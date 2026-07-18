@@ -6,7 +6,8 @@ import type { PdvData, PdvProduto, PdvServico, PdvCliente, PdvContaRecebedora, P
 import { correspondeBusca } from "@/lib/search/normalize";
 import { AdminPasswordModal } from "./AdminPasswordModal";
 import { normalizeDocumento } from "@/lib/fiscal/documento";
-import { imprimirCupom, impressaoAutoAtiva, setImpressaoAuto } from "./util-impressao";
+import { imprimirCupom } from "./util-impressao";
+import { ImpressaoConfig } from "./ImpressaoConfig";
 
 /** Origem do preço da linha: tabela à vista (padrão), tabela a prazo ou digitado (manual). */
 type TipoPreco = "VISTA" | "PRAZO" | "MANUAL";
@@ -178,9 +179,6 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
   const [vendedorId, setVendedorId] = useState(data.vendedorLogadoId ?? "");
   // RECIBO = venda não fiscal (só recibo HTML). Só disponível se a empresa permitir.
   const [modeloProduto, setModeloProduto] = useState<"NFCE" | "NFE" | "RECIBO">("NFCE");
-  // Preferência de impressão automática (por máquina, localStorage). Lida no cliente após montar.
-  const [impressaoAuto, setImpressaoAutoState] = useState(true);
-  useEffect(() => { setImpressaoAutoState(impressaoAutoAtiva()); }, []);
   /** Senha de admin validada (vai junto no checkout — o servidor revalida). */
   const [senhaAdmin, setSenhaAdmin] = useState<string>("");
   /** Desconto global em % da venda (igual ao atendimento). */
@@ -737,10 +735,7 @@ function Pdv({ data, caixa }: { data: PdvData; caixa: CaixaAberto }) {
                 <button className={modeloProduto === "RECIBO" ? "active" : ""} onClick={() => setModeloProduto("RECIBO")} title="Fechar a venda só com recibo (sem NF). Estoque e financeiro rodam normalmente.">Recibo (não fiscal)</button>
               )}
             </div>
-            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: "var(--erp-mute)" }} title="Nesta máquina: imprime o cupom direto (modo quiosque) ou abre o diálogo. Desligue em máquinas sem impressora térmica.">
-              <input type="checkbox" checked={impressaoAuto} onChange={(e) => { setImpressaoAuto(e.target.checked); setImpressaoAutoState(e.target.checked); }} style={{ width: "auto" }} />
-              🖨️ Imprimir cupom automaticamente (nesta máquina)
-            </label>
+            <div style={{ marginTop: 4 }}><ImpressaoConfig /></div>
             <label className="pdv-cliente" style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <span style={{ flex: 1 }}>Desconto global (%)</span>
               <input

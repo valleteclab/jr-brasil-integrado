@@ -7,7 +7,8 @@ import { useRealtime } from "@/lib/realtime/useRealtime";
 import { ClienteCadastroDrawer, type ClienteCriado } from "./ClienteCadastroDrawer";
 import { correspondeBusca } from "@/lib/search/normalize";
 import { normalizeDocumento } from "@/lib/fiscal/documento";
-import { imprimirCupom, impressaoAutoAtiva, setImpressaoAuto } from "./util-impressao";
+import { imprimirCupom } from "./util-impressao";
+import { ImpressaoConfig } from "./ImpressaoConfig";
 
 const brl = (v: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
 
@@ -99,9 +100,6 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
   const [pagamentos, setPagamentos] = useState<PagamentoLinha[]>([]);
   // RECIBO = venda não fiscal (só recibo HTML). Só disponível se a empresa permitir.
   const [modelo, setModelo] = useState<"NFCE" | "NFE" | "RECIBO">("NFCE");
-  // Preferência de impressão automática (por máquina, localStorage). Lida no cliente após montar.
-  const [impressaoAuto, setImpressaoAutoState] = useState(true);
-  useEffect(() => { setImpressaoAutoState(impressaoAutoAtiva()); }, []);
   const [query, setQuery] = useState("");
   const [pedidoAbertoId, setPedidoAbertoId] = useState<string | null>(null);
   const [retiradaExpedicao, setRetiradaExpedicao] = useState(false);
@@ -755,10 +753,7 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
                     <button type="button" className={`btn-erp ${modelo === "RECIBO" ? "primary" : "ghost"} sm`} style={{ flex: 1 }} onClick={() => setModelo("RECIBO")} title="Fechar a venda só com recibo (sem NF). Estoque e financeiro rodam normalmente.">Recibo</button>
                   )}
                 </div>
-                <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, fontSize: 12, color: "var(--erp-mute)" }} title="Nesta máquina: imprime o cupom direto (modo quiosque) ou abre o diálogo. Desligue em máquinas sem impressora térmica.">
-                  <input type="checkbox" checked={impressaoAuto} onChange={(e) => { setImpressaoAuto(e.target.checked); setImpressaoAutoState(e.target.checked); }} style={{ width: "auto" }} />
-                  🖨️ Imprimir cupom automaticamente (nesta máquina)
-                </label>
+                <div style={{ marginTop: 8 }}><ImpressaoConfig /></div>
                 {data.expedicaoHabilitada && (
                   <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, fontSize: 13 }}>
                     <input type="checkbox" checked={retiradaExpedicao} onChange={(e) => setRetiradaExpedicao(e.target.checked)} />

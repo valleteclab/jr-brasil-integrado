@@ -70,18 +70,31 @@ function imprimirViaIframe(url: string): void {
 }
 
 /**
- * Imprime um cupom/recibo respeitando a preferência da máquina: automático (iframe) quando ligado,
- * senão abre o documento em nova aba (comportamento antigo).
+ * Imprime um cupom/recibo respeitando a preferência da máquina:
+ *  - "qz": impressão direta via QZ Tray na impressora escolhida (sem diálogo);
+ *  - "iframe" com auto ligado: dispara a impressão (silenciosa no modo quiosque, senão diálogo);
+ *  - "iframe" com auto desligado: abre o documento em nova aba.
+ * Import dinâmico do QZ pra não carregar a lib quando o método é o navegador.
  */
 export function imprimirCupom(url: string): void {
   if (typeof window === "undefined") return;
-  if (impressaoAutoAtiva()) {
-    try {
-      imprimirViaIframe(url);
-    } catch {
+
+  import("./qz-print").then(({ metodoImpressao, imprimirPdfViaQz }) => {
+    if (metodoImpressao() === "qz") {
+      imprimirPdfViaQz(url).catch((e) => {
+        console.warn("[impressao] QZ Tray falhou, abrindo o documento:", e instanceof Error ? e.message : e);
+        window.open(url, "_blank", "noopener,noreferrer");
+      });
+      return;
+    }
+    if (impressaoAutoAtiva()) {
+      try { imprimirViaIframe(url); } catch { window.open(url, "_blank", "noopener,noreferrer"); }
+    } else {
       window.open(url, "_blank", "noopener,noreferrer");
     }
-  } else {
-    window.open(url, "_blank", "noopener,noreferrer");
-  }
+  }).catch(() => {
+    // Se nem o módulo carregar, cai no comportamento simples.
+    if (impressaoAutoAtiva()) imprimirViaIframe(url);
+    else window.open(url, "_blank", "noopener,noreferrer");
+  });
 }
