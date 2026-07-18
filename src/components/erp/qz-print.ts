@@ -32,7 +32,6 @@ export function setImpressoraQz(nome: string): void {
   try { localStorage.setItem(LS_PRINTER, nome); } catch { /* ignore */ }
 }
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 async function getQz(): Promise<any> {
   const mod: any = await import("qz-tray");
   return mod.default ?? mod;
@@ -93,4 +92,3 @@ export async function imprimirTesteQz(printer: string): Promise<void> {
     "direta via QZ Tray esta funcionando.\n\n\n\n"
   ]);
 }
-/* eslint-enable @typescript-eslint/no-explicit-any */
