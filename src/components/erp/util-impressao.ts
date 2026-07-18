@@ -29,14 +29,17 @@ export function setImpressaoAuto(on: boolean): void {
   }
 }
 
-/** Carrega o documento num iframe oculto e dispara a impressão (silenciosa no modo quiosque). */
+/** Carrega o documento num iframe fora da tela e dispara a impressão (silenciosa no modo quiosque). */
 function imprimirViaIframe(url: string): void {
   const iframe = document.createElement("iframe");
+  // IMPORTANTE: o iframe precisa ter TAMANHO REAL para o PDF renderizar antes do print — um iframe
+  // 0×0 (ou display:none) imprime EM BRANCO. Então damos dimensão de verdade e escondemos FORA da
+  // tela (left negativo), não com tamanho zero.
   iframe.style.position = "fixed";
-  iframe.style.right = "0";
-  iframe.style.bottom = "0";
-  iframe.style.width = "0";
-  iframe.style.height = "0";
+  iframe.style.left = "-10000px";
+  iframe.style.top = "0";
+  iframe.style.width = "820px";
+  iframe.style.height = "1160px";
   iframe.style.border = "0";
   iframe.setAttribute("aria-hidden", "true");
 
@@ -55,12 +58,14 @@ function imprimirViaIframe(url: string): void {
     }
   };
 
-  // Espera o PDF renderizar antes de mandar imprimir (o load do PDF no iframe é assíncrono).
-  iframe.onload = () => window.setTimeout(disparar, 500);
+  // Espera o PDF renderizar antes de mandar imprimir (o load do PDF no iframe é assíncrono; um
+  // tempo extra garante que o visualizador de PDF pintou o conteúdo, evitando cupom em branco).
+  iframe.onload = () => window.setTimeout(disparar, 700);
   iframe.onerror = () => {
     iframe.remove();
     window.open(url, "_blank", "noopener,noreferrer");
   };
+  iframe.src = url;
   document.body.appendChild(iframe);
 }
 
