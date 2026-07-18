@@ -76,7 +76,9 @@ export async function imprimirPdfViaQz(pdfUrl: string, printer?: string): Promis
   const resp = await fetch(pdfUrl, { credentials: "include" });
   if (!resp.ok) throw new Error(`Falha ao carregar o documento (HTTP ${resp.status}).`);
   const base64 = arrayBufferToBase64(await resp.arrayBuffer());
-  const cfg = qz.configs.create(alvo);
+  // Config afinada para cupom de bobina (ex.: Epson TM-T20, 80mm): sem margens, escala o conteúdo
+  // para a largura do papel e imprime em tons de cinza (impressora térmica é monocromática).
+  const cfg = qz.configs.create(alvo, { margins: 0, scaleContent: true, colorType: "grayscale", rasterize: false });
   await qz.print(cfg, [{ type: "pixel", format: "pdf", flavor: "base64", data: base64 }]);
 }
 
