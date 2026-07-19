@@ -31,6 +31,8 @@ type FiscalDraftItem = {
   marginCash?: string;
   marginTerm?: string;
   minimumPrice?: string;
+  /** Nome de venda do novo SKU — o cliente pode renomear (nome regional) sem alterar o da NF. */
+  nameCustom?: string;
   brand?: string;
   /** Conversão de embalagem: unidades de venda por unidade de compra (1 CX = 12 UN ⇒ 12). */
   fatorConversao?: number;
@@ -634,6 +636,7 @@ export function FiscalEntryWizard({ initialDraft = null, products, formasPagamen
             itemId: item.id,
             produtoId: item.action === "update" ? item.matchedProductId : null,
             criarNovoSku: item.action === "create",
+            nome: item.action === "create" ? (item.nameCustom?.trim() || null) : null,
             precoVenda: item.action === "create" ? decimalInputToNumber(item.salePrice) : null,
             precoVendaPrazo: item.action === "create" ? (decimalInputToNumber(item.salePriceTerm) || null) : null,
             precoMinimo: item.action === "create" ? decimalInputToNumber(item.minimumPrice) : null,
@@ -1123,6 +1126,14 @@ export function FiscalEntryWizard({ initialDraft = null, products, formasPagamen
                       ) : (
                         <div className="new-sku-box">
                           Novo SKU (código interno gerado no lançamento) · Cód. fornecedor <strong>{item.importedProduct.sku}</strong>
+                          <label>
+                            Nome do produto
+                            <input
+                              value={item.nameCustom ?? item.importedProduct.name}
+                              onChange={(event) => updateItem(item.id, { nameCustom: event.target.value })}
+                              title="Nome do produto (veio da nota; edite se quiser o nome conhecido na região)."
+                            />
+                          </label>
                           <label>
                             Marca
                             <input

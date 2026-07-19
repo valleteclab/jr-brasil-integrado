@@ -1113,6 +1113,8 @@ export async function processFiscalEntry(
               tenantId: scope.tenantId,
               empresaId: scope.empresaId,
               sku: await proximoSkuAutomatico(),
+              // Nome do produto = descrição do item (editável na conferência: o cliente pode ter
+              // trocado pelo nome regional; nesse caso descricaoFornecedor já veio com o novo nome).
               nome: item.descricaoFornecedor,
               descricao: `Criado pela entrada fiscal ${entrada.numero || entrada.id}.`,
               tipo: ehInsumo ? "INSUMO" : "PRODUTO",
@@ -1781,6 +1783,8 @@ export async function deleteFiscalEntry(scope: TenantScope, entradaFiscalId: str
 type FiscalEntryItemLinkInput = {
   produtoId?: string | null;
   criarNovoSku: boolean;
+  /** Nome de venda do novo SKU (o cliente pode renomear; o nome da NF é preservado). */
+  nome?: string | null;
   /** Preço de venda À VISTA do novo SKU. */
   precoVenda?: number | null;
   /** Preço de venda A PRAZO do novo SKU (opcional; sem ele vale o à vista). */
@@ -1960,6 +1964,9 @@ async function updateFiscalEntryItemLinkInTransaction(
         where: { id: item.id },
         data: {
           produtoId: null,
+          // Nome editado na conferência (ex.: nome regional) substitui a descrição do item — é o
+          // que vira o nome do produto ao processar. Sem edição, mantém o nome que veio na nota.
+          ...(input.nome?.trim() ? { descricaoFornecedor: input.nome.trim() } : {}),
           precoVendaDefinido: input.precoVenda,
           precoVendaPrazoDefinido: input.precoVendaPrazo && input.precoVendaPrazo > 0 ? input.precoVendaPrazo : null,
           precoMinimoDefinido: input.precoMinimo && input.precoMinimo > 0 ? input.precoMinimo : input.precoVenda,
