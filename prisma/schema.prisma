@@ -604,6 +604,10 @@ model PlataformaPlano {
 model PlataformaConfiguracao {
   id                  String   @id @default("default")
   provedorFiscalAtivo String   @default("ACBR")
+  /// Assinatura das requisições ao QZ Tray (impressão direta no PDV). Certificado público (PEM) +
+  /// chave privada criptografada. Assinar deixa o "Remember this decision" do QZ funcionar.
+  qzCertificado       String?
+  qzChaveCripto       String?
   atualizadoEm        DateTime @updatedAt
 }
 

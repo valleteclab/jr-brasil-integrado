@@ -37,9 +37,40 @@ async function getQz(): Promise<any> {
   return mod.default ?? mod;
 }
 
+let segurancaConfigurada = false;
+/**
+ * Configura a ASSINATURA das requisições ao QZ Tray: pega o certificado público da plataforma e
+ * assina cada desafio via `/api/erp/qz/sign` (a chave privada fica no servidor). Assinar faz o
+ * "Remember this decision" do QZ funcionar. Sem certificado configurado, segue no modo não assinado
+ * (o QZ pede permissão a cada impressão).
+ */
+async function configurarSeguranca(qz: any): Promise<void> {
+  if (segurancaConfigurada) return;
+  segurancaConfigurada = true;
+  try {
+    const resp = await fetch("/api/erp/qz/certificate", { credentials: "include" });
+    const cert = resp.ok ? (await resp.text()).trim() : "";
+    if (!cert.includes("BEGIN CERTIFICATE")) return; // sem cert → modo não assinado
+    qz.security.setCertificatePromise((resolve: (v: string) => void) => resolve(cert));
+    if (typeof qz.security.setSignatureAlgorithm === "function") qz.security.setSignatureAlgorithm("SHA512");
+    qz.security.setSignaturePromise((toSign: string) => (resolve: (v: string) => void, reject: (e: unknown) => void) => {
+      fetch("/api/erp/qz/sign", {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify({ request: toSign })
+      })
+        .then((r) => r.json())
+        .then((d) => (d?.signature ? resolve(d.signature) : reject(new Error(d?.error || "Falha ao assinar."))))
+        .catch(reject);
+    });
+  } catch {
+    /* falha no setup não trava a impressão (cai no modo não assinado) */
+  }
+}
+
 /** Conecta ao QZ Tray local (reusa a conexão se já estiver ativa). */
 export async function conectarQz(): Promise<any> {
   const qz = await getQz();
+  await configurarSeguranca(qz);
   if (!qz.websocket.isActive()) {
     await qz.websocket.connect({ retries: 3, delay: 1 });
   }
