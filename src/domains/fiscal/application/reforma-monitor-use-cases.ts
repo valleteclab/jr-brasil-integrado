@@ -175,7 +175,7 @@ function decodificarXml(raw: string | null): string {
 }
 
 /** AUTO-CHECK: a última NF-e/NFC-e AUTORIZADA de produção (2026+) contém o grupo IBSCBS? */
-async function checarProntidao(): Promise<MonitorReformaResult["prontidao"]> {
+export async function checarProntidao(): Promise<MonitorReformaResult["prontidao"]> {
   const corte = new Date("2026-01-01T00:00:00-03:00");
   const nota = await prisma.notaFiscal.findFirst({
     where: {
@@ -204,6 +204,30 @@ async function checarProntidao(): Promise<MonitorReformaResult["prontidao"]> {
 async function rodouRecentemente(horas: number): Promise<boolean> {
   const ultimo = await prisma.monitorFonteFiscal.findFirst({ orderBy: { verificadoEm: "desc" }, select: { verificadoEm: true } });
   return Boolean(ultimo && Date.now() - ultimo.verificadoEm.getTime() < horas * 3600000);
+}
+
+export type MonitorReformaAdminData = {
+  prontidao: MonitorReformaResult["prontidao"];
+  fontes: Array<{ id: string; nome: string; url: string; verificadoEm: string | null; itens: string[] }>;
+};
+
+/** Dados da página /admin/reforma (dono do SaaS): snapshots das fontes + prontidão atual. */
+export async function getMonitorReformaAdmin(): Promise<MonitorReformaAdminData> {
+  const snaps = await prisma.monitorFonteFiscal.findMany();
+  const porFonte = new Map(snaps.map((s) => [s.fonte, s]));
+  return {
+    prontidao: await checarProntidao(),
+    fontes: FONTES.map((f) => {
+      const snap = porFonte.get(f.id);
+      return {
+        id: f.id,
+        nome: f.nome,
+        url: f.url,
+        verificadoEm: snap?.verificadoEm?.toISOString() ?? null,
+        itens: Array.isArray(snap?.itens) ? (snap.itens as string[]) : [],
+      };
+    }),
+  };
 }
 
 export async function monitorarReforma(opts: { forcar?: boolean } = {}): Promise<MonitorReformaResult> {
