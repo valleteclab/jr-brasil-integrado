@@ -3300,3 +3300,13 @@ model GastoItem {
 
   @@index([tenantId, empresaId, gastoId])
 }
+
+/// Snapshot das FONTES OFICIAIS monitoradas pelo cron da Reforma Tributária (/api/cron/reforma):
+/// guarda os itens já vistos de cada fonte (títulos de NTs/leiautes) para detectar novidades e
+/// avisar os administradores da plataforma pelo sino. Ver docs/REFORMA-ROADMAP.md.
+model MonitorFonteFiscal {
+  id           String   @id @default(cuid())
+  fonte        String   @unique
+  itens        Json?
+  verificadoEm DateTime @default(now())
+}
