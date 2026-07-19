@@ -1,15 +1,14 @@
 /**
  * DANFSE (Documento Auxiliar da NFS-e) — representação gráfica da NFS-e do Sistema Nacional.
  *
- * Gera o DANFSE a partir do XML `<NFSe>` AUTORIZADO (devolvido pela SEFIN em GET /nfse/{chave}).
- * A SEFIN NÃO gera PDF (GET /danfse → 501): o documento é responsabilidade do emitente. Em vez de
- * mandar o usuário ao portal público, montamos aqui um DANFSE em HTML autocontido (CSS A4 para
- * impressão) + QR Code de consulta, e o usuário salva como PDF pelo próprio navegador
- * ("Imprimir → Salvar como PDF") — mesma abordagem do DANFE da NF-e (sem Chromium no servidor).
+ * Gera o DANFSE a partir do XML `<NFSe>` AUTORIZADO (devolvido pela SEFIN em GET /nfse/{chave}),
+ * como CLONE do leiaute oficial "DANFSe v1.0" (o mesmo do Emissor Nacional/ADN): cabeçalho com a
+ * marca NFS-e + prefeitura, chave de acesso com QR à direita, seções EMITENTE/TOMADOR com o título
+ * na primeira célula, grid de 4 colunas com rótulo em negrito e valor embaixo, TRIBUTAÇÃO
+ * MUNICIPAL/FEDERAL, VALOR TOTAL, TOTAIS APROXIMADOS e INFORMAÇÕES COMPLEMENTARES.
  *
- * O XML tem dois grupos relevantes: `infNFSe` (dados consolidados pela SEFIN: número nNFSe, emit,
- * valores finais) e o `DPS/infDPS` que enviamos (tomador, serviço, tributos). Parsing por regex no
- * mesmo espírito de soap.ts/danfe.ts.
+ * A SEFIN NÃO gera PDF (GET /danfse → 501); o ADN gera, mas está em desativação — este gerador é o
+ * substituto. HTML autocontido (CSS A4) + QR SVG; o usuário salva como PDF pelo navegador.
  */
 import { qrCodeSvg } from "../_shared/qrcode-svg";
 import { normalizeDocumento } from "@/lib/fiscal/documento";
@@ -44,17 +43,24 @@ function brl(v: string | number | null | undefined): string {
   return n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-/** Data/hora ISO → "dd/mm/aaaa hh:mm". Mantém o texto cru se não casar. */
-function dhFmt(dh: string): string {
-  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(dh);
-  if (!m) return dh;
-  return `${m[3]}/${m[2]}/${m[1]} ${m[4]}:${m[5]}`;
+/** "R$ x,yy" ou "-" quando vazio/zero (o oficial imprime "-" nos campos sem valor). */
+function mon(v: string | number | null | undefined, sempre = false): string {
+  const n = Number(String(v ?? "").replace(",", "."));
+  if (!Number.isFinite(n) || (n === 0 && !sempre)) return "-";
+  return `R$ ${n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-/** Data ISO (aaaa-mm-dd) → "mm/aaaa" (competência). */
-function competFmt(d: string): string {
-  const m = /^(\d{4})-(\d{2})/.exec(d);
-  return m ? `${m[2]}/${m[1]}` : d;
+/** Data/hora ISO → "dd/mm/aaaa hh:mm:ss" (como no oficial). Mantém o texto cru se não casar. */
+function dhFmt(dh: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/.exec(dh);
+  if (!m) return dh || "-";
+  return `${m[3]}/${m[2]}/${m[1]} ${m[4]}:${m[5]}${m[6] ? `:${m[6]}` : ""}`;
+}
+
+/** Data ISO (aaaa-mm-dd) → "dd/mm/aaaa" (competência, como no oficial). */
+function dataFmt(d: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d);
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : d || "-";
 }
 
 /** CNPJ/CPF formatado. */
@@ -65,15 +71,18 @@ function docFmt(value: string): string {
   return value;
 }
 
-/** Chave (50 díg.) em grupos de 5 para leitura humana. */
-function chaveFormatada(chave: string): string {
-  return (chave.match(/.{1,5}/g) ?? []).join(" ");
-}
-
 /** CEP formatado. */
 function cepFmt(v: string): string {
   const d = onlyDigits(v);
-  return d.length === 8 ? `${d.slice(0, 5)}-${d.slice(5)}` : v;
+  return d.length === 8 ? `${d.slice(0, 5)}-${d.slice(5)}` : v || "-";
+}
+
+/** Telefone "(DD) NNNNN-NNNN" quando possível. */
+function foneFmt(v: string): string {
+  const d = onlyDigits(v);
+  if (d.length === 11) return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
+  if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+  return v || "-";
 }
 
 /** URL de consulta pública da NFS-e nacional pela chave (verificação de autenticidade). */
@@ -81,18 +90,12 @@ export function consultaPublicaNfseUrl(chave: string): string {
   return `https://www.nfse.gov.br/consultapublica/?tpc=1&chave=${normalizeDfeKey(chave)}`;
 }
 
-/** Endereço de uma linha a partir de um bloco enderNac/end. */
-function enderecoLinha(end: string): string {
+/** Logradouro em uma linha (sem município/CEP — o oficial mostra em colunas separadas). */
+function enderecoLogradouro(end: string): string {
   if (!end) return "";
-  const partes = [
-    pick(end, "xLgr"),
-    pick(end, "nro") ? `nº ${pick(end, "nro")}` : "",
-    pick(end, "xCpl"),
-    pick(end, "xBairro"),
-    [pick(end, "xMun"), pick(end, "UF")].filter(Boolean).join("/"),
-    pick(end, "CEP") ? `CEP ${cepFmt(pick(end, "CEP"))}` : "",
-  ].filter(Boolean);
-  return partes.join(" - ");
+  return [pick(end, "xLgr"), pick(end, "nro"), pick(end, "xCpl"), pick(end, "xBairro")]
+    .filter(Boolean)
+    .join(", ");
 }
 
 export type DanfseData = {
@@ -106,22 +109,29 @@ export type DanfseData = {
   dhProc: string;
   dCompet: string;
   cStat: string;
+  /** Município emissor (prefeitura do cabeçalho) e locais de prestação/incidência. */
+  xLocEmi: string;
   xLocPrestacao: string;
-  /** Município de incidência do ISSQN (consolidado pela SEFIN). */
   xLocIncid: string;
-  emit: { nome: string; doc: string; im: string; ender: string; fone: string; email: string };
-  toma: { nome: string; doc: string; im: string; ender: string; fone: string; email: string };
-  /** Intermediário do serviço (o DANFSE oficial mostra "Não informado" quando ausente). */
+  emit: { nome: string; doc: string; im: string; fone: string; email: string; log: string; mun: string; cep: string };
+  toma: { nome: string; doc: string; im: string; fone: string; email: string; log: string; mun: string; cep: string };
+  /** Intermediário do serviço (o oficial imprime "NÃO IDENTIFICADO NA NFS-e" quando ausente). */
   interm: { nome: string; doc: string } | null;
-  serv: { cTribNac: string; xTribNac: string; cTribMun: string; cNBS: string; xNBS: string; xDescServ: string };
-  /** Código da tributação do ISSQN (1=Tributável, 2=Exportação, 3=Não incidência, 4=Imunidade). */
-  tribISSQN: string;
+  serv: { cTribNac: string; xTribNac: string; cTribMun: string; cNBS: string; xDescServ: string };
+  /** Simples Nacional na data de competência (opSimpNac) e regime de apuração pelo SN. */
+  simpNac: string;
+  regApSN: string;
+  tribISSQN: string;        // 1=Tributável, 2=Exportação, 3=Não incidência, 4=Imunidade
+  tpRetISSQN: string;       // 1=Não retido, 2=Retido pelo tomador, 3=Retido pelo intermediário
   valores: {
-    vServ: string; vDescIncond: string; vDedRed: string; vBC: string; pAliq: string; vISSQN: string; vTotalRet: string; vLiq: string;
-    issRetido: boolean; vRetINSS: string; vRetIRRF: string; vRetCSLL: string; vRetPis: string; vRetCofins: string;
+    vServ: string; vDescIncond: string; vDescCond: string; vDedRed: string;
+    vBC: string; pAliq: string; vISSQN: string; vTotalRet: string; vLiq: string;
+    vRetINSS: string; vRetIRRF: string; vRetCSLL: string; vRetPis: string; vRetCofins: string;
+    totFed: string; totEst: string; totMun: string;
   };
-  /** Informações complementares do DPS (xInfComp) — o oficial imprime a seção sempre. */
   xInfComp: string;
+  /** NFS-e substituída (chave), quando substituição — o oficial cita nas informações complementares. */
+  chaveSubst: string;
 };
 
 /** Parser do XML `<NFSe>` (infNFSe consolidado + DPS) → campos do DANFSE. */
@@ -146,6 +156,13 @@ export function parseNfse(nfseXml: string): DanfseData {
   const trib = pickBlock(dps, "trib");
   const tribMun = pickBlock(trib, "tribMun");
   const tribFed = pickBlock(trib, "tribFed");
+  const totTrib = pickBlock(trib, "totTrib");
+
+  const emitMun = [pick(emitEnder, "xMun"), pick(emitEnder, "UF")].filter(Boolean).join(" - ");
+  // Tomador: o DPS só carrega o CÓDIGO do município (cMun). Quando é o mesmo do emitente (caso
+  // comum, prestação local), reusamos o nome; senão mostramos o código IBGE.
+  const tomaCMun = pick(tomaEnder, "cMun");
+  const tomaMun = tomaCMun && tomaCMun === pick(emitEnder, "cMun") ? emitMun : (tomaCMun || "-");
 
   return {
     chave,
@@ -158,23 +175,28 @@ export function parseNfse(nfseXml: string): DanfseData {
     dhProc: pick(preDps, "dhProc"),
     dCompet: pick(dps, "dCompet"),
     cStat: pick(preDps, "cStat"),
+    xLocEmi: pick(preDps, "xLocEmi"),
     xLocPrestacao: pick(preDps, "xLocPrestacao"),
     xLocIncid: pick(preDps, "xLocIncid"),
     emit: {
       nome: pick(emitBlock, "xNome"),
       doc: pick(emitBlock, "CNPJ") || pick(emitBlock, "CPF"),
       im: pick(emitBlock, "IM"),
-      ender: enderecoLinha(emitEnder),
       fone: pick(emitBlock, "fone"),
       email: pick(emitBlock, "email"),
+      log: enderecoLogradouro(emitEnder),
+      mun: emitMun,
+      cep: pick(emitEnder, "CEP"),
     },
     toma: {
       nome: pick(tomaBlock, "xNome"),
       doc: pick(tomaBlock, "CNPJ") || pick(tomaBlock, "CPF"),
       im: pick(tomaBlock, "IM"),
-      ender: enderecoLinha(tomaEnder),
       fone: pick(tomaBlock, "fone"),
       email: pick(tomaBlock, "email"),
+      log: enderecoLogradouro(tomaEnder),
+      mun: tomaMun,
+      cep: pick(tomaEnder, "CEP"),
     },
     interm: intermBlock
       ? { nome: pick(intermBlock, "xNome"), doc: pick(intermBlock, "CNPJ") || pick(intermBlock, "CPF") }
@@ -184,63 +206,92 @@ export function parseNfse(nfseXml: string): DanfseData {
       xTribNac: pick(preDps, "xTribNac"),
       cTribMun: pick(cServ, "cTribMun"),
       cNBS: pick(cServ, "cNBS"),
-      xNBS: pick(preDps, "xNBS"),
       xDescServ: pick(cServ, "xDescServ"),
     },
+    simpNac: pick(dps, "opSimpNac"),
+    regApSN: pick(dps, "regApTribSN"),
     tribISSQN: pick(tribMun, "tribISSQN"),
+    tpRetISSQN: pick(tribMun, "tpRetISSQN"),
     valores: {
       vServ: pick(pickBlock(dps, "vServPrest"), "vServ"),
       vDescIncond: pick(pickBlock(dps, "vDescCondIncond"), "vDescIncond"),
+      vDescCond: pick(pickBlock(dps, "vDescCondIncond"), "vDescCond"),
       vDedRed: pick(pickBlock(dps, "vDedRed"), "vDR"),
       vBC: pick(valNFSe, "vBC"),
       pAliq: pick(valNFSe, "pAliqAplic"),
       vISSQN: pick(valNFSe, "vISSQN"),
       vTotalRet: pick(valNFSe, "vTotalRet"),
       vLiq: pick(valNFSe, "vLiq"),
-      issRetido: pick(tribMun, "tpRetISSQN") === "2",
       vRetINSS: pick(tribFed, "vRetCP"),
       vRetIRRF: pick(tribFed, "vRetIRRF"),
       vRetCSLL: pick(tribFed, "vRetCSLL"),
       vRetPis: pick(pickBlock(tribFed, "piscofins"), "vPis"),
       vRetCofins: pick(pickBlock(tribFed, "piscofins"), "vCofins"),
+      totFed: pick(totTrib, "vTotTribFed"),
+      totEst: pick(totTrib, "vTotTribEst"),
+      totMun: pick(totTrib, "vTotTribMun"),
     },
     xInfComp: pick(dps, "xInfComp"),
+    chaveSubst: pick(pickBlock(dps, "subst"), "chSubstda"),
   };
 }
 
-/** Rótulo da tributação do ISSQN (campo tribISSQN do DPS), como no DANFSE oficial. */
+/** Rótulos oficiais dos campos codificados do DPS. */
 function tribISSQNLabel(cod: string): string {
   switch (cod) {
     case "1": return "Operação Tributável";
     case "2": return "Exportação de Serviço";
     case "3": return "Não Incidência";
     case "4": return "Imunidade";
-    default: return cod || "—";
+    default: return cod || "-";
+  }
+}
+function retISSQNLabel(cod: string): string {
+  switch (cod) {
+    case "1": return "Não Retido";
+    case "2": return "Retido pelo Tomador";
+    case "3": return "Retido pelo Intermediário";
+    default: return cod || "-";
+  }
+}
+function simpNacLabel(cod: string): string {
+  switch (cod) {
+    case "1": return "Não optante";
+    case "2": return "Optante - MEI";
+    case "3": return "Optante - ME/EPP";
+    default: return cod || "-";
   }
 }
 
-/** Célula rotulada (label em cima, valor embaixo) — unidade base do grid, como no DANFSE oficial. */
+/** Célula do grid oficial: rótulo em NEGRITO em cima, valor normal embaixo. */
 function cel(label: string, value: string, flex = 1): string {
-  return `<div class="cel" style="flex:${flex}"><span class="lbl">${escHtml(label)}</span><span class="val">${escHtml(value) || "&nbsp;"}</span></div>`;
+  return `<div class="cel" style="flex:${flex}"><span class="lbl">${escHtml(label)}</span><span class="val">${escHtml(value) || "-"}</span></div>`;
+}
+
+/** Célula-título de seção (EMITENTE/TOMADOR): nome da seção em caixa alta + subtítulo. */
+function celSecao(titulo: string, sub: string, flex = 1): string {
+  return `<div class="cel" style="flex:${flex}"><span class="sec-in">${escHtml(titulo)}</span><span class="val">${escHtml(sub) || "&nbsp;"}</span></div>`;
 }
 
 export type DanfseOptions = { logoDataUrl?: string | null };
 
 function renderHtml(d: DanfseData, opts?: DanfseOptions): string {
+  const v = d.valores;
   const homolog =
     d.tpAmb === "2"
-      ? `<div class="homolog">AMBIENTE DE HOMOLOGAÇÃO — SEM VALOR FISCAL</div>`
+      ? `<div class="homolog">AMBIENTE DE HOMOLOGAÇÃO — NFS-e SEM VALOR FISCAL</div>`
       : "";
-  const v = d.valores;
-  // O DANFSE oficial não leva a logo da empresa no topo (leva a marca da NFS-e). Quando a empresa
-  // tem logo, mostramos discretamente dentro da seção do emitente.
-  const logoEmit = opts?.logoDataUrl
-    ? `<img class="logo-emit" src="${escHtml(opts.logoDataUrl)}" alt="logo"/>`
-    : "";
-
   const cTribNacFmt = d.serv.cTribNac
     ? `${d.serv.cTribNac.replace(/(\d{2})(\d{2})(\d{2})/, "$1.$2.$3")}${d.serv.xTribNac ? ` - ${d.serv.xTribNac}` : ""}`
-    : "—";
+    : "-";
+  const issRetido = d.tpRetISSQN === "2" || d.tpRetISSQN === "3";
+  // Informações complementares: substituição + NBS + texto livre (como o oficial).
+  const infComp = [
+    d.chaveSubst ? `NFSe Subst: ${d.chaveSubst}` : "",
+    d.serv.cNBS ? `NBS: ${d.serv.cNBS}` : "",
+    d.xInfComp,
+  ].filter(Boolean).join(" | ");
+  const logoEmit = opts?.logoDataUrl ? `<img class="logo-emit" src="${escHtml(opts.logoDataUrl)}" alt=""/>` : "";
 
   return `<!DOCTYPE html>
 <html lang="pt-BR">
@@ -248,46 +299,53 @@ function renderHtml(d: DanfseData, opts?: DanfseOptions): string {
 <meta charset="utf-8"/>
 <title>NFS-e ${escHtml(d.nNFSe)} - ${escHtml(d.chave)}</title>
 <style>
-  /* Layout no padrão do DANFSe v1.0 do Sistema Nacional: monocromático, bordas finas, seções
-     com barra cinza e células rotuladas. */
+  /* Clone do leiaute oficial DANFSe v1.0 (Emissor Nacional): grid de 4 colunas sem bordas
+     verticais, rótulos em negrito com valor embaixo, títulos de seção em caixa alta com filete
+     grosso em cima. */
   * { box-sizing: border-box; }
-  @page { size: A4 portrait; margin: 7mm; }
-  body { font-family: Arial, Helvetica, sans-serif; font-size: 9px; color: #000; margin: 0; background: #f5f6f8; }
-  .doc { width: 196mm; margin: 0 auto; background: #fff; border: 1px solid #000; }
-  /* Cabeçalho: marca NFS-e à esquerda, chave ao centro, QR à direita */
-  .cab { display: flex; align-items: stretch; border-bottom: 1px solid #000; }
-  .cab .brand { width: 34mm; display: flex; flex-direction: column; align-items: center; justify-content: center; border-right: 1px solid #000; padding: 6px; text-align: center; }
-  .cab .brand .nfse { font-size: 24px; font-weight: 800; letter-spacing: .5px; }
-  .cab .brand .nfse small { font-size: 10px; font-weight: 700; vertical-align: super; }
-  .cab .brand .ver { font-size: 8px; margin-top: 3px; }
-  .cab .mid { flex: 1; display: flex; flex-direction: column; justify-content: center; padding: 6px 10px; }
-  .cab .mid .t1 { font-size: 11px; font-weight: 700; text-align: center; margin-bottom: 4px; }
-  .cab .mid .clab { font-size: 7.5px; text-transform: uppercase; color: #333; }
-  .cab .mid .chv { font-family: "Courier New", monospace; font-size: 10.5px; font-weight: 700; letter-spacing: .3px; }
-  .cab .mid .url { font-size: 7.5px; color: #333; margin-top: 3px; }
-  .cab .qr { width: 30mm; display: flex; align-items: center; justify-content: center; border-left: 1px solid #000; padding: 4px; }
-  .cab .qr svg { width: 26mm; height: 26mm; }
-  /* Linha de identificação */
-  .grid { display: flex; flex-wrap: wrap; }
-  .cel { padding: 2px 6px; border-right: 1px solid #999; border-bottom: 1px solid #999; min-width: 0; overflow: hidden; }
-  .cel:last-child { border-right: 0; }
-  .lbl { display: block; font-size: 6.5px; color: #333; }
-  .val { display: block; font-size: 9.5px; font-weight: 700; word-wrap: break-word; }
-  /* Seções (barra cinza, texto preto centralizado — como o oficial) */
-  .sec { background: #d9d9d9; color: #000; font-weight: 700; font-size: 8.5px; text-align: center; text-transform: uppercase; padding: 2px 6px; border-bottom: 1px solid #999; }
-  .desc { padding: 4px 6px; white-space: pre-wrap; border-bottom: 1px solid #999; line-height: 1.35; min-height: 34px; }
-  .naoinf { padding: 3px 6px; border-bottom: 1px solid #999; color: #333; }
-  .logo-emit { max-height: 34px; max-width: 90px; float: right; margin: 2px 4px; }
-  /* Valor líquido destacado (faixa sóbria) */
-  .liq { display: flex; align-items: center; justify-content: space-between; padding: 5px 10px; border-bottom: 1px solid #000; background: #efefef; }
-  .liq .lab { font-size: 10px; font-weight: 700; text-transform: uppercase; }
-  .liq .num { font-size: 16px; font-weight: 800; }
-  .homolog { text-align: center; color: #000; font-weight: 800; border: 2px solid #000; padding: 3px; margin: 4px 6px; letter-spacing: 1px; }
-  .note { font-size: 7px; color: #333; padding: 4px 6px; text-align: center; }
+  @page { size: A4 portrait; margin: 6mm; }
+  body { font-family: "Segoe UI", Arial, Helvetica, sans-serif; font-size: 8px; color: #000; margin: 0; background: #f5f6f8; }
+  .doc { width: 198mm; margin: 0 auto; background: #fff; border: 1px solid #777; padding: 0 0 2mm; position: relative; }
+  /* Cabeçalho */
+  .cab { display: flex; align-items: center; border-bottom: 1px solid #777; }
+  .cab .brand { width: 58mm; display: flex; align-items: center; gap: 5px; padding: 6px 8px; }
+  .brand .nfs { font-size: 25px; font-weight: 800; font-style: italic; color: #17549b; letter-spacing: -1px; }
+  .brand .nfs .e { color: #47a23f; font-size: 27px; }
+  .brand .sub { font-size: 8px; color: #666; line-height: 1.2; }
+  .brand .sub b { color: #47a23f; font-weight: 600; }
+  .cab .mid { flex: 1; text-align: center; }
+  .cab .mid .t1 { font-size: 12px; font-weight: 700; }
+  .cab .mid .t2 { font-size: 10px; font-weight: 700; }
+  .cab .pref { width: 55mm; padding: 4px 8px; font-size: 7.5px; line-height: 1.35; border-left: 1px solid #ccc; }
+  .cab .pref b { display: block; font-size: 8.5px; }
+  /* Chave + identificação com QR à direita */
+  .idwrap { display: flex; border-bottom: 2px solid #000; }
+  .idleft { flex: 1; }
+  .chave { padding: 3px 8px 1px; }
+  .chave .lbl { font-weight: 700; font-size: 8px; display: block; }
+  .chave .num { font-size: 9.5px; letter-spacing: .4px; }
+  .qrbox { width: 34mm; border-left: 1px solid #ccc; padding: 4px 6px; text-align: center; }
+  .qrbox svg { width: 21mm; height: 21mm; }
+  .qrbox .cap { font-size: 6.3px; text-align: justify; line-height: 1.25; margin-top: 2px; }
+  /* Grid oficial: 4 colunas, sem bordas verticais, linha fina entre linhas */
+  .grid { display: flex; border-top: 1px solid #ccc; }
+  .grid.first { border-top: 0; }
+  .cel { padding: 2px 8px; min-width: 0; overflow: hidden; }
+  .lbl { display: block; font-size: 7.2px; font-weight: 700; }
+  .val { display: block; font-size: 8.2px; word-wrap: break-word; }
+  .sec-in { display: block; font-size: 8.2px; font-weight: 800; text-transform: uppercase; }
+  /* Títulos de seção de linha inteira */
+  .sec { border-top: 2px solid #000; padding: 2px 8px 0; font-size: 8.2px; font-weight: 800; text-transform: uppercase; }
+  .sec-mid { border-top: 2px solid #000; border-bottom: 0; padding: 2px 8px; font-size: 8px; font-weight: 800; text-transform: uppercase; text-align: center; }
+  .liq b { font-size: 9.5px; }
+  .homolog { text-align: center; font-weight: 800; border: 2px solid #000; padding: 3px; margin: 4px 8px; letter-spacing: 1px; font-size: 9px; }
+  .logo-emit { max-height: 26px; max-width: 80px; float: right; margin: 2px 6px 0 0; }
+  .totais { display: flex; text-align: center; }
+  .totais .cel { flex: 1; }
   .toolbar { text-align: center; padding: 10px; background: #fff; border-bottom: 1px solid #ddd; }
-  .toolbar button { font-size: 13px; font-weight: 700; padding: 8px 18px; cursor: pointer; border: 0; border-radius: 5px; background: #333; color: #fff; }
+  .toolbar button { font-size: 13px; font-weight: 700; padding: 8px 18px; cursor: pointer; border: 0; border-radius: 5px; background: #17549b; color: #fff; }
   .toolbar .hint { display: block; font-size: 10px; color: #555; margin-top: 5px; }
-  @media print { body { background: #fff; } .no-print { display: none !important; } .doc { border: 1px solid #000; width: auto; } @page { size: A4 portrait; margin: 7mm; } }
+  @media print { body { background: #fff; } .no-print { display: none !important; } .doc { border: 1px solid #777; width: auto; } @page { size: A4 portrait; margin: 6mm; } }
 </style>
 </head>
 <body>
@@ -298,111 +356,159 @@ function renderHtml(d: DanfseData, opts?: DanfseOptions): string {
 <div class="doc">
   <div class="cab">
     <div class="brand">
-      <div class="nfse">NFS<small>-e</small></div>
-      <div class="ver">DANFSe v1.0<br/>Documento Auxiliar da NFS-e</div>
+      <span class="nfs">NFS<span class="e">e</span></span>
+      <span class="sub">Nota Fiscal de<br/>Serviço <b>eletrônica</b></span>
     </div>
     <div class="mid">
-      <div class="t1">DANFSe — Documento Auxiliar da Nota Fiscal de Serviço Eletrônica</div>
-      <div class="clab">Chave de Acesso da NFS-e</div>
-      <div class="chv">${escHtml(chaveFormatada(d.chave))}</div>
-      <div class="url">Consulta pela chave de acesso ou QR Code em www.nfse.gov.br/consultapublica</div>
+      <div class="t1">DANFSe v1.0</div>
+      <div class="t2">Documento Auxiliar da NFS-e</div>
     </div>
-    <div class="qr">${qrCodeSvg(consultaPublicaNfseUrl(d.chave))}</div>
+    <div class="pref">
+      <b>Prefeitura Municipal de ${escHtml(d.xLocIncid || d.xLocEmi || d.emit.mun || "")}</b>
+      Documento emitido pelo Sistema Nacional NFS-e<br/>www.nfse.gov.br
+    </div>
   </div>
   ${homolog}
 
-  <div class="grid">
-    ${cel("Número da NFS-e", d.nNFSe)}
-    ${cel("Competência da NFS-e", competFmt(d.dCompet))}
-    ${cel("Data e Hora da emissão da NFS-e", dhFmt(d.dhProc || d.dhEmi), 1.4)}
-    ${cel("Número da DPS", d.nDPS)}
-    ${cel("Série da DPS", d.serie)}
-    ${cel("Data e Hora da emissão da DPS", dhFmt(d.dhEmi), 1.4)}
+  <div class="idwrap">
+    <div class="idleft">
+      <div class="chave">
+        <span class="lbl">Chave de Acesso da NFS-e</span>
+        <span class="num">${escHtml(d.chave)}</span>
+      </div>
+      <div class="grid">
+        ${cel("Número da NFS-e", d.nNFSe)}
+        ${cel("Competência da NFS-e", dataFmt(d.dCompet))}
+        ${cel("Data e Hora da emissão da NFS-e", dhFmt(d.dhProc || d.dhEmi), 1.4)}
+      </div>
+      <div class="grid">
+        ${cel("Número da DPS", d.nDPS)}
+        ${cel("Série da DPS", d.serie)}
+        ${cel("Data e Hora da emissão da DPS", dhFmt(d.dhEmi), 1.4)}
+      </div>
+    </div>
+    <div class="qrbox">
+      ${qrCodeSvg(consultaPublicaNfseUrl(d.chave))}
+      <div class="cap">A autenticidade desta NFS-e pode ser verificada pela leitura deste código QR ou pela consulta da chave de acesso no portal nacional da NFS-e.</div>
+    </div>
   </div>
 
-  <div class="sec">Emitente da NFS-e</div>
-  <div class="grid">
-    ${cel("CNPJ / CPF / NIF", docFmt(d.emit.doc), 1.2)}
-    ${cel("Inscrição Municipal", d.emit.im || "—")}
-    ${cel("Telefone", d.emit.fone || "—")}
-  </div>
-  <div class="grid">${cel("Nome / Nome Empresarial", `${d.emit.nome}`, 1)}</div>
-  <div class="grid">
-    ${cel("E-mail", d.emit.email || "—", 1)}
-  </div>
-  <div class="grid">${cel("Endereço", d.emit.ender || "—", 1)}</div>
-
-  <div class="sec">Tomador do Serviço</div>
-  ${d.toma.nome || d.toma.doc ? `
-  <div class="grid">
-    ${cel("CNPJ / CPF / NIF", d.toma.doc ? docFmt(d.toma.doc) : "—", 1.2)}
-    ${cel("Inscrição Municipal", d.toma.im || "—")}
-    ${cel("Telefone", d.toma.fone || "—")}
-  </div>
-  <div class="grid">${cel("Nome / Nome Empresarial", d.toma.nome || "—", 1)}</div>
-  <div class="grid">${cel("E-mail", d.toma.email || "—", 1)}</div>
-  ${d.toma.ender ? `<div class="grid">${cel("Endereço", d.toma.ender, 1)}</div>` : ""}
-  ` : `<div class="naoinf">Não informado</div>`}
-
-  <div class="sec">Intermediário do Serviço</div>
-  ${d.interm ? `
-  <div class="grid">
-    ${cel("CNPJ / CPF / NIF", d.interm.doc ? docFmt(d.interm.doc) : "—", 1)}
-    ${cel("Nome / Nome Empresarial", d.interm.nome || "—", 2)}
-  </div>
-  ` : `<div class="naoinf">Não informado</div>`}
-
-  <div class="sec">Serviço Prestado</div>
-  <div class="grid">${cel("Código de Tributação Nacional", cTribNacFmt, 1)}</div>
-  <div class="grid">
-    ${cel("Código de Tributação Municipal", d.serv.cTribMun || "—")}
-    ${cel("Código NBS", d.serv.cNBS || "—")}
-    ${cel("Local da Prestação", d.xLocPrestacao || "—", 1.4)}
-    ${cel("País da Prestação", "Brasil")}
-  </div>
-  <div class="grid"><div class="cel" style="flex:1;border-right:0"><span class="lbl">Descrição do Serviço</span></div></div>
-  <div class="desc">${escHtml(d.serv.xDescServ)}</div>
-
-  <div class="sec">Tributação Municipal</div>
-  <div class="grid">
-    ${cel("Tributação do ISSQN", tribISSQNLabel(d.tribISSQN), 1.2)}
-    ${cel("Município de Incidência do ISSQN", d.xLocIncid || d.xLocPrestacao || "—", 1.4)}
-    ${cel("ISSQN Retido pelo Tomador", v.issRetido ? "SIM" : "NÃO")}
+  <div class="grid first" style="border-top:0">
+    ${celSecao("EMITENTE DA NFS-e", "Prestador do Serviço", 1.2)}
+    ${cel("CNPJ / CPF / NIF", docFmt(d.emit.doc))}
+    ${cel("Inscrição Municipal", d.emit.im || "-")}
+    ${cel("Telefone", foneFmt(d.emit.fone))}
   </div>
   <div class="grid">
-    ${cel("Base de Cálculo do ISSQN", `R$ ${brl(v.vBC)}`)}
-    ${cel("Alíquota do ISSQN", `${brl(v.pAliq)}%`)}
-    ${cel("Valor do ISSQN", `R$ ${brl(v.vISSQN)}`)}
+    ${cel("Nome / Nome Empresarial", d.emit.nome, 2.2)}
+    ${cel("E-mail", d.emit.email || "-", 1.8)}
+  </div>
+  <div class="grid">
+    ${cel("Endereço", d.emit.log || "-", 2.2)}
+    ${cel("Município", d.emit.mun || "-")}
+    ${cel("CEP", cepFmt(d.emit.cep))}
+  </div>
+  <div class="grid">
+    ${cel("Simples Nacional na Data de Competência", simpNacLabel(d.simpNac), 2.2)}
+    ${cel("Regime de Apuração Tributária pelo SN", d.regApSN || "-", 1.8)}
   </div>
 
-  <div class="sec">Tributação Federal</div>
+  <div class="grid" style="border-top:2px solid #000">
+    ${celSecao("TOMADOR DO SERVIÇO", "", 1.2)}
+    ${cel("CNPJ / CPF / NIF", d.toma.doc ? docFmt(d.toma.doc) : "-")}
+    ${cel("Inscrição Municipal", d.toma.im || "-")}
+    ${cel("Telefone", d.toma.fone ? foneFmt(d.toma.fone) : "-")}
+  </div>
   <div class="grid">
-    ${cel("Retenção do IRRF", `R$ ${brl(v.vRetIRRF)}`)}
-    ${cel("Retenção da CSLL", `R$ ${brl(v.vRetCSLL)}`)}
-    ${cel("Retenção da CP (INSS)", `R$ ${brl(v.vRetINSS)}`)}
-    ${cel("Retenção do PIS", `R$ ${brl(v.vRetPis)}`)}
-    ${cel("Retenção da COFINS", `R$ ${brl(v.vRetCofins)}`)}
+    ${cel("Nome / Nome Empresarial", d.toma.nome || "-", 2.2)}
+    ${cel("E-mail", d.toma.email || "-", 1.8)}
   </div>
-
-  <div class="sec">Valores da NFS-e</div>
   <div class="grid">
-    ${cel("Valor do Serviço", `R$ ${brl(v.vServ)}`)}
-    ${cel("Desconto Incondicionado", `R$ ${brl(v.vDescIncond)}`)}
-    ${cel("Total de Deduções / Reduções", `R$ ${brl(v.vDedRed)}`)}
-    ${cel("Total de Retenções", `R$ ${brl(v.vTotalRet)}`)}
-  </div>
-  <div class="liq">
-    <span class="lab">Valor Líquido da NFS-e</span>
-    <span class="num">R$ ${escHtml(brl(v.vLiq))}</span>
+    ${cel("Endereço", d.toma.log || "-", 2.2)}
+    ${cel("Município", d.toma.mun || "-")}
+    ${cel("CEP", cepFmt(d.toma.cep))}
   </div>
 
-  <div class="sec">Informações Complementares</div>
-  <div class="naoinf">${d.xInfComp ? escHtml(d.xInfComp) : "Não informado"}${logoEmit}</div>
+  ${d.interm
+    ? `<div class="grid" style="border-top:2px solid #000">
+        ${celSecao("INTERMEDIÁRIO DO SERVIÇO", "", 1.2)}
+        ${cel("CNPJ / CPF / NIF", d.interm.doc ? docFmt(d.interm.doc) : "-")}
+        ${cel("Nome / Nome Empresarial", d.interm.nome || "-", 2)}
+      </div>`
+    : `<div class="sec-mid">INTERMEDIÁRIO DO SERVIÇO NÃO IDENTIFICADO NA NFS-e</div>`}
 
-  <div class="note">
-    DANFSE gerado a partir do XML autorizado da NFS-e do Sistema Nacional (DFe ${escHtml(d.nDFSe)} ·
-    processada em ${escHtml(dhFmt(d.dhProc))} · situação ${escHtml(d.cStat === "100" ? "Autorizada" : d.cStat)}).
-    A autenticidade pode ser verificada pelo QR Code ou pela chave de acesso em www.nfse.gov.br.
+  <div class="sec">SERVIÇO PRESTADO</div>
+  <div class="grid first">
+    ${cel("Código de Tributação Nacional", cTribNacFmt, 1.4)}
+    ${cel("Código de Tributação Municipal", d.serv.cTribMun || "-")}
+    ${cel("Local da Prestação", d.xLocPrestacao || "-")}
+    ${cel("País da Prestação", "-")}
+  </div>
+  <div class="grid">
+    ${cel("Descrição do Serviço", d.serv.xDescServ, 1)}
+  </div>
+
+  <div class="sec">TRIBUTAÇÃO MUNICIPAL</div>
+  <div class="grid first">
+    ${cel("Tributação do ISSQN", tribISSQNLabel(d.tribISSQN))}
+    ${cel("País Resultado da Prestação do Serviço", "-")}
+    ${cel("Município de Incidência do ISSQN", d.xLocIncid || d.xLocPrestacao || "-")}
+    ${cel("Regime Especial de Tributação", "Nenhum")}
+  </div>
+  <div class="grid">
+    ${cel("Tipo de Imunidade", "-")}
+    ${cel("Suspensão da Exigibilidade do ISSQN", "Não")}
+    ${cel("Número Processo Suspensão", "-")}
+    ${cel("Benefício Municipal", "-")}
+  </div>
+  <div class="grid">
+    ${cel("Valor do Serviço", mon(v.vServ, true))}
+    ${cel("Desconto Incondicionado", mon(v.vDescIncond))}
+    ${cel("Total Deduções/Reduções", mon(v.vDedRed))}
+    ${cel("Cálculo do BM", "-")}
+  </div>
+  <div class="grid">
+    ${cel("BC ISSQN", mon(v.vBC, true))}
+    ${cel("Alíquota Aplicada", Number(v.pAliq) > 0 ? `${brl(v.pAliq)} %` : "-")}
+    ${cel("Retenção do ISSQN", retISSQNLabel(d.tpRetISSQN))}
+    ${cel("ISSQN Apurado", mon(v.vISSQN))}
+  </div>
+
+  <div class="sec">TRIBUTAÇÃO FEDERAL</div>
+  <div class="grid first">
+    ${cel("IRRF", mon(v.vRetIRRF))}
+    ${cel("Contribuição Previdenciária - Retida", mon(v.vRetINSS))}
+    ${cel("Contribuições Sociais - Retidas", mon(Number(v.vRetCSLL) > 0 ? v.vRetCSLL : ""))}
+    ${cel("Descrição Contrib. Sociais - Retidas", Number(v.vRetCSLL) > 0 ? "CSLL" : "-")}
+  </div>
+  <div class="grid">
+    ${cel("PIS - Débito Apuração Própria", mon(v.vRetPis))}
+    ${cel("COFINS - Débito Apuração Própria", mon(v.vRetCofins), 3)}
+  </div>
+
+  <div class="sec">VALOR TOTAL DA NFS-e</div>
+  <div class="grid first">
+    ${cel("Valor do Serviço", mon(v.vServ, true))}
+    ${cel("Desconto Condicionado", mon(v.vDescCond))}
+    ${cel("Desconto Incondicionado", mon(v.vDescIncond))}
+    ${cel("ISSQN Retido", issRetido ? mon(v.vISSQN, true) : "-")}
+  </div>
+  <div class="grid liq">
+    ${cel("Total das Retenções Federais", mon(v.vTotalRet))}
+    ${cel("PIS/COFINS - Débito Apur. Própria", "-")}
+    <div class="cel" style="flex:1"><span class="lbl">Valor Líquido da NFS-e</span><span class="val"><b>${escHtml(mon(v.vLiq, true))}</b></span></div>
+  </div>
+
+  <div class="sec">TOTAIS APROXIMADOS DOS TRIBUTOS</div>
+  <div class="grid first totais">
+    ${cel("Federais", mon(v.totFed))}
+    ${cel("Estaduais", mon(v.totEst))}
+    ${cel("Municipais", mon(v.totMun))}
+  </div>
+
+  <div class="sec">INFORMAÇÕES COMPLEMENTARES</div>
+  <div class="grid first">
+    <div class="cel" style="flex:1"><span class="val">${escHtml(infComp) || "-"}${logoEmit}</span></div>
   </div>
 </div>
 </body>
