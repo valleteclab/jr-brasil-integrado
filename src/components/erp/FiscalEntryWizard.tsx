@@ -80,6 +80,9 @@ const FINALIDADE_ORIGEM_LABEL: Record<string, string> = {
   IA: "IA"
 };
 
+// Unidades de venda mais comuns para o dropdown (datalist) — o usuário ainda pode digitar outra.
+const UNIDADES_VENDA = ["UN", "PC", "CX", "FD", "SC", "PAR", "KG", "G", "L", "ML", "M", "M2", "M3", "DZ", "CT", "RL", "KIT"];
+
 // CFOP de entrada por finalidade (espelha src/domains/fiscal/finalidade-entrada.ts) para
 // recalcular o CFOP exibido ao trocar a finalidade no cliente. O eixo interno/interestadual
 // é preservado do CFOP já derivado no servidor.
@@ -1019,7 +1022,8 @@ export function FiscalEntryWizard({ initialDraft = null, products, formasPagamen
                               </label>
                               <input
                                 aria-label="Unidade de venda"
-                                style={{ width: 60 }}
+                                list="unidades-venda-lista"
+                                style={{ width: 72 }}
                                 placeholder="UN"
                                 value={unVenda}
                                 onChange={(event) => updateItem(item.id, { unidadeVenda: event.target.value.toUpperCase().slice(0, 6) })}
@@ -1176,6 +1180,9 @@ export function FiscalEntryWizard({ initialDraft = null, products, formasPagamen
               <strong>Valor dos itens: {formatBrl(totalItems)}</strong>
             </div>
           </div>
+          <datalist id="unidades-venda-lista">
+            {UNIDADES_VENDA.map((u) => <option key={u} value={u} />)}
+          </datalist>
           <datalist id="cfop-entrada-especiais">
             {/* Tabela completa (CodigoFiscal) + curados — os curados cobrem códigos ausentes do
                 dataset público (ex.: 2128). Dedup por código, ordenado. */}
