@@ -538,6 +538,20 @@ export function FiscalEntryWizard({ initialDraft = null, products, formasPagamen
       : { marginTerm: valor, ...(preco ? { salePriceTerm: preco } : {}) });
   }
 
+  // Fator de conversão de embalagem: muda o custo POR UNIDADE DE VENDA (custo do XML ÷ fator), então
+  // os preços sugeridos por margem precisam ser recalculados com o novo custo (senão ficam com o
+  // preço da embalagem inteira — bug quando o cliente aplica a conversão depois da sugestão).
+  function updateFator(item: FiscalDraftItem, valor: number) {
+    const fator = valor > 0 ? valor : 1;
+    const custo = currencyToNumber(item.importedProduct.costValue) / fator; // novo custo/unidade de venda
+    const changes: Partial<FiscalDraftItem> = { fatorConversao: fator };
+    const mVista = decimalInputToNumber(item.marginCash);
+    if (mVista > 0 && custo > 0) changes.salePrice = numberToDecimalInput(precoPorMargem(custo, mVista));
+    const mPrazo = decimalInputToNumber(item.marginTerm);
+    if (mPrazo > 0 && custo > 0) changes.salePriceTerm = numberToDecimalInput(precoPorMargem(custo, mPrazo));
+    updateItem(item.id, changes);
+  }
+
   // Aplica uma finalidade a TODOS os itens de uma vez (notas homogêneas — ex.: tudo uso e consumo).
   // Espelha a edição por item: recalcula o CFOP de entrada e se movimenta estoque. Continua sendo
   // possível ajustar item a item depois, e nada é gravado até confirmar o lançamento.
@@ -1014,10 +1028,7 @@ export function FiscalEntryWizard({ initialDraft = null, products, formasPagamen
                                   inputMode="decimal"
                                   style={{ width: 64 }}
                                   value={String(fator).replace(".", ",")}
-                                  onChange={(event) => {
-                                    const v = decimalInputToNumber(event.target.value);
-                                    updateItem(item.id, { fatorConversao: v > 0 ? v : 1 });
-                                  }}
+                                  onChange={(event) => updateFator(item, decimalInputToNumber(event.target.value))}
                                 />
                               </label>
                               <input
