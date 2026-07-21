@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { CobrancaClienteRow } from "@/lib/services/platform-admin";
+import { CODIGO_SERVICO_OPTIONS } from "@/domains/fiscal/codigo-tributacao-nacional";
 
 /**
  * Painel de COBRANÇAS da plataforma (/admin/cobrancas): mensalidades por cliente com o status das
@@ -122,8 +123,13 @@ export function CobrancasAdminPanel({ inicial }: { inicial: CobrancaClienteRow[]
                 <label style={{ fontSize: 12, flex: 1, minWidth: 220 }}>Descrição (vazio = padrão com competência)
                   <input value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder={`Assinatura mensal do sistema XERP — competência ${new Date().toLocaleDateString("pt-BR", { month: "2-digit", year: "numeric" })}`} style={{ display: "block", width: "100%", height: 32, border: "1px solid var(--erp-line)", borderRadius: 6, padding: "0 8px" }} />
                 </label>
-                <label style={{ fontSize: 12 }}>Cód. LC116 (vazio = padrão da empresa)
-                  <input value={codigo} onChange={(e) => setCodigo(e.target.value)} placeholder="ex.: 1.03" style={{ display: "block", width: 130, height: 32, border: "1px solid var(--erp-line)", borderRadius: 6, padding: "0 8px" }} />
+                <label style={{ fontSize: 12, flex: 1, minWidth: 280 }}>Código de Tributação Nacional (serviço)
+                  <select value={codigo} onChange={(e) => setCodigo(e.target.value)} style={{ display: "block", width: "100%", height: 32, border: "1px solid var(--erp-line)", borderRadius: 6, padding: "0 6px" }}>
+                    <option value="">Padrão da empresa (config fiscal)</option>
+                    {CODIGO_SERVICO_OPTIONS.map((o) => (
+                      <option key={o.code} value={o.code}>{o.code} — {o.description}</option>
+                    ))}
+                  </select>
                 </label>
                 <button type="button" className="btn-erp primary sm" disabled={busy} onClick={() => emitir(r.tenantId)}>
                   {busy ? "Emitindo…" : "Emitir NFS-e"}
