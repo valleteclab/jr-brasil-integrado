@@ -22,12 +22,17 @@ RUN npm run build
 # ---- runner: imagem final de produção ----
 FROM node:20-bookworm-slim AS runner
 WORKDIR /app
+# TZ: fuso de Brasília para TODA formatação server-side de data/hora (telas, cupons, crons).
+# O armazenamento no banco segue em UTC (Prisma) — isto muda só a exibição/parse local.
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
     HOSTNAME=0.0.0.0 \
-    PORT=3000
-# openssl é exigido pelos engines do Prisma; prisma CLI (global) roda o migrate deploy no start.
-RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates \
+    PORT=3000 \
+    TZ=America/Sao_Paulo
+# openssl é exigido pelos engines do Prisma; tzdata dá o fuso; prisma CLI roda o migrate no start.
+RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates tzdata \
+    && ln -snf /usr/share/zoneinfo/America/Sao_Paulo /etc/localtime \
+    && echo "America/Sao_Paulo" > /etc/timezone \
     && rm -rf /var/lib/apt/lists/* \
     && npm i -g prisma@5.22.0 \
     && useradd -m -u 1001 erp

@@ -12,6 +12,8 @@ services:
       - erp_internal                # rede privada ERP <-> Postgres
     environment:
       NODE_ENV: production
+      # Fuso de Brasília p/ formatação server-side (a imagem já traz TZ; aqui garante no stack).
+      TZ: "America/Sao_Paulo"
       # Banco dedicado (serviço erp_postgres abaixo) — nunca exposto na internet.
       DATABASE_URL: "postgresql://erp:${ERP_DB_PASSWORD}@erp_postgres:5432/erp?schema=public"
       ERP_BASE: "https://erp.sisgov.app.br"
