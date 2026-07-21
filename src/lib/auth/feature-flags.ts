@@ -102,7 +102,7 @@ export const PRESET_FLAGS_COMPLETO: TenantFeatures = {
  * Rotas permitidas no plano EMISSOR (whitelist por prefixo, aplicada ALÉM dos gates de flag/RBAC).
  * Foco: emitir NF-e/NFS-e, acompanhar o Simples/MEI e manter cadastros mínimos.
  */
-export const EMISSOR_ROUTE_PREFIXES = ["/erp/fiscal", "/erp/nfse-recebidas", "/erp/clientes", "/erp/produtos", "/erp/configuracoes"] as const;
+export const EMISSOR_ROUTE_PREFIXES = ["/erp/fiscal", "/erp/nfse-recebidas", "/erp/clientes", "/erp/produtos", "/erp/configuracoes", "/erp/colaboradores"] as const;
 
 /** Um pathname do ERP é acessível no plano EMISSOR? ("/erp" exato = dashboard sempre pode). */
 export function rotaPermitidaNoEmissor(pathname: string): boolean {

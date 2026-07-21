@@ -40,6 +40,8 @@ type ErpNavItem = {
   accent?: boolean;
   badgeKey?: keyof ErpShellBadges;
   danger?: boolean;
+  /** Sobrepõe o módulo RBAC derivado do path (ex.: itens fiscais que exigem outro módulo). */
+  modulo?: string;
 };
 
 type ErpNavGroup = { group: string; items: ErpNavItem[] };
@@ -114,15 +116,18 @@ const groups: ErpNavGroup[] = [
 ];
 
 /** Menu do plano EMISSOR DE NOTAS: foco total em emitir NF-e/NFS-e (MEI e Simples). */
+// Itens do EMISSOR com módulo RBAC fino: "Emitir NF-e" exige o módulo PRODUTOS (NF-e é nota de
+// produto) e "Simples/MEI" exige FINANCEIRO (apuração) — assim um perfil operacional (ex.: só
+// NFS-e + clientes) esconde o resto, sem mexer em código por cliente.
 const groupsEmissor: ErpNavGroup[] = [
   {
     group: "Emissor de Notas",
     items: [
       { label: "Início", href: "/erp", icon: "▦" },
-      { label: "Emitir NF-e", href: "/erp/fiscal/emitir", icon: "🧾", accent: true },
+      { label: "Emitir NF-e", href: "/erp/fiscal/emitir", icon: "🧾", accent: true, modulo: "produtos" },
       { label: "Emitir NFS-e", href: "/erp/fiscal/emitir/nfse", icon: "📑", accent: true },
       { label: "Notas emitidas", href: "/erp/fiscal", icon: "🗂" },
-      { label: "Simples / MEI", href: "/erp/fiscal/simples", icon: "📊" }
+      { label: "Simples / MEI", href: "/erp/fiscal/simples", icon: "📊", modulo: "financeiro" }
     ]
   },
   {
@@ -137,7 +142,8 @@ const groupsEmissor: ErpNavGroup[] = [
     items: [
       { label: "Dados da empresa", href: "/erp/configuracoes/empresa", icon: "🏢" },
       { label: "Emissão fiscal (certificado)", href: "/erp/configuracoes/fiscal", icon: "⚙" },
-      { label: "E-mail (envio)", href: "/erp/configuracoes/email", icon: "✉" }
+      { label: "E-mail (envio)", href: "/erp/configuracoes/email", icon: "✉" },
+      { label: "Usuários & permissões", href: "/erp/colaboradores", icon: "👤" }
     ]
   }
 ];
@@ -162,25 +168,33 @@ export function ErpShell({ children, context, modulos }: ErpShellProps) {
 
   // Gate por módulo: item visível se (1) a flag por tenant do dono do SaaS estiver ligada,
   // (2) o módulo for liberado ao perfil (RBAC) e (3) relevante para o tipo de negócio da empresa.
-  const podeVer = (href: string) => {
+  const podeVer = (href: string, moduloOverride?: string) => {
     // Gate por tenant (dono do SaaS): href mapeado em HREF_FLAG → respeita a flag liberada.
     const flag = HREF_FLAG[href];
     if (flag && !context.features[flag]) return false;
     // "Novo atendimento" não tem flag própria — depende de existir algum tipo de venda liberado.
     if (href === "/erp/atendimento" && !algumTipoVenda) return false;
-    const modulo = moduloFromPath(href);
+    const modulo = moduloOverride ?? moduloFromPath(href);
     if (!modulo) return true;
-    return modulos.includes(modulo) && moduloVisivelNoTipoNegocio(modulo, context.tipoNegocio);
+    return modulos.includes(modulo as Parameters<typeof moduloVisivelNoTipoNegocio>[0]) && moduloVisivelNoTipoNegocio(modulo as Parameters<typeof moduloVisivelNoTipoNegocio>[0], context.tipoNegocio);
   };
   const emissor = context.plano === "EMISSOR";
   const gruposVisiveis = (emissor ? groupsEmissor : groups)
-    .map((g) => ({ ...g, items: g.items.filter((i) => podeVer(i.href)) }))
+    .map((g) => ({ ...g, items: g.items.filter((i) => podeVer(i.href, i.modulo)) }))
     .filter((g) => g.items.length > 0);
 
   // Guard do plano EMISSOR: URLs fora do escopo do emissor voltam para o início (o menu já não
-  // as mostra; isto cobre o acesso direto por URL/rota antiga).
+  // as mostra; isto cobre o acesso direto por URL/rota antiga). Também cobre itens ESCONDIDOS
+  // pelo RBAC fino (ex.: Emitir NF-e sem o módulo produtos): o item de melhor match (href mais
+  // específico) precisa estar visível.
   useEffect(() => {
-    if (emissor && !rotaPermitidaNoEmissor(pathname)) router.replace("/erp");
+    if (!emissor) return;
+    if (!rotaPermitidaNoEmissor(pathname)) { router.replace("/erp"); return; }
+    const todos = groupsEmissor.flatMap((g) => g.items);
+    const melhor = todos
+      .filter((i) => pathname === i.href || pathname.startsWith(`${i.href}/`))
+      .sort((a, b) => b.href.length - a.href.length)[0];
+    if (melhor && melhor.href !== "/erp" && !podeVer(melhor.href, melhor.modulo)) router.replace("/erp");
   }, [emissor, pathname, router]);
 
   async function sair() {
