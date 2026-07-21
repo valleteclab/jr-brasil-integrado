@@ -722,8 +722,10 @@ export async function enviarCobrancaEmailAdmin(
   if (!vinculo?.empresaId) throw new PlatformAdminError("Seu usuário não tem vínculo com a empresa emissora (dono do SaaS).");
   const scopeDono = { tenantId: vinculo.tenantId, empresaId: vinculo.empresaId };
 
-  const alvo = await prisma.tenant.findUnique({ where: { id: tenantAlvoId }, select: { nome: true } });
+  const alvo = await prisma.tenant.findUnique({ where: { id: tenantAlvoId }, select: { nome: true, plano: true } });
   if (!alvo) throw new PlatformAdminError("Cliente não encontrado.");
+  const planoAlvo = await prisma.plataformaPlano.findUnique({ where: { codigo: alvo.plano } });
+  const nomeAssinatura = `sistema XERP${planoAlvo?.nome ? ` — plano ${planoAlvo.nome}` : ""}`;
 
   const { getEmailRuntime, sendEmail } = await import("@/lib/email/smtp-client");
   const cfgEmail = await getEmailRuntime(scopeDono);
@@ -760,7 +762,7 @@ export async function enviarCobrancaEmailAdmin(
   const html = `
     <div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#111;max-width:560px">
       <p>Olá, <strong>${alvo.nome}</strong>!</p>
-      <p>Segue a cobrança da sua assinatura${valorBr ? ` no valor de <strong>${valorBr}</strong>` : ""}${vencBr ? `, com vencimento em <strong>${vencBr}</strong>` : ""}.</p>
+      <p>Segue a cobrança da sua assinatura do <strong>${nomeAssinatura}</strong>${valorBr ? `, no valor de <strong>${valorBr}</strong>` : ""}${vencBr ? `, com vencimento em <strong>${vencBr}</strong>` : ""}.</p>
       ${botao}
       ${f?.link ? `<p style="font-size:12px;color:#555">Se o botão não abrir, copie o link: ${f.link}</p>` : ""}
       ${notaLinha}
@@ -770,7 +772,7 @@ export async function enviarCobrancaEmailAdmin(
 
   const r = await sendEmail(cfgEmail, {
     to: para,
-    subject: `Cobrança da assinatura${vencBr ? ` — vencimento ${vencBr}` : ""}`,
+    subject: `Assinatura XERP${planoAlvo?.nome ? ` (${planoAlvo.nome})` : ""}${vencBr ? ` — vencimento ${vencBr}` : ""}`,
     html,
     attachments: anexos
   });
