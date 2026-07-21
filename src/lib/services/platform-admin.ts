@@ -608,6 +608,10 @@ export type CobrancaClienteRow = {
   plano: string;
   valorMensal: number;
   temAssinatura: boolean;
+  /** E-mail cadastrado da empresa matriz do cliente (padrão do envio da cobrança). */
+  emailCliente: string | null;
+  /** Últimas NFS-e AUTORIZADAS emitidas pela empresa do dono para este cliente (tomador). */
+  notas: Array<{ id: string; numero: string; valor: number; emitidaEm: string | null }>;
   /** Resumo das faturas: pagas/pendentes/vencidas. */
   pagas: number;
   pendentes: number;
@@ -620,10 +624,16 @@ const PAGO_SET = new Set(["RECEIVED", "CONFIRMED", "RECEIVED_IN_CASH"]);
 
 /** Painel de cobranças do dono: cada tenant com assinatura + faturas do Asaas (pagas/vencidas). */
 export async function listarCobrancasAdmin(): Promise<CobrancaClienteRow[]> {
-  await requirePlatformAdmin();
+  const admin = await requirePlatformAdmin();
   assertDb();
   const { getAsaasRuntime, asaasListarFaturasAssinatura } = await import("@/lib/asaas/asaas-service");
   const rt = await getAsaasRuntime();
+
+  // Scope da empresa do DONO (emissora das NFS-e de mensalidade) — vínculo ativo do admin.
+  const vinculoDono = await prisma.usuarioVinculo.findFirst({
+    where: { usuarioId: admin.usuarioId, ativo: true, empresaId: { not: null } },
+    select: { tenantId: true, empresaId: true }
+  });
 
   const tenants = await prisma.tenant.findMany({
     where: { ativo: true },
@@ -632,13 +642,45 @@ export async function listarCobrancasAdmin(): Promise<CobrancaClienteRow[]> {
   });
   const planos = await prisma.plataformaPlano.findMany();
   const precoPlano = new Map(planos.map((p) => [p.codigo, Number(p.precoMensal)]));
+  // Matriz de cada tenant (e-mail padrão do envio + CNPJ p/ achar as NFS-e do tomador).
+  const matrizes = await prisma.empresa.findMany({
+    where: { tenantId: { in: tenants.map((t) => t.id) }, matriz: true },
+    select: { tenantId: true, cnpj: true, email: true }
+  });
+  const matrizPorTenant = new Map(matrizes.map((m) => [m.tenantId, m]));
 
   const rows: CobrancaClienteRow[] = [];
   for (const t of tenants) {
     const valorMensal = precoMensalEfetivo(t.mensalidadeValor != null ? Number(t.mensalidadeValor) : null, precoPlano.get(t.plano) ?? 0);
+    const matriz = matrizPorTenant.get(t.id);
+    // NFS-e da mensalidade já emitidas para este cliente (tomador = CNPJ da matriz dele).
+    let notas: CobrancaClienteRow["notas"] = [];
+    if (vinculoDono?.empresaId && matriz?.cnpj) {
+      const notasDb = await prisma.notaFiscal.findMany({
+        where: {
+          tenantId: vinculoDono.tenantId,
+          empresaId: vinculoDono.empresaId,
+          modelo: "NFSE",
+          status: "AUTORIZADA",
+          destinatarioDocumento: matriz.cnpj
+        },
+        orderBy: { emitidaEm: "desc" },
+        take: 5,
+        select: { id: true, numero: true, numeroNfse: true, total: true, emitidaEm: true }
+      });
+      notas = notasDb.map((n) => ({
+        id: n.id,
+        numero: n.numeroNfse ?? n.numero ?? "",
+        valor: Number(n.total),
+        emitidaEm: n.emitidaEm?.toISOString() ?? null
+      }));
+    }
     const row: CobrancaClienteRow = {
       tenantId: t.id, cliente: t.nome, plano: t.plano, valorMensal,
-      temAssinatura: Boolean(t.assinaturaAsaasId), pagas: 0, pendentes: 0, vencidas: 0, faturas: []
+      temAssinatura: Boolean(t.assinaturaAsaasId),
+      emailCliente: matriz?.email ?? null,
+      notas,
+      pagas: 0, pendentes: 0, vencidas: 0, faturas: []
     };
     if (t.assinaturaAsaasId && rt) {
       try {
@@ -658,6 +700,87 @@ export async function listarCobrancasAdmin(): Promise<CobrancaClienteRow[]> {
   }
   // Só interessa quem tem assinatura (ou valor definido) — tenants internos/sem cobrança ficam fora.
   return rows.filter((r) => r.temAssinatura || r.valorMensal > 0);
+}
+
+/**
+ * Envia a COBRANÇA por e-mail (SMTP da empresa do dono): link da fatura + NFS-e em anexo (PDF).
+ * `para` aceita múltiplos e-mails separados por vírgula/ponto-e-vírgula.
+ */
+export async function enviarCobrancaEmailAdmin(
+  tenantAlvoId: string,
+  input: { para: string; fatura?: { valor: number; vencimento: string | null; link: string | null } | null; notaId?: string | null }
+): Promise<{ ok: true; para: string }> {
+  const admin = await requirePlatformAdmin();
+  assertDb();
+  const para = (input.para ?? "").split(/[;,]/).map((e) => e.trim()).filter((e) => /.+@.+\..+/.test(e)).join(", ");
+  if (!para) throw new PlatformAdminError("Informe ao menos um e-mail de destino válido.");
+
+  const vinculo = await prisma.usuarioVinculo.findFirst({
+    where: { usuarioId: admin.usuarioId, ativo: true, empresaId: { not: null } },
+    select: { tenantId: true, empresaId: true }
+  });
+  if (!vinculo?.empresaId) throw new PlatformAdminError("Seu usuário não tem vínculo com a empresa emissora (dono do SaaS).");
+  const scopeDono = { tenantId: vinculo.tenantId, empresaId: vinculo.empresaId };
+
+  const alvo = await prisma.tenant.findUnique({ where: { id: tenantAlvoId }, select: { nome: true } });
+  if (!alvo) throw new PlatformAdminError("Cliente não encontrado.");
+
+  const { getEmailRuntime, sendEmail } = await import("@/lib/email/smtp-client");
+  const cfgEmail = await getEmailRuntime(scopeDono);
+  if (!cfgEmail?.ativo) throw new PlatformAdminError("Configure o e-mail (SMTP) da sua empresa em Configurações → E-mail do seu ERP.");
+
+  // Anexo: PDF (DANFSE) da NFS-e escolhida — precisa pertencer à empresa do dono.
+  const anexos: Array<{ filename: string; content: Buffer; contentType?: string }> = [];
+  let notaLinha = "";
+  if (input.notaId) {
+    const nota = await prisma.notaFiscal.findFirst({
+      where: { id: input.notaId, tenantId: scopeDono.tenantId, empresaId: scopeDono.empresaId, modelo: "NFSE" },
+      select: { id: true, numero: true, numeroNfse: true }
+    });
+    if (!nota) throw new PlatformAdminError("NFS-e não encontrada na sua empresa.");
+    const { downloadNotaFiscalDocumento } = await import("@/domains/fiscal/application/fiscal-emission-use-cases");
+    const doc = await downloadNotaFiscalDocumento(scopeDono, nota.id, "pdf");
+    const ehPdf = doc.contentType.includes("pdf");
+    anexos.push({
+      filename: ehPdf ? `NFSe-${nota.numeroNfse ?? nota.numero ?? nota.id}.pdf` : (doc.filename || "danfse.html"),
+      content: doc.body,
+      contentType: doc.contentType
+    });
+    notaLinha = `<p>A <strong>nota fiscal de serviço (NFS-e ${nota.numeroNfse ?? nota.numero ?? ""})</strong> está em anexo.</p>`;
+  }
+
+  const f = input.fatura;
+  const vencBr = f?.vencimento ? new Date(`${f.vencimento}T12:00:00`).toLocaleDateString("pt-BR") : null;
+  const valorBr = f ? f.valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : null;
+  const botao = f?.link
+    ? `<p style="margin:18px 0"><a href="${f.link}" style="background:#2563eb;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700">Pagar fatura${valorBr ? ` — ${valorBr}` : ""}</a></p>`
+    : "";
+
+  const remetente = cfgEmail.remetenteNome || "Cobrança";
+  const html = `
+    <div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#111;max-width:560px">
+      <p>Olá, <strong>${alvo.nome}</strong>!</p>
+      <p>Segue a cobrança da sua assinatura${valorBr ? ` no valor de <strong>${valorBr}</strong>` : ""}${vencBr ? `, com vencimento em <strong>${vencBr}</strong>` : ""}.</p>
+      ${botao}
+      ${f?.link ? `<p style="font-size:12px;color:#555">Se o botão não abrir, copie o link: ${f.link}</p>` : ""}
+      ${notaLinha}
+      <p>Qualquer dúvida, é só responder este e-mail.</p>
+      <p style="color:#555">— ${remetente}</p>
+    </div>`;
+
+  const r = await sendEmail(cfgEmail, {
+    to: para,
+    subject: `Cobrança da assinatura${vencBr ? ` — vencimento ${vencBr}` : ""}`,
+    html,
+    attachments: anexos
+  });
+  if (!r.ok) throw new PlatformAdminError(r.error || "Falha ao enviar o e-mail.");
+
+  await audit({
+    tenantId: tenantAlvoId, usuarioId: admin.usuarioId, entidade: "Tenant", entidadeId: tenantAlvoId,
+    acao: "plataforma.enviar_cobranca_email", payload: { para, notaId: input.notaId ?? null, vencimento: f?.vencimento ?? null }
+  });
+  return { ok: true, para };
 }
 
 /**

@@ -29,6 +29,47 @@ export function CobrancasAdminPanel({ inicial }: { inicial: CobrancaClienteRow[]
   const [busy, setBusy] = useState(false);
   const [resultado, setResultado] = useState<Record<string, string>>({});
   const [erro, setErro] = useState<Record<string, string>>({});
+  // Envio da cobrança por e-mail (fatura + NFS-e anexa).
+  const [emailAberto, setEmailAberto] = useState<string | null>(null);
+  const [emailPara, setEmailPara] = useState("");
+  const [emailFaturaId, setEmailFaturaId] = useState("");
+  const [emailNotaId, setEmailNotaId] = useState("");
+
+  function abrirEmail(r: CobrancaClienteRow) {
+    setEmailAberto((cur) => (cur === r.tenantId ? null : r.tenantId));
+    setEmailPara(r.emailCliente ?? "");
+    const emAberto = r.faturas.find((f) => f.status === "VENCIDA") ?? r.faturas.find((f) => f.status === "PENDENTE") ?? r.faturas[0];
+    setEmailFaturaId(emAberto?.id ?? "");
+    setEmailNotaId(r.notas[0]?.id ?? "");
+  }
+
+  async function enviarEmail(r: CobrancaClienteRow) {
+    setBusy(true);
+    setErro((m) => ({ ...m, [r.tenantId]: "" }));
+    setResultado((m) => ({ ...m, [r.tenantId]: "" }));
+    try {
+      const fat = r.faturas.find((f) => f.id === emailFaturaId) ?? null;
+      const res = await fetch("/api/admin/cobrancas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          acao: "enviar-email",
+          tenantId: r.tenantId,
+          para: emailPara,
+          fatura: fat ? { valor: fat.valor, vencimento: fat.vencimento, link: fat.link } : null,
+          notaId: emailNotaId || null
+        })
+      });
+      const d = (await res.json().catch(() => ({}))) as { error?: string; para?: string };
+      if (!res.ok) throw new Error(d.error || "Falha ao enviar o e-mail.");
+      setResultado((m) => ({ ...m, [r.tenantId]: `📨 Cobrança enviada para ${d.para}.|` }));
+      setEmailAberto(null);
+    } catch (e) {
+      setErro((m) => ({ ...m, [r.tenantId]: e instanceof Error ? e.message : "Falha ao enviar." }));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   function abrirNfse(r: CobrancaClienteRow) {
     setNfseAberta((cur) => (cur === r.tenantId ? null : r.tenantId));
@@ -100,6 +141,7 @@ export function CobrancasAdminPanel({ inicial }: { inicial: CobrancaClienteRow[]
                 {ultima?.link && <a className="btn-erp light xs" href={ultima.link} target="_blank" rel="noreferrer">Última fatura ↗</a>}
                 <a className="btn-erp light xs" href={`/admin/clientes/${r.tenantId}`}>Abrir cliente</a>
                 <button type="button" className="btn-erp primary xs" onClick={() => abrirNfse(r)}>🧾 NFS-e da mensalidade</button>
+                <button type="button" className="btn-erp primary xs" onClick={() => abrirEmail(r)}>✉ Enviar cobrança</button>
               </span>
             </div>
 
@@ -136,6 +178,36 @@ export function CobrancasAdminPanel({ inicial }: { inicial: CobrancaClienteRow[]
                 </button>
                 <span className="block-muted" style={{ fontSize: 11, flexBasis: "100%" }}>
                   A NFS-e sai pela SUA empresa (a do seu vínculo de admin), com o cliente como tomador.
+                </span>
+              </div>
+            )}
+
+            {emailAberto === r.tenantId && (
+              <div style={{ marginTop: 10, background: "#f8fafc", border: "1px solid var(--erp-line)", borderRadius: 10, padding: 12, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+                <label style={{ fontSize: 12, flex: 1, minWidth: 240 }}>Para (vários e-mails separados por vírgula)
+                  <input value={emailPara} onChange={(e) => setEmailPara(e.target.value)} placeholder="financeiro@cliente.com.br, contato@cliente.com.br" style={{ display: "block", width: "100%", height: 32, border: "1px solid var(--erp-line)", borderRadius: 6, padding: "0 8px" }} />
+                </label>
+                <label style={{ fontSize: 12 }}>Fatura (boleto/Pix)
+                  <select value={emailFaturaId} onChange={(e) => setEmailFaturaId(e.target.value)} style={{ display: "block", height: 32, border: "1px solid var(--erp-line)", borderRadius: 6, padding: "0 6px", minWidth: 180 }}>
+                    <option value="">Sem fatura (só a nota)</option>
+                    {r.faturas.map((f) => (
+                      <option key={f.id} value={f.id}>{dataBr(f.vencimento)} · {brl(f.valor)} · {STATUS_BADGE[f.status]?.label ?? f.status}</option>
+                    ))}
+                  </select>
+                </label>
+                <label style={{ fontSize: 12 }}>NFS-e anexa (PDF)
+                  <select value={emailNotaId} onChange={(e) => setEmailNotaId(e.target.value)} style={{ display: "block", height: 32, border: "1px solid var(--erp-line)", borderRadius: 6, padding: "0 6px", minWidth: 180 }}>
+                    <option value="">Sem nota</option>
+                    {r.notas.map((n) => (
+                      <option key={n.id} value={n.id}>NFS-e {n.numero} · {brl(n.valor)}{n.emitidaEm ? ` · ${new Date(n.emitidaEm).toLocaleDateString("pt-BR")}` : ""}</option>
+                    ))}
+                  </select>
+                </label>
+                <button type="button" className="btn-erp primary sm" disabled={busy || !emailPara.trim()} onClick={() => enviarEmail(r)}>
+                  {busy ? "Enviando…" : "📨 Enviar"}
+                </button>
+                <span className="block-muted" style={{ fontSize: 11, flexBasis: "100%" }}>
+                  Sai pelo e-mail (SMTP) configurado na SUA empresa, com o link de pagamento no corpo e a NFS-e em anexo.
                 </span>
               </div>
             )}

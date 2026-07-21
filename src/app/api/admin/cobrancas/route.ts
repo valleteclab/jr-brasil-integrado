@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { SessionError, ForbiddenError } from "@/lib/auth/session";
-import { listarCobrancasAdmin, emitirNfseMensalidadeAdmin, PlatformAdminError } from "@/lib/services/platform-admin";
+import { listarCobrancasAdmin, emitirNfseMensalidadeAdmin, enviarCobrancaEmailAdmin, PlatformAdminError } from "@/lib/services/platform-admin";
 
 /** Cobranças da plataforma: GET = clientes + faturas (Asaas); POST = emitir NFS-e da mensalidade. */
 export const dynamic = "force-dynamic";
@@ -23,8 +23,21 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as { tenantId?: string; valor?: number | null; descricao?: string | null; codigoServicoLc116?: string | null };
+    const body = (await request.json()) as {
+      acao?: string; tenantId?: string; valor?: number | null; descricao?: string | null; codigoServicoLc116?: string | null;
+      para?: string; fatura?: { valor: number; vencimento: string | null; link: string | null } | null; notaId?: string | null;
+    };
     if (!body.tenantId) return NextResponse.json({ error: "Informe o cliente." }, { status: 400 });
+
+    if (body.acao === "enviar-email") {
+      const r = await enviarCobrancaEmailAdmin(body.tenantId, {
+        para: body.para ?? "",
+        fatura: body.fatura ?? null,
+        notaId: body.notaId ?? null
+      });
+      return NextResponse.json(r);
+    }
+
     const r = await emitirNfseMensalidadeAdmin(body.tenantId, {
       valor: body.valor ?? null,
       descricao: body.descricao ?? null,
