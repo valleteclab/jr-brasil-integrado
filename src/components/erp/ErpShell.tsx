@@ -294,7 +294,7 @@ export function ErpShell({ children, context, modulos }: ErpShellProps) {
           </div>
           <div className="erp-top-actions">
             <span className={`erp-env${producao ? "" : " homolog"}`}><span className="dot" />{producao ? "Produção" : "Homologação"}</span>
-            <Link className="erp-top-btn" href="/loja">⤴ Ver loja</Link>
+            {context.features.lojaHabilitada && <Link className="erp-top-btn" href="/loja">⤴ Ver loja</Link>}
             <ComunicacaoWidget />
             <Link className="erp-top-btn" href="/erp/configuracoes/empresa" aria-label="Configurações">⚙</Link>
           </div>
