@@ -616,7 +616,7 @@ export type CobrancaClienteRow = {
   pagas: number;
   pendentes: number;
   vencidas: number;
-  faturas: Array<{ id: string; status: "PAGA" | "PENDENTE" | "VENCIDA" | "OUTRA"; statusRaw: string; valor: number; vencimento: string | null; pagaEm: string | null; link: string | null }>;
+  faturas: Array<{ id: string; status: "PAGA" | "PENDENTE" | "VENCIDA" | "OUTRA"; statusRaw: string; valor: number; vencimento: string | null; pagaEm: string | null; link: string | null; nfse: { notaId: string; numero: string } | null }>;
   erro?: string;
 };
 
@@ -685,9 +685,20 @@ export async function listarCobrancasAdmin(): Promise<CobrancaClienteRow[]> {
     if (t.assinaturaAsaasId && rt) {
       try {
         const faturas = await asaasListarFaturasAssinatura(rt, t.assinaturaAsaasId);
+        // NFS-e já vinculadas a estas faturas (numero resolvido pelas notas carregadas acima).
+        const vinculos = await prisma.mensalidadeNotaFiscal.findMany({
+          where: { faturaAsaasId: { in: faturas.map((f) => f.id) } },
+          select: { faturaAsaasId: true, notaId: true }
+        });
+        const notaPorFatura = new Map(vinculos.map((v) => [v.faturaAsaasId, v.notaId]));
+        const numeroPorNota = new Map(notas.map((n) => [n.id, n.numero]));
         row.faturas = faturas.map((f) => {
           const status = PAGO_SET.has(f.status) ? "PAGA" : f.status === "OVERDUE" ? "VENCIDA" : f.status === "PENDING" || f.status === "AWAITING_RISK_ANALYSIS" ? "PENDENTE" : "OUTRA";
-          return { id: f.id, status, statusRaw: f.status, valor: f.value, vencimento: f.dueDate, pagaEm: f.paymentDate, link: f.invoiceUrl };
+          const notaId = notaPorFatura.get(f.id) ?? null;
+          return {
+            id: f.id, status, statusRaw: f.status, valor: f.value, vencimento: f.dueDate, pagaEm: f.paymentDate, link: f.invoiceUrl,
+            nfse: notaId ? { notaId, numero: numeroPorNota.get(notaId) ?? "" } : null
+          };
         });
         row.pagas = row.faturas.filter((f) => f.status === "PAGA").length;
         row.pendentes = row.faturas.filter((f) => f.status === "PENDENTE").length;
@@ -700,6 +711,32 @@ export async function listarCobrancasAdmin(): Promise<CobrancaClienteRow[]> {
   }
   // Só interessa quem tem assinatura (ou valor definido) — tenants internos/sem cobrança ficam fora.
   return rows.filter((r) => r.temAssinatura || r.valorMensal > 0);
+}
+
+/** Vincula uma NFS-e JÁ EMITIDA a uma fatura da mensalidade (retroativo/controle manual). */
+export async function vincularNotaFaturaAdmin(tenantAlvoId: string, faturaAsaasId: string, notaId: string) {
+  const admin = await requirePlatformAdmin();
+  assertDb();
+  const vinculo = await prisma.usuarioVinculo.findFirst({
+    where: { usuarioId: admin.usuarioId, ativo: true, empresaId: { not: null } },
+    select: { tenantId: true, empresaId: true }
+  });
+  if (!vinculo?.empresaId) throw new PlatformAdminError("Seu usuário não tem vínculo com a empresa emissora.");
+  const nota = await prisma.notaFiscal.findFirst({
+    where: { id: notaId, tenantId: vinculo.tenantId, empresaId: vinculo.empresaId, modelo: "NFSE" },
+    select: { id: true }
+  });
+  if (!nota) throw new PlatformAdminError("NFS-e não encontrada na sua empresa.");
+  await prisma.mensalidadeNotaFiscal.upsert({
+    where: { faturaAsaasId },
+    create: { faturaAsaasId, tenantId: tenantAlvoId, notaId },
+    update: { notaId }
+  });
+  await audit({
+    tenantId: tenantAlvoId, usuarioId: admin.usuarioId, entidade: "Tenant", entidadeId: tenantAlvoId,
+    acao: "plataforma.vincular_nota_fatura", payload: { faturaAsaasId, notaId }
+  });
+  return { ok: true as const };
 }
 
 /**
@@ -793,8 +830,13 @@ export async function enviarCobrancaEmailAdmin(
  */
 export async function emitirNfseMensalidadeAdmin(
   tenantAlvoId: string,
-  input: { valor?: number | null; descricao?: string | null; codigoServicoLc116?: string | null }
+  input: { valor?: number | null; descricao?: string | null; codigoServicoLc116?: string | null; faturaAsaasId?: string | null }
 ): Promise<{ notaId: string; status: string; numero: string | null; erro: string | null }> {
+  // Trava de duplicidade: a fatura escolhida já tem NFS-e vinculada?
+  if (input.faturaAsaasId) {
+    const jaTem = await prisma.mensalidadeNotaFiscal.findUnique({ where: { faturaAsaasId: input.faturaAsaasId } });
+    if (jaTem) throw new PlatformAdminError("Esta fatura já tem NFS-e emitida e vinculada — não emita em duplicidade.");
+  }
   const admin = await requirePlatformAdmin();
   assertDb();
 
@@ -846,9 +888,17 @@ export async function emitirNfseMensalidadeAdmin(
     servicos: [{ descricao, valor }]
   });
 
+  // Vincula a NFS-e AUTORIZADA à fatura (controle na página de cobranças + trava de duplicidade).
+  if (input.faturaAsaasId && nota.status === "AUTORIZADA") {
+    await prisma.mensalidadeNotaFiscal.upsert({
+      where: { faturaAsaasId: input.faturaAsaasId },
+      create: { faturaAsaasId: input.faturaAsaasId, tenantId: tenantAlvoId, notaId: nota.id },
+      update: { notaId: nota.id }
+    }).catch(() => undefined);
+  }
   await audit({
     tenantId: tenantAlvoId, usuarioId: admin.usuarioId, entidade: "Tenant", entidadeId: tenantAlvoId,
-    acao: "plataforma.nfse_mensalidade", payload: { notaId: nota.id, status: nota.status, valor }
+    acao: "plataforma.nfse_mensalidade", payload: { notaId: nota.id, status: nota.status, valor, faturaAsaasId: input.faturaAsaasId ?? null }
   });
   return {
     notaId: nota.id,

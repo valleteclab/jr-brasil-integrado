@@ -43,6 +43,26 @@ export function CobrancasAdminPanel({ inicial }: { inicial: CobrancaClienteRow[]
     setEmailNotaId(r.notas[0]?.id ?? "");
   }
 
+  async function vincularNota(r: CobrancaClienteRow, faturaAsaasId: string, notaId: string) {
+    if (!notaId) return;
+    setBusy(true);
+    setErro((m) => ({ ...m, [r.tenantId]: "" }));
+    try {
+      const res = await fetch("/api/admin/cobrancas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ acao: "vincular-nota", tenantId: r.tenantId, faturaAsaasId, notaId })
+      });
+      const d = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(d.error || "Falha ao vincular.");
+      setResultado((m) => ({ ...m, [r.tenantId]: "🔗 NFS-e vinculada à fatura. Recarregue a página para ver o vínculo.|" }));
+    } catch (e) {
+      setErro((m) => ({ ...m, [r.tenantId]: e instanceof Error ? e.message : "Falha ao vincular." }));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function enviarEmail(r: CobrancaClienteRow) {
     setBusy(true);
     setErro((m) => ({ ...m, [r.tenantId]: "" }));
@@ -71,11 +91,16 @@ export function CobrancasAdminPanel({ inicial }: { inicial: CobrancaClienteRow[]
     }
   }
 
+  const [nfseFaturaId, setNfseFaturaId] = useState("");
+
   function abrirNfse(r: CobrancaClienteRow) {
     setNfseAberta((cur) => (cur === r.tenantId ? null : r.tenantId));
     setValor(r.valorMensal > 0 ? String(r.valorMensal).replace(".", ",") : "");
     setDescricao("");
     setCodigo("");
+    // Default: a fatura em aberto ainda SEM nota vinculada.
+    const semNota = r.faturas.find((f) => !f.nfse && f.status !== "PAGA") ?? r.faturas.find((f) => !f.nfse);
+    setNfseFaturaId(semNota?.id ?? "");
   }
 
   async function emitir(tenantId: string) {
@@ -90,7 +115,8 @@ export function CobrancasAdminPanel({ inicial }: { inicial: CobrancaClienteRow[]
           tenantId,
           valor: Number(valor.replace(/\./g, "").replace(",", ".")) || null,
           descricao: descricao.trim() || null,
-          codigoServicoLc116: codigo.trim() || null
+          codigoServicoLc116: codigo.trim() || null,
+          faturaAsaasId: nfseFaturaId || null
         })
       });
       const d = (await res.json().catch(() => ({}))) as { error?: string; status?: string; numero?: string | null; notaId?: string; erro?: string | null };
@@ -165,6 +191,16 @@ export function CobrancasAdminPanel({ inicial }: { inicial: CobrancaClienteRow[]
                 <label style={{ fontSize: 12, flex: 1, minWidth: 220 }}>Descrição (vazio = padrão com competência)
                   <input value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder={`Assinatura mensal do sistema XERP — competência ${new Date().toLocaleDateString("pt-BR", { month: "2-digit", year: "numeric" })}`} style={{ display: "block", width: "100%", height: 32, border: "1px solid var(--erp-line)", borderRadius: 6, padding: "0 8px" }} />
                 </label>
+                <label style={{ fontSize: 12 }}>Fatura correspondente (vínculo)
+                  <select value={nfseFaturaId} onChange={(e) => setNfseFaturaId(e.target.value)} style={{ display: "block", height: 32, border: "1px solid var(--erp-line)", borderRadius: 6, padding: "0 6px", minWidth: 190 }}>
+                    <option value="">Sem vínculo</option>
+                    {r.faturas.map((f) => (
+                      <option key={f.id} value={f.id} disabled={Boolean(f.nfse)}>
+                        {dataBr(f.vencimento)} · {brl(f.valor)}{f.nfse ? ` · já tem NFS-e ${f.nfse.numero}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
                 <label style={{ fontSize: 12, flex: 1, minWidth: 280 }}>Código de Tributação Nacional (serviço)
                   <select value={codigo} onChange={(e) => setCodigo(e.target.value)} style={{ display: "block", width: "100%", height: 32, border: "1px solid var(--erp-line)", borderRadius: 6, padding: "0 6px" }}>
                     <option value="">Padrão da empresa (config fiscal)</option>
@@ -216,7 +252,7 @@ export function CobrancasAdminPanel({ inicial }: { inicial: CobrancaClienteRow[]
               <details style={{ marginTop: 10 }}>
                 <summary style={{ cursor: "pointer", fontSize: 13, fontWeight: 600 }}>Faturas ({r.faturas.length})</summary>
                 <table className="erp-table" style={{ marginTop: 8 }}>
-                  <thead><tr><th>Vencimento</th><th className="num">Valor</th><th>Situação</th><th>Paga em</th><th /></tr></thead>
+                  <thead><tr><th>Vencimento</th><th className="num">Valor</th><th>Situação</th><th>Paga em</th><th>NFS-e</th><th /></tr></thead>
                   <tbody>
                     {r.faturas.map((f) => {
                       const b = STATUS_BADGE[f.status] ?? STATUS_BADGE.OUTRA;
@@ -226,6 +262,27 @@ export function CobrancasAdminPanel({ inicial }: { inicial: CobrancaClienteRow[]
                           <td className="num">{brl(f.valor)}</td>
                           <td><span className={`pill ${b.cls}`}><span className="dot" />{b.label}</span> <small className="block-muted">{f.statusRaw}</small></td>
                           <td>{dataBr(f.pagaEm)}</td>
+                          <td>
+                            {f.nfse ? (
+                              <span style={{ whiteSpace: "nowrap" }}>
+                                <span className="pill success"><span className="dot" />NFS-e {f.nfse.numero}</span>{" "}
+                                <a className="btn-erp ghost xs" href={`/api/erp/fiscal/${f.nfse.notaId}/pdf`} target="_blank" rel="noreferrer">PDF</a>
+                              </span>
+                            ) : r.notas.length ? (
+                              <select
+                                defaultValue=""
+                                disabled={busy}
+                                onChange={(e) => vincularNota(r, f.id, e.target.value)}
+                                title="Vincular uma NFS-e já emitida a esta fatura"
+                                style={{ height: 26, border: "1px solid var(--erp-line)", borderRadius: 6, fontSize: 12, maxWidth: 170 }}
+                              >
+                                <option value="">sem nota — vincular…</option>
+                                {r.notas.map((n) => <option key={n.id} value={n.id}>NFS-e {n.numero} · {brl(n.valor)}</option>)}
+                              </select>
+                            ) : (
+                              <span className="pill mute"><span className="dot" />sem nota</span>
+                            )}
+                          </td>
                           <td>{f.link && <a className="btn-erp ghost xs" href={f.link} target="_blank" rel="noreferrer">fatura ↗</a>}</td>
                         </tr>
                       );

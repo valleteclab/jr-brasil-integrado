@@ -3310,3 +3310,18 @@ model MonitorFonteFiscal {
   itens        Json?
   verificadoEm DateTime @default(now())
 }
+
+/// Vínculo FATURA da mensalidade (Asaas) ↔ NFS-e emitida pela empresa do dono do SaaS.
+/// Mostra na página /admin/cobrancas qual mensalidade já tem nota e evita emissão em duplicidade.
+model MensalidadeNotaFiscal {
+  id            String   @id @default(cuid())
+  /// Payment id da fatura no Asaas (pay_...).
+  faturaAsaasId String   @unique
+  /// Tenant COBRADO (cliente da plataforma).
+  tenantId      String
+  /// NotaFiscal (NFS-e) emitida no ERP da empresa do dono.
+  notaId        String
+  criadoEm      DateTime @default(now())
+
+  @@index([tenantId])
+}
