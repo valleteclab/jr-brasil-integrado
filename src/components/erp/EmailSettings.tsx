@@ -23,6 +23,25 @@ export function EmailSettings() {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [error, setError] = useState("");
+  const [destinoTeste, setDestinoTeste] = useState("");
+
+  async function enviarTeste() {
+    setBusy(true); setError(""); setMsg("");
+    try {
+      const res = await fetch("/api/erp/configuracoes/email/testar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ destino: destinoTeste.trim() || undefined })
+      });
+      const d = (await res.json().catch(() => ({}))) as { error?: string; para?: string };
+      if (!res.ok) throw new Error(d.error || "Falha no teste.");
+      setMsg(`E-mail de teste enviado para ${d.para}. Confira a caixa de entrada (e o spam).`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Falha no teste.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function carregar() {
     try {
@@ -99,7 +118,16 @@ export function EmailSettings() {
             <input value={cfg.remetenteEmail} onChange={(e) => setCfg({ ...cfg, remetenteEmail: e.target.value })} placeholder="Padrão: o usuário de login" />
           </label>
         </div>
-        <div className="erp-toolbar" style={{ borderBottom: "none", paddingBottom: 0, marginTop: 8 }}>
+        <div className="erp-toolbar" style={{ borderBottom: "none", paddingBottom: 0, marginTop: 8, gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <input
+            value={destinoTeste}
+            onChange={(e) => setDestinoTeste(e.target.value)}
+            placeholder="Destino do teste (vazio = remetente)"
+            style={{ height: 32, border: "1px solid var(--erp-line)", borderRadius: 6, padding: "0 10px", fontSize: 13, minWidth: 230 }}
+          />
+          <button type="button" className="btn-erp light sm" disabled={busy} onClick={enviarTeste} title="Salve a configuração antes de testar">
+            {busy ? "…" : "✉ Enviar e-mail de teste"}
+          </button>
           <div className="grow" />
           <button type="button" className="btn-erp primary sm" disabled={busy} onClick={salvar}>{busy ? "Salvando…" : "Salvar"}</button>
         </div>
