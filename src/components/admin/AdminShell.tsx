@@ -16,6 +16,7 @@ const navItems: AdminNavItem[] = [
   { label: "Provedor fiscal", href: "/admin/provedor-fiscal", icon: "⚙️" },
   { label: "Crédito & bureau", href: "/admin/credito", icon: "💳" },
   { label: "Planos & preços", href: "/admin/planos", icon: "🏷️" },
+  { label: "Cobranças", href: "/admin/cobrancas", icon: "💰" },
   { label: "Reforma Tributária", href: "/admin/reforma", icon: "📜" }
 ];
 

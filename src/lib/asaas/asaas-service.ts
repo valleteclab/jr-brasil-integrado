@@ -132,6 +132,32 @@ export async function asaasStatusPagamento(rt: AsaasRuntime, paymentId: string):
 // Status de pagamento Asaas que significam "já quitado" — nunca devemos mandar o cliente pagar.
 const ASAAS_PAGO = new Set(["RECEIVED", "CONFIRMED", "RECEIVED_IN_CASH", "REFUNDED", "REFUND_REQUESTED", "CHARGEBACK_REQUESTED", "CHARGEBACK_DISPUTE"]);
 
+export type AsaasFatura = {
+  id: string;
+  status: string;
+  value: number;
+  dueDate: string | null;
+  paymentDate: string | null;
+  invoiceUrl: string | null;
+};
+
+/** Todas as faturas de uma assinatura (controle de pagas/pendentes/vencidas no admin). */
+export async function asaasListarFaturasAssinatura(rt: AsaasRuntime, subscriptionId: string): Promise<AsaasFatura[]> {
+  const resp = await asaas<{ data?: Array<{ id?: string; status?: string; value?: number; dueDate?: string; paymentDate?: string; clientPaymentDate?: string; invoiceUrl?: string }> }>(
+    rt, "GET", `/subscriptions/${subscriptionId}/payments?limit=50`
+  );
+  return (resp.data ?? [])
+    .map((p) => ({
+      id: p.id ?? "",
+      status: p.status ?? "",
+      value: Number(p.value ?? 0),
+      dueDate: p.dueDate ?? null,
+      paymentDate: p.paymentDate ?? p.clientPaymentDate ?? null,
+      invoiceUrl: p.invoiceUrl ?? null,
+    }))
+    .sort((a, b) => (b.dueDate ?? "").localeCompare(a.dueDate ?? ""));
+}
+
 /**
  * Link da fatura EM ABERTO de uma assinatura (para o aviso/tela de mensalidade em atraso e o
  * "Gerar cobrança"). Ignora faturas já pagas e prioriza a mais antiga em aberto (vencida primeiro),

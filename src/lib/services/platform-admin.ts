@@ -599,6 +599,141 @@ export async function criarAssinaturaTenantAdmin(
 }
 
 // ---------------------------------------------------------------------------
+// Cobranças da plataforma (mensalidades no Asaas) + NFS-e da mensalidade
+// ---------------------------------------------------------------------------
+
+export type CobrancaClienteRow = {
+  tenantId: string;
+  cliente: string;
+  plano: string;
+  valorMensal: number;
+  temAssinatura: boolean;
+  /** Resumo das faturas: pagas/pendentes/vencidas. */
+  pagas: number;
+  pendentes: number;
+  vencidas: number;
+  faturas: Array<{ id: string; status: "PAGA" | "PENDENTE" | "VENCIDA" | "OUTRA"; statusRaw: string; valor: number; vencimento: string | null; pagaEm: string | null; link: string | null }>;
+  erro?: string;
+};
+
+const PAGO_SET = new Set(["RECEIVED", "CONFIRMED", "RECEIVED_IN_CASH"]);
+
+/** Painel de cobranças do dono: cada tenant com assinatura + faturas do Asaas (pagas/vencidas). */
+export async function listarCobrancasAdmin(): Promise<CobrancaClienteRow[]> {
+  await requirePlatformAdmin();
+  assertDb();
+  const { getAsaasRuntime, asaasListarFaturasAssinatura } = await import("@/lib/asaas/asaas-service");
+  const rt = await getAsaasRuntime();
+
+  const tenants = await prisma.tenant.findMany({
+    where: { ativo: true },
+    select: { id: true, nome: true, plano: true, assinaturaAsaasId: true, mensalidadeValor: true },
+    orderBy: { nome: "asc" }
+  });
+  const planos = await prisma.plataformaPlano.findMany();
+  const precoPlano = new Map(planos.map((p) => [p.codigo, Number(p.precoMensal)]));
+
+  const rows: CobrancaClienteRow[] = [];
+  for (const t of tenants) {
+    const valorMensal = precoMensalEfetivo(t.mensalidadeValor != null ? Number(t.mensalidadeValor) : null, precoPlano.get(t.plano) ?? 0);
+    const row: CobrancaClienteRow = {
+      tenantId: t.id, cliente: t.nome, plano: t.plano, valorMensal,
+      temAssinatura: Boolean(t.assinaturaAsaasId), pagas: 0, pendentes: 0, vencidas: 0, faturas: []
+    };
+    if (t.assinaturaAsaasId && rt) {
+      try {
+        const faturas = await asaasListarFaturasAssinatura(rt, t.assinaturaAsaasId);
+        row.faturas = faturas.map((f) => {
+          const status = PAGO_SET.has(f.status) ? "PAGA" : f.status === "OVERDUE" ? "VENCIDA" : f.status === "PENDING" || f.status === "AWAITING_RISK_ANALYSIS" ? "PENDENTE" : "OUTRA";
+          return { id: f.id, status, statusRaw: f.status, valor: f.value, vencimento: f.dueDate, pagaEm: f.paymentDate, link: f.invoiceUrl };
+        });
+        row.pagas = row.faturas.filter((f) => f.status === "PAGA").length;
+        row.pendentes = row.faturas.filter((f) => f.status === "PENDENTE").length;
+        row.vencidas = row.faturas.filter((f) => f.status === "VENCIDA").length;
+      } catch (e) {
+        row.erro = e instanceof Error ? e.message : "Falha ao consultar o Asaas.";
+      }
+    }
+    rows.push(row);
+  }
+  // Só interessa quem tem assinatura (ou valor definido) — tenants internos/sem cobrança ficam fora.
+  return rows.filter((r) => r.temAssinatura || r.valorMensal > 0);
+}
+
+/**
+ * Emite a NFS-e da MENSALIDADE pela EMPRESA DO DONO do SaaS (o tenant do admin logado — ex.:
+ * VALLETECLAB), com o cliente cobrado como TOMADOR (dados da empresa matriz dele). Reusa o motor
+ * de emissão avulsa de serviço (provedor NFS-e da empresa do dono). Nada hardcoded: o emissor é o
+ * vínculo do admin; o código LC116 usa o informado ou o padrão fiscal da empresa do dono.
+ */
+export async function emitirNfseMensalidadeAdmin(
+  tenantAlvoId: string,
+  input: { valor?: number | null; descricao?: string | null; codigoServicoLc116?: string | null }
+): Promise<{ notaId: string; status: string; numero: string | null; erro: string | null }> {
+  const admin = await requirePlatformAdmin();
+  assertDb();
+
+  // Scope do EMISSOR = vínculo ativo do admin (a empresa do dono do SaaS).
+  const vinculo = await prisma.usuarioVinculo.findFirst({
+    where: { usuarioId: admin.usuarioId, ativo: true, empresaId: { not: null } },
+    select: { tenantId: true, empresaId: true }
+  });
+  if (!vinculo?.empresaId) throw new PlatformAdminError("Seu usuário não tem vínculo com a empresa emissora (dono do SaaS).");
+  const scopeDono = { tenantId: vinculo.tenantId, empresaId: vinculo.empresaId };
+
+  // Tomador = empresa matriz do cliente cobrado.
+  const alvo = await prisma.tenant.findUnique({ where: { id: tenantAlvoId }, select: { id: true, nome: true, plano: true, mensalidadeValor: true } });
+  if (!alvo) throw new PlatformAdminError("Cliente não encontrado.");
+  const empresaAlvo = await prisma.empresa.findFirst({
+    where: { tenantId: tenantAlvoId, matriz: true },
+    orderBy: { criadoEm: "asc" }
+  });
+  if (!empresaAlvo) throw new PlatformAdminError("O cliente não tem empresa matriz cadastrada.");
+
+  const plano = await prisma.plataformaPlano.findUnique({ where: { codigo: alvo.plano } });
+  const valor = input.valor && input.valor > 0
+    ? Math.round(input.valor * 100) / 100
+    : precoMensalEfetivo(alvo.mensalidadeValor != null ? Number(alvo.mensalidadeValor) : null, Number(plano?.precoMensal ?? 0));
+  if (valor <= 0) throw new PlatformAdminError("Informe o valor da NFS-e (o cliente não tem mensalidade definida).");
+
+  const agora = new Date();
+  const competencia = agora.toLocaleDateString("pt-BR", { month: "2-digit", year: "numeric" });
+  const descricao = input.descricao?.trim() || `Assinatura mensal do sistema XERP (plano ${plano?.nome ?? alvo.plano}) — competência ${competencia}.`;
+
+  const { emitServiceInvoiceAvulsa } = await import("@/domains/fiscal/application/standalone-emission-use-cases");
+  const nota = await emitServiceInvoiceAvulsa(scopeDono, {
+    receiver: {
+      nome: empresaAlvo.razaoSocial,
+      documento: empresaAlvo.cnpj,
+      email: empresaAlvo.email ?? null,
+      endereco: {
+        logradouro: empresaAlvo.enderecoLogradouro ?? null,
+        numero: empresaAlvo.enderecoNumero ?? null,
+        complemento: empresaAlvo.enderecoComplemento ?? null,
+        bairro: empresaAlvo.enderecoBairro ?? null,
+        cep: empresaAlvo.enderecoCep ?? null,
+        cidade: empresaAlvo.enderecoCidade ?? null,
+        uf: empresaAlvo.enderecoUf ?? null,
+        codigoMunicipioIbge: empresaAlvo.codigoMunicipioIbge ?? null
+      }
+    },
+    codigoServicoLc116: input.codigoServicoLc116?.trim() || null,
+    servicos: [{ descricao, valor }]
+  });
+
+  await audit({
+    tenantId: tenantAlvoId, usuarioId: admin.usuarioId, entidade: "Tenant", entidadeId: tenantAlvoId,
+    acao: "plataforma.nfse_mensalidade", payload: { notaId: nota.id, status: nota.status, valor }
+  });
+  return {
+    notaId: nota.id,
+    status: nota.status,
+    numero: nota.numeroNfse ?? nota.numero ?? null,
+    erro: nota.status === "AUTORIZADA" ? null : (nota.motivo ?? null)
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Liberar / bloquear cliente
 // ---------------------------------------------------------------------------
 
