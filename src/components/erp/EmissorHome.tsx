@@ -27,7 +27,10 @@ export type EmissorHomeData = {
 
 const STATUS_TONE: Record<string, string> = { AUTORIZADA: "success", CANCELADA: "danger", REJEITADA: "danger", SUBSTITUIDA: "mute", RASCUNHO: "mute" };
 
-export function EmissorHome({ data }: { data: EmissorHomeData }) {
+export function EmissorHome({ data, modulos = [] }: { data: EmissorHomeData; modulos?: string[] }) {
+  // Atalhos por módulo do PERFIL (igual ao menu): NF-e é nota de PRODUTO → exige "produtos";
+  // NFS-e → "fiscal"; Clientes → "clientes". Lista vazia (retrocompat) mostra tudo.
+  const tem = (m: string) => modulos.length === 0 || modulos.includes(m);
   const cert = data.certificado;
   const certTone = !cert.configurado ? "danger" : cert.diasParaVencer != null && cert.diasParaVencer < 0 ? "danger" : cert.diasParaVencer != null && cert.diasParaVencer <= 30 ? "warn" : "success";
   const certLabel = !cert.configurado
@@ -75,29 +78,35 @@ export function EmissorHome({ data }: { data: EmissorHomeData }) {
         </div>
       )}
 
-      {/* Atalhos grandes de emissão */}
+      {/* Atalhos grandes de emissão (por módulo do perfil) */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
-        <Link href="/erp/fiscal/emitir/nfse" className="erp-card" style={{ padding: 22, textDecoration: "none", color: "inherit", display: "flex", alignItems: "center", gap: 14 }}>
-          <span style={{ fontSize: 34 }} aria-hidden="true">📑</span>
-          <span>
-            <strong style={{ fontSize: 16 }}>Emitir NFS-e</strong>
-            <br /><span className="block-muted" style={{ fontSize: 12 }}>Nota de serviço (padrão nacional)</span>
-          </span>
-        </Link>
-        <Link href="/erp/fiscal/emitir" className="erp-card" style={{ padding: 22, textDecoration: "none", color: "inherit", display: "flex", alignItems: "center", gap: 14 }}>
-          <span style={{ fontSize: 34 }} aria-hidden="true">🧾</span>
-          <span>
-            <strong style={{ fontSize: 16 }}>Emitir NF-e</strong>
-            <br /><span className="block-muted" style={{ fontSize: 12 }}>Nota de produto (modelo 55)</span>
-          </span>
-        </Link>
-        <Link href="/erp/clientes" className="erp-card" style={{ padding: 22, textDecoration: "none", color: "inherit", display: "flex", alignItems: "center", gap: 14 }}>
-          <span style={{ fontSize: 34 }} aria-hidden="true">👥</span>
-          <span>
-            <strong style={{ fontSize: 16 }}>Clientes</strong>
-            <br /><span className="block-muted" style={{ fontSize: 12 }}>Cadastrar tomadores/destinatários</span>
-          </span>
-        </Link>
+        {tem("fiscal") && (
+          <Link href="/erp/fiscal/emitir/nfse" className="erp-card" style={{ padding: 22, textDecoration: "none", color: "inherit", display: "flex", alignItems: "center", gap: 14 }}>
+            <span style={{ fontSize: 34 }} aria-hidden="true">📑</span>
+            <span>
+              <strong style={{ fontSize: 16 }}>Emitir NFS-e</strong>
+              <br /><span className="block-muted" style={{ fontSize: 12 }}>Nota de serviço (padrão nacional)</span>
+            </span>
+          </Link>
+        )}
+        {tem("produtos") && (
+          <Link href="/erp/fiscal/emitir" className="erp-card" style={{ padding: 22, textDecoration: "none", color: "inherit", display: "flex", alignItems: "center", gap: 14 }}>
+            <span style={{ fontSize: 34 }} aria-hidden="true">🧾</span>
+            <span>
+              <strong style={{ fontSize: 16 }}>Emitir NF-e</strong>
+              <br /><span className="block-muted" style={{ fontSize: 12 }}>Nota de produto (modelo 55)</span>
+            </span>
+          </Link>
+        )}
+        {tem("clientes") && (
+          <Link href="/erp/clientes" className="erp-card" style={{ padding: 22, textDecoration: "none", color: "inherit", display: "flex", alignItems: "center", gap: 14 }}>
+            <span style={{ fontSize: 34 }} aria-hidden="true">👥</span>
+            <span>
+              <strong style={{ fontSize: 16 }}>Clientes</strong>
+              <br /><span className="block-muted" style={{ fontSize: 12 }}>Cadastrar tomadores/destinatários</span>
+            </span>
+          </Link>
+        )}
       </div>
 
       {/* Certificado A1 (o checklist acima já cobre quando a configuração está incompleta) */}

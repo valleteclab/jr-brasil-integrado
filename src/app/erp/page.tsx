@@ -1,6 +1,7 @@
 import { getDashboardData } from "@/lib/services/dashboard";
 import { EmissorHome } from "@/components/erp/EmissorHome";
 import { getEmissorHomeData, planoDoTenantAtual } from "@/lib/services/emissor-home";
+import { getSession } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
 
@@ -94,10 +95,11 @@ function Donut({
 
 export default async function ErpDashboardPage() {
   // Plano EMISSOR DE NOTAS: a home é o painel do emissor (atalhos de emissão + certificado +
-  // limite MEI/Simples), não o dashboard completo do ERP.
+  // limite MEI/Simples), não o dashboard completo do ERP. Os atalhos respeitam os módulos do
+  // PERFIL do usuário (ex.: perfil operacional sem "produtos" não vê "Emitir NF-e").
   if ((await planoDoTenantAtual()) === "EMISSOR") {
-    const emissor = await getEmissorHomeData();
-    return <EmissorHome data={emissor} />;
+    const [emissor, session] = await Promise.all([getEmissorHomeData(), getSession()]);
+    return <EmissorHome data={emissor} modulos={session?.modulos ?? []} />;
   }
 
   let data;
