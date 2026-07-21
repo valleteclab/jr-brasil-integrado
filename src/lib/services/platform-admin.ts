@@ -534,10 +534,22 @@ export async function simularAtrasoMensalidade(tenantId: string, dias: number | 
  * — para o dono enviar ao cliente (WhatsApp/e-mail). Mesmo motor da /api/erp/assinatura, mas
  * disparado pelo painel. O webhook de pagamento confirma e libera o acesso (limpa o trial).
  */
-export async function criarAssinaturaTenantAdmin(tenantId: string): Promise<{ assinaturaId: string; invoiceUrl: string | null; valor: number; atualizada: boolean }> {
+export async function criarAssinaturaTenantAdmin(
+  tenantId: string,
+  opts: { primeiroVencimento?: string | null } = {}
+): Promise<{ assinaturaId: string; invoiceUrl: string | null; valor: number; atualizada: boolean }> {
   const admin = await requirePlatformAdmin();
   assertDb();
   const { asaasCriarAssinatura, asaasAtualizarAssinatura, asaasGarantirCliente, getAsaasRuntime } = await import("@/lib/asaas/asaas-service");
+
+  // 1º vencimento (define também o DIA das mensalidades seguintes): YYYY-MM-DD, hoje ou futuro.
+  let primeiroVencimento: string | null = null;
+  if (opts.primeiroVencimento) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(opts.primeiroVencimento)) throw new PlatformAdminError("Data de vencimento inválida.");
+    const hojeISO = new Date().toLocaleDateString("sv-SE"); // YYYY-MM-DD no fuso local
+    if (opts.primeiroVencimento < hojeISO) throw new PlatformAdminError("O 1º vencimento não pode ser no passado.");
+    primeiroVencimento = opts.primeiroVencimento;
+  }
 
   const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { id: true, nome: true, plano: true, assinaturaAsaasId: true, mensalidadeValor: true } });
   if (!tenant) throw new PlatformAdminError("Cliente não encontrado.");
@@ -555,10 +567,10 @@ export async function criarAssinaturaTenantAdmin(tenantId: string): Promise<{ as
   // assinatura antiga não existir mais no Asaas, cai no create abaixo.
   if (tenant.assinaturaAsaasId) {
     try {
-      const upd = await asaasAtualizarAssinatura(rt, tenant.assinaturaAsaasId, { valor, descricao });
+      const upd = await asaasAtualizarAssinatura(rt, tenant.assinaturaAsaasId, { valor, descricao, primeiroVencimento });
       await audit({
         tenantId, usuarioId: admin.usuarioId, entidade: "Tenant", entidadeId: tenantId,
-        acao: "plataforma.atualizar_assinatura", payload: { assinaturaId: upd.id, valor }
+        acao: "plataforma.atualizar_assinatura", payload: { assinaturaId: upd.id, valor, primeiroVencimento }
       });
       return { assinaturaId: upd.id, invoiceUrl: upd.invoiceUrl, valor, atualizada: true };
     } catch (e) {
@@ -577,11 +589,11 @@ export async function criarAssinaturaTenantAdmin(tenantId: string): Promise<{ as
     email: empresa?.email ?? null,
     externalReference: tenantId
   });
-  const sub = await asaasCriarAssinatura(rt, { customerId, valor, descricao, externalReference: tenantId });
+  const sub = await asaasCriarAssinatura(rt, { customerId, valor, descricao, externalReference: tenantId, primeiroVencimento });
   await prisma.tenant.update({ where: { id: tenantId }, data: { assinaturaAsaasId: sub.id } });
   await audit({
     tenantId, usuarioId: admin.usuarioId, entidade: "Tenant", entidadeId: tenantId,
-    acao: "plataforma.criar_assinatura", payload: { assinaturaId: sub.id, valor }
+    acao: "plataforma.criar_assinatura", payload: { assinaturaId: sub.id, valor, primeiroVencimento }
   });
   return { assinaturaId: sub.id, invoiceUrl: sub.invoiceUrl, valor, atualizada: false };
 }

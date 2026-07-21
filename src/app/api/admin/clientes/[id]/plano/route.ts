@@ -11,11 +11,11 @@ import { SessionError, ForbiddenError } from "@/lib/auth/session";
 export async function POST(request: Request, { params }: { params: { id: string } }) {
   try {
     const body = (await request.json()) as {
-      plano?: "COMPLETO" | "EMISSOR"; trialDias?: number | null; trialAte?: string | null; acao?: string; dias?: number | null; valor?: number | null;
+      plano?: "COMPLETO" | "EMISSOR"; trialDias?: number | null; trialAte?: string | null; acao?: string; dias?: number | null; valor?: number | null; vencimento?: string | null;
     };
 
     if (body.acao === "criar-assinatura") {
-      const r = await criarAssinaturaTenantAdmin(params.id);
+      const r = await criarAssinaturaTenantAdmin(params.id, { primeiroVencimento: body.vencimento ?? null });
       return NextResponse.json({ ok: true, ...r });
     }
     if (body.acao === "definir-valor-mensalidade") {

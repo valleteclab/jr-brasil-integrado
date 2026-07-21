@@ -19,6 +19,8 @@ export function PlanoCard({ clienteId, plano, trialFimEm, mensalidadeValor }: { 
   // Valor personalizado da mensalidade (desconto/acordo). Vazio = usa o preço do plano.
   const [valorCustom, setValorCustom] = useState(mensalidadeValor != null ? String(mensalidadeValor) : "");
   const [valorMsg, setValorMsg] = useState("");
+  // 1º vencimento da assinatura (define o DIA de todos os meses). Vazio = vence hoje.
+  const [vencimento, setVencimento] = useState("");
 
   async function salvarValorCustom(limpar = false) {
     setBusy(true); setErro(""); setValorMsg("");
@@ -73,7 +75,7 @@ export function PlanoCard({ clienteId, plano, trialFimEm, mensalidadeValor }: { 
       const res = await fetch(`/api/admin/clientes/${clienteId}/plano`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ acao: "criar-assinatura" })
+        body: JSON.stringify({ acao: "criar-assinatura", vencimento: vencimento || null })
       });
       const d = (await res.json().catch(() => ({}))) as { error?: string; invoiceUrl?: string | null; valor?: number; atualizada?: boolean };
       if (!res.ok) throw new Error(d.error || "Falha ao gerar a assinatura.");
@@ -184,10 +186,23 @@ export function PlanoCard({ clienteId, plano, trialFimEm, mensalidadeValor }: { 
 
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
           <strong style={{ fontSize: 13 }}>Cobrança:</strong>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12 }}>
+            1º vencimento
+            <input
+              type="date"
+              value={vencimento}
+              disabled={busy}
+              onChange={(e) => setVencimento(e.target.value)}
+              style={{ height: 30, border: "1px solid var(--erp-line)", borderRadius: 6, padding: "0 8px", fontSize: 13 }}
+            />
+          </span>
           <button type="button" className="btn-erp primary sm" disabled={busy} onClick={criarAssinatura}>
             💳 Gerar cobrança (assinatura mensal)
           </button>
-          <span className="block-muted" style={{ fontSize: 11 }}>Cria a mensalidade no Asaas e um link de fatura para enviar ao cliente.</span>
+          <span className="block-muted" style={{ fontSize: 11, flexBasis: "100%" }}>
+            A 1ª fatura vence na data escolhida e as mensalidades seguintes vencem TODO MÊS nesse mesmo dia
+            (vazio = vence hoje). Em assinatura já existente, a data muda o próximo vencimento e o dia do ciclo.
+          </span>
         </div>
         {assinouMsg && (
           <div className="alert success" style={{ margin: 0 }}>

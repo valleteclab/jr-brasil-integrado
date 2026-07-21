@@ -101,17 +101,19 @@ export async function asaasPixQrCodeRaw(rt: AsaasRuntime, paymentId: string): Pr
 
 /**
  * Cria uma ASSINATURA mensal (mensalidade do plano). billingType UNDEFINED deixa o cliente
- * escolher Pix/boleto/cartão na fatura. Devolve o id e o link da primeira fatura.
+ * escolher Pix/boleto/cartão na fatura. O `primeiroVencimento` (YYYY-MM-DD, opcional; default
+ * hoje) define o vencimento da 1ª fatura E o DIA das mensalidades seguintes (ciclo mensal).
+ * Devolve o id e o link da primeira fatura.
  */
 export async function asaasCriarAssinatura(
   rt: AsaasRuntime,
-  input: { customerId: string; valor: number; descricao: string; externalReference: string }
+  input: { customerId: string; valor: number; descricao: string; externalReference: string; primeiroVencimento?: string | null }
 ): Promise<{ id: string; invoiceUrl: string | null }> {
   const sub = await asaas<{ id: string }>(rt, "POST", "/subscriptions", {
     customer: input.customerId,
     billingType: "UNDEFINED",
     value: Math.round(input.valor * 100) / 100,
-    nextDueDate: new Date().toISOString().slice(0, 10),
+    nextDueDate: input.primeiroVencimento || new Date().toISOString().slice(0, 10),
     cycle: "MONTHLY",
     description: input.descricao.slice(0, 500),
     externalReference: input.externalReference
@@ -155,11 +157,13 @@ export async function asaasLinkFaturaAssinatura(rt: AsaasRuntime, subscriptionId
 export async function asaasAtualizarAssinatura(
   rt: AsaasRuntime,
   subscriptionId: string,
-  input: { valor: number; descricao: string }
+  input: { valor: number; descricao: string; primeiroVencimento?: string | null }
 ): Promise<{ id: string; invoiceUrl: string | null }> {
   await asaas(rt, "POST", `/subscriptions/${subscriptionId}`, {
     value: Math.round(input.valor * 100) / 100,
     description: input.descricao.slice(0, 500),
+    // Muda o próximo vencimento (e o DIA dos ciclos seguintes) quando informado.
+    ...(input.primeiroVencimento ? { nextDueDate: input.primeiroVencimento } : {}),
     updatePendingPayments: true
   });
   const invoiceUrl = await asaasLinkFaturaAssinatura(rt, subscriptionId);
