@@ -42,12 +42,12 @@ export async function processWhatsappReceipt(input: { telefone: string; imageUrl
       await sendWhatsappText(whats, telefone, "Não consegui baixar a imagem do cupom. Pode reenviar?");
       return;
     }
-    const r = await criarGastoDeCupom(scope, { imagem: base64, origem: "WHATSAPP" });
+    const r = await criarGastoDeCupom(scope, { imagem: base64, origem: "WHATSAPP", confirmarDireto: true });
     const dataFmt = r.data ? ` em ${r.data.split("-").reverse().join("/")}` : "";
     const resumo =
-      `✅ Gasto registrado:\n${r.estabelecimento} — R$ ${fmtMoeda(r.valorTotal)}${dataFmt}\n` +
+      `✅ Gasto lançado:\n${r.estabelecimento} — R$ ${fmtMoeda(r.valorTotal)}${dataFmt}\n` +
       `Categoria: ${r.categoria} · ${r.itens.length} item(ns)\n` +
-      `Revise/confirme em /erp/gastos`;
+      `Para corrigir ou excluir: /erp/gastos`;
     await sendWhatsappText(whats, telefone, resumo);
   } catch (e) {
     await sendWhatsappText(whats, telefone, `Não consegui ler o cupom: ${e instanceof Error ? e.message : "erro"}.`);

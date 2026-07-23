@@ -17,7 +17,7 @@ function parseData(data?: string | null): Date {
 /** Cria um gasto a partir da imagem do cupom (data URL base64): IA extrai e persiste para revisão. */
 export async function criarGastoDeCupom(
   scope: TenantScope,
-  input: { imagem: string; origem: "PWA" | "WHATSAPP"; criadoPor?: string | null }
+  input: { imagem: string; origem: "PWA" | "WHATSAPP"; criadoPor?: string | null; confirmarDireto?: boolean }
 ) {
   await assertModuloLiberado(scope, "gastosHabilitado");
   const extraido = await extrairCupomComIa(scope, input.imagem);
@@ -33,7 +33,9 @@ export async function criarGastoDeCupom(
         data: parseData(extraido.data),
         valorTotal: extraido.valorTotal,
         origem: input.origem,
-        status: "PENDENTE",
+        // Quem manda pelo chat é autorizado (AgenteTelefone) → o gasto entra CONFIRMADO direto;
+        // correções são exceção e podem ser feitas em /erp/gastos.
+        status: input.confirmarDireto ? "CONFIRMADO" : "PENDENTE",
         imagemCupom: input.imagem.startsWith("data:") ? input.imagem : null,
         iaConfianca: extraido.confianca,
         iaBruto: extraido as unknown as object,
