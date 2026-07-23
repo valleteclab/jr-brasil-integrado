@@ -44,6 +44,10 @@ services:
       labels:
         - "traefik.enable=true"
         - "traefik.docker.network=LomeServer"
+        # Roteia pelo VIP do Swarm (não por IP de task): a troca de container no deploy vira
+        # atômica no IPVS do Swarm (só tasks saudáveis), sem depender do refresh do Traefik —
+        # elimina a janela de 404 do Traefik durante o update start-first.
+        - "traefik.docker.lbswarm=true"
         - "traefik.http.routers.erp.rule=Host(`erp.sisgov.app.br`)"
         - "traefik.http.routers.erp.entrypoints=websecure"
         - "traefik.http.routers.erp.tls=true"
