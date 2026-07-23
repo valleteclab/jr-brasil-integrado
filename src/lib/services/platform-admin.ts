@@ -1227,7 +1227,7 @@ export async function criarCliente(input: CriarClienteInput): Promise<CriarClien
  */
 export async function criarClienteCore(
   input: CriarClienteInput,
-  opts: { criadoPorUsuarioId?: string | null; plano?: "COMPLETO" | "EMISSOR"; trialDias?: number | null; empresaDados?: EmpresaDadosExtra } = {}
+  opts: { criadoPorUsuarioId?: string | null; plano?: "COMPLETO" | "EMISSOR" | "CHAT"; trialDias?: number | null; empresaDados?: EmpresaDadosExtra } = {}
 ): Promise<CriarClienteResult> {
   const nomeCliente = input.nomeCliente?.trim();
   const razaoSocial = input.razaoSocial?.trim();
@@ -1260,7 +1260,7 @@ export async function criarClienteCore(
   const senhaInicial = input.senhaInicial?.trim() || gerarSenhaTemporaria();
   if (senhaInicial.length < 8) throw new PlatformAdminError("A senha inicial deve ter ao menos 8 caracteres.");
 
-  const { PRESET_FLAGS_EMISSOR } = await import("@/lib/auth/feature-flags");
+  const { PRESET_FLAGS_EMISSOR, PRESET_FLAGS_CHAT } = await import("@/lib/auth/feature-flags");
   const plano = opts.plano ?? "COMPLETO";
   const trialFimEm = opts.trialDias ? new Date(Date.now() + opts.trialDias * 86400000) : null;
 
@@ -1271,8 +1271,8 @@ export async function criarClienteCore(
         slug,
         plano,
         trialFimEm,
-        // Plano Emissor já nasce com o preset (só o fiscal ligado).
-        ...(plano === "EMISSOR" ? PRESET_FLAGS_EMISSOR : {})
+        // Planos enxutos já nascem com o preset (Emissor: só fiscal; Chat: fiscal + IA/gastos).
+        ...(plano === "EMISSOR" ? PRESET_FLAGS_EMISSOR : plano === "CHAT" ? PRESET_FLAGS_CHAT : {})
       }
     });
 

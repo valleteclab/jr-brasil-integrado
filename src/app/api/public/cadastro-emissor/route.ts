@@ -4,8 +4,8 @@ import { criarClienteCore, PlatformAdminError, type EmpresaDadosExtra } from "@/
 import { isValidCnpj, normalizeDocumento } from "@/lib/fiscal/documento";
 
 /**
- * CADASTRO PÚBLICO do plano EMISSOR DE NOTAS (self-service): cria tenant já no plano Emissor com
- * o trial definido em /admin/planos. Sem sessão — validações fortes + honeypot anti-bot.
+ * CADASTRO PÚBLICO self-service dos planos enxutos (EMISSOR ou CHAT): cria tenant já no plano
+ * escolhido com o trial definido em /admin/planos. Sem sessão — validações fortes + honeypot.
  */
 export const dynamic = "force-dynamic";
 
@@ -14,6 +14,8 @@ export async function POST(request: Request) {
     const body = (await request.json()) as {
       empresa?: string; cnpj?: string; nome?: string; email?: string; senha?: string; whatsapp?: string;
       site?: string; // honeypot — humano deixa vazio
+      /** Plano do cadastro (default EMISSOR; "CHAT" = plano chat-first com IA). */
+      plano?: string;
       /** Dados do lookup de CNPJ (passo 1 do cadastro) — reaproveitados na Empresa criada. */
       empresaDados?: EmpresaDadosExtra & { nomeFantasia?: string | null };
     };
@@ -30,7 +32,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Este CNPJ já está cadastrado — faça login ou fale com o suporte." }, { status: 400 });
     }
 
-    const plano = await prisma.plataformaPlano.findUnique({ where: { codigo: "EMISSOR" } });
+    const codigoPlano = body.plano === "CHAT" ? "CHAT" : "EMISSOR";
+    const plano = await prisma.plataformaPlano.findUnique({ where: { codigo: codigoPlano } });
     if (!plano?.ativo) return NextResponse.json({ error: "Cadastro indisponível no momento — fale com o suporte." }, { status: 400 });
 
     // Sanitiza os dados extras vindos do navegador (só os campos conhecidos, regime whitelist).
@@ -62,7 +65,7 @@ export async function POST(request: Request) {
         adminEmail: email,
         senhaInicial: senha
       },
-      { plano: "EMISSOR", trialDias: plano.trialDias, empresaDados }
+      { plano: codigoPlano, trialDias: plano.trialDias, empresaDados }
     );
     return NextResponse.json({ ok: true, trialDias: plano.trialDias, email: r.adminEmail });
   } catch (error) {

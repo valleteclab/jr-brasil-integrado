@@ -43,6 +43,7 @@ export function EmissorLanding({ precoMensal, limiteNotasMes, trialDias }: Emiss
             <a href="#recursos">O que tem</a>
             <a href="#preco">Preço</a>
             <a href="#como-funciona">Como funciona</a>
+            <Link href="/chat">Assistente IA</Link>
             <Link href="/">Sistema completo</Link>
           </div>
           <Link className={`${s.btn} ${s.btnPrimary}`} href="/cadastro">Testar grátis</Link>
