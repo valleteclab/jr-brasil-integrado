@@ -7,6 +7,8 @@ import { bancoValido, BankError, type BancoId, type BankProvider } from "./bank-
 import { createSicoobProvider } from "./sicoob-provider";
 import { createSicrediProvider } from "./sicredi-provider";
 import { createItauProvider } from "./itau-provider";
+import { createMercadoPagoProvider } from "./mercadopago-provider";
+import { garantirMpAccessToken } from "./mercadopago-oauth";
 
 /**
  * REGISTRY MULTIBANCO — resolve as credenciais da ContaBancaria (descriptografa segredos, carrega o
@@ -32,17 +34,22 @@ export function contaTemBoleto(conta: ContaBancariaRow): boolean {
       return Boolean(conta.bancoBeneficiario && conta.bancoCooperativa && conta.bancoApiKey && conta.bancoAcesso);
     case "ITAU":
       return Boolean(conta.bancoClientId && conta.bancoClientSecret && conta.bancoBeneficiario);
+    case "MERCADO_PAGO":
+      return Boolean(conta.mpAccessTokenCripto);
   }
 }
 
 /** A conta tem credencial de PIX do seu banco + chave Pix cadastrada? */
 export function contaTemPix(conta: ContaBancariaRow): boolean {
+  // Mercado Pago: o QR sai da própria conta MP — não usa chave Pix cadastrada aqui.
+  if (bancoValido(conta.bancoIntegrado) === "MERCADO_PAGO") return Boolean(conta.mpAccessTokenCripto);
   if (!conta.chavePix?.trim()) return false;
   switch (bancoValido(conta.bancoIntegrado)) {
     case "SICOOB":
       return contaTemBoleto(conta); // Pix Sicoob usa o mesmo credenciamento da cobrança
     case "SICREDI":
     case "ITAU":
+    case "MERCADO_PAGO":
       return Boolean(conta.bancoClientId && conta.bancoClientSecret);
   }
 }
@@ -63,7 +70,7 @@ export function contaSandbox(conta: ContaBancariaRow): boolean {
 
 /** Rótulo curto para a UI/erros. */
 export function bancoLabel(conta: ContaBancariaRow): string {
-  return { SICOOB: "Sicoob", SICREDI: "Sicredi", ITAU: "Itaú" }[bancoValido(conta.bancoIntegrado)];
+  return { SICOOB: "Sicoob", SICREDI: "Sicredi", ITAU: "Itaú", MERCADO_PAGO: "Mercado Pago" }[bancoValido(conta.bancoIntegrado)];
 }
 
 /**
@@ -72,6 +79,12 @@ export function bancoLabel(conta: ContaBancariaRow): string {
  */
 export async function getBankProvider(scope: TenantScope, conta: ContaBancariaRow): Promise<BankProvider> {
   const banco = bancoValido(conta.bancoIntegrado);
+
+  if (banco === "MERCADO_PAGO") {
+    // OAuth da conta conectada (renova o token sozinho quando perto de expirar). Sem certificado.
+    const accessToken = await garantirMpAccessToken(conta);
+    return createMercadoPagoProvider({ accessToken });
+  }
 
   if (banco === "SICOOB") {
     if (!contaTemBoleto(conta)) {

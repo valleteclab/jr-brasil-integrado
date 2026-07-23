@@ -622,6 +622,10 @@ model PlataformaConfiguracao {
   /// chave privada criptografada. Assinar deixa o "Remember this decision" do QZ funcionar.
   qzCertificado       String?
   qzChaveCripto       String?
+  /// Aplicação Mercado Pago da PLATAFORMA (OAuth marketplace): os clientes conectam a própria
+  /// conta MP via "Conectar Mercado Pago". client_secret criptografado (encryptSecret).
+  mpClientId          String?
+  mpClientSecretCripto String?
   atualizadoEm        DateTime @updatedAt
 }
 
@@ -2691,6 +2695,14 @@ model ContaBancaria {
   bancoConta            String?  // conta corrente (Itaú)
   bancoConvenio         String?  // carteira/convênio (Itaú)
   bancoSandbox          Boolean  @default(false)
+  // ── Mercado Pago (bancoIntegrado = MERCADO_PAGO): conta conectada via OAuth ──
+  // A aplicação (client_id/secret) é da PLATAFORMA (PlataformaConfiguracao); aqui ficam os tokens
+  // da CONTA do cliente (criptografados). O refresh renova sozinho antes de expirar (~6 meses).
+  mpUserId              String?
+  mpAccessTokenCripto   String?
+  mpRefreshTokenCripto  String?
+  mpPublicKey           String?
+  mpTokenExpiraEm       DateTime?
   // ── Cobrança Sicoob (emissão de boleto pela API oficial) ──
   // Credenciamento por conta: client_id (obtido no Sicoob Desenvolvedores), número do cliente
   // (código do beneficiário/cooperado) e conta corrente de cobrança. O mTLS de produção usa o

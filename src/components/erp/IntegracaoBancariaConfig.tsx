@@ -97,7 +97,7 @@ export function IntegracaoBancariaConfig({ contas }: { contas: ConfigBancoConta[
               <tr key={c.id}>
                 <td><strong>{c.nome}</strong></td>
                 <td>{BANCOS[c.bancoIntegrado].label}</td>
-                <td>{c.bancoIntegrado === "SICOOB" ? "—" : (c.bancoSandbox ? "Sandbox" : "Produção")}</td>
+                <td>{c.bancoIntegrado === "SICOOB" || c.bancoIntegrado === "MERCADO_PAGO" ? "—" : (c.bancoSandbox ? "Sandbox" : "Produção")}</td>
                 <td><span className={`pill ${c.temBoleto ? "success" : "mute"}`}><span className="dot" />{c.temBoleto ? "OK" : "—"}</span></td>
                 <td><span className={`pill ${c.temPix ? "success" : "mute"}`}><span className="dot" />{c.temPix ? "OK" : "—"}</span></td>
                 <td className="actions">
@@ -125,9 +125,10 @@ export function IntegracaoBancariaConfig({ contas }: { contas: ConfigBancoConta[
                 <option value="SICOOB">Sicoob</option>
                 <option value="SICREDI">Sicredi</option>
                 <option value="ITAU">Itaú</option>
+                <option value="MERCADO_PAGO">Mercado Pago</option>
               </select>
             </label>
-            {banco !== "SICOOB" && (
+            {banco !== "SICOOB" && banco !== "MERCADO_PAGO" && (
               <label>
                 Ambiente
                 <select value={sandbox ? "sandbox" : "producao"} onChange={(e) => setSandbox(e.target.value === "sandbox")}>
@@ -140,7 +141,53 @@ export function IntegracaoBancariaConfig({ contas }: { contas: ConfigBancoConta[
 
           <p style={{ fontSize: 12.5, color: "var(--erp-slate)", margin: "10px 0" }}>{meta.ajuda}</p>
 
-          {banco === "SICOOB" ? (
+          {banco === "MERCADO_PAGO" ? (
+            <div>
+              {contaEditando.mpConectado ? (
+                <div className="alert success" style={{ margin: 0 }}>
+                  <span>
+                    ✓ Conta Mercado Pago <strong>conectada</strong>
+                    {contaEditando.mpUserId ? ` (usuário ${contaEditando.mpUserId})` : ""}
+                    {contaEditando.mpTokenExpiraEm ? ` — renovação automática até ${new Date(contaEditando.mpTokenExpiraEm).toLocaleDateString("pt-BR")}` : ""}.
+                    Para trocar de conta, conecte novamente.
+                  </span>
+                </div>
+              ) : (
+                <div className="alert info" style={{ margin: 0 }}>
+                  <span>Clique em <strong>“Conectar Mercado Pago”</strong>: você será levado ao site do MP para autorizar — sem senha no ERP, sem certificado. Pix e boleto saem direto da conta MP da empresa.</span>
+                </div>
+              )}
+              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
+                <button
+                  type="button"
+                  className="btn-erp primary sm"
+                  disabled={busy}
+                  onClick={async () => {
+                    // Grava o provedor da conta e segue para a autorização OAuth no site do MP.
+                    setBusy(true);
+                    setErro("");
+                    try {
+                      const res = await fetch(`/api/erp/financeiro/contas-bancarias/${editando}/banco`, {
+                        method: "PATCH",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ bancoIntegrado: "MERCADO_PAGO" })
+                      });
+                      if (!res.ok) {
+                        const d = (await res.json().catch(() => ({}))) as { error?: string };
+                        throw new Error(d.error || "Não foi possível salvar.");
+                      }
+                      window.location.href = `/api/erp/mercadopago/conectar?conta=${editando}`;
+                    } catch (e) {
+                      setErro(e instanceof Error ? e.message : "Falha ao iniciar a conexão.");
+                      setBusy(false);
+                    }
+                  }}
+                >
+                  {contaEditando.mpConectado ? "Reconectar Mercado Pago" : "Conectar Mercado Pago →"}
+                </button>
+              </div>
+            </div>
+          ) : banco === "SICOOB" ? (
             <div className="alert info" style={{ margin: 0 }}>
               <span>Configure as credenciais do Sicoob na seção <strong>“Cobrança Sicoob”</strong> logo abaixo (nº do cliente, client_id, sandbox e webhook).</span>
             </div>

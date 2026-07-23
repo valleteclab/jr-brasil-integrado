@@ -9,7 +9,7 @@
  * via Open Finance; extrato Itaú depende de contrato Cash Management com doc autenticada).
  */
 
-export type BancoId = "SICOOB" | "SICREDI" | "ITAU";
+export type BancoId = "SICOOB" | "SICREDI" | "ITAU" | "MERCADO_PAGO";
 
 export class BankError extends Error {
   constructor(message: string) {
@@ -208,9 +208,15 @@ export const BANCOS: Record<BancoId, {
       { key: "bancoConvenio", label: "Carteira", help: "Código da carteira de cobrança" }
     ],
     ajuda: "Cobrança (Cash Management v2) e Pix Recebimentos padrão BACEN, com OAuth2 client_credentials + mTLS (A1). Extrato depende de contrato Cash Management (doc autenticada) — não disponível aqui."
+  },
+  MERCADO_PAGO: {
+    label: "Mercado Pago",
+    caps: { boleto: true, pix: true, extrato: false, webhookCobranca: false },
+    campos: [], // Sem credencial manual: a conta é conectada com o botão "Conectar Mercado Pago" (OAuth).
+    ajuda: "Pix (QR na hora) e boleto pela conta Mercado Pago que a empresa já tem — conexão em 1 clique via OAuth, sem certificado e sem credenciamento bancário. O dinheiro cai direto na conta MP da empresa."
   }
 };
 
 export function bancoValido(v: string | null | undefined): BancoId {
-  return v === "SICREDI" || v === "ITAU" ? v : "SICOOB";
+  return v === "SICREDI" || v === "ITAU" || v === "MERCADO_PAGO" ? v : "SICOOB";
 }

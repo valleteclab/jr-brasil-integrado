@@ -38,6 +38,10 @@ export type ConfigBancoConta = {
   // Estado
   temBoleto: boolean;
   temPix: boolean;
+  // Mercado Pago (OAuth): conta conectada + validade do token (renova sozinho).
+  mpConectado: boolean;
+  mpUserId: string | null;
+  mpTokenExpiraEm: string | null;
 };
 
 export async function listConfigBancos(scope: TenantScope): Promise<ConfigBancoConta[]> {
@@ -61,7 +65,10 @@ export async function listConfigBancos(scope: TenantScope): Promise<ConfigBancoC
     temApiKey: Boolean(c.bancoApiKey),
     temAcesso: Boolean(c.bancoAcesso),
     temBoleto: contaTemBoleto(c),
-    temPix: contaTemPix(c)
+    temPix: contaTemPix(c),
+    mpConectado: Boolean(c.mpAccessTokenCripto),
+    mpUserId: c.mpUserId,
+    mpTokenExpiraEm: c.mpTokenExpiraEm ? c.mpTokenExpiraEm.toISOString() : null
   }));
 }
 

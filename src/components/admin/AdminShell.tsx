@@ -17,6 +17,7 @@ const navItems: AdminNavItem[] = [
   { label: "Crédito & bureau", href: "/admin/credito", icon: "💳" },
   { label: "Planos & preços", href: "/admin/planos", icon: "🏷️" },
   { label: "Cobranças", href: "/admin/cobrancas", icon: "💰" },
+  { label: "Pagamentos (MP)", href: "/admin/pagamentos", icon: "🔌" },
   { label: "Reforma Tributária", href: "/admin/reforma", icon: "📜" }
 ];
 

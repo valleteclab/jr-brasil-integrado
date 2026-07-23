@@ -2258,3 +2258,17 @@ export async function testarCredenciaisProvedorPlataforma(
     return { ok: false, message: error instanceof Error ? error.message : "Falha ao testar a conexão." };
   }
 }
+
+/** Config da aplicação MERCADO PAGO da plataforma (OAuth marketplace) — página /admin/pagamentos. */
+export async function getMpConfigAdmin(): Promise<{ clientId: string | null; temSecret: boolean }> {
+  await requirePlatformAdmin();
+  const cfg = await prisma.plataformaConfiguracao.findUnique({ where: { id: "default" } });
+  return { clientId: cfg?.mpClientId ?? null, temSecret: Boolean(cfg?.mpClientSecretCripto) };
+}
+
+export async function salvarMpConfigAdmin(input: { clientId?: string; clientSecret?: string | null }): Promise<void> {
+  await requirePlatformAdmin();
+  if (!input.clientId?.trim()) throw new PlatformAdminError("Informe o client_id da aplicação Mercado Pago.");
+  const { salvarMpAppCreds } = await import("@/domains/finance/providers/mercadopago-oauth");
+  await salvarMpAppCreds({ clientId: input.clientId, clientSecret: input.clientSecret ?? null });
+}

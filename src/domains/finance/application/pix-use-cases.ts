@@ -23,15 +23,15 @@ export class PixError extends Error {
   }
 }
 
-/** Contas aptas a gerar QR Pix dinâmico: chave Pix cadastrada + credenciamento Sicoob. */
+/** Contas aptas a gerar QR Pix dinâmico: chave Pix + credenciamento do banco (MP dispensa a chave). */
 export async function listContasComPix(scope: TenantScope): Promise<Array<{ id: string; nome: string; chavePix: string }>> {
   const contas = await prisma.contaBancaria.findMany({
-    where: { ...scopedByTenantCompany(scope), ativo: true, chavePix: { not: null } },
+    where: { ...scopedByTenantCompany(scope), ativo: true },
     orderBy: { nome: "asc" }
   });
   return contas
     .filter((c) => contaTemPix(c))
-    .map((c) => ({ id: c.id, nome: c.nome, chavePix: c.chavePix as string }));
+    .map((c) => ({ id: c.id, nome: c.nome, chavePix: c.chavePix ?? "conta Mercado Pago" }));
 }
 
 export type PixCriado = {
@@ -75,7 +75,9 @@ export async function criarPixCobranca(
   if (!(valor > 0)) throw new PixError("Valor da cobrança Pix inválido.");
   const conta = await prisma.contaBancaria.findFirst({ where: { id: input.contaBancariaId, ...scopedByTenantCompany(scope), ativo: true } });
   if (!conta) throw new PixError("Conta bancária não encontrada.");
-  if (!conta.chavePix?.trim()) throw new PixError(`Cadastre a chave Pix da conta "${conta.nome}" para gerar QR Code.`);
+  // Mercado Pago gera o QR da própria conta conectada — os demais bancos exigem a chave Pix cadastrada.
+  const ehMp = conta.bancoIntegrado === "MERCADO_PAGO";
+  if (!ehMp && !conta.chavePix?.trim()) throw new PixError(`Cadastre a chave Pix da conta "${conta.nome}" para gerar QR Code.`);
   if (!contaTemPix(conta)) throw new PixError(`A conta "${conta.nome}" não tem o credenciamento ${bancoLabel(conta)} (Pix) configurado.`);
 
   if (input.contaReceberId) {
@@ -100,7 +102,7 @@ export async function criarPixCobranca(
   const txid = gerarTxid();
   const cob = await provider.criarCobrancaPix({
     txid,
-    chave: conta.chavePix.trim(),
+    chave: conta.chavePix?.trim() ?? "",
     valor,
     expiracaoSeg: input.expiracaoSeg ?? 3600,
     solicitacaoPagador: input.descricao ?? undefined
@@ -117,7 +119,7 @@ export async function criarPixCobranca(
       txid: cob.txid,
       status: "ATIVA",
       valor,
-      chave: conta.chavePix.trim(),
+      chave: conta.chavePix?.trim() || "MERCADO_PAGO",
       brcode: cob.brcode,
       descricao: input.descricao ?? null,
       expiracaoSeg: input.expiracaoSeg ?? 3600,
