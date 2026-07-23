@@ -65,8 +65,16 @@ export function allFeaturesEnabled(): TenantFeatures {
 
 // ─── Planos comerciais ────────────────────────────────────────────────────────
 
-/** Planos do SaaS. EMISSOR = "Emissor de Notas" (NF-e/NFS-e + clientes/produtos) p/ MEI e Simples. */
-export type TenantPlano = "COMPLETO" | "EMISSOR";
+/**
+ * Planos do SaaS. EMISSOR = "Emissor de Notas" (NF-e/NFS-e + clientes/produtos) p/ MEI e Simples.
+ * CHAT = plano "chat-first": Emissor + assistente de IA (Telegram/WhatsApp/web) + gastos por foto.
+ */
+export type TenantPlano = "COMPLETO" | "EMISSOR" | "CHAT";
+
+/** Planos "enxutos" (nav próprio, whitelist de rotas, home do emissor). */
+export function planoEnxuto(plano: string): boolean {
+  return plano === "EMISSOR" || plano === "CHAT";
+}
 
 /**
  * Preset de flags aplicado ao colocar um cliente no plano EMISSOR: liga só o fiscal; o resto
@@ -90,6 +98,14 @@ export const PRESET_FLAGS_EMISSOR: TenantFeatures = {
   whatsappHabilitado: false
 };
 
+/** Preset do plano CHAT: Emissor + IA (assistente nos canais) + WhatsApp + gastos por foto. */
+export const PRESET_FLAGS_CHAT: TenantFeatures = {
+  ...PRESET_FLAGS_EMISSOR,
+  iaHabilitada: true,
+  whatsappHabilitado: true,
+  gastosHabilitado: true
+};
+
 /** Preset do plano COMPLETO (padrões de novo cliente: módulos de série ligados; loja/SPED/expedição opt-in). */
 export const PRESET_FLAGS_COMPLETO: TenantFeatures = {
   ...allFeaturesEnabled(),
@@ -104,8 +120,21 @@ export const PRESET_FLAGS_COMPLETO: TenantFeatures = {
  */
 export const EMISSOR_ROUTE_PREFIXES = ["/erp/fiscal", "/erp/nfse-recebidas", "/erp/clientes", "/erp/produtos", "/erp/configuracoes", "/erp/colaboradores", "/erp/conta"] as const;
 
+/** Rotas EXTRAS do plano CHAT além das do Emissor (assistente de IA e gastos por foto). */
+export const CHAT_ROUTE_PREFIXES = ["/erp/assistente", "/erp/gastos"] as const;
+
 /** Um pathname do ERP é acessível no plano EMISSOR? ("/erp" exato = dashboard sempre pode). */
 export function rotaPermitidaNoEmissor(pathname: string): boolean {
   if (pathname === "/erp" || pathname === "/erp/") return true;
   return EMISSOR_ROUTE_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+}
+
+/** Whitelist de rotas por PLANO enxuto (CHAT = Emissor + assistente/gastos). */
+export function rotaPermitidaNoPlano(plano: string, pathname: string): boolean {
+  if (!planoEnxuto(plano)) return true;
+  if (rotaPermitidaNoEmissor(pathname)) return true;
+  if (plano === "CHAT") {
+    return CHAT_ROUTE_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+  }
+  return false;
 }

@@ -438,13 +438,13 @@ export async function definirValorMensalidadeTenant(tenantId: string, valor: num
  * EMISSOR = só emissão fiscal (NF-e/NFS-e + cadastros); COMPLETO = religa os módulos de série.
  * É o mesmo sistema — upgrade/downgrade a qualquer momento.
  */
-export async function setTenantPlano(tenantId: string, plano: "COMPLETO" | "EMISSOR") {
+export async function setTenantPlano(tenantId: string, plano: "COMPLETO" | "EMISSOR" | "CHAT") {
   const admin = await requirePlatformAdmin();
   assertDb();
   const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { id: true, plano: true } });
   if (!tenant) throw new PlatformAdminError("Cliente não encontrado.");
-  const { PRESET_FLAGS_EMISSOR, PRESET_FLAGS_COMPLETO } = await import("@/lib/auth/feature-flags");
-  const preset = plano === "EMISSOR" ? PRESET_FLAGS_EMISSOR : PRESET_FLAGS_COMPLETO;
+  const { PRESET_FLAGS_EMISSOR, PRESET_FLAGS_COMPLETO, PRESET_FLAGS_CHAT } = await import("@/lib/auth/feature-flags");
+  const preset = plano === "EMISSOR" ? PRESET_FLAGS_EMISSOR : plano === "CHAT" ? PRESET_FLAGS_CHAT : PRESET_FLAGS_COMPLETO;
   const atualizado = await prisma.tenant.update({ where: { id: tenantId }, data: { plano, ...preset } });
   await audit({
     tenantId,

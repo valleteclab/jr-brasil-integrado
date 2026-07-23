@@ -11,7 +11,7 @@ import { SessionError, ForbiddenError } from "@/lib/auth/session";
 export async function POST(request: Request, { params }: { params: { id: string } }) {
   try {
     const body = (await request.json()) as {
-      plano?: "COMPLETO" | "EMISSOR"; trialDias?: number | null; trialAte?: string | null; acao?: string; dias?: number | null; valor?: number | null; vencimento?: string | null;
+      plano?: "COMPLETO" | "EMISSOR" | "CHAT"; trialDias?: number | null; trialAte?: string | null; acao?: string; dias?: number | null; valor?: number | null; vencimento?: string | null;
     };
 
     if (body.acao === "criar-assinatura") {
@@ -30,7 +30,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
     let plano: string | undefined;
     let trialFimEm: string | null | undefined;
     if (body.plano) {
-      if (body.plano !== "COMPLETO" && body.plano !== "EMISSOR") {
+      if (!["COMPLETO", "EMISSOR", "CHAT"].includes(body.plano)) {
         return NextResponse.json({ error: "Plano inválido." }, { status: 400 });
       }
       plano = (await setTenantPlano(params.id, body.plano)).plano;

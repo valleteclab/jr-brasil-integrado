@@ -19,7 +19,7 @@ export default async function CompanySettingsPage() {
   }
 
   // Plano EMISSOR: versão enxuta (sem perfil de operação/PDV) — só o que a emissão precisa.
-  const emissor = (await planoDoTenantAtual()) === "EMISSOR";
+  const emissor = ["EMISSOR", "CHAT"].includes(await planoDoTenantAtual());
 
   return (
     <>

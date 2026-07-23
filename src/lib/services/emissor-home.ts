@@ -4,11 +4,11 @@ import { apuracaoSimples } from "@/domains/fiscal/simples/apuracao-simples-use-c
 import type { EmissorHomeData } from "@/components/erp/EmissorHome";
 
 /** O tenant do usuário logado está no plano EMISSOR? (decide a home do /erp). */
-export async function planoDoTenantAtual(): Promise<"COMPLETO" | "EMISSOR"> {
+export async function planoDoTenantAtual(): Promise<"COMPLETO" | "EMISSOR" | "CHAT"> {
   try {
     const scope = await getDevelopmentTenantScope();
     const tenant = await prisma.tenant.findUnique({ where: { id: scope.tenantId }, select: { plano: true } });
-    return tenant?.plano === "EMISSOR" ? "EMISSOR" : "COMPLETO";
+    return tenant?.plano === "EMISSOR" ? "EMISSOR" : tenant?.plano === "CHAT" ? "CHAT" : "COMPLETO";
   } catch {
     return "COMPLETO";
   }

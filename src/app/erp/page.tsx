@@ -97,7 +97,7 @@ export default async function ErpDashboardPage() {
   // Plano EMISSOR DE NOTAS: a home é o painel do emissor (atalhos de emissão + certificado +
   // limite MEI/Simples), não o dashboard completo do ERP. Os atalhos respeitam os módulos do
   // PERFIL do usuário (ex.: perfil operacional sem "produtos" não vê "Emitir NF-e").
-  if ((await planoDoTenantAtual()) === "EMISSOR") {
+  if (["EMISSOR", "CHAT"].includes(await planoDoTenantAtual())) {
     const [emissor, session] = await Promise.all([getEmissorHomeData(), getSession()]);
     return <EmissorHome data={emissor} modulos={session?.modulos ?? []} />;
   }

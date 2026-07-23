@@ -28,8 +28,11 @@ const fmtCnpj = (d: string) =>
   d.length === 14 ? `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}` : d;
 
 async function listarVinculos(telefone: string): Promise<VinculoEmpresa[]> {
+  // Sufixo de 8 dígitos: Telegram/WhatsApp mandam formatos diferentes do cadastro (+55, DDD, 9).
+  const sufixo = telefone.replace(/\D/g, "").slice(-8);
+  if (!sufixo) return [];
   const rows = await prisma.agenteTelefone.findMany({
-    where: { telefone, ativo: true },
+    where: { ativo: true, telefone: { contains: sufixo } },
     include: { empresa: { select: { razaoSocial: true, nomeFantasia: true, cnpj: true } } }
   });
   return rows

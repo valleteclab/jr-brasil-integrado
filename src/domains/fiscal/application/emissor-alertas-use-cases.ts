@@ -28,10 +28,11 @@ async function alertar(scope: TenantScope, tipo: string, desde: Date, titulo: st
 
 export async function rodarAlertasEmissor(): Promise<{ tenants: number; notificacoes: number }> {
   const tenants = await prisma.tenant.findMany({
-    where: { plano: "EMISSOR", ativo: true },
+    where: { plano: { in: ["EMISSOR", "CHAT"] }, ativo: true },
     select: { id: true, plano: true }
   });
-  const planoCfg = await prisma.plataformaPlano.findUnique({ where: { codigo: "EMISSOR" } });
+  const planosCfg = await prisma.plataformaPlano.findMany();
+  const limitePorPlano = new Map(planosCfg.map((pl) => [pl.codigo, pl.limiteNotasMes]));
   const agora = new Date();
   const inicioMes = new Date(agora.getFullYear(), agora.getMonth(), 1);
   const seteDiasAtras = new Date(Date.now() - 7 * 86400000);
@@ -47,8 +48,8 @@ export async function rodarAlertasEmissor(): Promise<{ tenants: number; notifica
     const scope: TenantScope = { tenantId: t.id, empresaId: empresa.id };
 
     try {
-      // 1) Limite de notas do plano (80% / 100%).
-      const limite = planoCfg?.limiteNotasMes ?? null;
+      // 1) Limite de notas do plano (80% / 100%) — limite do PLANO do tenant.
+      const limite = limitePorPlano.get(t.plano) ?? null;
       if (limite) {
         const emitidas = await prisma.notaFiscal.count({
           where: { tenantId: t.id, status: { in: ["AUTORIZADA", "CANCELADA", "SUBSTITUIDA"] }, emitidaEm: { gte: inicioMes } }

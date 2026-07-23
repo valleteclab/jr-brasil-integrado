@@ -11,6 +11,7 @@ import {
   type TelegramRuntime
 } from "@/lib/telegram/telegram-service";
 import { enviarPdfBoleto, enviarPdfNota, enviarQrPix, handleTelegramCallback, handleTelegramTexto, mostrarMenu } from "./telegram-fluxos";
+import { resolverEmpresaAtiva, empresaAtivaSemTexto } from "./selecao-empresa";
 
 /**
  * Processa um update do Telegram (mesmo agente do WhatsApp, canal TELEGRAM):
@@ -108,8 +109,28 @@ export async function processTelegramMessage(
   const texto = (message.text ?? "").trim();
   if (!texto) return;
 
-  const role = vinculo.role as AgentRole;
-  const clienteId = vinculo.clienteId ?? null;
+  let role = vinculo.role as AgentRole;
+  let clienteId = vinculo.clienteId ?? null;
+  let multiEmpresa = false;
+  let empresaAtivaNome = "";
+
+  // MULTI-EMPRESA (contador): telefone vinculado a várias empresas → seletor fixa a empresa ativa
+  // da sessão; o scope de TUDO (fluxos guiados e IA) passa a ser o da empresa escolhida.
+  if (role !== "CLIENTE" && vinculo.telefone) {
+    const resolucao = await resolverEmpresaAtiva({ canal: "TELEGRAM", chave: chatId, telefone: vinculo.telefone, texto });
+    if (resolucao.tipo === "responder") {
+      await sendTelegramTextoSemTeclado(runtime, chatId, resolucao.mensagem.replace(/\*/g, ""));
+      return;
+    }
+    if (resolucao.tipo === "ok") {
+      scope.tenantId = resolucao.vinculo.tenantId;
+      scope.empresaId = resolucao.vinculo.empresaId;
+      role = resolucao.vinculo.role;
+      clienteId = resolucao.vinculo.clienteId;
+      multiEmpresa = resolucao.multi;
+      empresaAtivaNome = resolucao.vinculo.empresaNome;
+    }
+  }
 
   // Ambiente fiscal vigente — isola homologação de produção nas consultas.
   const cfgFiscal = await prisma.configuracaoFiscal.findUnique({
@@ -209,6 +230,10 @@ export async function processTelegramMessage(
       ? `\n\n📝 ${tipoLabel} ${result.draft.numero ?? ""} criado(a).`
       : `\n\n📝 ${tipoLabel} ${result.draft.numero ?? ""} criado(a) como rascunho. Um responsável vai confirmar no sistema.`;
   }
+  // Multi-empresa: deixa SEMPRE claro por qual empresa a ação valeu (segurança do contador).
+  if (multiEmpresa && empresaAtivaNome) {
+    resposta = `🏢 ${empresaAtivaNome}\n\n${resposta}`;
+  }
   await sendTelegramText(runtime, chatId, resposta);
 
   // Documentos gerados pelas tools do turno (NF/boleto) vão como PDF anexo — link do ERP exige login.
@@ -274,6 +299,19 @@ export async function processTelegramCallback(
     return;
   }
   if (vinculo.role === "CLIENTE") return; // fluxos guiados são só do time (v1)
+
+  // MULTI-EMPRESA: os botões também agem na empresa ATIVA da sessão (sem sessão → pede a seleção).
+  if (vinculo.telefone) {
+    const resolucao = await empresaAtivaSemTexto({ canal: "TELEGRAM", chave: chatId, telefone: vinculo.telefone });
+    if (resolucao.tipo === "responder") {
+      await sendTelegramTextoSemTeclado(runtime, chatId, resolucao.mensagem.replace(/\*/g, ""));
+      return;
+    }
+    if (resolucao.tipo === "ok") {
+      scope.tenantId = resolucao.vinculo.tenantId;
+      scope.empresaId = resolucao.vinculo.empresaId;
+    }
+  }
 
   const cfgFiscal = await prisma.configuracaoFiscal.findUnique({
     where: { empresaId: scope.empresaId },

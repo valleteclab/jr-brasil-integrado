@@ -20,7 +20,7 @@ export default async function FiscalSettingsPage() {
   }
 
   // Plano EMISSOR: tela enxuta — ambiente, regime, numeração NF-e/NFS-e, certificado A1 e logo.
-  const emissor = (await planoDoTenantAtual()) === "EMISSOR";
+  const emissor = ["EMISSOR", "CHAT"].includes(await planoDoTenantAtual());
 
   return (
     <>

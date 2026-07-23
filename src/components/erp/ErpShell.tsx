@@ -6,7 +6,7 @@ import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import type { ErpShellBadges, ErpShellContext } from "@/lib/services/erp-shell";
 import { ComunicacaoWidget } from "@/components/erp/ComunicacaoWidget";
 import { moduloFromPath, moduloVisivelNoTipoNegocio } from "@/lib/auth/modules";
-import { HREF_FLAG, TIPO_VENDA_FLAG, rotaPermitidaNoEmissor } from "@/lib/auth/feature-flags";
+import { HREF_FLAG, TIPO_VENDA_FLAG, planoEnxuto, rotaPermitidaNoPlano } from "@/lib/auth/feature-flags";
 
 // Escurece um hex #rrggbb (para a variante "dark" usada em hovers/bordas da cor de destaque).
 function darken(hex: string, amount = 0.14): string {
@@ -178,8 +178,18 @@ export function ErpShell({ children, context, modulos }: ErpShellProps) {
     if (!modulo) return true;
     return modulos.includes(modulo as Parameters<typeof moduloVisivelNoTipoNegocio>[0]) && moduloVisivelNoTipoNegocio(modulo as Parameters<typeof moduloVisivelNoTipoNegocio>[0], context.tipoNegocio);
   };
-  const emissor = context.plano === "EMISSOR";
-  const gruposVisiveis = (emissor ? groupsEmissor : groups)
+  const emissor = planoEnxuto(context.plano);
+  // Plano CHAT: nav do Emissor + Assistente IA + Gastos (foto do cupom).
+  const gruposDoPlano = context.plano === "CHAT"
+    ? groupsEmissor.map((g) =>
+        g.group === "Emissor de Notas"
+          ? { ...g, group: "Assistente & Notas", items: [g.items[0], { label: "Assistente IA", href: "/erp/assistente", icon: "💬", accent: true }, ...g.items.slice(1)] }
+          : g.group === "Cadastros"
+            ? { ...g, items: [...g.items, { label: "Gastos (foto do cupom)", href: "/erp/gastos", icon: "🧾" }] }
+            : g
+      )
+    : groupsEmissor;
+  const gruposVisiveis = (emissor ? gruposDoPlano : groups)
     .map((g) => ({ ...g, items: g.items.filter((i) => podeVer(i.href, i.modulo)) }))
     .filter((g) => g.items.length > 0);
 
@@ -189,8 +199,8 @@ export function ErpShell({ children, context, modulos }: ErpShellProps) {
   // específico) precisa estar visível.
   useEffect(() => {
     if (!emissor) return;
-    if (!rotaPermitidaNoEmissor(pathname)) { router.replace("/erp"); return; }
-    const todos = groupsEmissor.flatMap((g) => g.items);
+    if (!rotaPermitidaNoPlano(context.plano, pathname)) { router.replace("/erp"); return; }
+    const todos = gruposDoPlano.flatMap((g) => g.items);
     const melhor = todos
       .filter((i) => pathname === i.href || pathname.startsWith(`${i.href}/`))
       .sort((a, b) => b.href.length - a.href.length)[0];

@@ -10,7 +10,7 @@ import { planoDoTenantAtual, getEmissorSetupStatus } from "@/lib/services/emisso
  */
 export async function EmissorSetupAviso() {
   try {
-    if ((await planoDoTenantAtual()) !== "EMISSOR") return null;
+    if (!["EMISSOR", "CHAT"].includes(await planoDoTenantAtual())) return null;
     const scope = await getDevelopmentTenantScope();
     const setup = await getEmissorSetupStatus(scope);
     if (setup.completo) return null;

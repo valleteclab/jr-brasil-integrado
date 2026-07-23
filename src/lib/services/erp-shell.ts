@@ -30,8 +30,8 @@ export type ErpShellContext = {
   expedicaoHabilitada: boolean;
   /** Flags de módulo liberadas pelo dono do SaaS (esconde itens do menu e bloqueia URLs). */
   features: TenantFeatures;
-  /** Plano comercial do tenant (COMPLETO | EMISSOR) — muda o menu e o foco da UI. */
-  plano: "COMPLETO" | "EMISSOR";
+  /** Plano comercial do tenant (COMPLETO | EMISSOR | CHAT) — muda o menu e o foco da UI. */
+  plano: "COMPLETO" | "EMISSOR" | "CHAT";
   /** Fim do trial (ISO) e se já venceu — o layout do ERP bloqueia quando vencido. */
   trialFimEm: string | null;
   trialVencido: boolean;
@@ -192,7 +192,7 @@ export async function getErpShellContext(): Promise<ErpShellContext> {
       spedFiscalHabilitado: features.spedFiscalHabilitado,
       expedicaoHabilitada: features.expedicaoHabilitada,
       features,
-      plano: tenantPlano?.plano === "EMISSOR" ? "EMISSOR" : "COMPLETO",
+      plano: tenantPlano?.plano === "EMISSOR" ? "EMISSOR" : tenantPlano?.plano === "CHAT" ? "CHAT" : "COMPLETO",
       trialFimEm: tenantPlano?.trialFimEm?.toISOString() ?? null,
       trialVencido: Boolean(tenantPlano?.trialFimEm && tenantPlano.trialFimEm < new Date()),
       mensalidade: derivarMensalidade(tenantPlano?.mensalidadeVencidaEm ?? null, tenantPlano?.mensalidadeFaturaUrl ?? null),

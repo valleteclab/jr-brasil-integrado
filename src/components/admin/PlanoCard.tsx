@@ -46,7 +46,7 @@ export function PlanoCard({ clienteId, plano, trialFimEm, mensalidadeValor }: { 
     }
   }
 
-  async function post(body: { plano?: "COMPLETO" | "EMISSOR"; trialDias?: number | null; trialAte?: string | null; acao?: string; dias?: number | null }) {
+  async function post(body: { plano?: "COMPLETO" | "EMISSOR" | "CHAT"; trialDias?: number | null; trialAte?: string | null; acao?: string; dias?: number | null }) {
     setBusy(true);
     setErro("");
     try {
@@ -91,11 +91,13 @@ export function PlanoCard({ clienteId, plano, trialFimEm, mensalidadeValor }: { 
     }
   }
 
-  function trocarPlano(novo: "COMPLETO" | "EMISSOR") {
+  function trocarPlano(novo: "COMPLETO" | "EMISSOR" | "CHAT") {
     if (novo === plano) return;
     const msg = novo === "EMISSOR"
       ? "Colocar este cliente no plano EMISSOR DE NOTAS? Os módulos além da emissão fiscal serão desligados (o upgrade religa tudo)."
-      : "Fazer UPGRADE deste cliente para o plano COMPLETO? Os módulos de série serão religados.";
+      : novo === "CHAT"
+        ? "Colocar este cliente no plano CHAT (Emissor + assistente de IA + gastos por foto)? Os demais módulos serão desligados."
+        : "Fazer UPGRADE deste cliente para o plano COMPLETO? Os módulos de série serão religados.";
     if (!window.confirm(msg)) return;
     void post({ plano: novo });
   }
@@ -114,6 +116,9 @@ export function PlanoCard({ clienteId, plano, trialFimEm, mensalidadeValor }: { 
         </button>
         <button type="button" className={`btn-erp ${plano === "EMISSOR" ? "primary" : "light"} sm`} disabled={busy} onClick={() => trocarPlano("EMISSOR")}>
           🧾 Emissor de Notas
+        </button>
+        <button type="button" className={`btn-erp ${plano === "CHAT" ? "primary" : "light"} sm`} disabled={busy} onClick={() => trocarPlano("CHAT")}>
+          💬 Chat (IA)
         </button>
         <span className="block-muted" style={{ fontSize: 12 }}>
           Emissor = só NF-e/NFS-e + clientes/produtos (MEI e Simples). Mesmo sistema — upgrade religa IA, WhatsApp, PDV etc.
