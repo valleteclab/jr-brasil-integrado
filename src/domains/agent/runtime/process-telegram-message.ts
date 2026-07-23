@@ -5,6 +5,7 @@ import { runAgentTurn } from "./run-agent-turn";
 import type { ToolChatMessage } from "@/domains/ai/openrouter-service";
 import {
   answerTelegramCallback,
+  baixarTelegramArquivoBuffer,
   sendTelegramPedirContato,
   sendTelegramText,
   sendTelegramTextoSemTeclado,
@@ -35,8 +36,8 @@ type TelegramMessage = {
   contact?: TelegramContact;
   /** Foto enviada ao bot (cupom de gasto): tamanhos em ordem crescente — o último é o maior. */
   photo?: Array<{ file_id?: string; file_size?: number }>;
-  /** Imagem enviada como ARQUIVO (sem compressão). */
-  document?: { file_id?: string; mime_type?: string };
+  /** Imagem/arquivo enviado como documento (sem compressão). */
+  document?: { file_id?: string; mime_type?: string; file_name?: string };
 };
 
 /** file_id da imagem da mensagem (maior foto, ou documento image/*). */
@@ -47,6 +48,24 @@ function imagemDaMensagem(message: TelegramMessage): string | null {
     return message.document.file_id;
   }
   return null;
+}
+
+/** Certificado A1 (.pfx/.p12) enviado como documento — onboarding fiscal pelo chat. */
+function certificadoDaMensagem(message: TelegramMessage): { fileId: string; nome: string } | null {
+  const doc = message.document;
+  if (!doc?.file_id) return null;
+  const nome = doc.file_name ?? "";
+  if (/\.(pfx|p12)$/i.test(nome) || doc.mime_type === "application/x-pkcs12") {
+    return { fileId: doc.file_id, nome: nome || "certificado.pfx" };
+  }
+  return null;
+}
+
+/** Estado "aguardando a senha do certificado" gravado no vínculo. */
+type EstadoCertificado = { fluxo?: string; passo?: string; fileId?: string; nome?: string; tenantId?: string; empresaId?: string };
+function estadoCertificadoDe(estado: unknown): EstadoCertificado | null {
+  const e = estado as EstadoCertificado | null;
+  return e?.fluxo === "certificado" && e.passo === "senha" && e.fileId ? e : null;
 }
 
 export async function processTelegramMessage(
@@ -120,6 +139,39 @@ export async function processTelegramMessage(
   }
 
   // ── Com vínculo: roda o agente ───────────────────────────────────────────
+  // CERTIFICADO A1 (.pfx) enviado no chat → onboarding fiscal: guarda o file_id e pede a senha.
+  const cert = certificadoDaMensagem(message);
+  if (cert) {
+    if (vinculo.role !== "GESTOR") {
+      await sendTelegramText(runtime, chatId, "Por segurança, só o GESTOR pode enviar o certificado digital da empresa.");
+      return;
+    }
+    // Multi-empresa: o certificado entra na empresa ATIVA da sessão (sem sessão → pede a seleção).
+    let scopeCert: TenantScope = { tenantId: scope.tenantId, empresaId: scope.empresaId };
+    let sufixoEmpresa = "";
+    if (vinculo.telefone) {
+      const r = await empresaAtivaSemTexto({ canal: "TELEGRAM", chave: chatId, telefone: vinculo.telefone });
+      if (r.tipo === "responder") {
+        await sendTelegramTextoSemTeclado(runtime, chatId, `Antes de enviar o certificado, escolha a empresa e depois REENVIE o arquivo.\n\n${r.mensagem.replace(/\*/g, "")}`);
+        return;
+      }
+      if (r.tipo === "ok") {
+        scopeCert = { tenantId: r.vinculo.tenantId, empresaId: r.vinculo.empresaId };
+        if (r.multi) sufixoEmpresa = ` para 🏢 ${r.vinculo.empresaNome}`;
+      }
+    }
+    await prisma.telegramVinculo.update({
+      where: { id: vinculo.id },
+      data: { estado: { fluxo: "certificado", passo: "senha", fileId: cert.fileId, nome: cert.nome, tenantId: scopeCert.tenantId, empresaId: scopeCert.empresaId } }
+    });
+    await sendTelegramText(
+      runtime,
+      chatId,
+      `🔐 Recebi o certificado ${cert.nome}${sufixoEmpresa}.\n\nAgora me envie a SENHA do certificado (só a senha).\n\nDica: depois que eu confirmar, apague aqui a mensagem com a senha. Para desistir, digite "cancelar".`
+    );
+    return;
+  }
+
   // FOTO de cupom → lança o gasto direto (mesmo fluxo do WhatsApp; só staff autorizado).
   const fotoId = imagemDaMensagem(message);
   if (fotoId) {
@@ -132,6 +184,39 @@ export async function processTelegramMessage(
 
   const texto = (message.text ?? "").trim();
   if (!texto) return;
+
+  // SENHA do certificado aguardada → conclui o envio ANTES de qualquer outro fluxo (a senha não
+  // pode cair no seletor de empresa nem na IA). O scope é o gravado quando o arquivo chegou.
+  const estadoCert = vinculo.role === "GESTOR" ? estadoCertificadoDe(vinculo.estado) : null;
+  if (estadoCert) {
+    const limparEstado = () => prisma.telegramVinculo.update({ where: { id: vinculo.id }, data: { estado: { fluxo: "ia" } } });
+    if (texto.toLowerCase() === "cancelar") {
+      await limparEstado();
+      await sendTelegramText(runtime, chatId, "Envio do certificado cancelado.");
+      return;
+    }
+    const arq = await baixarTelegramArquivoBuffer(runtime, estadoCert.fileId!);
+    if (!arq) {
+      await limparEstado();
+      await sendTelegramText(runtime, chatId, "Não consegui baixar o arquivo do certificado (limite 6 MB). Reenvie o .pfx, por favor.");
+      return;
+    }
+    try {
+      const { distribuirCertificadoFiscal } = await import("@/domains/fiscal/application/fiscal-certificate-use-cases");
+      const r = await distribuirCertificadoFiscal(
+        { tenantId: estadoCert.tenantId ?? scope.tenantId, empresaId: estadoCert.empresaId ?? scope.empresaId },
+        { buffer: arq.buffer, filename: estadoCert.nome ?? "certificado.pfx", password: texto }
+      );
+      await limparEstado();
+      const validade = r.resumo.validade ? `\nVálido até: ${new Date(r.resumo.validade).toLocaleDateString("pt-BR")}.` : "";
+      await sendTelegramText(runtime, chatId, `✅ ${r.message}${validade}\n\n🗑 Por segurança, apague a mensagem com a senha.`);
+    } catch (e) {
+      // Senha errada/arquivo inválido → mantém o estado para tentar de novo.
+      const msg = e instanceof Error ? e.message : "erro ao processar o certificado";
+      await sendTelegramText(runtime, chatId, `❌ ${msg}\n\nEnvie a senha novamente ou digite "cancelar".`);
+    }
+    return;
+  }
 
   let role = vinculo.role as AgentRole;
   let clienteId = vinculo.clienteId ?? null;

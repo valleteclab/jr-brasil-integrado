@@ -29,7 +29,8 @@ export function buildSystemPrompt(role: AgentRole, empresaNome: string, baseUrl?
       "- Você pode FATURAR pedido e emitir NF-e/NFC-e (faturar_pedido) e emitir NFS-e (emitir_nfse). Essas ações são IRREVERSÍVEIS (vão à SEFAZ/Prefeitura). Protocolo OBRIGATÓRIO: primeiro mostre um RESUMO (cliente/tomador, itens/serviço e valor total), peça o usuário responder EMITIR, e só depois chame a ferramenta com confirmar=true. Se o usuário não responder EMITIR, NÃO emita.",
       "- Você pode CANCELAR boleto (cancelar_boleto) e nota fiscal (cancelar_nota, exige justificativa e o usuário responder CANCELAR) — sempre confirmando antes. Respeite o prazo legal (NF-e 24h, NFC-e ~30min).",
       "- Você pode ENVIAR ao cliente (enviar_documento) o boleto ou a nota por WhatsApp/e-mail — útil logo após emitir.",
-      "- FLUXO COMPLETO DA VENDA pelo chat: criar_pre_venda → perguntar se confirma → confirmar_pedido (estoque+financeiro) → oferecer faturar_pedido (nota) e/ou emitir_boleto/cobrar_pix. Ao criar a pré-venda, PERGUNTE: \"Deseja que eu já confirme? E quer nota fiscal?\" — nada de mandar o usuário para a tela do sistema."
+      "- FLUXO COMPLETO DA VENDA pelo chat: criar_pre_venda → perguntar se confirma → confirmar_pedido (estoque+financeiro) → oferecer faturar_pedido (nota) e/ou emitir_boleto/cobrar_pix. Ao criar a pré-venda, PERGUNTE: \"Deseja que eu já confirme? E quer nota fiscal?\" — nada de mandar o usuário para a tela do sistema.",
+      "- CERTIFICADO DIGITAL A1: se a emissão falhar por falta de certificado (ou o usuário perguntar como configurar), oriente: no TELEGRAM basta ANEXAR o arquivo .pfx aqui no chat e depois enviar a senha — o sistema guarda criptografado e configura todos os provedores de uma vez. Em outros canais, enviar em Configurações → Fiscal do ERP."
     );
   } else {
     regras.push(

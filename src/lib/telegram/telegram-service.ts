@@ -95,11 +95,14 @@ export async function sendTelegramTextoSemTeclado(runtime: TelegramRuntime, chat
 }
 
 /**
- * Baixa um arquivo enviado ao bot (foto de cupom) e devolve como data URL base64 (cap 6MB).
- * Fluxo da Bot API: getFile(file_id) → file_path → GET /file/bot<token>/<file_path>.
+ * Baixa um arquivo enviado ao bot como Buffer (cap 6MB). Fluxo da Bot API:
+ * getFile(file_id) → file_path → GET /file/bot<token>/<file_path>.
  * Retorna null em qualquer falha (o chamador responde pedindo reenvio).
  */
-export async function baixarTelegramArquivoBase64(runtime: TelegramRuntime, fileId: string): Promise<string | null> {
+export async function baixarTelegramArquivoBuffer(
+  runtime: TelegramRuntime,
+  fileId: string
+): Promise<{ buffer: Buffer; filePath: string } | null> {
   if (!runtime.botToken || !fileId) return null;
   try {
     const info = await tgCall<{ file_path?: string; file_size?: number }>(runtime.botToken, "getFile", { file_id: fileId });
@@ -109,12 +112,19 @@ export async function baixarTelegramArquivoBase64(runtime: TelegramRuntime, file
     if (!res.ok) return null;
     const buf = Buffer.from(await res.arrayBuffer());
     if (!buf.length || buf.length > 6 * 1024 * 1024) return null;
-    const ext = info.file_path.split(".").pop()?.toLowerCase() ?? "";
-    const mime = ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
-    return `data:${mime};base64,${buf.toString("base64")}`;
+    return { buffer: buf, filePath: info.file_path };
   } catch {
     return null;
   }
+}
+
+/** Baixa uma FOTO enviada ao bot como data URL base64 (cupom de gasto). */
+export async function baixarTelegramArquivoBase64(runtime: TelegramRuntime, fileId: string): Promise<string | null> {
+  const arq = await baixarTelegramArquivoBuffer(runtime, fileId);
+  if (!arq) return null;
+  const ext = arq.filePath.split(".").pop()?.toLowerCase() ?? "";
+  const mime = ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
+  return `data:${mime};base64,${arq.buffer.toString("base64")}`;
 }
 
 export type BotaoInline = { text: string; data: string };
