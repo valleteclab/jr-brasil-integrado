@@ -1,9 +1,12 @@
 import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import { createAuditLog } from "@/lib/audit/audit-service";
-import { getFiscalRuntimeConfig } from "./fiscal-config-use-cases";
+import type { AmbienteFiscal, ProvedorFiscal } from "@prisma/client";
+import { getFiscalRuntimeConfig, empresaAcbrPayload } from "./fiscal-config-use-cases";
+import { getCredenciaisProvedorPlataforma } from "./plataforma-provedor-use-cases";
+import { salvarCertificado, type CertificadoResumo } from "./certificado-use-cases";
 import { uploadSpedyCertificate } from "../providers/spedy-provider";
-import { uploadAcbrCertificate, uploadAcbrLogotipo, deleteAcbrLogotipo } from "../providers/acbr-provider";
+import { uploadAcbrCertificate, uploadAcbrLogotipo, deleteAcbrLogotipo, registrarEmpresaAcbr } from "../providers/acbr-provider";
 import type { ProviderContext } from "../providers/types";
 
 export class CertificateUploadError extends Error {}
@@ -105,56 +108,88 @@ export async function removeFiscalLogotipo(scope: TenantScope): Promise<{ ok: bo
   return result;
 }
 
-export type CertificateUploadResult = {
+/** Contexto de API da ACBr resolvido pelas credenciais da PLATAFORMA (independe do provedor de produtos). */
+async function contextoAcbr(ambiente: AmbienteFiscal): Promise<ProviderContext | null> {
+  const cred = await getCredenciaisProvedorPlataforma("ACBR", ambiente);
+  const token = cred.clientSecret ?? process.env.ACBR_CLIENT_SECRET?.trim() ?? null;
+  const cscId = cred.clientId ?? process.env.ACBR_CLIENT_ID?.trim() ?? null;
+  if (!token) return null;
+  return { ambiente, provedor: "ACBR" as ProvedorFiscal, baseUrl: cred.baseUrl, token, cscId, cscToken: null };
+}
+
+export type CertificadoDistribuicaoResult = {
   ok: boolean;
-  alreadyRegistered: boolean;
+  resumo: CertificadoResumo;
   message: string;
 };
 
 /**
- * Envia o certificado digital A1 (.pfx) da empresa ao provedor fiscal (hoje: Spedy).
- * O arquivo/senha são repassados ao provedor e NÃO são persistidos no nosso banco —
- * guardamos apenas metadados (nome/validade) para exibição.
+ * PONTO ÚNICO de entrada do certificado A1: um upload atende TODOS os provedores em uso.
+ *  1. Guarda o .pfx + senha criptografados (CertificadoDigital) — fonte da verdade; valida
+ *     arquivo/senha e serve a emissão direta (SEFAZ NF-e/NFC-e e NFS-e Nacional), que usa o
+ *     A1 a cada emissão.
+ *  2. Repassa o MESMO arquivo à ACBr quando ela for o provedor resolvido de produtos OU de
+ *     serviços (garante antes a empresa cadastrada lá — idempotente).
+ *  3. Spedy (legado): repassa quando for o provedor ativo.
+ * Falha no repasse NÃO desfaz a guarda local (o cliente pode usar "Sincronizar ACBr", que
+ * também reenvia o certificado guardado).
  */
-export async function uploadFiscalCertificate(
+export async function distribuirCertificadoFiscal(
   scope: TenantScope,
   input: { buffer: Buffer; filename: string; password: string }
-): Promise<CertificateUploadResult> {
+): Promise<CertificadoDistribuicaoResult> {
   if (!input.buffer?.length) throw new CertificateUploadError("Selecione o arquivo do certificado (.pfx).");
-  if (!input.password?.trim()) throw new CertificateUploadError("Informe a senha do certificado.");
+  const senha = input.password?.trim();
+  if (!senha) throw new CertificateUploadError("Informe a senha do certificado.");
+
+  const resumo = await salvarCertificado(scope, {
+    pfxBase64: input.buffer.toString("base64"),
+    senha,
+    arquivoNome: input.filename
+  });
 
   const config = await getFiscalRuntimeConfig(scope);
-  if (config.provider !== "SPEDY" && config.provider !== "ACBR") {
-    throw new CertificateUploadError("O envio de certificado pela plataforma está disponível para os provedores Spedy e ACBr. Para outros provedores, configure o certificado no painel do provedor.");
+  const partes: string[] = ["guardado com segurança para a emissão direta (SEFAZ / NFS-e Nacional)"];
+
+  if (config.provider === "ACBR" || config.providerServicos === "ACBR") {
+    const ctx = await contextoAcbr(config.ambiente);
+    if (!ctx) {
+      partes.push("ACBr: credenciais da plataforma não configuradas — use \"Sincronizar ACBr\" depois de configurá-las");
+    } else {
+      const empresa = await prisma.empresa.findUniqueOrThrow({ where: { id: scope.empresaId } });
+      const registro = await registrarEmpresaAcbr(ctx, empresaAcbrPayload(empresa));
+      if (!registro.ok) {
+        partes.push(`ACBr: ${registro.message}`);
+      } else {
+        const envio = await uploadAcbrCertificate(ctx, empresa.cnpj, input.buffer, senha);
+        partes.push(envio.ok ? "enviado ao provedor ACBr" : `ACBr: ${envio.message}`);
+      }
+    }
   }
 
-  const ctx: ProviderContext = {
-    ambiente: config.ambiente,
-    provedor: config.provider,
-    baseUrl: config.baseUrl,
-    token: config.token,
-    cscId: config.cscId,
-    cscToken: config.cscToken
-  };
-
-  let alreadyRegistered = false;
-  let expiresOn: string | undefined;
-  if (config.provider === "ACBR") {
-    const result = await uploadAcbrCertificate(ctx, config.emitter.cnpj, input.buffer, input.password.trim());
-    if (!result.ok) throw new CertificateUploadError(result.message);
-  } else {
-    const result = await uploadSpedyCertificate(ctx, { buffer: input.buffer, filename: input.filename }, input.password.trim());
-    alreadyRegistered = result.alreadyRegistered;
-    expiresOn = result.expiresOn ?? undefined;
+  if (config.provider === "SPEDY") {
+    const ctx: ProviderContext = {
+      ambiente: config.ambiente,
+      provedor: config.provider,
+      baseUrl: config.baseUrl,
+      token: config.token,
+      cscId: config.cscId,
+      cscToken: config.cscToken
+    };
+    try {
+      const r = await uploadSpedyCertificate(ctx, { buffer: input.buffer, filename: input.filename }, senha);
+      partes.push(r.alreadyRegistered ? "já estava cadastrado no Spedy" : "enviado ao Spedy");
+    } catch (e) {
+      partes.push(`Spedy: ${e instanceof Error ? e.message : "falha no envio"}`);
+    }
   }
 
-  // Persiste apenas metadados (nunca o arquivo/senha). Upsert: cria a config fiscal se a empresa
-  // ainda não tiver (ex.: certificado enviado antes de salvar o onboarding), já com o provedor ativo.
+  // Metadados de exibição (nunca o arquivo/senha em claro na config fiscal).
   await prisma.configuracaoFiscal.upsert({
     where: { empresaId: scope.empresaId },
     update: {
       certificadoInfo: input.filename || "Certificado A1",
-      certificadoValidade: expiresOn ? new Date(expiresOn) : undefined
+      certificadoValidade: resumo.validade ? new Date(resumo.validade) : undefined
     },
     create: {
       tenantId: scope.tenantId,
@@ -162,25 +197,18 @@ export async function uploadFiscalCertificate(
       provedor: config.provider,
       ambiente: config.ambiente,
       certificadoInfo: input.filename || "Certificado A1",
-      certificadoValidade: expiresOn ? new Date(expiresOn) : undefined
+      certificadoValidade: resumo.validade ? new Date(resumo.validade) : undefined
     }
   });
 
-  await prisma.$transaction(async (tx) => {
-    await createAuditLog(tx, {
-      scope,
-      entidade: "ConfiguracaoFiscal",
-      entidadeId: scope.empresaId,
-      acao: "UPLOAD_CERTIFICATE",
-      payload: { filename: input.filename, alreadyRegistered, provider: config.provider }
-    });
+  await createAuditLog(prisma, {
+    scope,
+    entidade: "ConfiguracaoFiscal",
+    entidadeId: scope.empresaId,
+    acao: "UPLOAD_CERTIFICATE",
+    payload: { filename: input.filename, destinos: partes }
   });
 
-  return {
-    ok: true,
-    alreadyRegistered,
-    message: alreadyRegistered
-      ? "Certificado já estava cadastrado no provedor."
-      : "Certificado enviado com sucesso ao provedor."
-  };
+  return { ok: true, resumo, message: `Certificado A1: ${partes.join("; ")}.` };
 }
+

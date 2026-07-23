@@ -41,11 +41,6 @@ export function FiscalSettingsForm({
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  const [certFile, setCertFile] = useState<File | null>(null);
-  const [certPassword, setCertPassword] = useState("");
-  const [certBusy, setCertBusy] = useState(false);
-  const [certMsg, setCertMsg] = useState("");
-  const [certErr, setCertErr] = useState("");
   // Certificado A1 da emissão NACIONAL (armazenado criptografado no nosso banco).
   const [certNacFile, setCertNacFile] = useState<File | null>(null);
   const [certNacPassword, setCertNacPassword] = useState("");
@@ -76,30 +71,7 @@ export function FiscalSettingsForm({
     }
   }
 
-  async function enviarCertificado() {
-    setCertErr("");
-    setCertMsg("");
-    if (!certFile) { setCertErr("Selecione o arquivo .pfx do certificado A1."); return; }
-    if (!certPassword.trim()) { setCertErr("Informe a senha do certificado."); return; }
-    setCertBusy(true);
-    try {
-      const form = new FormData();
-      form.append("file", certFile);
-      form.append("password", certPassword);
-      const res = await fetch("/api/erp/configuracoes/fiscal/certificado", { method: "POST", body: form });
-      const data = (await res.json()) as { message?: string; error?: string };
-      if (!res.ok) throw new Error(data.error || "Não foi possível enviar o certificado.");
-      setCertMsg(data.message || "Certificado enviado com sucesso.");
-      setCertFile(null);
-      setCertPassword("");
-    } catch (e) {
-      setCertErr(e instanceof Error ? e.message : "Não foi possível enviar o certificado.");
-    } finally {
-      setCertBusy(false);
-    }
-  }
-
-  // Carrega o que já está guardado do certificado nacional (titular/validade) ao montar.
+  // Carrega o que já está guardado do certificado A1 (titular/validade) ao montar.
   useEffect(() => {
     let ativo = true;
     fetch("/api/erp/configuracoes/fiscal/certificado-nacional")
@@ -122,10 +94,10 @@ export function FiscalSettingsForm({
       form.append("file", certNacFile);
       form.append("password", certNacPassword);
       const res = await fetch("/api/erp/configuracoes/fiscal/certificado-nacional", { method: "POST", body: form });
-      const data = (await res.json()) as { titularCnpj?: string | null; validade?: string | null; arquivoNome?: string | null; error?: string };
+      const data = (await res.json()) as { titularCnpj?: string | null; validade?: string | null; arquivoNome?: string | null; message?: string; error?: string };
       if (!res.ok) throw new Error(data.error || "Não foi possível salvar o certificado.");
       setCertNacInfo({ titularCnpj: data.titularCnpj ?? null, validade: data.validade ?? null, arquivoNome: data.arquivoNome ?? null });
-      setCertNacMsg("Certificado armazenado com segurança para a emissão nacional.");
+      setCertNacMsg(data.message || "Certificado armazenado com segurança e distribuído aos provedores em uso.");
       setCertNacFile(null);
       setCertNacPassword("");
     } catch (e) {
@@ -216,7 +188,6 @@ export function FiscalSettingsForm({
   // Provedores que derivam a URL base do ambiente — baseUrl é opcional.
   const baseUrlOpcional = isSpedy || isFocusNfe || isAcbr;
   // Provedores que aceitam envio de certificado pela plataforma.
-  const aceitaCertificado = isSpedy || isAcbr;
 
   function update<K extends keyof FiscalConfigSummary>(key: K, value: FiscalConfigSummary[K]) {
     setConfig((current) => ({ ...current, [key]: value }));
@@ -570,37 +541,9 @@ export function FiscalSettingsForm({
         </div>
       )}
 
-      {aceitaCertificado && !simplificado && (
-        <div className="erp-card">
-          <div className="erp-card-head"><h3>Certificado digital A1</h3></div>
-          <div className="erp-card-body">
-            <p style={{ fontSize: 12.5, color: "var(--erp-mute)", margin: "0 0 12px" }}>
-              Envie o arquivo <b>.pfx</b> do certificado A1 da empresa. Ele é transmitido com segurança ao provedor ({isAcbr ? "ACBr" : "Spedy"})
-              para assinar as notas e <b>não é armazenado</b> em nosso sistema. {config.certificadoInfo ? `Atual: ${config.certificadoInfo}.` : ""}
-            </p>
-            {certErr && <div className="alert danger" style={{ marginBottom: 10 }}><span>{certErr}</span></div>}
-            {certMsg && <div className="alert success" style={{ marginBottom: 10 }}><span>{certMsg}</span></div>}
-            <div className="erp-form" style={{ gridTemplateColumns: "1fr 1fr" }}>
-              <label>Arquivo do certificado (.pfx)
-                <input type="file" accept=".pfx,application/x-pkcs12" onChange={(e) => setCertFile(e.target.files?.[0] ?? null)} />
-              </label>
-              <label>Senha do certificado
-                <input type="password" value={certPassword} onChange={(e) => setCertPassword(e.target.value)} autoComplete="off" />
-              </label>
-            </div>
-            <div className="erp-toolbar" style={{ borderBottom: "none", paddingBottom: 0, marginTop: 8 }}>
-              <div className="grow" />
-              <button type="button" className="btn-erp primary sm" onClick={enviarCertificado} disabled={certBusy}>
-                {certBusy ? "Enviando…" : "Enviar certificado"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       <div className="erp-card">
         <div className="erp-card-head">
-          <h3>{simplificado ? "Certificado digital A1 (obrigatório para emitir)" : `Certificado A1 — emissão direta${isSefaz ? " (SEFAZ / NFS-e Nacional)" : " NFS-e Nacional"}`}</h3>
+          <h3>{simplificado ? "Certificado digital A1 (obrigatório para emitir)" : "Certificado digital A1"}</h3>
         </div>
         <div className="erp-card-body">
           {isSefaz && (
@@ -614,10 +557,10 @@ export function FiscalSettingsForm({
             </div>
           )}
           <p style={{ fontSize: 12.5, color: "var(--erp-mute)", margin: "0 0 12px" }}>
-            Envie o arquivo <b>.pfx</b> do certificado A1 da empresa. Diferente da seção acima, aqui o certificado é
-            <b> armazenado de forma criptografada</b> em nosso sistema para a <b>emissão direta</b>{" "}
-            {isSefaz ? "de NF-e na SEFAZ e de NFS-e na SEFIN" : "nacional de NFS-e"} (assinatura
-            do XML e conexão segura direto com o web service oficial). A senha também é guardada criptografada.
+            Envie o arquivo <b>.pfx</b> do certificado A1 da empresa <b>uma única vez</b>: ele é
+            <b> armazenado de forma criptografada</b> (arquivo e senha) para a emissão direta na SEFAZ /
+            NFS-e Nacional e <b>repassado automaticamente</b> aos demais provedores em uso (ex.: ACBr) —
+            não é preciso enviar em mais de um lugar.
           </p>
           {certNacInfo && (
             <div className="alert info" style={{ marginBottom: 10 }}>

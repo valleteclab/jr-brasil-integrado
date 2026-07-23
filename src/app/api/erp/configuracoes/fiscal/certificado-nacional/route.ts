@@ -3,15 +3,14 @@ import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
 import { requireModulo } from "@/lib/auth/session";
 import { authErrorStatus } from "@/lib/auth/http";
 import {
-  salvarCertificado,
   getCertificadoInfo,
   CertificadoNacionalError
 } from "@/domains/fiscal/application/certificado-use-cases";
+import { distribuirCertificadoFiscal, CertificateUploadError } from "@/domains/fiscal/application/fiscal-certificate-use-cases";
 
 /**
- * Guarda criptografada do certificado A1 (.pfx) para a emissão NACIONAL (NFS-e direto
- * na SEFIN). Diferente da rota /certificado (que repassa ao ACBr sem armazenar), aqui o
- * arquivo + senha são persistidos criptografados no model CertificadoDigital.
+ * Upload ÚNICO do certificado A1 (.pfx): persiste criptografado (emissão direta SEFAZ /
+ * NFS-e Nacional) E repassa aos provedores em uso (ACBr/Spedy) — distribuirCertificadoFiscal.
  */
 export async function POST(request: Request) {
   try {
@@ -28,17 +27,17 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Informe a senha do certificado." }, { status: 400 });
     }
 
-    const pfxBase64 = Buffer.from(await file.arrayBuffer()).toString("base64");
-    const resumo = await salvarCertificado(scope, {
-      pfxBase64,
-      senha: password,
-      arquivoNome: file.name
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const result = await distribuirCertificadoFiscal(scope, {
+      buffer,
+      filename: file.name,
+      password
     });
 
-    return NextResponse.json(resumo);
+    return NextResponse.json({ ...result.resumo, message: result.message });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro ao salvar o certificado.";
-    const status = error instanceof CertificadoNacionalError ? 400 : authErrorStatus(error);
+    const status = error instanceof CertificadoNacionalError || error instanceof CertificateUploadError ? 400 : authErrorStatus(error);
     return NextResponse.json({ error: message }, { status });
   }
 }

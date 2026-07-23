@@ -1,10 +1,10 @@
-import type { AmbienteFiscal, ModeloFiscal, ProvedorFiscal, RegimeTributario } from "@prisma/client";
+import type { AmbienteFiscal, Empresa, ModeloFiscal, ProvedorFiscal, RegimeTributario } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import { createAuditLog } from "@/lib/audit/audit-service";
 import { decryptSecret, encryptSecret, secretLastChars } from "@/lib/security/secret-crypto";
 import { resolveFiscalProvider } from "@/domains/fiscal/providers";
-import { updateAcbrNfceCsc, registrarEmpresaAcbr } from "@/domains/fiscal/providers/acbr-provider";
+import { updateAcbrNfceCsc, registrarEmpresaAcbr, uploadAcbrCertificate } from "@/domains/fiscal/providers/acbr-provider";
 import { getCredenciaisProvedorPlataforma, getProvedorFiscalAtivo, provedorCred } from "@/domains/fiscal/application/plataforma-provedor-use-cases";
 import { carregarCertificado } from "@/domains/fiscal/application/certificado-use-cases";
 
@@ -427,57 +427,84 @@ export type TestFiscalConnectionResult = { ok: boolean; message: string };
  * Cadastra/atualiza a empresa emitente na ACBr por API (sem abrir o console), com os dados do
  * nosso cadastro. Só para o provedor ACBr. Idempotente (atualiza se já existir).
  */
+export function empresaAcbrPayload(empresa: Empresa) {
+  return {
+    cpf_cnpj: empresa.cnpj,
+    nome_razao_social: empresa.razaoSocial,
+    nome_fantasia: empresa.nomeFantasia,
+    inscricao_estadual: empresa.inscricaoEstadual,
+    inscricao_municipal: empresa.inscricaoMunicipal,
+    fone: empresa.telefone,
+    email: empresa.email,
+    endereco: {
+      logradouro: empresa.enderecoLogradouro,
+      numero: empresa.enderecoNumero,
+      complemento: empresa.enderecoComplemento,
+      bairro: empresa.enderecoBairro,
+      codigo_municipio: empresa.codigoMunicipioIbge,
+      cidade: empresa.enderecoCidade,
+      uf: empresa.enderecoUf,
+      cep: empresa.enderecoCep
+    }
+  };
+}
+
 export async function sincronizarEmpresaAcbr(scope: TenantScope): Promise<{ ok: boolean; message: string }> {
   const runtime = await getFiscalRuntimeConfig(scope);
-  if (runtime.provider !== "ACBR") {
+  if (runtime.provider !== "ACBR" && runtime.providerServicos !== "ACBR") {
     return { ok: false, message: "A sincronização de empresa por API está disponível apenas para o provedor ACBr." };
   }
-  if (!runtime.token) {
+  // Quando só a NFS-e passa pelo ACBr (produtos = SEFAZ), o runtime carrega as credenciais do
+  // provedor de produtos — busca as da ACBr diretamente na plataforma nesse caso.
+  let ctx = {
+    ambiente: runtime.ambiente,
+    provedor: "ACBR" as ProvedorFiscal,
+    baseUrl: runtime.baseUrl,
+    emissionMode: runtime.emissionMode,
+    token: runtime.token,
+    cscId: runtime.cscId,
+    cscToken: runtime.cscToken
+  };
+  if (runtime.provider !== "ACBR") {
+    const cred = await getCredenciaisProvedorPlataforma("ACBR", runtime.ambiente);
+    ctx = {
+      ...ctx,
+      baseUrl: cred.baseUrl,
+      token: cred.clientSecret ?? process.env.ACBR_CLIENT_SECRET?.trim() ?? null,
+      cscId: cred.clientId ?? process.env.ACBR_CLIENT_ID?.trim() ?? null
+    };
+  }
+  if (!ctx.token) {
     return { ok: false, message: "Configure a credencial da ACBr (token) antes de sincronizar a empresa." };
   }
 
   const empresa = await prisma.empresa.findUniqueOrThrow({ where: { id: scope.empresaId } });
 
-  const res = await registrarEmpresaAcbr(
-    {
-      ambiente: runtime.ambiente,
-      provedor: runtime.provider,
-      baseUrl: runtime.baseUrl,
-      emissionMode: runtime.emissionMode,
-      token: runtime.token,
-      cscId: runtime.cscId,
-      cscToken: runtime.cscToken
-    },
-    {
-      cpf_cnpj: empresa.cnpj,
-      nome_razao_social: empresa.razaoSocial,
-      nome_fantasia: empresa.nomeFantasia,
-      inscricao_estadual: empresa.inscricaoEstadual,
-      inscricao_municipal: empresa.inscricaoMunicipal,
-      fone: empresa.telefone,
-      email: empresa.email,
-      endereco: {
-        logradouro: empresa.enderecoLogradouro,
-        numero: empresa.enderecoNumero,
-        complemento: empresa.enderecoComplemento,
-        bairro: empresa.enderecoBairro,
-        codigo_municipio: empresa.codigoMunicipioIbge,
-        cidade: empresa.enderecoCidade,
-        uf: empresa.enderecoUf,
-        cep: empresa.enderecoCep
-      }
+  const res = await registrarEmpresaAcbr(ctx, empresaAcbrPayload(empresa));
+
+  // Reaproveita o certificado A1 já guardado (emissão direta): reenvia ao cadastro na ACBr.
+  // Cobre o certificado salvo antes de a ACBr entrar no circuito (ex.: cliente que emitia só
+  // pela SEFAZ) sem exigir novo upload do .pfx.
+  let certMsg = "";
+  if (res.ok) {
+    const cert = await carregarCertificado(scope);
+    if (cert) {
+      const envio = await uploadAcbrCertificate(ctx, empresa.cnpj, cert.pfx, cert.senha);
+      certMsg = envio.ok
+        ? " O certificado A1 guardado foi reenviado ao cadastro na ACBr."
+        : ` Atenção — falha ao reenviar o certificado A1 guardado: ${envio.message}`;
     }
-  );
+  }
 
   await createAuditLog(prisma, {
     scope,
     entidade: "Empresa",
     entidadeId: scope.empresaId,
     acao: res.created ? "fiscal.acbr_empresa_criada" : "fiscal.acbr_empresa_atualizada",
-    payload: { ok: res.ok, cnpj: empresa.cnpj }
+    payload: { ok: res.ok, cnpj: empresa.cnpj, certificadoReenviado: Boolean(certMsg) }
   });
 
-  return { ok: res.ok, message: res.message };
+  return { ok: res.ok, message: res.message + certMsg };
 }
 
 export async function testFiscalConnection(scope: TenantScope): Promise<TestFiscalConnectionResult> {
