@@ -3159,8 +3159,26 @@ model AgenteTelefone {
   criadoEm     DateTime  @default(now())
   atualizadoEm DateTime  @updatedAt
 
-  @@unique([telefone])
+  /// Um telefone pode operar VÁRIAS empresas (contador com carteira de CNPJs) — único por empresa.
+  @@unique([telefone, empresaId])
+  @@index([telefone])
   @@index([tenantId, empresaId])
+}
+
+/// EMPRESA ATIVA de um chat (WhatsApp/Telegram) quando o telefone opera várias empresas:
+/// o assistente pergunta qual CNPJ acessar e fixa aqui; "trocar empresa" alterna.
+model ChatEmpresaAtiva {
+  id                String   @id @default(cuid())
+  canal             String
+  /// Chave do chat no canal (telefone no WhatsApp; chatId no Telegram).
+  chave             String
+  tenantId          String
+  empresaId         String
+  /// Aguardando o usuário responder o número da empresa do seletor.
+  aguardandoSelecao Boolean  @default(false)
+  atualizadoEm      DateTime @updatedAt
+
+  @@unique([canal, chave])
 }
 
 model ConfiguracaoWhatsapp {

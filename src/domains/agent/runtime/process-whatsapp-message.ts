@@ -4,6 +4,7 @@ import type { AgentRole } from "../types";
 import { runAgentTurn } from "./run-agent-turn";
 import type { ToolChatMessage } from "@/domains/ai/openrouter-service";
 import { getWhatsappRuntime, sendWhatsappText } from "@/lib/whatsapp/whatsapp-service";
+import { resolverEmpresaAtiva } from "./selecao-empresa";
 
 /**
  * Processa uma mensagem recebida do WhatsApp (Z-API):
@@ -20,17 +21,32 @@ export async function processWhatsappMessage(input: { telefone: string; texto: s
   const texto = input.texto.trim();
   if (!telefone || !texto) return;
 
-  // 1) Identidade autorizada (vendedor/gestor) por telefone.
-  const autorizado = await prisma.agenteTelefone.findFirst({ where: { telefone, ativo: true } });
+  // 1) Identidade autorizada (vendedor/gestor) por telefone — com SELEÇÃO DE EMPRESA quando o
+  // telefone opera várias (contador multi-CNPJ): o seletor fixa a empresa ativa da sessão.
+  const resolucao = await resolverEmpresaAtiva({ canal: "WHATSAPP", chave: telefone, telefone, texto });
 
   let scope: TenantScope;
   let role: AgentRole;
   let clienteId: string | null = null;
+  let multiEmpresa = false;
+  let empresaAtivaNome = "";
 
-  if (autorizado) {
-    scope = { tenantId: autorizado.tenantId, empresaId: autorizado.empresaId };
-    role = autorizado.role as AgentRole;
-    clienteId = autorizado.clienteId ?? null;
+  if (resolucao.tipo === "responder") {
+    // Seletor/troca de empresa: responde e não processa o texto como pergunta.
+    const vinculoQualquer = await prisma.agenteTelefone.findFirst({ where: { telefone, ativo: true }, select: { tenantId: true, empresaId: true } });
+    if (vinculoQualquer) {
+      const whatsSel = await getWhatsappRuntime({ tenantId: vinculoQualquer.tenantId, empresaId: vinculoQualquer.empresaId });
+      if (whatsSel?.ativo) await sendWhatsappText(whatsSel, telefone, resolucao.mensagem);
+    }
+    return;
+  }
+
+  if (resolucao.tipo === "ok") {
+    scope = { tenantId: resolucao.vinculo.tenantId, empresaId: resolucao.vinculo.empresaId };
+    role = resolucao.vinculo.role;
+    clienteId = resolucao.vinculo.clienteId;
+    multiEmpresa = resolucao.multi;
+    empresaAtivaNome = resolucao.vinculo.empresaNome;
   } else {
     // 2) Cliente final: localizar por ClienteContato.whatsapp em empresas que atendem clientes.
     const contato = await prisma.clienteContato.findFirst({
@@ -121,6 +137,10 @@ export async function processWhatsappMessage(input: { telefone: string; texto: s
     resposta += role === "GESTOR"
       ? `\n\n📝 ${tipoLabel} ${result.draft.numero ?? ""} criado(a).`
       : `\n\n📝 ${tipoLabel} ${result.draft.numero ?? ""} criado(a) como rascunho. Um responsável vai confirmar no sistema.`;
+  }
+  // Multi-empresa: deixa SEMPRE claro por qual empresa a ação valeu (segurança do contador).
+  if (multiEmpresa && empresaAtivaNome) {
+    resposta = `🏢 *${empresaAtivaNome}*\n\n${resposta}`;
   }
   await sendWhatsappText(whats, telefone, resposta);
 }

@@ -36,10 +36,10 @@ export async function POST(request: Request) {
     }
     const role: AgentRole = ROLES.includes(body.role as AgentRole) ? (body.role as AgentRole) : "VENDEDOR";
 
-    // telefone é único globalmente — bloqueia duplicidade entre empresas.
-    const existente = await prisma.agenteTelefone.findUnique({ where: { telefone } });
+    // Único POR EMPRESA — o mesmo telefone pode operar várias empresas (contador multi-CNPJ).
+    const existente = await prisma.agenteTelefone.findFirst({ where: { telefone, empresaId: scope.empresaId } });
     if (existente) {
-      return NextResponse.json({ error: "Este telefone já está cadastrado." }, { status: 400 });
+      return NextResponse.json({ error: "Este telefone já está cadastrado nesta empresa." }, { status: 400 });
     }
     const criado = await prisma.agenteTelefone.create({
       data: {

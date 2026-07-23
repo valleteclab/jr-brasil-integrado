@@ -29,10 +29,21 @@ export async function processWhatsappReceipt(input: { telefone: string; imageUrl
   const telefone = input.telefone.replace(/\D/g, "");
   if (!telefone || !input.imageUrl) return;
 
-  const autorizado = await prisma.agenteTelefone.findFirst({ where: { telefone, ativo: true } });
-  if (!autorizado || autorizado.role === "CLIENTE") return; // só staff autorizado
+  // Empresa ATIVA do chat (telefone multi-empresa usa a sessão; sem sessão → pede a seleção).
+  const { empresaAtivaSemTexto } = await import("@/domains/agent/runtime/selecao-empresa");
+  const resolucao = await empresaAtivaSemTexto({ canal: "WHATSAPP", chave: telefone, telefone });
+  if (resolucao.tipo === "nenhum") return; // só staff autorizado
+  if (resolucao.tipo === "responder") {
+    const qualquer = await prisma.agenteTelefone.findFirst({ where: { telefone, ativo: true }, select: { tenantId: true, empresaId: true } });
+    if (qualquer) {
+      const w = await getWhatsappRuntime({ tenantId: qualquer.tenantId, empresaId: qualquer.empresaId });
+      if (w?.ativo) await sendWhatsappText(w, telefone, `Antes de lançar o cupom, escolha a empresa.\n\n${resolucao.mensagem}`);
+    }
+    return;
+  }
+  if (resolucao.vinculo.role === "CLIENTE") return; // só staff autorizado
 
-  const scope = { tenantId: autorizado.tenantId, empresaId: autorizado.empresaId };
+  const scope = { tenantId: resolucao.vinculo.tenantId, empresaId: resolucao.vinculo.empresaId };
   const whats = await getWhatsappRuntime(scope);
   if (!whats?.ativo) return;
 

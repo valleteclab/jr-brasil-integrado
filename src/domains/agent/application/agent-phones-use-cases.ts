@@ -32,9 +32,11 @@ export async function createAgentPhone(scope: TenantScope, input: { telefone: st
   }
   const role: AgentRole = ROLES.includes(input.role as AgentRole) ? (input.role as AgentRole) : "VENDEDOR";
 
-  const existente = await prisma.agenteTelefone.findUnique({ where: { telefone } });
+  // Único POR EMPRESA: o mesmo telefone pode operar várias empresas (contador multi-CNPJ) —
+  // o assistente pergunta qual empresa acessar quando há mais de uma.
+  const existente = await prisma.agenteTelefone.findFirst({ where: { telefone, empresaId: scope.empresaId } });
   if (existente) {
-    throw new AgentPhoneError("Este telefone já está autorizado (para o agente, o telefone é único).");
+    throw new AgentPhoneError("Este telefone já está autorizado nesta empresa.");
   }
 
   return prisma.agenteTelefone.create({
