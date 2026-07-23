@@ -94,6 +94,29 @@ export async function sendTelegramTextoSemTeclado(runtime: TelegramRuntime, chat
   await tgCall(runtime.botToken, "sendMessage", { chat_id: chatId, text: texto, reply_markup: { remove_keyboard: true } });
 }
 
+/**
+ * Baixa um arquivo enviado ao bot (foto de cupom) e devolve como data URL base64 (cap 6MB).
+ * Fluxo da Bot API: getFile(file_id) → file_path → GET /file/bot<token>/<file_path>.
+ * Retorna null em qualquer falha (o chamador responde pedindo reenvio).
+ */
+export async function baixarTelegramArquivoBase64(runtime: TelegramRuntime, fileId: string): Promise<string | null> {
+  if (!runtime.botToken || !fileId) return null;
+  try {
+    const info = await tgCall<{ file_path?: string; file_size?: number }>(runtime.botToken, "getFile", { file_id: fileId });
+    if (!info.file_path) return null;
+    if (info.file_size && info.file_size > 6 * 1024 * 1024) return null;
+    const res = await fetch(`${API}/file/bot${runtime.botToken}/${info.file_path}`);
+    if (!res.ok) return null;
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (!buf.length || buf.length > 6 * 1024 * 1024) return null;
+    const ext = info.file_path.split(".").pop()?.toLowerCase() ?? "";
+    const mime = ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
+    return `data:${mime};base64,${buf.toString("base64")}`;
+  } catch {
+    return null;
+  }
+}
+
 export type BotaoInline = { text: string; data: string };
 
 /** Mensagem com BOTÕES inline (fluxos guiados sem IA). `data` volta no callback_query (máx 64 bytes). */

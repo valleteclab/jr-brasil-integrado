@@ -33,7 +33,21 @@ type TelegramMessage = {
   chat?: { id?: number; type?: string };
   text?: string;
   contact?: TelegramContact;
+  /** Foto enviada ao bot (cupom de gasto): tamanhos em ordem crescente — o último é o maior. */
+  photo?: Array<{ file_id?: string; file_size?: number }>;
+  /** Imagem enviada como ARQUIVO (sem compressão). */
+  document?: { file_id?: string; mime_type?: string };
 };
+
+/** file_id da imagem da mensagem (maior foto, ou documento image/*). */
+function imagemDaMensagem(message: TelegramMessage): string | null {
+  const maior = message.photo?.length ? message.photo[message.photo.length - 1] : null;
+  if (maior?.file_id) return maior.file_id;
+  if (message.document?.file_id && (message.document.mime_type ?? "").startsWith("image/")) {
+    return message.document.file_id;
+  }
+  return null;
+}
 
 export async function processTelegramMessage(
   runtime: TelegramRuntime & { tenantId: string; empresaId: string },
@@ -106,6 +120,16 @@ export async function processTelegramMessage(
   }
 
   // ── Com vínculo: roda o agente ───────────────────────────────────────────
+  // FOTO de cupom → lança o gasto direto (mesmo fluxo do WhatsApp; só staff autorizado).
+  const fotoId = imagemDaMensagem(message);
+  if (fotoId) {
+    if (vinculo.role !== "CLIENTE") {
+      const { processTelegramReceipt } = await import("@/domains/expenses/runtime/process-telegram-receipt");
+      await processTelegramReceipt({ runtime, scope, chatId, telefone: vinculo.telefone ?? null, fileId: fotoId });
+    }
+    return;
+  }
+
   const texto = (message.text ?? "").trim();
   if (!texto) return;
 

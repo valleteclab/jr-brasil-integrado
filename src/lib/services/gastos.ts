@@ -14,7 +14,7 @@ export type GastoRow = {
   valorTotal: number;
   valorFmt: string;
   formaPagamento: string | null;
-  origem: "PWA" | "WHATSAPP" | "MANUAL";
+  origem: "PWA" | "WHATSAPP" | "TELEGRAM" | "MANUAL";
   status: "PENDENTE" | "CONFIRMADO";
   iaConfianca: number | null;
   lancadoFinanceiro: boolean;

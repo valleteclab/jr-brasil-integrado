@@ -17,7 +17,7 @@ function parseData(data?: string | null): Date {
 /** Cria um gasto a partir da imagem do cupom (data URL base64): IA extrai e persiste para revisão. */
 export async function criarGastoDeCupom(
   scope: TenantScope,
-  input: { imagem: string; origem: "PWA" | "WHATSAPP"; criadoPor?: string | null; confirmarDireto?: boolean }
+  input: { imagem: string; origem: "PWA" | "WHATSAPP" | "TELEGRAM"; criadoPor?: string | null; confirmarDireto?: boolean }
 ) {
   await assertModuloLiberado(scope, "gastosHabilitado");
   // Leitura do cupom usa IA de visão → consome 1 interação da franquia do plano.

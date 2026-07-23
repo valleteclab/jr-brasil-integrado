@@ -313,7 +313,7 @@ export function GastosManager({ initialGastos, resumo: resumoInicial, categorias
                 </td>
                 <td>{g.categoria}</td>
                 <td className="num">{g.valorFmt}</td>
-                <td>{g.origem === "WHATSAPP" ? "WhatsApp" : g.origem === "PWA" ? "Foto" : "Manual"}</td>
+                <td>{g.origem === "WHATSAPP" ? "WhatsApp" : g.origem === "TELEGRAM" ? "Telegram" : g.origem === "PWA" ? "Foto" : "Manual"}</td>
                 <td>
                   {g.lancadoFinanceiro ? <span className="status-badge success">No financeiro</span> : g.status === "PENDENTE" ? <span className="status-badge warn">A revisar</span> : <span className="status-badge info">Confirmado</span>}
                 </td>
