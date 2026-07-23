@@ -48,4 +48,9 @@ COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh && chown -R erp:erp /app
 USER erp
 EXPOSE 3000
+# Healthcheck do deploy SEM DOWNTIME (update start-first): o Swarm só derruba o container antigo
+# quando o novo responder aqui (depois do migrate deploy + boot do Next — por isso o start-period
+# folgado). Qualquer resposta HTTP conta como vivo (banco fora não recria o app em loop).
+HEALTHCHECK --interval=10s --timeout=5s --start-period=180s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:3000/api/health').then(()=>process.exit(0)).catch(()=>process.exit(1))"
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]

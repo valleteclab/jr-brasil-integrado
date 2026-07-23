@@ -29,6 +29,16 @@ services:
       CRON_SECRET: "${CRON_SECRET}"
     deploy:
       replicas: 1
+      # Deploy SEM DOWNTIME: sobe o container NOVO primeiro, espera o healthcheck (da imagem)
+      # passar e só então derruba o antigo. Se o novo não ficar saudável, faz ROLLBACK sozinho.
+      # Regra que isso exige: migrations sempre ADITIVAS (o container antigo continua servindo
+      # enquanto o novo aplica o prisma migrate deploy) — nunca DROP/RENAME em uso.
+      update_config:
+        order: start-first
+        failure_action: rollback
+        monitor: 30s
+      rollback_config:
+        order: start-first
       restart_policy:
         condition: any
       labels:
