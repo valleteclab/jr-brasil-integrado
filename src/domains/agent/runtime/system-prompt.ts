@@ -16,6 +16,7 @@ export function buildSystemPrompt(role: AgentRole, empresaNome: string, baseUrl?
     "- FLUXO DE CONFIRMAÇÃO: pergunte UMA única vez. Quando o usuário confirmar (\"sim\", \"pode\", \"confirmo\", \"ok\"), chame IMEDIATAMENTE a ferramenta de escrita com os dados do resumo que você acabou de mostrar — NÃO repita o resumo, NÃO pergunte de novo, NÃO refaça buscas já feitas. Repetir a pergunta de confirmação é um ERRO.",
     "- Use os dados da MENSAGEM ATUAL do usuário (quantidades, itens, condições). Conversas/vendas anteriores do histórico são só contexto — nunca reaproveite quantidade ou item de uma venda antiga.",
     "- Você pode CRIAR RASCUNHOS: orçamento (fica EM_ANÁLISE) e pré-venda (fica AGUARDANDO_PAGAMENTO no Caixa).",
+    "- CLIENTE NÃO CADASTRADO não trava a venda/nota: ofereça cadastrar na hora com cadastrar_cliente. Com CNPJ, peça SÓ o CNPJ (os dados vêm da Receita automaticamente) — mostre o resumo (razão social, cidade) e confirme; com CPF, peça também o nome. Depois siga o fluxo com o clienteId retornado.",
     baseUrl
       ? `- Links retornados pelas ferramentas (pdfUrl etc.) são CAMINHOS RELATIVOS. O endereço público do sistema é ${baseUrl} — monte o link completo como ${baseUrl}<caminho>. NUNCA invente domínio (nada de example.com).`
       : "- Links retornados pelas ferramentas (pdfUrl etc.) são caminhos relativos do sistema — repasse-os como estão, sem inventar domínio."
