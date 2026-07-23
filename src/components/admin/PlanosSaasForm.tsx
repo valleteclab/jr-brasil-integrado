@@ -17,6 +17,7 @@ function PlanoCardEdit({ plano }: { plano: PlanoSaasRow }) {
   const [descricao, setDescricao] = useState(plano.descricao ?? "");
   const [preco, setPreco] = useState(plano.precoMensal);
   const [limite, setLimite] = useState<string>(plano.limiteNotasMes == null ? "" : String(plano.limiteNotasMes));
+  const [franquiaIa, setFranquiaIa] = useState<string>(plano.franquiaIaMes == null ? "" : String(plano.franquiaIaMes));
   const [trial, setTrial] = useState(plano.trialDias);
   const [ativo, setAtivo] = useState(plano.ativo);
   const [aplicarAssinantes, setAplicarAssinantes] = useState(false);
@@ -37,6 +38,7 @@ function PlanoCardEdit({ plano }: { plano: PlanoSaasRow }) {
           descricao: descricao || null,
           precoMensal: Number(preco) || 0,
           limiteNotasMes: limite.trim() === "" ? null : Math.max(1, Number(limite) || 0),
+          franquiaIaMes: franquiaIa.trim() === "" ? null : Math.max(0, Number(franquiaIa) || 0),
           trialDias: Number(trial) || 0,
           ativo,
           aplicarAssinantes: aplicarAssinantes && precoMudou
@@ -81,6 +83,9 @@ function PlanoCardEdit({ plano }: { plano: PlanoSaasRow }) {
         </label>
         <label style={campo}>Trial (dias)
           <input type="number" min={0} value={trial} onChange={(e) => setTrial(Number(e.target.value) || 0)} style={{ width: 100, height: 34, textAlign: "right" }} />
+        </label>
+        <label style={campo}>IA/mês (vazio = ilimitada; 0 = sem IA)
+          <input type="number" min={0} value={franquiaIa} onChange={(e) => setFranquiaIa(e.target.value)} placeholder="∞" style={{ width: 150, height: 34, textAlign: "right" }} />
         </label>
       </div>
       {precoMudou && (

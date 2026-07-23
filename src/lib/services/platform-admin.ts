@@ -314,6 +314,8 @@ export type PlanoSaasRow = {
   descricao: string | null;
   precoMensal: number;
   limiteNotasMes: number | null;
+  /** Interações de IA/mês (null = ilimitado; 0 = IA desligada no plano). */
+  franquiaIaMes: number | null;
   trialDias: number;
   ativo: boolean;
 };
@@ -327,6 +329,7 @@ export async function listPlanosSaas(): Promise<PlanoSaasRow[]> {
     descricao: p.descricao,
     precoMensal: Number(p.precoMensal),
     limiteNotasMes: p.limiteNotasMes,
+    franquiaIaMes: p.franquiaIaMes,
     trialDias: p.trialDias,
     ativo: p.ativo
   }));
@@ -339,7 +342,7 @@ export function precoMensalEfetivo(mensalidadeValor: number | null | undefined, 
 
 export async function salvarPlanoSaas(
   codigo: string,
-  input: { nome?: string; descricao?: string | null; precoMensal?: number; limiteNotasMes?: number | null; trialDias?: number; ativo?: boolean },
+  input: { nome?: string; descricao?: string | null; precoMensal?: number; limiteNotasMes?: number | null; franquiaIaMes?: number | null; trialDias?: number; ativo?: boolean },
   opts: { aplicarAssinantes?: boolean } = {}
 ): Promise<PlanoSaasRow & { assinantesAtualizados?: number }> {
   const admin = await requirePlatformAdmin();
@@ -353,6 +356,7 @@ export async function salvarPlanoSaas(
       ...(input.descricao !== undefined ? { descricao: input.descricao } : {}),
       ...(input.precoMensal !== undefined ? { precoMensal: input.precoMensal } : {}),
       ...(input.limiteNotasMes !== undefined ? { limiteNotasMes: input.limiteNotasMes } : {}),
+      ...(input.franquiaIaMes !== undefined ? { franquiaIaMes: input.franquiaIaMes } : {}),
       ...(input.trialDias !== undefined ? { trialDias: Math.max(0, Math.floor(input.trialDias)) } : {}),
       ...(input.ativo !== undefined ? { ativo: input.ativo } : {})
     }
@@ -387,7 +391,7 @@ export async function salvarPlanoSaas(
 
   return {
     codigo: p.codigo, nome: p.nome, descricao: p.descricao, precoMensal: Number(p.precoMensal),
-    limiteNotasMes: p.limiteNotasMes, trialDias: p.trialDias, ativo: p.ativo, assinantesAtualizados
+    limiteNotasMes: p.limiteNotasMes, franquiaIaMes: p.franquiaIaMes, trialDias: p.trialDias, ativo: p.ativo, assinantesAtualizados
   };
 }
 

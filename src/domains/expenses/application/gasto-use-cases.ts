@@ -20,6 +20,10 @@ export async function criarGastoDeCupom(
   input: { imagem: string; origem: "PWA" | "WHATSAPP"; criadoPor?: string | null; confirmarDireto?: boolean }
 ) {
   await assertModuloLiberado(scope, "gastosHabilitado");
+  // Leitura do cupom usa IA de visão → consome 1 interação da franquia do plano.
+  const { consumirFranquiaIa } = await import("@/domains/agent/runtime/franquia-ia");
+  const franquia = await consumirFranquiaIa(scope);
+  if (!franquia.ok) throw new Error(franquia.motivo);
   const extraido = await extrairCupomComIa(scope, input.imagem);
 
   const gasto = await prisma.$transaction(async (tx) => {

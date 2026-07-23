@@ -4,6 +4,7 @@ import { createAuditLog } from "@/lib/audit/audit-service";
 import { callOpenRouterWithTools, type ToolChatMessage } from "@/domains/ai/openrouter-service";
 import type { AgentDraft, AgentRole } from "../types";
 import { getTool, getToolsForRole, toOpenAiTools } from "../tools/registry";
+import { consumirFranquiaIa } from "./franquia-ia";
 import { buildSystemPrompt } from "./system-prompt";
 
 // Limites de SEGURANÇA (custo/loop descontrolado) — não devem interromper fluxos legítimos:
@@ -45,6 +46,16 @@ export async function runAgentTurn(params: {
   baseUrl?: string | null;
 }): Promise<AgentTurnResult> {
   const { scope, role, empresaNome, historico, mensagemUsuario, conversaId, clienteId, baseUrl } = params;
+
+  // FRANQUIA de IA do plano: sem saldo, responde a orientação (menu de botões segue livre) sem LLM.
+  const franquia = await consumirFranquiaIa(scope);
+  if (!franquia.ok) {
+    return {
+      assistantText: `⚠️ ${franquia.motivo}`,
+      draft: null,
+      novasMensagens: [{ papel: "ASSISTANT", conteudo: `⚠️ ${franquia.motivo}` }]
+    };
+  }
 
   const tools = getToolsForRole(role);
   const openAiTools = toOpenAiTools(tools);

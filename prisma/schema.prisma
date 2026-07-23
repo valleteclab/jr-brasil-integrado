@@ -595,9 +595,23 @@ model PlataformaPlano {
   precoMensal    Decimal  @default(0) @db.Decimal(10, 2)
   /// Notas fiscais (emissões aceitas na SEFAZ/SEFIN) por mês. null = ilimitado.
   limiteNotasMes Int?
+  /// Interações de IA por mês (mensagens processadas pelo agente, incl. foto de cupom).
+  /// null = ilimitado; 0 = IA desligada no plano. Fluxos de botão NÃO contam.
+  franquiaIaMes  Int?
   trialDias      Int      @default(7)
   ativo          Boolean  @default(true)
   atualizadoEm   DateTime @updatedAt
+}
+
+/// Contador mensal de INTERAÇÕES DE IA por tenant (franquia do plano). Competência "YYYY-MM".
+model UsoIaMensal {
+  id           String   @id @default(cuid())
+  tenantId     String
+  competencia  String
+  interacoes   Int      @default(0)
+  atualizadoEm DateTime @updatedAt
+
+  @@unique([tenantId, competencia])
 }
 
 /// Configuração única (global) da plataforma. Hoje guarda qual provedor de emissão está ativo.
