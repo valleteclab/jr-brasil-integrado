@@ -100,6 +100,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
+| 2026-07-25 | A gerar | Em andamento | Ajuste da classificação de respostas por voz para não duplicar em texto listas meramente informativas. |
 | 2026-07-25 | `ade8bb4` | Enviado | Experiência multimodal do Telegram: áudio responde em áudio, texto responde em texto e conteúdo operacional preserva texto. |
 | 2026-07-25 | `8a74988` | Enviado | Correção de reentregas duplicadas do Telegram e serialização assíncrona das respostas de voz do Kokoro. |
 | 2026-07-25 | `c850075` | Enviado | Transcrição local de mensagens de voz do Telegram com Faster-Whisper e resposta pelo agente/Kokoro. |
@@ -554,3 +555,4 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Se a geracao ou o envio do audio falhar em uma conversa por voz, a resposta e enviada automaticamente em texto.
 - O status nativo `sendChatAction` informa digitacao, gravacao e envio de voz sem poluir o historico.
 - Validacao: TypeScript e lint aprovados; imagem de producao `264053b4f53c` implantada, servicos em `1/1` e ERP respondendo HTTP 200.
+- Listas informativas e mencoes genericas a recursos do ERP, como Pix ou boletos, nao exigem mais uma copia textual; texto permanece obrigatorio quando uma ferramenta foi executada, existe rascunho, valor, link ou bloco de codigo.

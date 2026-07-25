@@ -90,8 +90,7 @@ function respostaPrecisaFicarEmTexto(
   resposta: string
 ): boolean {
   if (result.draft || result.novasMensagens.some((mensagem) => mensagem.papel === "TOOL")) return true;
-  if (/https?:\/\/|\b(?:pix|boleto|nota fiscal|nf-e|nfs-e|senha|certificado|código|chave)\b|R\$\s*\d/i.test(resposta)) return true;
-  return resposta.includes("```") || resposta.split("\n").length >= 4;
+  return /https?:\/\/|R\$\s*\d/i.test(resposta) || resposta.includes("```");
 }
 
 /** file_id da imagem da mensagem (maior foto, ou documento image/*). */
