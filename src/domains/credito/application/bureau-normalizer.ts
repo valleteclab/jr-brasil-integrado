@@ -155,18 +155,36 @@ export function normalizarBureau(respBruta: unknown, tipoPessoa: "PF" | "PJ"): C
     }
     if (typeof (q as Obj).nome === "string") base.nome = (q as Obj).nome as string;
   }
-  // ── PJ: credcadastral (score risco 12m + pend/protestos) ─────────────────
+  // ── credcadastral (PF ou PJ): score risco 12m + pend/protestos. Sem laudo PDF (produto só-dados).
   else if (isObj(r.credcadastral)) {
     const c = r.credcadastral as Obj;
     base.produto = "credcadastral";
     const scores = isObj(c.scores) && Array.isArray((c.scores as Obj).ocorrencias) ? ((c.scores as Obj).ocorrencias as Obj[]) : [];
     base.score = num(scores[0]?.score);
     base.probabilidadeInadimplencia = num(scores[0]?.probabilidade_inadimplencia);
-    base.faixa = typeof scores[0]?.classif_abc === "string" ? (scores[0].classif_abc as string) : null;
+    // A Boa Vista usa a string literal "NULO" para "não se aplica" — não é uma faixa.
+    const cls = scores[0]?.classif_abc;
+    base.faixa = typeof cls === "string" && cls.trim() && cls !== "NULO" ? cls : null;
+    // Nome: PJ vem em informacoes_da_empresa; PF em identificacao_pessoa_fisica.
     const emp = isObj(c.informacoes_da_empresa) ? (c.informacoes_da_empresa as Obj) : {};
-    base.nome = typeof emp.razao_social === "string" ? emp.razao_social : null;
+    const pf = isObj(c.identificacao_pessoa_fisica) ? (c.identificacao_pessoa_fisica as Obj) : {};
+    base.nome = typeof emp.razao_social === "string" && emp.razao_social
+      ? emp.razao_social
+      : typeof pf.nome === "string" && pf.nome ? pf.nome : null;
+    // Renda presumida (PF): faixa mensal ("R$ 11.298,00").
+    const renda = isObj(c.renda_presumida) ? (c.renda_presumida as Obj) : {};
+    base.rendaOuFaturamento = typeof renda.faixa === "string" && renda.faixa.trim() ? renda.faixa : null;
+    // "DECISAO DE NEGOCIO" nos alertas (ex.: "FAVORAVEL A NEGOCIACAO") → parecer/decisão.
+    const alertas = isObj(c.informacoes_alertas_restricoes) && Array.isArray((c.informacoes_alertas_restricoes as Obj).ocorrencias)
+      ? ((c.informacoes_alertas_restricoes as Obj).ocorrencias as Obj[]) : [];
+    const dec = alertas.find((o) => typeof o.titulo === "string" && /decis/i.test(o.titulo));
+    if (dec && typeof dec.observacoes === "string" && dec.observacoes.trim()) {
+      base.parecer = dec.observacoes;
+      base.decisao = /favor[aá]vel|aprovad/i.test(base.parecer) ? "APROVADO"
+        : /desfavor|reprovad|negad/i.test(base.parecer) ? "REPROVADO" : "ANALISE";
+    }
     base.restricoes = {
-      protestos: conta(c.protestos), pendencias: conta(c.pend_financeiras),
+      protestos: conta(c.protestos) + conta(c.protesto_sintetico), pendencias: conta(c.pend_financeiras),
       chequesSemFundo: conta(c.ch_sem_fundos_bacen) + conta(c.ch_sem_fundos_varejo), acoesJudiciais: 0, total: 0
     };
   }

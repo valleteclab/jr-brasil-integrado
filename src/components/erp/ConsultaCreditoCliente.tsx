@@ -137,7 +137,9 @@ export function ConsultaCreditoCliente({
                 {onLimiteSugerido && <button type="button" className="btn-erp light xs" onClick={() => onLimiteSugerido(n.limiteRecomendado!)}>Usar como limite aprovado</button>}
               </>
             )}
-            {n.pdfUrl && <a href={n.pdfUrl} target="_blank" rel="noreferrer" className="btn-erp ghost xs">📄 Abrir laudo (PDF)</a>}
+            {n.pdfUrl
+              ? <a href={n.pdfUrl} target="_blank" rel="noreferrer" className="btn-erp ghost xs">📄 Abrir laudo (PDF)</a>
+              : <span style={{ color: "var(--erp-mute)", fontSize: 12 }}>Este produto de consulta não emite laudo em PDF — o resultado completo é o exibido acima.</span>}
           </div>
 
           {ultima && (
