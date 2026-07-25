@@ -100,7 +100,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
-| 2026-07-25 | A gerar | Em andamento | Transcrição local de mensagens de voz do Telegram com Faster-Whisper e resposta pelo agente/Kokoro. |
+| 2026-07-25 | `c850075` | Enviado | Transcrição local de mensagens de voz do Telegram com Faster-Whisper e resposta pelo agente/Kokoro. |
 | 2026-07-25 | `e9c659b` | Enviado | Integração do Kokoro com o agente no Telegram, enviando áudio PT-BR após a resposta textual com fallback seguro. |
 | 2026-07-25 | `8aba1d2` | Enviado | Implantação isolada do Kokoro TTS CPU-only na VPS, com limites de recursos e acesso apenas pela rede privada do ERP. |
 | 2026-05-26 | `36ca124` | Enviado | Base inicial integrada: Next.js, Prisma, páginas iniciais, README e seed. |
@@ -534,3 +534,5 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - O usuario recebe a transcricao reconhecida antes do processamento; falhas retornam aviso claro sem executar acoes do agente.
 - Senha de certificado A1 continua obrigatoriamente digitada e nunca e aceita por audio.
 - Fluxo completo: voz Telegram -> Faster-Whisper -> agente -> resposta textual -> Kokoro -> voz Telegram.
+- Validacao real: um MP3 de 8,64 segundos foi transcrito em portugues com HTTP 200 em 3,28 segundos.
+- Deploy concluido: `whisper_api`, `kokoro_api` e ERP ativos; nova configuracao carregada no container e `https://erp.sisgov.app.br` respondeu HTTP 200.
