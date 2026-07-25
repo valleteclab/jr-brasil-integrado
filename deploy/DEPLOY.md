@@ -103,3 +103,21 @@ docker service logs -f kokoro_api
 - O Postgres do ERP é dedicado e isolado (rede `erp_internal`, sem porta publicada).
 - O Railway atual é só de teste — a produção começa limpa neste Postgres.
 - Recursos: a VPS tem 4 vCPU / 15Gi RAM com folga; o ERP + Postgres cabem tranquilo.
+
+## 11. Faster-Whisper STT (áudio recebido no Telegram)
+
+O Whisper roda em uma stack separada, CPU-only, conectado apenas à rede privada do ERP.
+Não há porta publicada na internet.
+
+```bash
+docker stack deploy -c deploy/whisper-stack.yml whisper
+docker service ps whisper_api
+docker service logs -f whisper_api
+```
+
+- Endpoint interno: `http://whisper_api:9000/asr`
+- Motor/modelo: `faster_whisper` / `base`, em CPU.
+- Limites: 1,5 vCPU e 3 GiB de RAM; uma única réplica.
+- Áudio do Telegram: no máximo 60 segundos e 6 MB.
+- O texto transcrito entra no mesmo fluxo seguro do agente; a resposta volta em texto e voz.
+- Para remover somente o STT: `docker stack rm whisper`.

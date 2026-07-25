@@ -13,6 +13,7 @@ import {
   type TelegramRuntime
 } from "@/lib/telegram/telegram-service";
 import { synthesizeKokoroSpeech } from "@/lib/tts/kokoro-client";
+import { transcribeWhisperAudio } from "@/lib/stt/whisper-client";
 import { enviarPdfBoleto, enviarPdfNota, enviarQrPix, handleTelegramCallback, handleTelegramTexto, mostrarMenu } from "./telegram-fluxos";
 import { resolverEmpresaAtiva, empresaAtivaSemTexto } from "./selecao-empresa";
 
@@ -40,6 +41,8 @@ type TelegramMessage = {
   photo?: Array<{ file_id?: string; file_size?: number }>;
   /** Imagem/arquivo enviado como documento (sem compressão). */
   document?: { file_id?: string; mime_type?: string; file_name?: string };
+  /** Mensagem de voz nativa do Telegram. */
+  voice?: { file_id?: string; file_size?: number; duration?: number; mime_type?: string };
 };
 
 /** file_id da imagem da mensagem (maior foto, ou documento image/*). */
@@ -184,7 +187,40 @@ export async function processTelegramMessage(
     return;
   }
 
-  const texto = (message.text ?? "").trim();
+  let texto = (message.text ?? "").trim();
+  if (message.voice?.file_id) {
+    if (vinculo.role === "GESTOR" && estadoCertificadoDe(vinculo.estado)) {
+      await sendTelegramText(runtime, chatId, "Por segurança, a senha do certificado precisa ser digitada, não enviada por áudio.");
+      return;
+    }
+    const maxSeconds = Number(process.env.WHISPER_STT_MAX_SECONDS || "60");
+    if (message.voice.duration && Number.isFinite(maxSeconds) && message.voice.duration > maxSeconds) {
+      await sendTelegramText(runtime, chatId, `O áudio pode ter no máximo ${maxSeconds} segundos. Envie uma mensagem mais curta, por favor.`);
+      return;
+    }
+    await sendTelegramText(runtime, chatId, "🎙️ Recebi seu áudio. Estou transcrevendo…");
+    const arquivo = await baixarTelegramArquivoBuffer(runtime, message.voice.file_id);
+    if (!arquivo) {
+      await sendTelegramText(runtime, chatId, "Não consegui baixar esse áudio (limite de 6 MB). Pode reenviar?");
+      return;
+    }
+    try {
+      texto = await transcribeWhisperAudio({
+        audio: arquivo.buffer,
+        filename: arquivo.filePath.split("/").pop() || "mensagem.ogg",
+        mimeType: message.voice.mime_type
+      });
+      await sendTelegramText(runtime, chatId, `🎙️ Entendi: “${texto.slice(0, 1000)}”`);
+    } catch (err) {
+      console.error("[telegram] transcrição falhou:", err instanceof Error ? err.message : err);
+      await sendTelegramText(
+        runtime,
+        chatId,
+        `Não consegui entender o áudio agora: ${err instanceof Error ? err.message : "falha na transcrição"}. Tente novamente ou escreva a mensagem.`
+      );
+      return;
+    }
+  }
   if (!texto) return;
 
   // SENHA do certificado aguardada → conclui o envio ANTES de qualquer outro fluxo (a senha não

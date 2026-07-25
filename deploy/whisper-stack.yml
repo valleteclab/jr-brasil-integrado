@@ -1,0 +1,49 @@
+# Faster-Whisper STT CPU-only para uso interno do ERP.
+# Deploy:
+#   docker stack deploy -c deploy/whisper-stack.yml whisper
+#
+# A API não publica portas. Ela só é acessível por serviços ligados à rede
+# privada do ERP em http://whisper_api:9000.
+
+version: "3.8"
+
+services:
+  api:
+    image: onerahmet/openai-whisper-asr-webservice:v1.9.1
+    networks:
+      - erp_internal
+    environment:
+      ASR_ENGINE: "faster_whisper"
+      ASR_MODEL: "base"
+      ASR_DEVICE: "cpu"
+    volumes:
+      - whisper_cache:/root/.cache
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: "1.50"
+          memory: 3G
+        reservations:
+          cpus: "0.25"
+          memory: 512M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 5
+        window: 120s
+      update_config:
+        order: stop-first
+        parallelism: 1
+        failure_action: rollback
+        monitor: 90s
+      rollback_config:
+        order: stop-first
+
+networks:
+  erp_internal:
+    external: true
+    name: erp_erp_internal
+
+volumes:
+  whisper_cache:

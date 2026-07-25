@@ -30,6 +30,11 @@ services:
       KOKORO_TTS_VOICE: "pf_dora"
       KOKORO_TTS_MAX_CHARS: "1200"
       KOKORO_TTS_TIMEOUT_MS: "60000"
+      # STT interno: voz recebida no Telegram -> texto para o agente.
+      WHISPER_STT_URL: "http://whisper_api:9000"
+      WHISPER_STT_MAX_SECONDS: "60"
+      WHISPER_STT_MAX_BYTES: "6291456"
+      WHISPER_STT_TIMEOUT_MS: "90000"
       # Segredo do cron de distribuicao NF-e (POST /api/cron/distribuicao), chamado pelo crontab da VPS.
       CRON_SECRET: "${CRON_SECRET}"
     deploy:

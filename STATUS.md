@@ -100,6 +100,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
+| 2026-07-25 | A gerar | Em andamento | Transcrição local de mensagens de voz do Telegram com Faster-Whisper e resposta pelo agente/Kokoro. |
 | 2026-07-25 | `e9c659b` | Enviado | Integração do Kokoro com o agente no Telegram, enviando áudio PT-BR após a resposta textual com fallback seguro. |
 | 2026-07-25 | `8aba1d2` | Enviado | Implantação isolada do Kokoro TTS CPU-only na VPS, com limites de recursos e acesso apenas pela rede privada do ERP. |
 | 2026-05-26 | `36ca124` | Enviado | Base inicial integrada: Next.js, Prisma, páginas iniciais, README e seed. |
@@ -524,3 +525,12 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Menus guiados, senhas, mensagens de erro e documentos continuam somente em texto; a voz e aplicada a resposta final do assistente.
 - Variaveis `KOKORO_TTS_*` documentadas em `.env.example` e configuradas na stack do ERP com endpoint apenas interno.
 - Validacao: TypeScript e lint aprovados; build Docker de producao compilou 190 paginas; rollout do ERP concluido sem indisponibilidade e `https://erp.sisgov.app.br` respondeu HTTP 200.
+
+## Atualizacao operacional - 2026-07-25 - transcricao de voz no Telegram
+
+- Criada stack isolada `whisper` com `onerahmet/openai-whisper-asr-webservice:v1.9.1`, motor `faster_whisper`, modelo multilingue `base` e execucao CPU-only.
+- O servico nao publica portas, compartilha somente a rede privada do ERP e tem limite de 1,5 vCPU/3 GiB de RAM.
+- Mensagens de voz privadas do Telegram sao baixadas pelo Bot API, limitadas a 60 segundos/6 MB, transcritas em PT-BR e processadas pelo mesmo agente e escopo tenant/empresa do texto.
+- O usuario recebe a transcricao reconhecida antes do processamento; falhas retornam aviso claro sem executar acoes do agente.
+- Senha de certificado A1 continua obrigatoriamente digitada e nunca e aceita por audio.
+- Fluxo completo: voz Telegram -> Faster-Whisper -> agente -> resposta textual -> Kokoro -> voz Telegram.

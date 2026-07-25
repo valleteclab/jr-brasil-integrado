@@ -3,7 +3,7 @@ import { getTelegramRuntimeById } from "@/lib/telegram/telegram-service";
 import { processTelegramCallback, processTelegramMessage } from "@/domains/agent/runtime/process-telegram-message";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 120;
+export const maxDuration = 240;
 
 /** URL pública do sistema a partir dos headers do proxy (Traefik). */
 function baseUrlDe(request: Request): string {
