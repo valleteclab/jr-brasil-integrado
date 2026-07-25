@@ -100,7 +100,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
-| 2026-07-25 | A gerar | Em andamento | Plumbing completo de voz no WhatsApp/Z-API com Whisper, agente, Kokoro, deduplicação e fallback em texto. |
+| 2026-07-25 | `66229a9` | Enviado | Plumbing completo de voz no WhatsApp/Z-API com Whisper, agente, Kokoro, deduplicação e fallback em texto. |
 | 2026-07-25 | `df692f9` | Enviado | Sessões explícitas e memórias autorizadas do agente nos canais web, Telegram e WhatsApp. |
 | 2026-07-25 | `37a0571` | Enviado | Identidade institucional do agente por empresa, apresentando-se como assistente do sistema desenvolvido pela Valleteclab. |
 | 2026-07-25 | `923ba7a` | Enviado | Ajuste da classificação de respostas por voz para não duplicar em texto listas meramente informativas. |
@@ -592,3 +592,5 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Fluxo completo: audio WhatsApp -> Faster-Whisper -> agente -> Kokoro -> `send-audio` da Z-API em base64.
 - A mesma politica multimodal do Telegram foi centralizada: resposta comum em voz; dados operacionais tambem em texto; falha de audio faz fallback para texto.
 - O plumbing de recebimento continua exclusivo da Z-API; a Zernio permanece somente para envios iniciados pelo ERP nesta versao.
+- Validacao: teste de bloqueio de URL privada, TypeScript, lint e build de 190 paginas aprovados; ajuste MIME complementar no commit `7cc7561`.
+- Imagem `d06a1dc65120` implantada; ERP/PostgreSQL/Kokoro/Whisper em `1/1`, sem migration pendente e endpoint publico de saude respondendo HTTP 200.
