@@ -100,6 +100,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
+| 2026-07-25 | A gerar | Em andamento | Identidade institucional do agente por empresa, apresentando-se como assistente do sistema desenvolvido pela Valleteclab. |
 | 2026-07-25 | `923ba7a` | Enviado | Ajuste da classificação de respostas por voz para não duplicar em texto listas meramente informativas. |
 | 2026-07-25 | `ade8bb4` | Enviado | Experiência multimodal do Telegram: áudio responde em áudio, texto responde em texto e conteúdo operacional preserva texto. |
 | 2026-07-25 | `8a74988` | Enviado | Correção de reentregas duplicadas do Telegram e serialização assíncrona das respostas de voz do Kokoro. |
@@ -557,3 +558,10 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Validacao: TypeScript e lint aprovados; imagem de producao `264053b4f53c` implantada, servicos em `1/1` e ERP respondendo HTTP 200.
 - Listas informativas e mencoes genericas a recursos do ERP, como Pix ou boletos, nao exigem mais uma copia textual; texto permanece obrigatorio quando uma ferramenta foi executada, existe rascunho, valor, link ou bloco de codigo.
 - Validacao do ajuste: imagem de producao `2740300bb9c9` implantada, ERP/Kokoro/Whisper em `1/1` e endpoint publico respondendo HTTP 200.
+
+## Atualizacao operacional - 2026-07-25 - identidade institucional do agente
+
+- O nome publico passa a ser `Assistente <nome da empresa>`, respeitando o contexto multiempresa.
+- Ao se apresentar, o agente informa que e o assistente virtual do sistema da empresa e que foi desenvolvido pela Valleteclab.
+- Provedores e modelos de IA sao tratados como tecnologia utilizada, nunca como criadores do agente ou do sistema.
+- A identidade vale para web, Telegram e WhatsApp porque foi aplicada no prompt central do runtime.
