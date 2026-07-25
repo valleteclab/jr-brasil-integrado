@@ -45,6 +45,24 @@ type TelegramMessage = {
   voice?: { file_id?: string; file_size?: number; duration?: number; mime_type?: string };
 };
 
+let filaVozTelegram: Promise<void> = Promise.resolve();
+
+/**
+ * Kokoro em CPU atende uma geração por vez. A voz é complementar e roda fora
+ * do tempo de resposta do webhook, evitando reentregas do mesmo update.
+ */
+function enfileirarRespostaPorVoz(runtime: TelegramRuntime, chatId: string, resposta: string): void {
+  filaVozTelegram = filaVozTelegram
+    .catch(() => undefined)
+    .then(async () => {
+      const audio = await synthesizeKokoroSpeech(resposta);
+      if (audio) await sendTelegramVoice(runtime, chatId, audio);
+    })
+    .catch((err) => {
+      console.error("[telegram] resposta por voz falhou:", err instanceof Error ? err.message : err);
+    });
+}
+
 /** file_id da imagem da mensagem (maior foto, ou documento image/*). */
 function imagemDaMensagem(message: TelegramMessage): string | null {
   const maior = message.photo?.length ? message.photo[message.photo.length - 1] : null;
@@ -382,13 +400,7 @@ export async function processTelegramMessage(
     resposta = `🏢 ${empresaAtivaNome}\n\n${resposta}`;
   }
   await sendTelegramText(runtime, chatId, resposta);
-  try {
-    const audio = await synthesizeKokoroSpeech(resposta);
-    if (audio) await sendTelegramVoice(runtime, chatId, audio);
-  } catch (err) {
-    // Voz é complementar: falha no Kokoro/Telegram nunca interrompe a resposta em texto.
-    console.error("[telegram] resposta por voz falhou:", err instanceof Error ? err.message : err);
-  }
+  enfileirarRespostaPorVoz(runtime, chatId, resposta);
 
   // Documentos gerados pelas tools do turno (NF/boleto) vão como PDF anexo — link do ERP exige login.
   await enviarPdfsDasTools(runtime, scope, chatId, result.novasMensagens);

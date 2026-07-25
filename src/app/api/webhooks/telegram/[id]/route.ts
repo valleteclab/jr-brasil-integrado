@@ -5,6 +5,33 @@ import { processTelegramCallback, processTelegramMessage } from "@/domains/agent
 export const dynamic = "force-dynamic";
 export const maxDuration = 240;
 
+const TELEGRAM_UPDATE_TTL_MS = 30 * 60 * 1000;
+const telegramUpdatesRecebidos = new Map<string, number>();
+
+type TelegramUpdate = {
+  update_id?: number;
+  message?: unknown;
+  callback_query?: unknown;
+};
+
+function updateJaRecebido(configId: string, updateId: number | undefined): boolean {
+  if (!Number.isInteger(updateId)) return false;
+
+  const agora = Date.now();
+  if (telegramUpdatesRecebidos.size > 500) {
+    for (const [chave, expiraEm] of telegramUpdatesRecebidos) {
+      if (expiraEm <= agora) telegramUpdatesRecebidos.delete(chave);
+    }
+  }
+
+  const chave = `${configId}:${updateId}`;
+  const expiraEm = telegramUpdatesRecebidos.get(chave);
+  if (expiraEm && expiraEm > agora) return true;
+
+  telegramUpdatesRecebidos.set(chave, agora + TELEGRAM_UPDATE_TTL_MS);
+  return false;
+}
+
 /** URL pública do sistema a partir dos headers do proxy (Traefik). */
 function baseUrlDe(request: Request): string {
   const proto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim() || "https";
@@ -30,7 +57,11 @@ export async function POST(request: Request, { params }: { params: { id: string 
       return NextResponse.json({ received: true }, { status: 200 });
     }
 
-    const update = (await request.json().catch(() => null)) as { message?: unknown; callback_query?: unknown } | null;
+    const update = (await request.json().catch(() => null)) as TelegramUpdate | null;
+    if (update && updateJaRecebido(params.id, update.update_id)) {
+      console.info(`[webhook/telegram] update duplicado ignorado: ${update.update_id}`);
+      return NextResponse.json({ received: true }, { status: 200 });
+    }
     if (update?.callback_query) {
       // Clique em botão inline dos fluxos guiados.
       await processTelegramCallback(runtime, update.callback_query as Parameters<typeof processTelegramCallback>[1], baseUrlDe(request) || null);
