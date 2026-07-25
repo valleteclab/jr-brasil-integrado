@@ -78,7 +78,13 @@ export async function downloadRemoteAudio(input: string): Promise<{ buffer: Buff
     if (!response.ok || !response.body) throw new Error(`Não foi possível baixar o áudio (HTTP ${response.status}).`);
 
     const contentType = response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() || null;
-    if (contentType && !contentType.startsWith("audio/") && contentType !== "application/octet-stream") {
+    if (
+      contentType &&
+      !contentType.startsWith("audio/") &&
+      contentType !== "application/octet-stream" &&
+      contentType !== "application/ogg" &&
+      contentType !== "binary/octet-stream"
+    ) {
       throw new Error("A mídia recebida não é um áudio válido.");
     }
     const declaredSize = Number(response.headers.get("content-length") || "0");
