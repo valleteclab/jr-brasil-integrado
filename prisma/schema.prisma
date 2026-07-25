@@ -274,6 +274,11 @@ enum AgentRole {
   CLIENTE
 }
 
+enum ConversaAgenteStatus {
+  ATIVA
+  ENCERRADA
+}
+
 enum MensagemPapel {
   USER
   ASSISTANT
@@ -343,6 +348,7 @@ model Tenant {
   configuracoesIa          ConfiguracaoIa[]
   configuracoesIntegracao  ConfiguracaoIntegracao[]
   conversasAgente          ConversaAgente[]
+  memoriasAgente           MemoriaAgente[]
   chavesApiAgente          ChaveApiAgente[]
   telefonesAgente          AgenteTelefone[]
   configWhatsapp           ConfiguracaoWhatsapp[]
@@ -410,6 +416,7 @@ model Empresa {
   inventarios               Inventario[]
   auditorias                Auditoria[]
   conversasAgente           ConversaAgente[]
+  memoriasAgente            MemoriaAgente[]
   gastos                    Gasto[]
   chavesApiAgente           ChaveApiAgente[]
   telefonesAgente           AgenteTelefone[]
@@ -3116,10 +3123,15 @@ model ConversaAgente {
   canal        String           @default("WEB")
   telefone     String?
   mensagens    MensagemAgente[]
+  status       ConversaAgenteStatus @default(ATIVA)
+  resumo       String?          @db.Text
+  encerradaEm  DateTime?
+  motivoEncerramento String?
   criadoEm     DateTime         @default(now())
   atualizadoEm DateTime         @updatedAt
 
   @@index([tenantId, empresaId])
+  @@index([tenantId, empresaId, canal, status, atualizadoEm])
 }
 
 model MensagemAgente {
@@ -3137,6 +3149,24 @@ model MensagemAgente {
   criadoEm    DateTime       @default(now())
 
   @@index([tenantId, empresaId, conversaId])
+}
+
+model MemoriaAgente {
+  id             String    @id @default(cuid())
+  tenantId       String
+  empresaId      String
+  tenant         Tenant    @relation(fields: [tenantId], references: [id])
+  empresa        Empresa   @relation(fields: [empresaId], references: [id])
+  conteudo       String    @db.Text
+  criadoPorRole  AgentRole
+  origemCanal    String
+  origemChave    String?
+  ativa          Boolean   @default(true)
+  removidaEm     DateTime?
+  criadoEm       DateTime  @default(now())
+  atualizadoEm   DateTime  @updatedAt
+
+  @@index([tenantId, empresaId, ativa, criadoEm])
 }
 
 model ChaveApiAgente {

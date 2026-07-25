@@ -22,11 +22,51 @@ export function AssistantChat() {
 
   const persona = PERSONAS[role];
 
-  function trocarRole(novo: AgentRole) {
-    setRole(novo);
-    setConversaId(null);
-    setMensagens([]);
+  async function trocarRole(novo: AgentRole) {
+    if (novo === role || busy) return;
     setError("");
+    setBusy(true);
+    try {
+      if (conversaId) {
+        const res = await fetch("/api/erp/assistente/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ conversaId, role, acao: "finalizar" })
+        });
+        if (!res.ok) throw new Error("Não foi possível encerrar a conversa atual.");
+      }
+      setRole(novo);
+      setConversaId(null);
+      setMensagens([]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Falha ao trocar o perfil da conversa.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function novaConversa() {
+    if (busy) return;
+    setError("");
+    setBusy(true);
+    try {
+      if (conversaId) {
+        const res = await fetch("/api/erp/assistente/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ conversaId, role, acao: "finalizar" })
+        });
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        if (!res.ok) throw new Error(data.error || "Não foi possível encerrar a conversa.");
+      }
+      setConversaId(null);
+      setMensagens([]);
+      setInput("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Falha ao iniciar uma nova conversa.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function enviar(texto: string) {
@@ -42,9 +82,16 @@ export function AssistantChat() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ conversaId, role, mensagem: msg })
       });
-      const data = (await res.json()) as { conversaId?: string; assistantText?: string; draft?: AgentDraft | null; error?: string };
+      const data = (await res.json()) as {
+        conversaId?: string;
+        assistantText?: string;
+        draft?: AgentDraft | null;
+        conversationEnded?: boolean;
+        error?: string;
+      };
       if (!res.ok) throw new Error(data.error || "Não foi possível obter a resposta.");
-      if (data.conversaId) setConversaId(data.conversaId);
+      if (data.conversationEnded) setConversaId(null);
+      else if (data.conversaId) setConversaId(data.conversaId);
       setMensagens((cur) => [...cur, { papel: "assistant", texto: data.assistantText ?? "", draft: data.draft ?? null }]);
       requestAnimationFrame(() => listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" }));
     } catch (e) {
@@ -62,9 +109,12 @@ export function AssistantChat() {
           <h1 className="erp-page-title">Assistente de IA</h1>
           <p className="erp-page-sub">{persona.descricao}</p>
         </div>
-        <div style={{ display: "flex", gap: 6 }}>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+          <button type="button" className="btn-erp ghost sm" onClick={novaConversa} disabled={busy || (!conversaId && mensagens.length === 0)}>
+            Nova conversa
+          </button>
           {ROLES.map((r) => (
-            <button key={r.id} type="button" className={`btn-erp ${role === r.id ? "primary" : "ghost"} sm`} onClick={() => trocarRole(r.id)}>
+            <button key={r.id} type="button" className={`btn-erp ${role === r.id ? "primary" : "ghost"} sm`} onClick={() => void trocarRole(r.id)} disabled={busy}>
               {r.label}
             </button>
           ))}

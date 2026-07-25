@@ -93,10 +93,10 @@ docker service logs -f kokoro_api
 
 - Endpoint interno: `http://kokoro_api:8880/v1/audio/speech`
 - Voz PT-BR inicial: `pf_dora`
-- Limites: 1,5 vCPU e 3 GiB de RAM; uma única réplica.
+- Limites: 2 vCPU e 3 GiB de RAM; uma única réplica.
 - Imagem fixada: `ghcr.io/remsky/kokoro-fastapi-cpu:v0.2.4`.
-- O ERP usa esse endpoint para enviar, no Telegram, uma mensagem de voz após a resposta textual do assistente.
-- A narração é limitada a 1.200 caracteres e tem timeout de 60 segundos; falha no TTS não interrompe o texto.
+- O ERP usa esse endpoint para responder em voz quando a entrada do Telegram também foi por voz.
+- A narração é limitada a 1.200 caracteres e tem timeout de 60 segundos; em caso de falha, a resposta é enviada em texto.
 - Para remover somente o TTS: `docker stack rm kokoro`.
 
 ## Observações
@@ -119,5 +119,5 @@ docker service logs -f whisper_api
 - Motor/modelo: `faster_whisper` / `base`, em CPU.
 - Limites: 1,5 vCPU e 3 GiB de RAM; uma única réplica.
 - Áudio do Telegram: no máximo 60 segundos e 6 MB.
-- O texto transcrito entra no mesmo fluxo seguro do agente; a resposta volta em texto e voz.
+- O texto transcrito entra no mesmo fluxo seguro do agente; respostas comuns voltam em voz, enquanto dados operacionais também permanecem em texto.
 - Para remover somente o STT: `docker stack rm whisper`.

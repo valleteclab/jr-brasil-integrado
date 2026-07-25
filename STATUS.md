@@ -100,6 +100,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
+| 2026-07-25 | A gerar | Em andamento | Sessões explícitas e memórias autorizadas do agente nos canais web, Telegram e WhatsApp. |
 | 2026-07-25 | `37a0571` | Enviado | Identidade institucional do agente por empresa, apresentando-se como assistente do sistema desenvolvido pela Valleteclab. |
 | 2026-07-25 | `923ba7a` | Enviado | Ajuste da classificação de respostas por voz para não duplicar em texto listas meramente informativas. |
 | 2026-07-25 | `ade8bb4` | Enviado | Experiência multimodal do Telegram: áudio responde em áudio, texto responde em texto e conteúdo operacional preserva texto. |
@@ -566,3 +567,14 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Provedores e modelos de IA sao tratados como tecnologia utilizada, nunca como criadores do agente ou do sistema.
 - A identidade vale para web, Telegram e WhatsApp porque foi aplicada no prompt central do runtime.
 - Validacao: TypeScript e lint aprovados; imagem de producao `b92cd7e2880f` implantada, servicos em `1/1` e ERP respondendo HTTP 200.
+
+## Atualizacao operacional - 2026-07-25 - sessoes e memorias do agente
+
+- `ConversaAgente` passa a ter estado `ATIVA/ENCERRADA`, data, motivo e resumo seguro de encerramento.
+- Telegram e WhatsApp encerram automaticamente a sessao apos 4 horas de inatividade; `/finalizar`, `finalizar conversa`, `/nova` e `nova conversa` encerram explicitamente.
+- O chat web ganhou o botao `Nova conversa` e tambem aceita os comandos textuais de encerramento.
+- O contexto foi corrigido para usar as 20 mensagens mais recentes, em ordem cronologica; o historico completo continua persistido para auditoria.
+- Memorias permanentes sao isoladas por tenant/empresa e so nascem por comando explicito de GESTOR: `lembre que ...`.
+- Gestores podem usar `listar memorias`, `esqueca <numero>` e `esqueca tudo`; remocoes sao logicas e auditadas.
+- Senhas, tokens, certificados, chaves privadas, CVV e outros segredos sao recusados pela memoria.
+- Memorias autorizadas entram no prompt de gestor/vendedor como orientacao e nunca substituem dados operacionais consultados por ferramentas.

@@ -57,6 +57,14 @@ NF-e/NFC-e/NFS-e**, boleto, Pix (QR na conversa), cancelar boleto/nota, consulta
 (bureau), enviar documentos ao cliente, e **foto de cupom → gasto lançado** (WhatsApp).
 Ações irreversíveis exigem confirmação (EMITIR/CANCELAR) — sempre.
 
+### Sessões e memórias
+- Telegram e WhatsApp mantêm a sessão por até 4 horas sem atividade. Depois disso, a conversa é encerrada com resumo seguro e a próxima mensagem abre uma nova.
+- `finalizar conversa` ou `/finalizar` encerra a sessão; `nova conversa` ou `/nova` encerra o assunto atual e prepara uma sessão limpa.
+- No chat web há um botão **Nova conversa**.
+- O agente usa as 20 mensagens mais recentes da sessão. O histórico completo continua no banco para auditoria.
+- Memórias permanentes nunca são criadas automaticamente. Somente o gestor pode usar `lembre que ...`, `listar memórias`, `esqueça 2` ou `esqueça tudo`.
+- Senhas, tokens, certificados, chaves privadas e outros segredos são recusados pela memória.
+
 ### Como um cliente ativa
 1. **Telefones autorizados**: no ERP do cliente → Configurações → IA → Telefones do agente
    (papel GESTOR emite/cobra; VENDEDOR só cria rascunhos).

@@ -5,21 +5,74 @@ import { authErrorStatus } from "@/lib/auth/http";
 import { prisma } from "@/lib/db/prisma";
 import { runAgentTurn } from "@/domains/agent/runtime/run-agent-turn";
 import type { AgentRole } from "@/domains/agent/types";
-import type { ToolChatMessage } from "@/domains/ai/openrouter-service";
+import {
+  closeConversation,
+  detectSessionCommand,
+  handleAgentMemoryCommand,
+  loadRecentConversationHistory
+} from "@/domains/agent/runtime/conversation-session";
 
 const ROLES: AgentRole[] = ["GESTOR", "VENDEDOR"];
 
 // Um turno do chat do assistente: cria/continua conversa, roda o agente e persiste.
 export async function POST(request: Request) {
   try {
-    await requireModulo("assistente");
+    const session = await requireModulo("assistente");
     const scope = await getDevelopmentTenantScope();
-    const body = (await request.json()) as { conversaId?: string; role?: string; mensagem?: string };
+    const body = (await request.json()) as {
+      conversaId?: string;
+      role?: string;
+      mensagem?: string;
+      acao?: "finalizar";
+    };
+
+    if (body.acao === "finalizar") {
+      const closed = body.conversaId
+        ? await closeConversation(scope, body.conversaId, "USUARIO", session.usuarioId)
+        : false;
+      return NextResponse.json({
+        conversationEnded: true,
+        assistantText: closed
+          ? "Conversa encerrada. A próxima mensagem iniciará uma nova sessão."
+          : "Não havia uma conversa ativa."
+      });
+    }
 
     const mensagem = (body.mensagem ?? "").trim();
     if (!mensagem) return NextResponse.json({ error: "Mensagem vazia." }, { status: 400 });
 
     const role: AgentRole = ROLES.includes(body.role as AgentRole) ? (body.role as AgentRole) : "GESTOR";
+
+    const sessionCommand = detectSessionCommand(mensagem);
+    if (sessionCommand) {
+      const closed = body.conversaId
+        ? await closeConversation(
+            scope,
+            body.conversaId,
+            sessionCommand === "NOVA" ? "NOVA_CONVERSA" : "USUARIO",
+            session.usuarioId
+          )
+        : false;
+      return NextResponse.json({
+        conversationEnded: true,
+        assistantText: closed
+          ? sessionCommand === "NOVA"
+            ? "Conversa anterior encerrada. Escreva a próxima mensagem para começar um novo assunto."
+            : "Conversa encerrada. Quando quiser voltar, é só iniciar uma nova conversa."
+          : "Não havia uma conversa ativa."
+      });
+    }
+
+    const memoryResponse = await handleAgentMemoryCommand({
+      scope,
+      role,
+      channel: "WEB",
+      channelKey: session.usuarioId,
+      text: mensagem
+    });
+    if (memoryResponse) {
+      return NextResponse.json({ conversaId: body.conversaId ?? null, assistantText: memoryResponse, draft: null });
+    }
 
     const empresa = await prisma.empresa.findFirst({
       where: { id: scope.empresaId, tenantId: scope.tenantId },
@@ -30,26 +83,43 @@ export async function POST(request: Request) {
     // Carrega ou cria a conversa (escopada por tenant+empresa).
     let conversa = body.conversaId
       ? await prisma.conversaAgente.findFirst({
-          where: { id: body.conversaId, tenantId: scope.tenantId, empresaId: scope.empresaId }
+          where: {
+            id: body.conversaId,
+            tenantId: scope.tenantId,
+            empresaId: scope.empresaId,
+            usuarioId: session.usuarioId,
+            status: "ATIVA"
+          }
         })
       : null;
     if (!conversa) {
+      const anterioresAtivas = await prisma.conversaAgente.findMany({
+        where: {
+          tenantId: scope.tenantId,
+          empresaId: scope.empresaId,
+          usuarioId: session.usuarioId,
+          canal: "WEB",
+          status: "ATIVA"
+        },
+        select: { id: true },
+        take: 10
+      });
+      for (const anterior of anterioresAtivas) {
+        await closeConversation(scope, anterior.id, "NOVA_CONVERSA", session.usuarioId);
+      }
       conversa = await prisma.conversaAgente.create({
-        data: { tenantId: scope.tenantId, empresaId: scope.empresaId, role, titulo: mensagem.slice(0, 60) }
+        data: {
+          tenantId: scope.tenantId,
+          empresaId: scope.empresaId,
+          usuarioId: session.usuarioId,
+          role,
+          titulo: mensagem.slice(0, 60),
+          status: "ATIVA"
+        }
       });
     }
 
-    // Histórico (USER/ASSISTANT) para dar contexto ao modelo — tools não são reenviadas.
-    const anteriores = await prisma.mensagemAgente.findMany({
-      where: { conversaId: conversa.id, tenantId: scope.tenantId, empresaId: scope.empresaId, papel: { in: ["USER", "ASSISTANT"] } },
-      orderBy: { criadoEm: "asc" },
-      take: 20,
-      select: { papel: true, conteudo: true }
-    });
-    const historico: ToolChatMessage[] = anteriores.map((m) => ({
-      role: m.papel === "USER" ? "user" : "assistant",
-      content: m.conteudo
-    }));
+    const historico = await loadRecentConversationHistory(scope, conversa.id);
 
     // Persiste a mensagem do usuário.
     await prisma.mensagemAgente.create({

@@ -2,7 +2,6 @@ import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import type { AgentRole } from "../types";
 import { runAgentTurn } from "./run-agent-turn";
-import type { ToolChatMessage } from "@/domains/ai/openrouter-service";
 import {
   answerTelegramCallback,
   baixarTelegramArquivoBuffer,
@@ -17,6 +16,13 @@ import { synthesizeKokoroSpeech } from "@/lib/tts/kokoro-client";
 import { transcribeWhisperAudio } from "@/lib/stt/whisper-client";
 import { enviarPdfBoleto, enviarPdfNota, enviarQrPix, handleTelegramCallback, handleTelegramTexto, mostrarMenu } from "./telegram-fluxos";
 import { resolverEmpresaAtiva, empresaAtivaSemTexto } from "./selecao-empresa";
+import {
+  closeActiveChannelConversation,
+  detectSessionCommand,
+  getOrCreateChannelConversation,
+  handleAgentMemoryCommand,
+  loadRecentConversationHistory
+} from "./conversation-session";
 
 /**
  * Processa um update do Telegram (mesmo agente do WhatsApp, canal TELEGRAM):
@@ -327,6 +333,42 @@ export async function processTelegramMessage(
     }
   }
 
+  const sessionCommand = detectSessionCommand(texto);
+  if (sessionCommand) {
+    await prisma.telegramVinculo.updateMany({
+      where: { id: vinculo.id, tenantId: vinculo.tenantId },
+      data: { estado: { fluxo: "ia" } }
+    });
+    const closed = await closeActiveChannelConversation({
+      scope,
+      channel: "TELEGRAM",
+      channelKey: chatId,
+      reason: sessionCommand === "NOVA" ? "NOVA_CONVERSA" : "USUARIO"
+    });
+    await sendTelegramText(
+      runtime,
+      chatId,
+      closed
+        ? sessionCommand === "NOVA"
+          ? "Conversa anterior encerrada. Envie a próxima mensagem para começar um novo assunto."
+          : "Conversa encerrada. Quando quiser voltar, é só enviar uma nova mensagem."
+        : "Não havia uma conversa ativa. Envie uma mensagem quando quiser começar."
+    );
+    return;
+  }
+
+  const memoryResponse = await handleAgentMemoryCommand({
+    scope,
+    role,
+    channel: "TELEGRAM",
+    channelKey: chatId,
+    text: texto
+  });
+  if (memoryResponse) {
+    await sendTelegramText(runtime, chatId, memoryResponse);
+    return;
+  }
+
   // Ambiente fiscal vigente — isola homologação de produção nas consultas.
   const cfgFiscal = await prisma.configuracaoFiscal.findUnique({
     where: { empresaId: scope.empresaId },
@@ -356,30 +398,14 @@ export async function processTelegramMessage(
   });
   const empresaNome = empresa?.nomeFantasia ?? empresa?.razaoSocial ?? "sua empresa";
 
-  // Conversa por chat (canal TELEGRAM; o campo telefone guarda o chatId — chave estável do canal).
-  // JANELA DE SESSÃO: conversa parada há mais de 4h vira conversa NOVA — o histórico de vendas
-  // antigas contamina o contexto (o modelo ressuscita quantidades/confirmações passadas).
-  const janelaSessao = new Date(Date.now() - 4 * 60 * 60 * 1000);
-  let conversa = await prisma.conversaAgente.findFirst({
-    where: { tenantId: scope.tenantId, empresaId: scope.empresaId, canal: "TELEGRAM", telefone: chatId, atualizadoEm: { gte: janelaSessao } },
-    orderBy: { atualizadoEm: "desc" }
+  const conversa = await getOrCreateChannelConversation({
+    scope,
+    channel: "TELEGRAM",
+    channelKey: chatId,
+    role,
+    title: texto
   });
-  if (!conversa) {
-    conversa = await prisma.conversaAgente.create({
-      data: { tenantId: scope.tenantId, empresaId: scope.empresaId, role, canal: "TELEGRAM", telefone: chatId, titulo: texto.slice(0, 60) }
-    });
-  }
-
-  const anteriores = await prisma.mensagemAgente.findMany({
-    where: { conversaId: conversa.id, tenantId: scope.tenantId, empresaId: scope.empresaId, papel: { in: ["USER", "ASSISTANT"] } },
-    orderBy: { criadoEm: "asc" },
-    take: 20,
-    select: { papel: true, conteudo: true }
-  });
-  const historico: ToolChatMessage[] = anteriores.map((m) => ({
-    role: m.papel === "USER" ? "user" : "assistant",
-    content: m.conteudo
-  }));
+  const historico = await loadRecentConversationHistory(scope, conversa.id);
 
   await prisma.mensagemAgente.create({
     data: { tenantId: scope.tenantId, empresaId: scope.empresaId, conversaId: conversa.id, papel: "USER", conteudo: texto }

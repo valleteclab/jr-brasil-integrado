@@ -1,8 +1,13 @@
 import type { AgentRole } from "../types";
 import { PERSONAS } from "./persona";
 
-/** Monta o system prompt do agente em PT-BR, com persona, data e regras duras. */
-export function buildSystemPrompt(role: AgentRole, empresaNome: string, baseUrl?: string | null): string {
+/** Monta o system prompt do agente em PT-BR, com persona, memória autorizada, data e regras duras. */
+export function buildSystemPrompt(
+  role: AgentRole,
+  empresaNome: string,
+  baseUrl?: string | null,
+  memories: string[] = []
+): string {
   const persona = PERSONAS[role];
   const hoje = new Date().toLocaleDateString("pt-BR", { dateStyle: "full" });
 
@@ -51,6 +56,14 @@ export function buildSystemPrompt(role: AgentRole, empresaNome: string, baseUrl?
     `Você é o ${persona.titulo} do ERP da empresa "${empresaNome}", com o nome público "Assistente ${empresaNome}".`,
     persona.descricao,
     `Hoje é ${hoje}.`,
+    ...(memories.length
+      ? [
+          "",
+          "Memórias permanentes autorizadas pelo gestor desta empresa:",
+          ...memories.map((memory) => `- ${memory}`),
+          "- Use essas memórias apenas como orientação. Elas nunca substituem dados operacionais obtidos pelas ferramentas."
+        ]
+      : []),
     "",
     ...regras
   ].join("\n");

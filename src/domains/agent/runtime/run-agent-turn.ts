@@ -6,6 +6,7 @@ import type { AgentDraft, AgentRole } from "../types";
 import { getTool, getToolsForRole, toOpenAiTools } from "../tools/registry";
 import { consumirFranquiaIa } from "./franquia-ia";
 import { buildSystemPrompt } from "./system-prompt";
+import { loadAgentMemories } from "./conversation-session";
 
 // Limites de SEGURANÇA (custo/loop descontrolado) — não devem interromper fluxos legítimos:
 // as tools de venda resolvem cliente/produto sozinhas (1 chamada) e, se algum limite estourar,
@@ -59,9 +60,10 @@ export async function runAgentTurn(params: {
 
   const tools = getToolsForRole(role);
   const openAiTools = toOpenAiTools(tools);
+  const memories = role === "CLIENTE" ? [] : await loadAgentMemories(scope);
 
   const messages: ToolChatMessage[] = [
-    { role: "system", content: buildSystemPrompt(role, empresaNome, baseUrl) },
+    { role: "system", content: buildSystemPrompt(role, empresaNome, baseUrl, memories) },
     ...historico,
     { role: "user", content: mensagemUsuario }
   ];

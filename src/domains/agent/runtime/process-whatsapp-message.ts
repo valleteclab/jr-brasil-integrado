@@ -2,9 +2,15 @@ import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import type { AgentRole } from "../types";
 import { runAgentTurn } from "./run-agent-turn";
-import type { ToolChatMessage } from "@/domains/ai/openrouter-service";
 import { getWhatsappRuntime, sendWhatsappText } from "@/lib/whatsapp/whatsapp-service";
 import { resolverEmpresaAtiva } from "./selecao-empresa";
+import {
+  closeActiveChannelConversation,
+  detectSessionCommand,
+  getOrCreateChannelConversation,
+  handleAgentMemoryCommand,
+  loadRecentConversationHistory
+} from "./conversation-session";
 
 /**
  * Processa uma mensagem recebida do WhatsApp (Z-API):
@@ -76,35 +82,52 @@ export async function processWhatsappMessage(input: { telefone: string; texto: s
   const whats = await getWhatsappRuntime(scope);
   if (!whats?.ativo) return;
 
+  const sessionCommand = detectSessionCommand(texto);
+  if (sessionCommand) {
+    const closed = await closeActiveChannelConversation({
+      scope,
+      channel: "WHATSAPP",
+      channelKey: telefone,
+      reason: sessionCommand === "NOVA" ? "NOVA_CONVERSA" : "USUARIO"
+    });
+    await sendWhatsappText(
+      whats,
+      telefone,
+      closed
+        ? sessionCommand === "NOVA"
+          ? "Conversa anterior encerrada. Envie a próxima mensagem para começar um novo assunto."
+          : "Conversa encerrada. Quando quiser voltar, é só enviar uma nova mensagem."
+        : "Não havia uma conversa ativa. Envie uma mensagem quando quiser começar."
+    );
+    return;
+  }
+
+  const memoryResponse = await handleAgentMemoryCommand({
+    scope,
+    role,
+    channel: "WHATSAPP",
+    channelKey: telefone,
+    text: texto
+  });
+  if (memoryResponse) {
+    await sendWhatsappText(whats, telefone, memoryResponse);
+    return;
+  }
+
   const empresa = await prisma.empresa.findFirst({
     where: { id: scope.empresaId, tenantId: scope.tenantId },
     select: { nomeFantasia: true, razaoSocial: true }
   });
   const empresaNome = empresa?.nomeFantasia ?? empresa?.razaoSocial ?? "sua empresa";
 
-  // Conversa por telefone (reaproveita a última do canal WHATSAPP dentro da janela de sessão de
-  // 4h — histórico velho contamina o contexto do modelo com vendas/confirmações passadas).
-  const janelaSessao = new Date(Date.now() - 4 * 60 * 60 * 1000);
-  let conversa = await prisma.conversaAgente.findFirst({
-    where: { tenantId: scope.tenantId, empresaId: scope.empresaId, canal: "WHATSAPP", telefone, atualizadoEm: { gte: janelaSessao } },
-    orderBy: { atualizadoEm: "desc" }
+  const conversa = await getOrCreateChannelConversation({
+    scope,
+    channel: "WHATSAPP",
+    channelKey: telefone,
+    role,
+    title: texto
   });
-  if (!conversa) {
-    conversa = await prisma.conversaAgente.create({
-      data: { tenantId: scope.tenantId, empresaId: scope.empresaId, role, canal: "WHATSAPP", telefone, titulo: texto.slice(0, 60) }
-    });
-  }
-
-  const anteriores = await prisma.mensagemAgente.findMany({
-    where: { conversaId: conversa.id, tenantId: scope.tenantId, empresaId: scope.empresaId, papel: { in: ["USER", "ASSISTANT"] } },
-    orderBy: { criadoEm: "asc" },
-    take: 20,
-    select: { papel: true, conteudo: true }
-  });
-  const historico: ToolChatMessage[] = anteriores.map((m) => ({
-    role: m.papel === "USER" ? "user" : "assistant",
-    content: m.conteudo
-  }));
+  const historico = await loadRecentConversationHistory(scope, conversa.id);
 
   await prisma.mensagemAgente.create({
     data: { tenantId: scope.tenantId, empresaId: scope.empresaId, conversaId: conversa.id, papel: "USER", conteudo: texto }
