@@ -1,0 +1,46 @@
+# Kokoro TTS CPU-only para uso interno do ERP.
+# Deploy:
+#   docker stack deploy -c deploy/kokoro-stack.yml kokoro
+#
+# A API não publica portas. Ela só é acessível por serviços ligados à rede
+# privada do ERP em http://kokoro_api:8880.
+
+version: "3.8"
+
+services:
+  api:
+    image: ghcr.io/remsky/kokoro-fastapi-cpu:v0.2.4
+    networks:
+      - erp_internal
+    environment:
+      USE_GPU: "false"
+      DEVICE: "cpu"
+      API_LOG_LEVEL: "WARNING"
+      ENABLE_DEBUG_ENDPOINTS: "false"
+      ALLOW_DEV_UNLOAD: "false"
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: "1.50"
+          memory: 3G
+        reservations:
+          cpus: "0.25"
+          memory: 512M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 5
+        window: 120s
+      update_config:
+        order: stop-first
+        parallelism: 1
+        failure_action: rollback
+        monitor: 60s
+      rollback_config:
+        order: stop-first
+
+networks:
+  erp_internal:
+    external: true
+    name: erp_erp_internal

@@ -100,6 +100,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
+| 2026-07-25 | A gerar | Em andamento | Implantação isolada do Kokoro TTS CPU-only na VPS, com limites de recursos e acesso apenas pela rede privada do ERP. |
 | 2026-05-26 | `36ca124` | Enviado | Base inicial integrada: Next.js, Prisma, páginas iniciais, README e seed. |
 | 2026-05-26 | `d844cac` | Enviado | Adição deste documento de status do desenvolvimento. |
 | 2026-05-26 | `da59141` | Enviado | Atualização do histórico com hash real do commit de status. |
@@ -501,3 +502,11 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - SETUP: rota GET /api/erp/configuracoes/whatsapp/zernio lista contas WhatsApp conectadas e templates aprovados da WABA (usa a key salva) — a tela preenche selects sem digitacao manual.
 - LIMITES v1: o AGENTE de atendimento (webhook de recebimento) continua funcionando apenas com Z-API; webhook de recebimento da Zernio e evolucao futura. Requisitos para usar ZERNIO: conta Zernio + WABA conectada + template UTILITY aprovado com corpo {{1}}.
 - Validacao: `prisma generate`, `tsc --noEmit` e `next lint` ok.
+
+## Atualizacao operacional - 2026-07-25 - Kokoro TTS
+
+- Auditada a VPS de producao do ERP: 4 vCPU, 15 GiB de RAM, 153 GiB livres e carga baixa no momento da verificacao.
+- Criada stack Docker Swarm separada para o Kokoro FastAPI CPU-only, sem porta publica e ligada somente a rede privada `erp_erp_internal`.
+- Fixada a imagem `ghcr.io/remsky/kokoro-fastapi-cpu:v0.2.4`, com uma replica, limite de 1,5 vCPU e 3 GiB de RAM.
+- Endpoint interno planejado: `http://kokoro_api:8880/v1/audio/speech`; voz PT-BR inicial: `pf_dora`.
+- Integracao do endpoint TTS com as respostas do assistente web fica como proxima etapa apos a validacao operacional do container.

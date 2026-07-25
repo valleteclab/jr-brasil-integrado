@@ -80,6 +80,23 @@ docker service update --image jrb-erp:latest --force erp_erp
 - Remover a stack (preserva o volume do banco): `docker stack rm erp`
 - Backup do banco: `docker exec $(docker ps -qf name=erp_erp_postgres) pg_dump -U erp erp > backup.sql`
 
+## 10. Kokoro TTS (voz do assistente)
+
+O Kokoro roda em uma stack separada, CPU-only, conectado apenas à rede privada do ERP.
+Não há porta publicada na internet.
+
+```bash
+docker stack deploy -c deploy/kokoro-stack.yml kokoro
+docker service ps kokoro_api
+docker service logs -f kokoro_api
+```
+
+- Endpoint interno: `http://kokoro_api:8880/v1/audio/speech`
+- Voz PT-BR inicial: `pf_dora`
+- Limites: 1,5 vCPU e 3 GiB de RAM; uma única réplica.
+- Imagem fixada: `ghcr.io/remsky/kokoro-fastapi-cpu:v0.2.4`.
+- Para remover somente o TTS: `docker stack rm kokoro`.
+
 ## Observações
 - O Postgres do ERP é dedicado e isolado (rede `erp_internal`, sem porta publicada).
 - O Railway atual é só de teste — a produção começa limpa neste Postgres.
