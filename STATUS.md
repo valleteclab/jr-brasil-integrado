@@ -100,7 +100,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
-| 2026-07-25 | A gerar | Em andamento | Integração do Kokoro com o agente no Telegram, enviando áudio PT-BR após a resposta textual com fallback seguro. |
+| 2026-07-25 | `e9c659b` | Enviado | Integração do Kokoro com o agente no Telegram, enviando áudio PT-BR após a resposta textual com fallback seguro. |
 | 2026-07-25 | `8aba1d2` | Enviado | Implantação isolada do Kokoro TTS CPU-only na VPS, com limites de recursos e acesso apenas pela rede privada do ERP. |
 | 2026-05-26 | `36ca124` | Enviado | Base inicial integrada: Next.js, Prisma, páginas iniciais, README e seed. |
 | 2026-05-26 | `d844cac` | Enviado | Adição deste documento de status do desenvolvimento. |
@@ -523,3 +523,4 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Falhas no Kokoro ou no envio do audio sao registradas, mas nunca interrompem a resposta textual nem as acoes do agente.
 - Menus guiados, senhas, mensagens de erro e documentos continuam somente em texto; a voz e aplicada a resposta final do assistente.
 - Variaveis `KOKORO_TTS_*` documentadas em `.env.example` e configuradas na stack do ERP com endpoint apenas interno.
+- Validacao: TypeScript e lint aprovados; build Docker de producao compilou 190 paginas; rollout do ERP concluido sem indisponibilidade e `https://erp.sisgov.app.br` respondeu HTTP 200.
