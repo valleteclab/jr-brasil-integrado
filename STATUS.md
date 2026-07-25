@@ -100,7 +100,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
-| 2026-07-25 | A gerar | Em andamento | Sessões explícitas e memórias autorizadas do agente nos canais web, Telegram e WhatsApp. |
+| 2026-07-25 | `df692f9` | Enviado | Sessões explícitas e memórias autorizadas do agente nos canais web, Telegram e WhatsApp. |
 | 2026-07-25 | `37a0571` | Enviado | Identidade institucional do agente por empresa, apresentando-se como assistente do sistema desenvolvido pela Valleteclab. |
 | 2026-07-25 | `923ba7a` | Enviado | Ajuste da classificação de respostas por voz para não duplicar em texto listas meramente informativas. |
 | 2026-07-25 | `ade8bb4` | Enviado | Experiência multimodal do Telegram: áudio responde em áudio, texto responde em texto e conteúdo operacional preserva texto. |
@@ -578,3 +578,6 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Gestores podem usar `listar memorias`, `esqueca <numero>` e `esqueca tudo`; remocoes sao logicas e auditadas.
 - Senhas, tokens, certificados, chaves privadas, CVV e outros segredos sao recusados pela memoria.
 - Memorias autorizadas entram no prompt de gestor/vendedor como orientacao e nunca substituem dados operacionais consultados por ferramentas.
+- Validacao: Prisma, TypeScript, lint e build de producao aprovados; os dois avisos de lint preexistentes permanecem sem relacao com esta entrega.
+- Backup anterior a migracao salvo em `/root/backups/erp-before-agent-sessions-20260725.dump` (18 MiB).
+- Migracao `20260725193000_agente_sessoes_memorias` aplicada; imagem `b2c5a8ab999d` implantada, ERP/PostgreSQL/Kokoro/Whisper em `1/1` e endpoint publico de saude respondendo HTTP 200.
