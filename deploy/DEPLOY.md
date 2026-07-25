@@ -95,6 +95,8 @@ docker service logs -f kokoro_api
 - Voz PT-BR inicial: `pf_dora`
 - Limites: 1,5 vCPU e 3 GiB de RAM; uma única réplica.
 - Imagem fixada: `ghcr.io/remsky/kokoro-fastapi-cpu:v0.2.4`.
+- O ERP usa esse endpoint para enviar, no Telegram, uma mensagem de voz após a resposta textual do assistente.
+- A narração é limitada a 1.200 caracteres e tem timeout de 60 segundos; falha no TTS não interrompe o texto.
 - Para remover somente o TTS: `docker stack rm kokoro`.
 
 ## Observações

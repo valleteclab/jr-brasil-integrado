@@ -74,6 +74,21 @@ export async function sendTelegramText(runtime: TelegramRuntime, chatId: string,
   }
 }
 
+/** Envia um MP3 como mensagem de voz reproduzível no próprio Telegram. */
+export async function sendTelegramVoice(
+  runtime: TelegramRuntime,
+  chatId: string,
+  mp3: Buffer
+): Promise<void> {
+  if (!runtime.botToken || !mp3.length) return;
+  const form = new FormData();
+  form.append("chat_id", chatId);
+  form.append("voice", new Blob([new Uint8Array(mp3)], { type: "audio/mpeg" }), "resposta.mp3");
+  const res = await fetch(`${API}/bot${runtime.botToken}/sendVoice`, { method: "POST", body: form });
+  const body = (await res.json().catch(() => ({}))) as { ok?: boolean; description?: string };
+  if (!res.ok || !body.ok) throw new Error(body.description || `Telegram sendVoice falhou (HTTP ${res.status}).`);
+}
+
 /** Pede o contato do usuário com o botão nativo do Telegram (contato verificado). */
 export async function sendTelegramPedirContato(runtime: TelegramRuntime, chatId: string, texto: string): Promise<void> {
   if (!runtime.botToken) return;

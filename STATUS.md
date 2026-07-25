@@ -100,6 +100,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
+| 2026-07-25 | A gerar | Em andamento | Integração do Kokoro com o agente no Telegram, enviando áudio PT-BR após a resposta textual com fallback seguro. |
 | 2026-07-25 | `8aba1d2` | Enviado | Implantação isolada do Kokoro TTS CPU-only na VPS, com limites de recursos e acesso apenas pela rede privada do ERP. |
 | 2026-05-26 | `36ca124` | Enviado | Base inicial integrada: Next.js, Prisma, páginas iniciais, README e seed. |
 | 2026-05-26 | `d844cac` | Enviado | Adição deste documento de status do desenvolvimento. |
@@ -512,4 +513,13 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Endpoint interno validado: `http://kokoro_api:8880/v1/audio/speech`; voz PT-BR inicial: `pf_dora`.
 - Teste real gerou MP3 de 64 KB em 6,48 segundos; consumo ocioso apos o teste ficou em aproximadamente 1,2 GiB.
 - Confirmado que a porta 8880 nao esta publicada e que o ERP continuou respondendo HTTP 200.
-- Integracao do endpoint TTS com as respostas do assistente web fica como proxima etapa apos a validacao operacional do container.
+- Integracao do endpoint TTS com as respostas do assistente web fica como evolucao futura.
+
+## Atualizacao operacional - 2026-07-25 - voz do assistente no Telegram
+
+- Respostas livres do agente no Telegram agora mantem o texto e enviam em seguida um MP3 narrado pelo Kokoro com a voz PT-BR `pf_dora`.
+- Adicionado cliente TTS com limpeza de markdown, URLs e emojis, limite configuravel de 1.200 caracteres, timeout de 60 segundos e validacao do tipo/tamanho do audio.
+- Adicionado envio multipart pelo metodo oficial `sendVoice` da Bot API do Telegram.
+- Falhas no Kokoro ou no envio do audio sao registradas, mas nunca interrompem a resposta textual nem as acoes do agente.
+- Menus guiados, senhas, mensagens de erro e documentos continuam somente em texto; a voz e aplicada a resposta final do assistente.
+- Variaveis `KOKORO_TTS_*` documentadas em `.env.example` e configuradas na stack do ERP com endpoint apenas interno.

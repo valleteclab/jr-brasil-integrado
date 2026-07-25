@@ -9,8 +9,10 @@ import {
   sendTelegramPedirContato,
   sendTelegramText,
   sendTelegramTextoSemTeclado,
+  sendTelegramVoice,
   type TelegramRuntime
 } from "@/lib/telegram/telegram-service";
+import { synthesizeKokoroSpeech } from "@/lib/tts/kokoro-client";
 import { enviarPdfBoleto, enviarPdfNota, enviarQrPix, handleTelegramCallback, handleTelegramTexto, mostrarMenu } from "./telegram-fluxos";
 import { resolverEmpresaAtiva, empresaAtivaSemTexto } from "./selecao-empresa";
 
@@ -344,6 +346,13 @@ export async function processTelegramMessage(
     resposta = `🏢 ${empresaAtivaNome}\n\n${resposta}`;
   }
   await sendTelegramText(runtime, chatId, resposta);
+  try {
+    const audio = await synthesizeKokoroSpeech(resposta);
+    if (audio) await sendTelegramVoice(runtime, chatId, audio);
+  } catch (err) {
+    // Voz é complementar: falha no Kokoro/Telegram nunca interrompe a resposta em texto.
+    console.error("[telegram] resposta por voz falhou:", err instanceof Error ? err.message : err);
+  }
 
   // Documentos gerados pelas tools do turno (NF/boleto) vão como PDF anexo — link do ERP exige login.
   await enviarPdfsDasTools(runtime, scope, chatId, result.novasMensagens);
