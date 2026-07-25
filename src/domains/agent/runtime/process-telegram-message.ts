@@ -6,6 +6,7 @@ import type { ToolChatMessage } from "@/domains/ai/openrouter-service";
 import {
   answerTelegramCallback,
   baixarTelegramArquivoBuffer,
+  sendTelegramChatAction,
   sendTelegramPedirContato,
   sendTelegramText,
   sendTelegramTextoSemTeclado,
@@ -51,16 +52,46 @@ let filaVozTelegram: Promise<void> = Promise.resolve();
  * Kokoro em CPU atende uma geração por vez. A voz é complementar e roda fora
  * do tempo de resposta do webhook, evitando reentregas do mesmo update.
  */
-function enfileirarRespostaPorVoz(runtime: TelegramRuntime, chatId: string, resposta: string): void {
+function enfileirarRespostaPorVoz(
+  runtime: TelegramRuntime,
+  chatId: string,
+  resposta: string,
+  enviarTextoSeFalhar: boolean
+): void {
   filaVozTelegram = filaVozTelegram
     .catch(() => undefined)
     .then(async () => {
-      const audio = await synthesizeKokoroSpeech(resposta);
-      if (audio) await sendTelegramVoice(runtime, chatId, audio);
+      await sendTelegramChatAction(runtime, chatId, "record_voice").catch(() => undefined);
+      const indicador = setInterval(() => {
+        void sendTelegramChatAction(runtime, chatId, "record_voice").catch(() => undefined);
+      }, 4_000);
+      let audio: Buffer | null;
+      try {
+        audio = await synthesizeKokoroSpeech(resposta);
+      } finally {
+        clearInterval(indicador);
+      }
+      if (!audio) throw new Error("Kokoro não está configurado.");
+      await sendTelegramChatAction(runtime, chatId, "upload_voice").catch(() => undefined);
+      await sendTelegramVoice(runtime, chatId, audio);
     })
-    .catch((err) => {
+    .catch(async (err) => {
       console.error("[telegram] resposta por voz falhou:", err instanceof Error ? err.message : err);
+      if (enviarTextoSeFalhar) {
+        await sendTelegramText(runtime, chatId, resposta).catch((falhaTexto) => {
+          console.error("[telegram] fallback em texto falhou:", falhaTexto instanceof Error ? falhaTexto.message : falhaTexto);
+        });
+      }
     });
+}
+
+function respostaPrecisaFicarEmTexto(
+  result: Awaited<ReturnType<typeof runAgentTurn>>,
+  resposta: string
+): boolean {
+  if (result.draft || result.novasMensagens.some((mensagem) => mensagem.papel === "TOOL")) return true;
+  if (/https?:\/\/|\b(?:pix|boleto|nota fiscal|nf-e|nfs-e|senha|certificado|código|chave)\b|R\$\s*\d/i.test(resposta)) return true;
+  return resposta.includes("```") || resposta.split("\n").length >= 4;
 }
 
 /** file_id da imagem da mensagem (maior foto, ou documento image/*). */
@@ -206,6 +237,7 @@ export async function processTelegramMessage(
   }
 
   let texto = (message.text ?? "").trim();
+  const entradaPorVoz = Boolean(message.voice?.file_id);
   if (message.voice?.file_id) {
     if (vinculo.role === "GESTOR" && estadoCertificadoDe(vinculo.estado)) {
       await sendTelegramText(runtime, chatId, "Por segurança, a senha do certificado precisa ser digitada, não enviada por áudio.");
@@ -216,7 +248,7 @@ export async function processTelegramMessage(
       await sendTelegramText(runtime, chatId, `O áudio pode ter no máximo ${maxSeconds} segundos. Envie uma mensagem mais curta, por favor.`);
       return;
     }
-    await sendTelegramText(runtime, chatId, "🎙️ Recebi seu áudio. Estou transcrevendo…");
+    await sendTelegramChatAction(runtime, chatId, "typing").catch(() => undefined);
     const arquivo = await baixarTelegramArquivoBuffer(runtime, message.voice.file_id);
     if (!arquivo) {
       await sendTelegramText(runtime, chatId, "Não consegui baixar esse áudio (limite de 6 MB). Pode reenviar?");
@@ -228,7 +260,6 @@ export async function processTelegramMessage(
         filename: arquivo.filePath.split("/").pop() || "mensagem.ogg",
         mimeType: message.voice.mime_type
       });
-      await sendTelegramText(runtime, chatId, `🎙️ Entendi: “${texto.slice(0, 1000)}”`);
     } catch (err) {
       console.error("[telegram] transcrição falhou:", err instanceof Error ? err.message : err);
       await sendTelegramText(
@@ -399,8 +430,13 @@ export async function processTelegramMessage(
   if (multiEmpresa && empresaAtivaNome) {
     resposta = `🏢 ${empresaAtivaNome}\n\n${resposta}`;
   }
-  await sendTelegramText(runtime, chatId, resposta);
-  enfileirarRespostaPorVoz(runtime, chatId, resposta);
+  if (entradaPorVoz) {
+    const manterTexto = respostaPrecisaFicarEmTexto(result, resposta);
+    if (manterTexto) await sendTelegramText(runtime, chatId, resposta);
+    enfileirarRespostaPorVoz(runtime, chatId, resposta, !manterTexto);
+  } else {
+    await sendTelegramText(runtime, chatId, resposta);
+  }
 
   // Documentos gerados pelas tools do turno (NF/boleto) vão como PDF anexo — link do ERP exige login.
   await enviarPdfsDasTools(runtime, scope, chatId, result.novasMensagens);

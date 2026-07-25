@@ -74,6 +74,18 @@ export async function sendTelegramText(runtime: TelegramRuntime, chatId: string,
   }
 }
 
+type TelegramChatAction = "typing" | "record_voice" | "upload_voice" | "upload_document";
+
+/** Exibe o indicador nativo de atividade sem poluir a conversa com mensagens de status. */
+export async function sendTelegramChatAction(
+  runtime: TelegramRuntime,
+  chatId: string,
+  action: TelegramChatAction
+): Promise<void> {
+  if (!runtime.botToken) return;
+  await tgCall(runtime.botToken, "sendChatAction", { chat_id: chatId, action });
+}
+
 /** Envia um MP3 como mensagem de voz reproduzível no próprio Telegram. */
 export async function sendTelegramVoice(
   runtime: TelegramRuntime,

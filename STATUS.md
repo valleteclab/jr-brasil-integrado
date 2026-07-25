@@ -100,6 +100,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
+| 2026-07-25 | A gerar | Em andamento | Experiência multimodal do Telegram: áudio responde em áudio, texto responde em texto e conteúdo operacional preserva texto. |
 | 2026-07-25 | `8a74988` | Enviado | Correção de reentregas duplicadas do Telegram e serialização assíncrona das respostas de voz do Kokoro. |
 | 2026-07-25 | `c850075` | Enviado | Transcrição local de mensagens de voz do Telegram com Faster-Whisper e resposta pelo agente/Kokoro. |
 | 2026-07-25 | `e9c659b` | Enviado | Integração do Kokoro com o agente no Telegram, enviando áudio PT-BR após a resposta textual com fallback seguro. |
@@ -544,3 +545,11 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - A geracao de voz deixou de bloquear a resposta HTTP do webhook e passou a uma fila unica por processo, evitando geracoes concorrentes e duplicacao por reentrega.
 - O limite do Kokoro foi elevado de 1,5 para 2 vCPU; a memoria permanece limitada a 3 GiB e a API continua restrita a rede privada.
 - Validacao: TypeScript, lint e stack aprovados; imagem de producao `ba2497c692fb` implantada, servicos em `1/1` e ERP respondendo HTTP 200.
+
+## Atualizacao operacional - 2026-07-25 - experiencia multimodal no Telegram
+
+- Mensagem de voz passa a receber resposta prioritariamente em voz, sem mensagens extras de "transcrevendo", transcricao reconhecida e resposta textual duplicada.
+- Mensagem digitada recebe resposta em texto, sem audio automatico.
+- Valores, links, documentos, codigos, certificados, rascunhos e respostas que usam ferramentas continuam visiveis em texto e tambem podem ser narrados quando a entrada foi por voz.
+- Se a geracao ou o envio do audio falhar em uma conversa por voz, a resposta e enviada automaticamente em texto.
+- O status nativo `sendChatAction` informa digitacao, gravacao e envio de voz sem poluir o historico.
