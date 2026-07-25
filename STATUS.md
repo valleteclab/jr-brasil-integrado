@@ -100,7 +100,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
-| 2026-07-25 | A gerar | Em andamento | Experiência multimodal do Telegram: áudio responde em áudio, texto responde em texto e conteúdo operacional preserva texto. |
+| 2026-07-25 | `ade8bb4` | Enviado | Experiência multimodal do Telegram: áudio responde em áudio, texto responde em texto e conteúdo operacional preserva texto. |
 | 2026-07-25 | `8a74988` | Enviado | Correção de reentregas duplicadas do Telegram e serialização assíncrona das respostas de voz do Kokoro. |
 | 2026-07-25 | `c850075` | Enviado | Transcrição local de mensagens de voz do Telegram com Faster-Whisper e resposta pelo agente/Kokoro. |
 | 2026-07-25 | `e9c659b` | Enviado | Integração do Kokoro com o agente no Telegram, enviando áudio PT-BR após a resposta textual com fallback seguro. |
@@ -553,3 +553,4 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Valores, links, documentos, codigos, certificados, rascunhos e respostas que usam ferramentas continuam visiveis em texto e tambem podem ser narrados quando a entrada foi por voz.
 - Se a geracao ou o envio do audio falhar em uma conversa por voz, a resposta e enviada automaticamente em texto.
 - O status nativo `sendChatAction` informa digitacao, gravacao e envio de voz sem poluir o historico.
+- Validacao: TypeScript e lint aprovados; imagem de producao `264053b4f53c` implantada, servicos em `1/1` e ERP respondendo HTTP 200.
