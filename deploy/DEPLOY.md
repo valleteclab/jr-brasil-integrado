@@ -95,7 +95,7 @@ docker service logs -f kokoro_api
 - Voz PT-BR inicial: `pf_dora`
 - Limites: 2 vCPU e 3 GiB de RAM; uma única réplica.
 - Imagem fixada: `ghcr.io/remsky/kokoro-fastapi-cpu:v0.2.4`.
-- O ERP usa esse endpoint para responder em voz quando a entrada do Telegram também foi por voz.
+- O ERP usa esse endpoint para responder em voz quando a entrada do Telegram ou do WhatsApp/Z-API também foi por voz.
 - A narração é limitada a 1.200 caracteres e tem timeout de 60 segundos; em caso de falha, a resposta é enviada em texto.
 - Para remover somente o TTS: `docker stack rm kokoro`.
 
@@ -104,7 +104,7 @@ docker service logs -f kokoro_api
 - O Railway atual é só de teste — a produção começa limpa neste Postgres.
 - Recursos: a VPS tem 4 vCPU / 15Gi RAM com folga; o ERP + Postgres cabem tranquilo.
 
-## 11. Faster-Whisper STT (áudio recebido no Telegram)
+## 11. Faster-Whisper STT (áudio recebido no Telegram e WhatsApp)
 
 O Whisper roda em uma stack separada, CPU-only, conectado apenas à rede privada do ERP.
 Não há porta publicada na internet.
@@ -118,6 +118,7 @@ docker service logs -f whisper_api
 - Endpoint interno: `http://whisper_api:9000/asr`
 - Motor/modelo: `faster_whisper` / `base`, em CPU.
 - Limites: 1,5 vCPU e 3 GiB de RAM; uma única réplica.
-- Áudio do Telegram: no máximo 60 segundos e 6 MB.
+- Áudio do Telegram ou WhatsApp/Z-API: no máximo 60 segundos e 6 MB.
 - O texto transcrito entra no mesmo fluxo seguro do agente; respostas comuns voltam em voz, enquanto dados operacionais também permanecem em texto.
+- No WhatsApp, a URL temporária da mídia precisa ser HTTPS pública, passa por bloqueio de rede privada e o arquivo não é persistido.
 - Para remover somente o STT: `docker stack rm whisper`.

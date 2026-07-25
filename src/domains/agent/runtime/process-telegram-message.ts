@@ -23,6 +23,7 @@ import {
   handleAgentMemoryCommand,
   loadRecentConversationHistory
 } from "./conversation-session";
+import { responseNeedsText } from "./voice-response-policy";
 
 /**
  * Processa um update do Telegram (mesmo agente do WhatsApp, canal TELEGRAM):
@@ -89,14 +90,6 @@ function enfileirarRespostaPorVoz(
         });
       }
     });
-}
-
-function respostaPrecisaFicarEmTexto(
-  result: Awaited<ReturnType<typeof runAgentTurn>>,
-  resposta: string
-): boolean {
-  if (result.draft || result.novasMensagens.some((mensagem) => mensagem.papel === "TOOL")) return true;
-  return /https?:\/\/|R\$\s*\d/i.test(resposta) || resposta.includes("```");
 }
 
 /** file_id da imagem da mensagem (maior foto, ou documento image/*). */
@@ -456,7 +449,7 @@ export async function processTelegramMessage(
     resposta = `🏢 ${empresaAtivaNome}\n\n${resposta}`;
   }
   if (entradaPorVoz) {
-    const manterTexto = respostaPrecisaFicarEmTexto(result, resposta);
+    const manterTexto = responseNeedsText(result, resposta);
     if (manterTexto) await sendTelegramText(runtime, chatId, resposta);
     enfileirarRespostaPorVoz(runtime, chatId, resposta, !manterTexto);
   } else {

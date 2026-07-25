@@ -2,8 +2,16 @@ import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import type { AgentRole } from "../types";
 import { runAgentTurn } from "./run-agent-turn";
-import { getWhatsappRuntime, sendWhatsappText } from "@/lib/whatsapp/whatsapp-service";
-import { resolverEmpresaAtiva } from "./selecao-empresa";
+import {
+  getWhatsappRuntime,
+  sendWhatsappAudio,
+  sendWhatsappText,
+  type WhatsappConfig
+} from "@/lib/whatsapp/whatsapp-service";
+import { empresaAtivaSemTexto, resolverEmpresaAtiva } from "./selecao-empresa";
+import { downloadRemoteAudio } from "@/lib/stt/remote-audio";
+import { transcribeWhisperAudio } from "@/lib/stt/whisper-client";
+import { synthesizeKokoroSpeech } from "@/lib/tts/kokoro-client";
 import {
   closeActiveChannelConversation,
   detectSessionCommand,
@@ -11,6 +19,47 @@ import {
   handleAgentMemoryCommand,
   loadRecentConversationHistory
 } from "./conversation-session";
+import { responseNeedsText } from "./voice-response-policy";
+
+type WhatsappAudioInput = {
+  url: string;
+  mimeType?: string | null;
+  seconds?: number | null;
+};
+
+type WhatsappMessageInput = {
+  telefone: string;
+  texto?: string;
+  instanceId?: string;
+  audio?: WhatsappAudioInput | null;
+  baseUrl?: string | null;
+};
+
+let whatsappVoiceQueue: Promise<void> = Promise.resolve();
+
+/** Kokoro usa CPU e atende uma geração por vez; o webhook não fica esperando a síntese. */
+function enqueueWhatsappVoice(
+  config: WhatsappConfig,
+  phone: string,
+  response: string,
+  sendTextOnFailure: boolean
+): void {
+  whatsappVoiceQueue = whatsappVoiceQueue
+    .catch(() => undefined)
+    .then(async () => {
+      const audio = await synthesizeKokoroSpeech(response);
+      if (!audio) throw new Error("Kokoro não está configurado.");
+      const sent = await sendWhatsappAudio(config, phone, audio);
+      if (!sent.ok) throw new Error(sent.error || "Falha ao enviar áudio pela Z-API.");
+    })
+    .catch(async (error) => {
+      console.error("[whatsapp] resposta por voz falhou:", error instanceof Error ? error.message : error);
+      if (sendTextOnFailure) {
+        const fallback = await sendWhatsappText(config, phone, response);
+        if (!fallback.ok) console.error("[whatsapp] fallback em texto falhou:", fallback.error);
+      }
+    });
+}
 
 /**
  * Processa uma mensagem recebida do WhatsApp (Z-API):
@@ -22,14 +71,17 @@ import {
  *
  * Nunca lança: erros são logados e absorvidos (webhook responde 200 sempre).
  */
-export async function processWhatsappMessage(input: { telefone: string; texto: string; baseUrl?: string | null }): Promise<void> {
+export async function processWhatsappMessage(input: WhatsappMessageInput): Promise<void> {
   const telefone = input.telefone.replace(/\D/g, "");
-  const texto = input.texto.trim();
-  if (!telefone || !texto) return;
+  let texto = input.texto?.trim() ?? "";
+  const inputByVoice = Boolean(input.audio?.url);
+  if (!telefone || (!texto && !inputByVoice)) return;
 
   // 1) Identidade autorizada (vendedor/gestor) por telefone — com SELEÇÃO DE EMPRESA quando o
   // telefone opera várias (contador multi-CNPJ): o seletor fixa a empresa ativa da sessão.
-  const resolucao = await resolverEmpresaAtiva({ canal: "WHATSAPP", chave: telefone, telefone, texto });
+  const resolucao = inputByVoice
+    ? await empresaAtivaSemTexto({ canal: "WHATSAPP", chave: telefone, telefone })
+    : await resolverEmpresaAtiva({ canal: "WHATSAPP", chave: telefone, telefone, texto });
 
   let scope: TenantScope;
   let role: AgentRole;
@@ -81,6 +133,35 @@ export async function processWhatsappMessage(input: { telefone: string; texto: s
   // WhatsApp precisa estar ativo na empresa para responder.
   const whats = await getWhatsappRuntime(scope);
   if (!whats?.ativo) return;
+  if (whats.provedor !== "ZAPI" || !input.instanceId || input.instanceId !== whats.instanceId) {
+    console.warn("[whatsapp] mensagem descartada: instância Z-API não corresponde à empresa resolvida.");
+    return;
+  }
+
+  if (input.audio?.url) {
+    const maxSeconds = Number(process.env.WHISPER_STT_MAX_SECONDS || "60");
+    if (input.audio.seconds && Number.isFinite(maxSeconds) && input.audio.seconds > maxSeconds) {
+      await sendWhatsappText(whats, telefone, `O áudio pode ter no máximo ${maxSeconds} segundos. Envie uma mensagem mais curta, por favor.`);
+      return;
+    }
+    try {
+      const remote = await downloadRemoteAudio(input.audio.url);
+      texto = await transcribeWhisperAudio({
+        audio: remote.buffer,
+        filename: "mensagem-whatsapp.ogg",
+        mimeType: input.audio.mimeType || remote.mimeType
+      });
+    } catch (error) {
+      console.error("[whatsapp] transcrição falhou:", error instanceof Error ? error.message : error);
+      await sendWhatsappText(
+        whats,
+        telefone,
+        `Não consegui entender o áudio agora: ${error instanceof Error ? error.message : "falha na transcrição"}. Tente novamente ou escreva a mensagem.`
+      );
+      return;
+    }
+  }
+  if (!texto) return;
 
   const sessionCommand = detectSessionCommand(texto);
   if (sessionCommand) {
@@ -165,5 +246,11 @@ export async function processWhatsappMessage(input: { telefone: string; texto: s
   if (multiEmpresa && empresaAtivaNome) {
     resposta = `🏢 *${empresaAtivaNome}*\n\n${resposta}`;
   }
-  await sendWhatsappText(whats, telefone, resposta);
+  if (inputByVoice) {
+    const keepText = responseNeedsText(result, resposta);
+    if (keepText) await sendWhatsappText(whats, telefone, resposta);
+    enqueueWhatsappVoice(whats, telefone, resposta, !keepText);
+  } else {
+    await sendWhatsappText(whats, telefone, resposta);
+  }
 }

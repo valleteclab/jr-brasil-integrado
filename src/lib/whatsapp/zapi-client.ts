@@ -42,6 +42,42 @@ export async function sendZapiText(
   }
 }
 
+/** Envia áudio MP3 em base64, sem precisar expor um arquivo público. */
+export async function sendZapiAudio(
+  config: ZapiCredentials,
+  phone: string,
+  audio: Buffer
+): Promise<{ ok: boolean; error?: string }> {
+  if (!config.instanceId || !config.token) {
+    return { ok: false, error: "WhatsApp (Z-API) não configurado." };
+  }
+  if (!audio.length) return { ok: false, error: "Áudio vazio." };
+
+  const url = `https://api.z-api.io/instances/${config.instanceId}/token/${config.token}/send-audio`;
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(config.clientToken ? { "Client-Token": config.clientToken } : {})
+      },
+      body: JSON.stringify({
+        phone: phone.replace(/\D/g, ""),
+        audio: `data:audio/mpeg;base64,${audio.toString("base64")}`,
+        async: true,
+        waveform: true
+      })
+    });
+    if (!res.ok) {
+      const raw = await res.text().catch(() => "");
+      return { ok: false, error: `Z-API HTTP ${res.status}${raw ? ` ${raw.slice(0, 160)}` : ""}` };
+    }
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Falha de rede ao enviar áudio no WhatsApp." };
+  }
+}
+
 /**
  * Envia um DOCUMENTO (ex.: PDF de boleto/DANFE) via Z-API. O arquivo vai em base64 (data URL) —
  * não precisa de URL pública. `extension` define o endpoint (send-document/{extension}).

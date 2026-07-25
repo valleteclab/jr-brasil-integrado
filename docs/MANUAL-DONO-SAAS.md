@@ -57,6 +57,12 @@ NF-e/NFC-e/NFS-e**, boleto, Pix (QR na conversa), cancelar boleto/nota, consulta
 (bureau), enviar documentos ao cliente, e **foto de cupom → gasto lançado** (WhatsApp).
 Ações irreversíveis exigem confirmação (EMITIR/CANCELAR) — sempre.
 
+### Conversa por voz
+- No Telegram e no WhatsApp com Z-API, um áudio de até 60 segundos/6 MB é transcrito pelo Whisper e processado pelo mesmo agente.
+- Perguntas por áudio recebem resposta prioritariamente em áudio pelo Kokoro. Valores, links, documentos e ações operacionais também permanecem visíveis em texto.
+- Se a transcrição, síntese ou envio do áudio falhar, o usuário recebe uma orientação ou a resposta em texto.
+- O recebimento de voz ainda não está disponível no provedor Zernio.
+
 ### Sessões e memórias
 - Telegram e WhatsApp mantêm a sessão por até 4 horas sem atividade. Depois disso, a conversa é encerrada com resumo seguro e a próxima mensagem abre uma nova.
 - `finalizar conversa` ou `/finalizar` encerra a sessão; `nova conversa` ou `/nova` encerra o assunto atual e prepara uma sessão limpa.

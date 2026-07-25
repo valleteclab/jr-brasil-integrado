@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import { decryptSecret, encryptSecret } from "@/lib/security/secret-crypto";
 import { assertModuloLiberado } from "@/lib/auth/tenant-features";
-import { sendZapiDocument, sendZapiText } from "./zapi-client";
+import { sendZapiAudio, sendZapiDocument, sendZapiText } from "./zapi-client";
 import {
   zernioAbrirConversaComTemplate,
   zernioEnviarMensagemLivre,
@@ -129,6 +129,19 @@ export async function sendWhatsappText(
     return { ok: r.ok, error: r.error };
   }
   return sendZapiText(config, phone, message);
+}
+
+/** Resposta de voz do agente. Nesta integração, mídia de áudio está disponível pela Z-API. */
+export async function sendWhatsappAudio(
+  config: WhatsappConfig | null,
+  phone: string,
+  audio: Buffer
+): Promise<WhatsappSendResult> {
+  if (!config) return { ok: false, error: "WhatsApp não configurado." };
+  if (config.provedor !== "ZAPI") {
+    return { ok: false, error: "Resposta em áudio ainda não está disponível neste provedor de WhatsApp." };
+  }
+  return sendZapiAudio(config, phone, audio);
 }
 
 /**

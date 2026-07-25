@@ -100,6 +100,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
+| 2026-07-25 | A gerar | Em andamento | Plumbing completo de voz no WhatsApp/Z-API com Whisper, agente, Kokoro, deduplicação e fallback em texto. |
 | 2026-07-25 | `df692f9` | Enviado | Sessões explícitas e memórias autorizadas do agente nos canais web, Telegram e WhatsApp. |
 | 2026-07-25 | `37a0571` | Enviado | Identidade institucional do agente por empresa, apresentando-se como assistente do sistema desenvolvido pela Valleteclab. |
 | 2026-07-25 | `923ba7a` | Enviado | Ajuste da classificação de respostas por voz para não duplicar em texto listas meramente informativas. |
@@ -581,3 +582,13 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Validacao: Prisma, TypeScript, lint e build de producao aprovados; os dois avisos de lint preexistentes permanecem sem relacao com esta entrega.
 - Backup anterior a migracao salvo em `/root/backups/erp-before-agent-sessions-20260725.dump` (18 MiB).
 - Migracao `20260725193000_agente_sessoes_memorias` aplicada; imagem `b2c5a8ab999d` implantada, ERP/PostgreSQL/Kokoro/Whisper em `1/1` e endpoint publico de saude respondendo HTTP 200.
+
+## Atualizacao operacional - 2026-07-25 - voz no WhatsApp
+
+- O webhook da Z-API passa a aceitar o payload oficial `audio` (`audioUrl`, `mimeType`, `seconds`) e encaminha a midia para `processWhatsappMessage`.
+- Mensagens sao deduplicadas por `instanceId/messageId` durante 30 minutos; grupos, canais e mensagens da propria conta sao ignorados.
+- Antes de baixar a midia, o telefone e a empresa sao resolvidos e o `instanceId` recebido precisa coincidir com a configuracao Z-API da empresa.
+- O download aceita somente HTTPS publico, bloqueia enderecos privados, limita redirecionamentos, tempo e 6 MB e nao persiste o arquivo.
+- Fluxo completo: audio WhatsApp -> Faster-Whisper -> agente -> Kokoro -> `send-audio` da Z-API em base64.
+- A mesma politica multimodal do Telegram foi centralizada: resposta comum em voz; dados operacionais tambem em texto; falha de audio faz fallback para texto.
+- O plumbing de recebimento continua exclusivo da Z-API; a Zernio permanece somente para envios iniciados pelo ERP nesta versao.
