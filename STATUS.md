@@ -100,7 +100,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
-| 2026-07-25 | A gerar | Em andamento | Correção de reentregas duplicadas do Telegram e serialização assíncrona das respostas de voz do Kokoro. |
+| 2026-07-25 | `8a74988` | Enviado | Correção de reentregas duplicadas do Telegram e serialização assíncrona das respostas de voz do Kokoro. |
 | 2026-07-25 | `c850075` | Enviado | Transcrição local de mensagens de voz do Telegram com Faster-Whisper e resposta pelo agente/Kokoro. |
 | 2026-07-25 | `e9c659b` | Enviado | Integração do Kokoro com o agente no Telegram, enviando áudio PT-BR após a resposta textual com fallback seguro. |
 | 2026-07-25 | `8aba1d2` | Enviado | Implantação isolada do Kokoro TTS CPU-only na VPS, com limites de recursos e acesso apenas pela rede privada do ERP. |
@@ -543,3 +543,4 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Updates repetidos pelo Telegram passam a ser deduplicados por `update_id` durante 30 minutos.
 - A geracao de voz deixou de bloquear a resposta HTTP do webhook e passou a uma fila unica por processo, evitando geracoes concorrentes e duplicacao por reentrega.
 - O limite do Kokoro foi elevado de 1,5 para 2 vCPU; a memoria permanece limitada a 3 GiB e a API continua restrita a rede privada.
+- Validacao: TypeScript, lint e stack aprovados; imagem de producao `ba2497c692fb` implantada, servicos em `1/1` e ERP respondendo HTTP 200.
