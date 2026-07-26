@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import type { Prisma, StatusPedido } from "@prisma/client";
 import { scopedByTenantCompanyAmbiente } from "@/lib/auth/dev-session";
+import { normalizeDocumento } from "@/lib/fiscal/documento";
 
 const STATUS_PEDIDO: StatusPedido[] = [
   "RASCUNHO",
@@ -63,7 +64,7 @@ export async function listRecentOrders(
   input: { cliente?: string; status?: string; periodoDias?: number; limite?: number }
 ) {
   const cliente = input.cliente?.trim();
-  const documento = cliente?.replace(/\D+/g, "");
+  const documento = normalizeDocumento(cliente);
   const status = STATUS_PEDIDO.includes(input.status as StatusPedido) ? (input.status as StatusPedido) : undefined;
   const periodoDias = Number(input.periodoDias);
   const limite = Math.min(Math.max(Number(input.limite) || 20, 1), 50);

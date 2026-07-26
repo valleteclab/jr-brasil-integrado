@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import { scopedByTenantCompany } from "@/lib/auth/dev-session";
+import { normalizeDocumento } from "@/lib/fiscal/documento";
 
 /**
  * Resolve referências "humanas" de venda no SERVIDOR — cliente por nome/CNPJ e produto por SKU —
@@ -25,9 +26,9 @@ export async function resolverCliente(
   const busca = ref.clienteBusca?.trim();
   if (!busca) return { id: null }; // consumidor anônimo (permitido na pré-venda)
 
-  const digitos = busca.replace(/\D/g, "");
-  const porDocumento = digitos.length >= 8
-    ? await prisma.cliente.findMany({ where: { ...scopedByTenantCompany(scope), documento: { contains: digitos } }, select: { id: true, razaoSocial: true, nomeFantasia: true }, take: 4 })
+  const documento = normalizeDocumento(busca);
+  const porDocumento = documento.length >= 8
+    ? await prisma.cliente.findMany({ where: { ...scopedByTenantCompany(scope), documento: { contains: documento } }, select: { id: true, razaoSocial: true, nomeFantasia: true }, take: 4 })
     : [];
   const candidatos = porDocumento.length
     ? porDocumento

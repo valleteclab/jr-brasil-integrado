@@ -100,6 +100,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
+| 2026-07-26 | A gerar | Em andamento | Expansao do agente com detalhe fiscal, orcamentos, contas a pagar, fluxo de caixa, fornecedores, compras, despesa manual e NF-e/NFC-e avulsa. |
 | 2026-07-26 | `2f75f7c` | Enviado | Ferramentas do agente para listar notas fiscais e pedidos recentes, com filtros, escopo multiempresa/ambiente e `notaId` para ações posteriores. |
 | 2026-07-25 | `6d5d59b` | Enviado | Painel de voz do Kokoro por empresa, com Dora, Alex e Santa, prévia em áudio e aplicação dinâmica no Telegram e WhatsApp. |
 | 2026-07-25 | `66229a9` | Enviado | Plumbing completo de voz no WhatsApp/Z-API com Whisper, agente, Kokoro, deduplicação e fallback em texto. |
@@ -607,3 +608,15 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Isolamento preservado por `tenantId`, `empresaId` e ambiente fiscal, com limite maximo de 50 registros por chamada e total encontrado separado.
 - Validacao: `npx tsc --noEmit` e `npm run lint` aprovados; os dois avisos de lint preexistentes permanecem sem relacao com esta entrega. O Windows bloqueou o encerramento de um worker do Next.js (`kill EPERM`), mas o build Docker/Linux concluiu as 191 paginas.
 - Deploy concluido com a imagem `jrb-erp:2f75f7c` (`sha256:13a613a05743`); servico convergido, sem migrations pendentes, logs limpos e `https://erp.sisgov.app.br` respondendo HTTP 200.
+
+## Atualizacao operacional - 2026-07-26 - caixa de ferramentas do agente
+
+- Adicionadas seis consultas: `consultar_nota_fiscal`, `consultar_orcamentos`, `consultar_contas_pagar`, `consultar_fluxo_caixa`, `consultar_fornecedores` e `consultar_compras`.
+- O detalhe fiscal retorna itens, impostos, eventos, protocolo e links de PDF/XML; numero ambiguo nao escolhe documento arbitrariamente e devolve candidatos com `notaId`.
+- Listagens limitam a resposta a 50 registros e omitem itens extensos quando nao ha numero especifico, preservando o contexto da IA.
+- Nova acao `registrar_despesa` exige confirmacao explicita e, por padrao, nao movimenta banco; `lancarFinanceiro=true` so deve ser usado quando o gestor pedir e confirmar o debito.
+- Nova acao `emitir_nota_produto` emite NF-e/NFC-e avulsa por SKU, exige `EMITIR`, permite baixa de estoque apenas quando explicitamente confirmada e reaproveita o motor fiscal existente.
+- A ferramenta `emitir_nfse` existente continua responsavel pela emissao avulsa de servicos.
+- Buscas por documento nas ferramentas do agente passaram a preservar CNPJ alfanumerico.
+- Seguranca: todas as consultas usam `tenantId`, `empresaId` e, quando aplicavel, ambiente fiscal; acoes permanecem restritas ao perfil GESTOR e reutilizam use cases com validacao/auditoria.
+- Validacao parcial: sete consultas executadas com sucesso no banco de teste, catalogo com 33 ferramentas e sem nomes duplicados, `npx tsc --noEmit` e `npm run lint` aprovados (dois avisos preexistentes).
