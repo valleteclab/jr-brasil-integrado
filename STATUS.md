@@ -100,7 +100,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
-| 2026-07-25 | A gerar | Em andamento | Painel de voz do Kokoro por empresa, com Dora, Alex e Santa, prévia em áudio e aplicação dinâmica no Telegram e WhatsApp. |
+| 2026-07-25 | `6d5d59b` | Enviado | Painel de voz do Kokoro por empresa, com Dora, Alex e Santa, prévia em áudio e aplicação dinâmica no Telegram e WhatsApp. |
 | 2026-07-25 | `66229a9` | Enviado | Plumbing completo de voz no WhatsApp/Z-API com Whisper, agente, Kokoro, deduplicação e fallback em texto. |
 | 2026-07-25 | `df692f9` | Enviado | Sessões explícitas e memórias autorizadas do agente nos canais web, Telegram e WhatsApp. |
 | 2026-07-25 | `37a0571` | Enviado | Identidade institucional do agente por empresa, apresentando-se como assistente do sistema desenvolvido pela Valleteclab. |
