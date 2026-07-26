@@ -92,7 +92,10 @@ docker service logs -f kokoro_api
 ```
 
 - Endpoint interno: `http://kokoro_api:8880/v1/audio/speech`
-- Voz PT-BR inicial: `pf_dora`
+- Voz PT-BR padrão: `pf_dora` (Dora).
+- Administradores podem trocar entre Dora, Alex e Santa, além de ouvir uma prévia, em
+  **Configurações → IA do ERP → Voz do assistente**. A escolha é isolada por empresa e
+  passa a valer nas próximas respostas de áudio, sem reiniciar os contêineres.
 - Limites: 2 vCPU e 3 GiB de RAM; uma única réplica.
 - Imagem fixada: `ghcr.io/remsky/kokoro-fastapi-cpu:v0.2.4`.
 - O ERP usa esse endpoint para responder em voz quando a entrada do Telegram ou do WhatsApp/Z-API também foi por voz.

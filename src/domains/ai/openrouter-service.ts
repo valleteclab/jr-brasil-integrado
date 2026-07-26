@@ -1,6 +1,12 @@
 import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import { decryptSecret, encryptSecret, secretLastChars } from "@/lib/security/secret-crypto";
+import {
+  DEFAULT_KOKORO_VOICE,
+  isKokoroVoiceId,
+  sanitizeKokoroVoice,
+  type KokoroVoiceId
+} from "./tts-voices";
 
 const OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions";
 
@@ -37,6 +43,7 @@ type SaveAiConfigInput = {
   model: string;
   enabled: boolean;
   notes?: string;
+  voice: string;
 };
 
 export type AiConfigSummary = {
@@ -48,6 +55,7 @@ export type AiConfigSummary = {
   testedAt: string | null;
   lastError: string | null;
   configured: boolean;
+  voice: KokoroVoiceId;
 };
 
 function sanitizeModel(model: string) {
@@ -67,6 +75,7 @@ function toSummary(config: {
   observacoes: string | null;
   testadoEm: Date | null;
   ultimoErro: string | null;
+  vozTts: string;
 } | null): AiConfigSummary {
   return {
     provider: "OPENROUTER",
@@ -76,7 +85,8 @@ function toSummary(config: {
     notes: config?.observacoes ?? null,
     testedAt: config?.testadoEm?.toISOString() ?? null,
     lastError: config?.ultimoErro ?? null,
-    configured: Boolean(config?.chaveFinal)
+    configured: Boolean(config?.chaveFinal),
+    voice: isKokoroVoiceId(config?.vozTts) ? config.vozTts : DEFAULT_KOKORO_VOICE
   };
 }
 
@@ -96,6 +106,7 @@ export async function getAiConfig(scope: TenantScope) {
 
 export async function saveAiConfig(scope: TenantScope, input: SaveAiConfigInput) {
   const model = sanitizeModel(input.model);
+  const voice = sanitizeKokoroVoice(input.voice);
   const apiKey = input.apiKey?.trim();
   const existing = await prisma.configuracaoIa.findUnique({
     where: {
@@ -130,6 +141,7 @@ export async function saveAiConfig(scope: TenantScope, input: SaveAiConfigInput)
       ativo: input.enabled,
       modelo: model,
       observacoes: input.notes?.trim() || null,
+      vozTts: voice,
       ultimoErro: null,
       ...secretData
     },
@@ -139,6 +151,7 @@ export async function saveAiConfig(scope: TenantScope, input: SaveAiConfigInput)
       provedor: "OPENROUTER",
       ativo: input.enabled,
       modelo: model,
+      vozTts: voice,
       observacoes: input.notes?.trim() || null,
       chaveCriptografada: secretData.chaveCriptografada!,
       chaveFinal: secretData.chaveFinal!
@@ -146,6 +159,21 @@ export async function saveAiConfig(scope: TenantScope, input: SaveAiConfigInput)
   });
 
   return toSummary(config);
+}
+
+export async function getAiVoice(scope: TenantScope): Promise<KokoroVoiceId> {
+  const config = await prisma.configuracaoIa.findUnique({
+    where: {
+      tenantId_empresaId_provedor: {
+        tenantId: scope.tenantId,
+        empresaId: scope.empresaId,
+        provedor: "OPENROUTER"
+      }
+    },
+    select: { vozTts: true }
+  });
+
+  return isKokoroVoiceId(config?.vozTts) ? config.vozTts : DEFAULT_KOKORO_VOICE;
 }
 
 async function getActiveOpenRouterSecret(scope: TenantScope) {

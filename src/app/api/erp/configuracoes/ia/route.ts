@@ -26,6 +26,7 @@ export async function PUT(request: Request) {
       model?: string;
       enabled?: boolean;
       notes?: string;
+      voice?: string;
     };
 
     const scope = await getDevelopmentTenantScope();
@@ -33,7 +34,8 @@ export async function PUT(request: Request) {
       apiKey: body.apiKey,
       model: body.model || "openai/gpt-4o-mini",
       enabled: Boolean(body.enabled),
-      notes: body.notes
+      notes: body.notes,
+      voice: body.voice || "pf_dora"
     });
 
     return NextResponse.json(config);

@@ -1455,6 +1455,61 @@ p {
   padding: 10px 12px;
 }
 
+.voice-settings-card {
+  margin-top: 14px;
+}
+
+.voice-options {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+}
+
+.voice-option {
+  align-items: center;
+  background: var(--erp-bg);
+  border: 1px solid var(--erp-line);
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  gap: 12px;
+  padding: 12px;
+}
+
+.voice-option.selected {
+  background: rgba(245, 158, 11, .08);
+  border-color: var(--jr-yellow);
+}
+
+.voice-option input {
+  accent-color: var(--jr-yellow);
+  height: 16px;
+  width: 16px;
+}
+
+.voice-option-copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.voice-option-copy strong {
+  color: var(--erp-ink);
+  font-size: 13px;
+}
+
+.voice-option-copy small,
+.voice-save-hint {
+  color: var(--erp-slate);
+  font-size: 11.5px;
+}
+
+.voice-save-hint {
+  align-self: center;
+  margin-right: auto;
+}
+
 .tax-rule-form {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }

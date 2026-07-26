@@ -20,6 +20,8 @@ import {
   loadRecentConversationHistory
 } from "./conversation-session";
 import { responseNeedsText } from "./voice-response-policy";
+import { getAiVoice } from "@/domains/ai/openrouter-service";
+import type { KokoroVoiceId } from "@/domains/ai/tts-voices";
 
 type WhatsappAudioInput = {
   url: string;
@@ -42,12 +44,13 @@ function enqueueWhatsappVoice(
   config: WhatsappConfig,
   phone: string,
   response: string,
-  sendTextOnFailure: boolean
+  sendTextOnFailure: boolean,
+  voice: KokoroVoiceId
 ): void {
   whatsappVoiceQueue = whatsappVoiceQueue
     .catch(() => undefined)
     .then(async () => {
-      const audio = await synthesizeKokoroSpeech(response);
+      const audio = await synthesizeKokoroSpeech(response, voice);
       if (!audio) throw new Error("Kokoro não está configurado.");
       const sent = await sendWhatsappAudio(config, phone, audio);
       if (!sent.ok) throw new Error(sent.error || "Falha ao enviar áudio pela Z-API.");
@@ -249,7 +252,8 @@ export async function processWhatsappMessage(input: WhatsappMessageInput): Promi
   if (inputByVoice) {
     const keepText = responseNeedsText(result, resposta);
     if (keepText) await sendWhatsappText(whats, telefone, resposta);
-    enqueueWhatsappVoice(whats, telefone, resposta, !keepText);
+    const voice = await getAiVoice(scope);
+    enqueueWhatsappVoice(whats, telefone, resposta, !keepText, voice);
   } else {
     await sendWhatsappText(whats, telefone, resposta);
   }

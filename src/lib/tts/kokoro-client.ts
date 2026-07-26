@@ -1,4 +1,4 @@
-const DEFAULT_VOICE = "pf_dora";
+import { DEFAULT_KOKORO_VOICE, sanitizeKokoroVoice, type KokoroVoiceId } from "@/domains/ai/tts-voices";
 const DEFAULT_MAX_CHARS = 1200;
 const DEFAULT_TIMEOUT_MS = 60_000;
 const MAX_AUDIO_BYTES = 10 * 1024 * 1024;
@@ -36,7 +36,7 @@ export function prepareTextForSpeech(input: string): string {
 }
 
 /** Gera MP3 no Kokoro interno. Sem URL configurada, a integração fica desativada. */
-export async function synthesizeKokoroSpeech(text: string): Promise<Buffer | null> {
+export async function synthesizeKokoroSpeech(text: string, selectedVoice?: KokoroVoiceId): Promise<Buffer | null> {
   const url = endpoint();
   const input = prepareTextForSpeech(text);
   if (!url || !input) return null;
@@ -48,7 +48,11 @@ export async function synthesizeKokoroSpeech(text: string): Promise<Buffer | nul
     body: JSON.stringify({
       model: "kokoro",
       input,
-      voice: process.env.KOKORO_TTS_VOICE?.trim() || DEFAULT_VOICE,
+      voice: selectedVoice ?? (
+        process.env.KOKORO_TTS_VOICE?.trim()
+          ? sanitizeKokoroVoice(process.env.KOKORO_TTS_VOICE.trim())
+          : DEFAULT_KOKORO_VOICE
+      ),
       response_format: "mp3",
       speed: 1
     }),

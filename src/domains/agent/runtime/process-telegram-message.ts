@@ -24,6 +24,8 @@ import {
   loadRecentConversationHistory
 } from "./conversation-session";
 import { responseNeedsText } from "./voice-response-policy";
+import { getAiVoice } from "@/domains/ai/openrouter-service";
+import type { KokoroVoiceId } from "@/domains/ai/tts-voices";
 
 /**
  * Processa um update do Telegram (mesmo agente do WhatsApp, canal TELEGRAM):
@@ -63,7 +65,8 @@ function enfileirarRespostaPorVoz(
   runtime: TelegramRuntime,
   chatId: string,
   resposta: string,
-  enviarTextoSeFalhar: boolean
+  enviarTextoSeFalhar: boolean,
+  voice: KokoroVoiceId
 ): void {
   filaVozTelegram = filaVozTelegram
     .catch(() => undefined)
@@ -74,7 +77,7 @@ function enfileirarRespostaPorVoz(
       }, 4_000);
       let audio: Buffer | null;
       try {
-        audio = await synthesizeKokoroSpeech(resposta);
+        audio = await synthesizeKokoroSpeech(resposta, voice);
       } finally {
         clearInterval(indicador);
       }
@@ -451,7 +454,8 @@ export async function processTelegramMessage(
   if (entradaPorVoz) {
     const manterTexto = responseNeedsText(result, resposta);
     if (manterTexto) await sendTelegramText(runtime, chatId, resposta);
-    enfileirarRespostaPorVoz(runtime, chatId, resposta, !manterTexto);
+    const voice = await getAiVoice(scope);
+    enfileirarRespostaPorVoz(runtime, chatId, resposta, !manterTexto, voice);
   } else {
     await sendTelegramText(runtime, chatId, resposta);
   }

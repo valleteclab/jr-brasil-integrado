@@ -499,6 +499,7 @@ model ConfiguracaoIa {
   provedor           ProvedorIa @default(OPENROUTER)
   ativo              Boolean    @default(false)
   modelo             String     @default("openai/gpt-4o-mini")
+  vozTts             String     @default("pf_dora")
   chaveCriptografada String
   chaveFinal         String?
   observacoes        String?

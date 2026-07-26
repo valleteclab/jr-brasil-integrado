@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Button } from "@/components/shared/Button";
 import type { AiConfigSummary } from "@/domains/ai/openrouter-service";
+import { KOKORO_VOICES, type KokoroVoiceId } from "@/domains/ai/tts-voices";
 
 type AiSettingsFormProps = {
   initialConfig: AiConfigSummary;
@@ -13,11 +14,13 @@ export function AiSettingsForm({ initialConfig }: AiSettingsFormProps) {
   const [model, setModel] = useState(initialConfig.model);
   const [apiKey, setApiKey] = useState("");
   const [notes, setNotes] = useState(initialConfig.notes ?? "");
+  const [voice, setVoice] = useState<KokoroVoiceId>(initialConfig.voice);
   const [config, setConfig] = useState(initialConfig);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [previewingVoice, setPreviewingVoice] = useState<KokoroVoiceId | null>(null);
 
   async function saveConfig() {
     setSaving(true);
@@ -26,7 +29,7 @@ export function AiSettingsForm({ initialConfig }: AiSettingsFormProps) {
 
     try {
       const response = await fetch("/api/erp/configuracoes/ia", {
-        body: JSON.stringify({ apiKey, model, enabled, notes }),
+        body: JSON.stringify({ apiKey, model, enabled, notes, voice }),
         headers: { "Content-Type": "application/json" },
         method: "PUT"
       });
@@ -43,6 +46,35 @@ export function AiSettingsForm({ initialConfig }: AiSettingsFormProps) {
       setError(saveError instanceof Error ? saveError.message : "Não foi possível salvar a configuração de IA.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function previewVoice(selectedVoice: KokoroVoiceId) {
+    setPreviewingVoice(selectedVoice);
+    setError("");
+    setMessage("");
+
+    try {
+      const response = await fetch("/api/erp/configuracoes/ia/voz/preview", {
+        body: JSON.stringify({ voice: selectedVoice }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST"
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({})) as { error?: string };
+        throw new Error(data.error || "Não foi possível gerar a demonstração.");
+      }
+
+      const url = URL.createObjectURL(await response.blob());
+      const audio = new Audio(url);
+      audio.addEventListener("ended", () => URL.revokeObjectURL(url), { once: true });
+      audio.addEventListener("error", () => URL.revokeObjectURL(url), { once: true });
+      await audio.play();
+    } catch (previewError) {
+      setError(previewError instanceof Error ? previewError.message : "Não foi possível gerar a demonstração.");
+    } finally {
+      setPreviewingVoice(null);
     }
   }
 
@@ -69,6 +101,7 @@ export function AiSettingsForm({ initialConfig }: AiSettingsFormProps) {
   }
 
   return (
+    <>
     <section className="erp-card ai-settings-card">
       <div className="erp-card-head">
         <div>
@@ -126,6 +159,53 @@ export function AiSettingsForm({ initialConfig }: AiSettingsFormProps) {
         </Button>
       </footer>
     </section>
+
+    <section className="erp-card ai-settings-card voice-settings-card">
+      <div className="erp-card-head">
+        <div>
+          <h3>Voz do assistente</h3>
+          <span>Usada nas respostas de áudio do Telegram e WhatsApp.</span>
+        </div>
+        <span className="status-badge info">{KOKORO_VOICES.find((item) => item.id === voice)?.name}</span>
+      </div>
+
+      <div className="voice-options">
+        {KOKORO_VOICES.map((item) => (
+          <label className={`voice-option ${voice === item.id ? "selected" : ""}`} key={item.id}>
+            <input
+              checked={voice === item.id}
+              name="kokoro-voice"
+              type="radio"
+              value={item.id}
+              onChange={() => setVoice(item.id)}
+            />
+            <span className="voice-option-copy">
+              <strong>{item.name}</strong>
+              <small>{item.description}</small>
+            </span>
+            <Button
+              disabled={previewingVoice !== null}
+              type="button"
+              variant="light"
+              onClick={(event) => {
+                event.preventDefault();
+                void previewVoice(item.id);
+              }}
+            >
+              {previewingVoice === item.id ? "Gerando..." : "Ouvir"}
+            </Button>
+          </label>
+        ))}
+      </div>
+
+      <footer className="inline-foot">
+        <span className="voice-save-hint">A voz escolhida entra em uso após salvar.</span>
+        <Button type="button" onClick={saveConfig} disabled={saving || testing || previewingVoice !== null}>
+          {saving ? "Salvando..." : "Salvar voz"}
+        </Button>
+      </footer>
+    </section>
+    </>
   );
 }
 
