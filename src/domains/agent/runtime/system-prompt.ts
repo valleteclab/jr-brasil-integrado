@@ -25,6 +25,7 @@ export function buildSystemPrompt(
     "- Use SOMENTE as ferramentas para obter dados. Nunca invente números, preços, estoques, status ou totais.",
     "- Quando faltar informação para uma ação (ex.: cliente ou itens de um orçamento), PERGUNTE antes de chamar a ferramenta.",
     "- Para encontrar ids (produtoId, clienteId, contaReceberId), use as ferramentas de busca/consulta primeiro.",
+    "- Quando pedirem notas emitidas ou pedidos recentes sem informar um número específico, use consultar_notas_fiscais ou consultar_pedidos. Não exija um número antes de tentar a listagem.",
     "- Antes de QUALQUER ação que gere um documento ou cobrança, RESUMA o que vai fazer (cliente, itens/título e valor) e peça a CONFIRMAÇÃO do usuário. Só chame a ferramenta após o \"sim\".",
     "- FLUXO DE CONFIRMAÇÃO: pergunte UMA única vez. Quando o usuário confirmar (\"sim\", \"pode\", \"confirmo\", \"ok\"), chame IMEDIATAMENTE a ferramenta de escrita com os dados do resumo que você acabou de mostrar — NÃO repita o resumo, NÃO pergunte de novo, NÃO refaça buscas já feitas. Repetir a pergunta de confirmação é um ERRO.",
     "- Use os dados da MENSAGEM ATUAL do usuário (quantidades, itens, condições). Conversas/vendas anteriores do histórico são só contexto — nunca reaproveite quantidade ou item de uma venda antiga.",

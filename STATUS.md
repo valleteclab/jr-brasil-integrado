@@ -100,6 +100,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
+| 2026-07-26 | A gerar | Em andamento | Ferramentas do agente para listar notas fiscais e pedidos recentes, com filtros, escopo multiempresa/ambiente e `notaId` para ações posteriores. |
 | 2026-07-25 | `6d5d59b` | Enviado | Painel de voz do Kokoro por empresa, com Dora, Alex e Santa, prévia em áudio e aplicação dinâmica no Telegram e WhatsApp. |
 | 2026-07-25 | `66229a9` | Enviado | Plumbing completo de voz no WhatsApp/Z-API com Whisper, agente, Kokoro, deduplicação e fallback em texto. |
 | 2026-07-25 | `df692f9` | Enviado | Sessões explícitas e memórias autorizadas do agente nos canais web, Telegram e WhatsApp. |
@@ -595,3 +596,13 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - O plumbing de recebimento continua exclusivo da Z-API; a Zernio permanece somente para envios iniciados pelo ERP nesta versao.
 - Validacao: teste de bloqueio de URL privada, TypeScript, lint e build de 190 paginas aprovados; ajuste MIME complementar no commit `7cc7561`.
 - Imagem `d06a1dc65120` implantada; ERP/PostgreSQL/Kokoro/Whisper em `1/1`, sem migration pendente e endpoint publico de saude respondendo HTTP 200.
+
+## Atualizacao operacional - 2026-07-26 - consultas do agente
+
+- Nova ferramenta `consultar_notas_fiscais` lista NF-e, NFC-e e NFS-e da empresa e do ambiente fiscal ativos, com filtros por modelo, status, cliente, numero/chave, periodo e limite.
+- A resposta fiscal inclui `notaId`, numero, destinatario, valor, status, datas, pedido relacionado, chave e link de PDF quando disponivel, permitindo encadear envio ou cancelamento sem adivinhar IDs.
+- Nova ferramenta `consultar_pedidos` lista pedidos recentes por cliente, status e periodo quando o usuario ainda nao conhece um numero especifico.
+- `consultar_pedido` passou a devolver o `notaId` e o numero oficial da NFS-e nas notas vinculadas.
+- O prompt orienta o agente a consultar as listagens antes de exigir numero de nota ou pedido.
+- Isolamento preservado por `tenantId`, `empresaId` e ambiente fiscal, com limite maximo de 50 registros por chamada e total encontrado separado.
+- Validacao local: `npx tsc --noEmit` e `npm run lint` aprovados; os dois avisos de lint preexistentes permanecem sem relacao com esta entrega. O build compilou e validou tipos, mas o Windows bloqueou o encerramento de um worker do Next.js (`kill EPERM`); validacao Docker/Linux pendente no deploy.

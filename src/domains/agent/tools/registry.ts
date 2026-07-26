@@ -10,6 +10,8 @@ import { dashboardTool } from "./read/dashboard";
 import { consultarMeusPedidos } from "./read/consultar-meus-pedidos";
 import { consultarContasReceber } from "./read/consultar-contas-receber";
 import { consultarOs } from "./read/consultar-os";
+import { consultarNotasFiscais } from "./read/consultar-notas-fiscais";
+import { consultarPedidos } from "./read/consultar-pedidos";
 import { cadastrarCliente } from "./write/cadastrar-cliente";
 import { criarOrcamento } from "./write/criar-orcamento";
 import { criarPreVenda } from "./write/criar-pre-venda";
@@ -36,6 +38,8 @@ export const ALL_TOOLS: AgentTool[] = [
   consultarMeusPedidos,
   consultarContasReceber,
   consultarOs,
+  consultarNotasFiscais,
+  consultarPedidos,
   cadastrarCliente,
   criarOrcamento,
   criarPreVenda,

@@ -8,7 +8,7 @@ import { cancelNotaFiscal } from "@/domains/fiscal/application/fiscal-emission-u
 export const cancelarNota: AgentTool = {
   name: "cancelar_nota",
   description:
-    "Cancela uma NOTA FISCAL autorizada na SEFAZ (use consultar_pedido para achar o notaId). AÇÃO IRREVERSÍVEL e com prazo legal (NF-e 24h, NFC-e ~30min). Fluxo: 1) mostre a nota (número, cliente, valor); 2) peça o motivo e o usuário responder CANCELAR; 3) chame com confirmar=true e a justificativa (mín. 15 caracteres).",
+    "Cancela uma NOTA FISCAL autorizada na SEFAZ (use consultar_notas_fiscais para achar o notaId). AÇÃO IRREVERSÍVEL e com prazo legal (NF-e 24h, NFC-e ~30min). Fluxo: 1) mostre a nota (número, cliente, valor); 2) peça o motivo e o usuário responder CANCELAR; 3) chame com confirmar=true e a justificativa (mín. 15 caracteres).",
   mode: "write",
   roles: ["GESTOR"],
   inputSchema: {
