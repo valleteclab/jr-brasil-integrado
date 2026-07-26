@@ -100,7 +100,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
-| 2026-07-26 | A gerar | Em andamento | Expansao do agente com detalhe fiscal, orcamentos, contas a pagar, fluxo de caixa, fornecedores, compras, despesa manual e NF-e/NFC-e avulsa. |
+| 2026-07-26 | `cc920bf` | Enviado | Expansao do agente com detalhe fiscal, orcamentos, contas a pagar, fluxo de caixa, fornecedores, compras, despesa manual e NF-e/NFC-e avulsa. |
 | 2026-07-26 | `2f75f7c` | Enviado | Ferramentas do agente para listar notas fiscais e pedidos recentes, com filtros, escopo multiempresa/ambiente e `notaId` para ações posteriores. |
 | 2026-07-25 | `6d5d59b` | Enviado | Painel de voz do Kokoro por empresa, com Dora, Alex e Santa, prévia em áudio e aplicação dinâmica no Telegram e WhatsApp. |
 | 2026-07-25 | `66229a9` | Enviado | Plumbing completo de voz no WhatsApp/Z-API com Whisper, agente, Kokoro, deduplicação e fallback em texto. |
@@ -619,4 +619,5 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - A ferramenta `emitir_nfse` existente continua responsavel pela emissao avulsa de servicos.
 - Buscas por documento nas ferramentas do agente passaram a preservar CNPJ alfanumerico.
 - Seguranca: todas as consultas usam `tenantId`, `empresaId` e, quando aplicavel, ambiente fiscal; acoes permanecem restritas ao perfil GESTOR e reutilizam use cases com validacao/auditoria.
-- Validacao parcial: sete consultas executadas com sucesso no banco de teste, catalogo com 33 ferramentas e sem nomes duplicados, `npx tsc --noEmit` e `npm run lint` aprovados (dois avisos preexistentes).
+- Validacao: sete consultas executadas com sucesso no banco de teste, bloqueios de confirmacao das duas novas acoes aprovados sem mutacao, catalogo com 33 ferramentas e sem nomes duplicados, `npx tsc --noEmit`, `npm run lint` e build Docker/Linux das 191 paginas aprovados (dois avisos preexistentes).
+- Deploy concluido com a imagem `jrb-erp:cc920bf` (`sha256:4c8e2c67bcc`); servico convergido, sem migrations pendentes, logs limpos e `https://erp.sisgov.app.br` respondendo HTTP 200.
