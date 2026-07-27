@@ -100,7 +100,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
-| 2026-07-27 | A gerar | Em andamento | Correcao da resposta de voz do chat web para WAV, contornando falha nativa do encoder MP3 do Kokoro sem alterar WhatsApp e Telegram. |
+| 2026-07-27 | `d970d38` | Enviado | Correcao da resposta de voz do chat web para WAV, contornando falha nativa do encoder MP3 do Kokoro sem alterar WhatsApp e Telegram. |
 | 2026-07-27 | `b53efc8` | Enviado | Chat web com envio automatico ao parar a gravacao e resposta em audio pela voz configurada, seguindo a politica do WhatsApp. |
 | 2026-07-26 | `26edfd1` | Enviado | Plano CHAT provisionado com IA operacional e chat web ampliado com imagens, PDF, arquivos de texto e audio gravado/enviado. |
 | 2026-07-26 | `03f5f4f` | Enviado | Complemento do onboarding fiscal com inscricao estadual obrigatoria e credenciais CSC da NFC-e separadas por ambiente. |
@@ -669,7 +669,10 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 - Ao clicar em `Audio`, gravar e depois clicar em `Parar`, a mensagem de voz e enviada imediatamente; nao e mais necessario selecionar o arquivo nem escrever uma mensagem auxiliar.
 - O audio do usuario aparece como player de mensagem de voz, em vez de anexo comum.
-- Depois da transcricao pelo Whisper e do processamento pelo agente, a resposta e sintetizada pelo Kokoro com a voz configurada para a empresa e devolvida como MP3 no proprio chat.
+- Depois da transcricao pelo Whisper e do processamento pelo agente, a resposta e sintetizada pelo Kokoro com a voz configurada para a empresa e devolvida como WAV no proprio chat.
+- O WAV foi adotado apenas no chat web porque o encoder MP3 nativo da imagem atual do Kokoro encerrou o processo em uma resposta real; WhatsApp e Telegram continuam usando MP3.
 - A politica acompanha WhatsApp/Telegram: respostas simples podem ficar somente em audio; valores, links, codigos e operacoes continuam tambem em texto.
 - Falha do TTS nao perde a resposta: o texto permanece como fallback.
-- Validacao: `npx tsc --noEmit`, `npm run lint` e `git diff --check` aprovados; permanecem somente os dois avisos de lint preexistentes.
+- Validacao: `npx tsc --noEmit`, `npm run lint`, `git diff --check` e build Docker/Linux das 191 paginas aprovados; permanecem somente os dois avisos de lint preexistentes.
+- Teste autenticado em producao enviou um MP3 sem mensagem auxiliar e recebeu HTTP 200, `audio/wav` valido com 779.186 bytes e resposta simples somente em audio; sessao, conversa, mensagens e consumo criados pelo teste foram removidos.
+- Deploy concluido com a imagem `jrb-erp:d970d38` (`sha256:cf4f0e5ba519`); ERP e Kokoro permaneceram ativos e `https://erp.sisgov.app.br/login` respondeu HTTP 200.
