@@ -4,7 +4,13 @@ import { useEffect, useRef, useState } from "react";
 import { PERSONAS } from "@/domains/agent/runtime/persona";
 import type { AgentRole, AgentDraft } from "@/domains/agent/types";
 
-type ChatMsg = { papel: "user" | "assistant"; texto: string; anexo?: string; draft?: AgentDraft | null };
+type ChatMsg = {
+  papel: "user" | "assistant";
+  texto: string;
+  anexo?: string;
+  audioUrl?: string;
+  draft?: AgentDraft | null;
+};
 
 const ROLES: Array<{ id: AgentRole; label: string }> = [
   { id: "GESTOR", label: "Gestor" },
@@ -25,13 +31,17 @@ export function AssistantChat() {
   const recorderRef = useRef<MediaRecorder | null>(null);
   const recorderStreamRef = useRef<MediaStream | null>(null);
   const recorderChunksRef = useRef<Blob[]>([]);
+  const localAudioUrlsRef = useRef<Set<string>>(new Set());
 
   const persona = PERSONAS[role];
 
   useEffect(() => {
+    const localAudioUrls = localAudioUrlsRef.current;
     return () => {
       if (recorderRef.current?.state === "recording") recorderRef.current.stop();
       recorderStreamRef.current?.getTracks().forEach((track) => track.stop());
+      localAudioUrls.forEach((url) => URL.revokeObjectURL(url));
+      localAudioUrls.clear();
     };
   }, []);
 
@@ -75,7 +85,10 @@ export function AssistantChat() {
         recorderRef.current = null;
         recorderChunksRef.current = [];
         setRecording(false);
-        if (blob.size) escolherAnexo(new File([blob], `audio-${Date.now()}.${extension}`, { type: mimeType }));
+        if (blob.size) {
+          const audioFile = new File([blob], `audio-${Date.now()}.${extension}`, { type: mimeType });
+          void enviar(input, audioFile);
+        }
       }, { once: true });
       recorder.start();
       setRecording(true);
@@ -137,18 +150,25 @@ export function AssistantChat() {
     }
   }
 
-  async function enviar(texto: string) {
+  async function enviar(texto: string, explicitAttachment?: File) {
     const msg = texto.trim();
-    const currentAttachment = attachment;
+    const currentAttachment = explicitAttachment ?? attachment;
     if ((!msg && !currentAttachment) || busy || recording) return;
+    const isAudioMessage = Boolean(currentAttachment?.type.startsWith("audio/"));
+    let localAudioUrl: string | undefined;
+    if (isAudioMessage && currentAttachment) {
+      localAudioUrl = URL.createObjectURL(currentAttachment);
+      localAudioUrlsRef.current.add(localAudioUrl);
+    }
     setError("");
     setInput("");
     setMensagens((cur) => [
       ...cur,
       {
         papel: "user",
-        texto: msg || (currentAttachment?.type.startsWith("audio/") ? "Áudio enviado" : "Anexo enviado"),
-        anexo: currentAttachment?.name
+        texto: msg || (isAudioMessage ? "Mensagem de voz" : "Anexo enviado"),
+        anexo: isAudioMessage ? undefined : currentAttachment?.name,
+        audioUrl: localAudioUrl
       }
     ]);
     setBusy(true);
@@ -176,6 +196,9 @@ export function AssistantChat() {
         assistantText?: string;
         draft?: AgentDraft | null;
         conversationEnded?: boolean;
+        assistantAudioBase64?: string | null;
+        assistantAudioMime?: string | null;
+        showAssistantText?: boolean;
         error?: string;
       };
       if (!res.ok) throw new Error(data.error || "Não foi possível obter a resposta.");
@@ -183,7 +206,18 @@ export function AssistantChat() {
       else if (data.conversaId) setConversaId(data.conversaId);
       setAttachment(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
-      setMensagens((cur) => [...cur, { papel: "assistant", texto: data.assistantText ?? "", draft: data.draft ?? null }]);
+      const assistantAudioUrl = data.assistantAudioBase64
+        ? `data:${data.assistantAudioMime || "audio/mpeg"};base64,${data.assistantAudioBase64}`
+        : undefined;
+      setMensagens((cur) => [
+        ...cur,
+        {
+          papel: "assistant",
+          texto: data.showAssistantText === false && assistantAudioUrl ? "" : (data.assistantText ?? ""),
+          audioUrl: assistantAudioUrl,
+          draft: data.draft ?? null
+        }
+      ]);
       requestAnimationFrame(() => listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" }));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Falha ao conversar com o assistente.");
@@ -242,7 +276,18 @@ export function AssistantChat() {
                     📎 {m.anexo}
                   </span>
                 )}
-                {m.texto}
+                {m.audioUrl && (
+                  <audio
+                    autoPlay={m.papel === "assistant"}
+                    controls
+                    preload="metadata"
+                    src={m.audioUrl}
+                    style={{ display: "block", width: "min(300px, 65vw)", maxWidth: "100%" }}
+                  />
+                )}
+                {m.texto && (
+                  <span style={{ display: "block", marginTop: m.audioUrl ? 7 : 0 }}>{m.texto}</span>
+                )}
               </div>
               {m.draft && (
                 <a
@@ -296,7 +341,7 @@ export function AssistantChat() {
           )}
           {recording && (
             <div style={{ width: "100%", fontSize: 12.5, color: "var(--erp-danger, #b42318)" }}>
-              ● Gravando áudio… clique em Parar quando terminar.
+              ● Gravando áudio… ao clicar em Parar, a mensagem será enviada automaticamente.
             </div>
           )}
           <input

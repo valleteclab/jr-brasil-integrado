@@ -5,6 +5,9 @@ import { authErrorStatus } from "@/lib/auth/http";
 import { prisma } from "@/lib/db/prisma";
 import { runAgentTurn } from "@/domains/agent/runtime/run-agent-turn";
 import type { AgentRole } from "@/domains/agent/types";
+import { getAiVoice } from "@/domains/ai/openrouter-service";
+import { synthesizeKokoroSpeech } from "@/lib/tts/kokoro-client";
+import { responseNeedsText } from "@/domains/agent/runtime/voice-response-policy";
 import {
   closeConversation,
   detectSessionCommand,
@@ -31,6 +34,7 @@ export async function POST(request: Request) {
       acao?: "finalizar";
     };
     let attachmentLabel: string | null = null;
+    let inputByVoice = false;
 
     if (request.headers.get("content-type")?.includes("multipart/form-data")) {
       const form = await request.formData();
@@ -49,6 +53,7 @@ export async function POST(request: Request) {
       });
       body.mensagem = prepared.agentMessage;
       attachmentLabel = prepared.attachmentLabel;
+      inputByVoice = prepared.attachmentKind === "audio";
     } else {
       body = (await request.json()) as typeof body;
     }
@@ -184,9 +189,33 @@ export async function POST(request: Request) {
     }
     await prisma.conversaAgente.update({ where: { id: conversa.id }, data: { atualizadoEm: new Date() } });
 
+    // Mesmo comportamento dos canais móveis: voz recebida gera resposta em voz. Se houver
+    // valores, links, código ou operação criada, o texto também permanece visível.
+    let assistantAudioBase64: string | null = null;
+    let showAssistantText = true;
+    if (inputByVoice) {
+      try {
+        const voice = await getAiVoice(scope);
+        const audio = await synthesizeKokoroSpeech(result.assistantText, voice);
+        if (audio) {
+          assistantAudioBase64 = audio.toString("base64");
+          showAssistantText = responseNeedsText(result, result.assistantText);
+        }
+      } catch (voiceError) {
+        // Falha do TTS nunca apaga a resposta textual já produzida pelo agente.
+        console.warn(
+          "[assistente-web-voz]",
+          voiceError instanceof Error ? voiceError.message : voiceError
+        );
+      }
+    }
+
     return NextResponse.json({
       conversaId: conversa.id,
       assistantText: result.assistantText,
+      assistantAudioBase64,
+      assistantAudioMime: assistantAudioBase64 ? "audio/mpeg" : null,
+      showAssistantText,
       draft: result.draft,
       attachmentLabel
     });

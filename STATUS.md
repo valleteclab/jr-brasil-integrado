@@ -100,6 +100,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
+| 2026-07-27 | A gerar | Em andamento | Chat web com envio automatico ao parar a gravacao e resposta em audio pela voz configurada, seguindo a politica do WhatsApp. |
 | 2026-07-26 | `26edfd1` | Enviado | Plano CHAT provisionado com IA operacional e chat web ampliado com imagens, PDF, arquivos de texto e audio gravado/enviado. |
 | 2026-07-26 | `03f5f4f` | Enviado | Complemento do onboarding fiscal com inscricao estadual obrigatoria e credenciais CSC da NFC-e separadas por ambiente. |
 | 2026-07-26 | `02600b2` | Enviado | Onboarding fiscal continuo apos o cadastro, com login automatico, modelos de nota, numeracao, certificado A1, servico principal LC 116 e descricao personalizavel. |
@@ -662,3 +663,12 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - O frontend mostra o anexo selecionado, permite remove-lo e aceita uma instrucao opcional junto do arquivo.
 - Validacao aprovada: `npx tsc --noEmit`, `npm run lint`, `git diff --check`, leitura local de CSV, chamada real da IA e build Docker/Linux das 191 paginas; permanecem somente os dois avisos de lint preexistentes.
 - Deploy concluido com a imagem `jrb-erp:26edfd1` (`sha256:cf2301d043f9`), sem migrations pendentes e servico saudavel. Um teste autenticado de CSV no chat de producao retornou HTTP 200 e resposta da IA; sessao, conversa e consumo criados pelo teste foram removidos depois.
+
+## Atualizacao operacional - 2026-07-27 - conversa por voz no chat web
+
+- Ao clicar em `Audio`, gravar e depois clicar em `Parar`, a mensagem de voz e enviada imediatamente; nao e mais necessario selecionar o arquivo nem escrever uma mensagem auxiliar.
+- O audio do usuario aparece como player de mensagem de voz, em vez de anexo comum.
+- Depois da transcricao pelo Whisper e do processamento pelo agente, a resposta e sintetizada pelo Kokoro com a voz configurada para a empresa e devolvida como MP3 no proprio chat.
+- A politica acompanha WhatsApp/Telegram: respostas simples podem ficar somente em audio; valores, links, codigos e operacoes continuam tambem em texto.
+- Falha do TTS nao perde a resposta: o texto permanece como fallback.
+- Validacao: `npx tsc --noEmit`, `npm run lint` e `git diff --check` aprovados; permanecem somente os dois avisos de lint preexistentes.

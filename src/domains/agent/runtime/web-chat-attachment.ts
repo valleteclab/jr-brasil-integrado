@@ -53,7 +53,7 @@ function displaySize(bytes: number): string {
 export async function prepareWebChatAttachment(
   scope: TenantScope,
   input: { file: File; message?: string }
-): Promise<{ agentMessage: string; attachmentLabel: string }> {
+): Promise<{ agentMessage: string; attachmentLabel: string; attachmentKind: "audio" | "file" }> {
   const file = input.file;
   const filename = cleanFilename(file.name);
   const userMessage = input.message?.trim() ?? "";
@@ -84,6 +84,7 @@ export async function prepareWebChatAttachment(
     }
     return {
       attachmentLabel,
+      attachmentKind: "audio",
       agentMessage: [
         userMessage,
         `[Áudio anexado: ${filename}]`,
@@ -110,6 +111,7 @@ export async function prepareWebChatAttachment(
     }
     return {
       attachmentLabel,
+      attachmentKind: "file",
       agentMessage: [
         userMessage || "Analise o anexo enviado.",
         `[Conteúdo extraído do anexo ${filename}]`,
@@ -127,6 +129,7 @@ export async function prepareWebChatAttachment(
     if (!text) throw new WebChatAttachmentError("Não foi encontrado texto legível no anexo.");
     return {
       attachmentLabel,
+      attachmentKind: "file",
       agentMessage: [
         userMessage || "Analise o arquivo enviado.",
         `[Conteúdo do anexo ${filename}]`,
