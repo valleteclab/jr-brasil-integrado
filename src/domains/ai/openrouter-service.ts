@@ -308,6 +308,75 @@ export async function callOpenRouterVision(
 }
 
 /**
+ * Lê um anexo privado do chat web sem armazenar o binário. Imagens usam visão e PDFs usam o
+ * parser da OpenRouter; o texto extraído volta ao runtime do agente como contexto.
+ */
+export async function analyzeOpenRouterAttachment(
+  scope: TenantScope,
+  input: { prompt: string; filename: string; mimeType: string; buffer: Buffer }
+): Promise<string> {
+  const config = await getActiveOpenRouterSecret(scope);
+  const dataUrl = `data:${input.mimeType};base64,${input.buffer.toString("base64")}`;
+  const content = input.mimeType === "application/pdf"
+    ? [
+        { type: "text", text: input.prompt },
+        { type: "file", file: { filename: input.filename, file_data: dataUrl } }
+      ]
+    : [
+        { type: "text", text: input.prompt },
+        { type: "image_url", image_url: { url: dataUrl } }
+      ];
+
+  const response = await fetch(OPENROUTER_CHAT_URL, {
+    body: JSON.stringify({
+      model: config.model,
+      messages: [
+        {
+          role: "system",
+          content:
+            "Leia o anexo com precisão. Extraia textos, datas, pessoas, documentos, itens, valores e demais dados relevantes. " +
+            "Não execute ações e não invente conteúdo ilegível. Responda em português do Brasil com um resumo estruturado."
+        },
+        { role: "user", content }
+      ],
+      ...(input.mimeType === "application/pdf"
+        ? { plugins: [{ id: "file-parser", pdf: { engine: "cloudflare-ai" } }] }
+        : {}),
+      temperature: 0,
+      max_tokens: 1800
+    }),
+    headers: {
+      Authorization: `Bearer ${config.apiKey}`,
+      "Content-Type": "application/json",
+      "X-Title": "XERP"
+    },
+    method: "POST"
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    let message = typeof data?.error?.message === "string"
+      ? data.error.message
+      : `OpenRouter retornou HTTP ${response.status} ao ler o anexo.`;
+    if (/image|vision|multimodal|modality|file/i.test(message)) {
+      message = `O modelo configurado (${config.model}) não conseguiu ler este anexo. Detalhe: ${message}`;
+    }
+    await prisma.configuracaoIa.update({ where: { id: config.id }, data: { ultimoErro: message } });
+    throw new Error(message);
+  }
+
+  const result = data?.choices?.[0]?.message?.content;
+  if (typeof result !== "string" || !result.trim()) {
+    throw new Error("A IA não encontrou conteúdo utilizável no anexo.");
+  }
+  await prisma.configuracaoIa.update({
+    where: { id: config.id },
+    data: { testadoEm: new Date(), ultimoErro: null }
+  });
+  return result.trim();
+}
+
+/**
  * Variante com function calling: envia `tools` e devolve a MENSAGEM completa do
  * assistant (incluindo `tool_calls`), para o runtime do agente conduzir o loop.
  * Reusa a mesma credencial/modelo criptografados de `callOpenRouter`.

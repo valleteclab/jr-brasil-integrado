@@ -1303,6 +1303,33 @@ export async function criarClienteCore(
       }
     });
 
+    // O plano CHAT deve nascer operacional: copia a credencial padrão da plataforma, ainda
+    // criptografada, para a nova empresa. A chave nunca passa pelo cliente nem aparece em logs.
+    if (plano === "CHAT") {
+      const empresaFonteIaId = process.env.PLATFORM_AI_CONFIG_EMPRESA_ID?.trim();
+      if (empresaFonteIaId) {
+        const configPadrao = await tx.configuracaoIa.findFirst({
+          where: { empresaId: empresaFonteIaId, provedor: "OPENROUTER", ativo: true },
+          orderBy: { atualizadoEm: "desc" }
+        });
+        if (configPadrao) {
+          await tx.configuracaoIa.create({
+            data: {
+              tenantId: tenant.id,
+              empresaId: empresa.id,
+              provedor: "OPENROUTER",
+              ativo: true,
+              modelo: configPadrao.modelo,
+              vozTts: configPadrao.vozTts,
+              chaveCriptografada: configPadrao.chaveCriptografada,
+              chaveFinal: configPadrao.chaveFinal,
+              observacoes: "Configuração padrão incluída pelo plano CHAT."
+            }
+          });
+        }
+      }
+    }
+
     // Formas de pagamento padrão (o cliente pode editar/excluir depois).
     await tx.formaPagamento.createMany({
       data: FORMAS_PAGAMENTO_PADRAO.map((f) => ({ tenantId: tenant.id, empresaId: empresa.id, nome: f.nome, tipo: f.tipo, ordem: f.ordem, ativo: true }))

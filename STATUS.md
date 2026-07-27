@@ -100,6 +100,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
+| 2026-07-26 | A gerar | Em andamento | Plano CHAT provisionado com IA operacional e chat web ampliado com imagens, PDF, arquivos de texto e audio gravado/enviado. |
 | 2026-07-26 | `03f5f4f` | Enviado | Complemento do onboarding fiscal com inscricao estadual obrigatoria e credenciais CSC da NFC-e separadas por ambiente. |
 | 2026-07-26 | `02600b2` | Enviado | Onboarding fiscal continuo apos o cadastro, com login automatico, modelos de nota, numeracao, certificado A1, servico principal LC 116 e descricao personalizavel. |
 | 2026-07-26 | `6075158` | Enviado | Allowlist segura para repetir o onboarding do plano CHAT com CNPJ ja cadastrado, destinada a testes controlados sem liberar duplicacao global. |
@@ -650,3 +651,13 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Deploy concluido com a imagem `jrb-erp:02600b2` (`sha256:d44948aa768f`); migration aplicada entre as 130 encontradas, servico convergido, logs limpos e cadastro CHAT respondendo HTTP 200.
 - Complemento final validado e publicado na imagem `jrb-erp:03f5f4f` (`sha256:4a92b24a39cf`), com IE obrigatoria para NF-e/NFC-e e CSC separado por ambiente; servico convergido, sem migrations pendentes e cadastro CHAT respondendo HTTP 200.
 - A inspecao visual automatizada nao foi executada porque a conexao do navegador integrado nao iniciou neste ambiente; a navegacao deve ser conferida no proximo cadastro manual.
+
+## Atualizacao operacional - 2026-07-26 - IA e anexos no chat web
+
+- Corrigida a diferenca entre o modulo de IA habilitado e a credencial efetivamente configurada: novos tenants do plano CHAT passam a receber, ainda criptografada, a configuracao OpenRouter padrao definida por `PLATFORM_AI_CONFIG_EMPRESA_ID`.
+- O tenant CHAT de teste da VALLETECLAB foi corrigido sem expor a chave; chamada real ao modelo `openai/gpt-4o-mini` respondeu HTTP 200.
+- O chat web agora aceita imagens JPG/PNG/WebP, PDF, TXT, CSV, XML e JSON, com limite geral de 10 MB.
+- Imagens e PDFs sao lidos pela camada multimodal; arquivos textuais sao extraidos localmente e limitados a 40 mil caracteres. O binario nao e persistido no banco.
+- Audio pode ser anexado ou gravado pelo microfone do navegador; o Whisper privado transcreve arquivos de ate 6 MB antes de encaminhar o pedido ao agente.
+- O frontend mostra o anexo selecionado, permite remove-lo e aceita uma instrucao opcional junto do arquivo.
+- Validacao parcial aprovada: `npx tsc --noEmit`, `npm run lint`, `git diff --check`, leitura local de CSV e chamada real da IA. O build local excedeu a janela de tres minutos sem erro conclusivo e sera repetido no build Docker/Linux de producao.

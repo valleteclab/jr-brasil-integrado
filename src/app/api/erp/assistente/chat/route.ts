@@ -11,20 +11,47 @@ import {
   handleAgentMemoryCommand,
   loadRecentConversationHistory
 } from "@/domains/agent/runtime/conversation-session";
+import {
+  prepareWebChatAttachment,
+  WebChatAttachmentError
+} from "@/domains/agent/runtime/web-chat-attachment";
 
 const ROLES: AgentRole[] = ["GESTOR", "VENDEDOR"];
+export const runtime = "nodejs";
 
 // Um turno do chat do assistente: cria/continua conversa, roda o agente e persiste.
 export async function POST(request: Request) {
   try {
     const session = await requireModulo("assistente");
     const scope = await getDevelopmentTenantScope();
-    const body = (await request.json()) as {
+    let body: {
       conversaId?: string;
       role?: string;
       mensagem?: string;
       acao?: "finalizar";
     };
+    let attachmentLabel: string | null = null;
+
+    if (request.headers.get("content-type")?.includes("multipart/form-data")) {
+      const form = await request.formData();
+      body = {
+        conversaId: String(form.get("conversaId") ?? "") || undefined,
+        role: String(form.get("role") ?? "") || undefined,
+        mensagem: String(form.get("mensagem") ?? "") || undefined
+      };
+      const attachment = form.get("anexo");
+      if (!(attachment instanceof File)) {
+        throw new WebChatAttachmentError("Selecione um arquivo ou grave um áudio.");
+      }
+      const prepared = await prepareWebChatAttachment(scope, {
+        file: attachment,
+        message: body.mensagem
+      });
+      body.mensagem = prepared.agentMessage;
+      attachmentLabel = prepared.attachmentLabel;
+    } else {
+      body = (await request.json()) as typeof body;
+    }
 
     if (body.acao === "finalizar") {
       const closed = body.conversaId
@@ -160,11 +187,13 @@ export async function POST(request: Request) {
     return NextResponse.json({
       conversaId: conversa.id,
       assistantText: result.assistantText,
-      draft: result.draft
+      draft: result.draft,
+      attachmentLabel
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro ao processar a mensagem.";
     const isConfig = message.includes("IA não configurada") || message.includes("desativada");
-    return NextResponse.json({ error: message }, { status: authErrorStatus(error, isConfig ? 400 : 500) });
+    const isAttachment = error instanceof WebChatAttachmentError;
+    return NextResponse.json({ error: message }, { status: authErrorStatus(error, isConfig || isAttachment ? 400 : 500) });
   }
 }
