@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db/prisma";
 import { criarClienteCore, PlatformAdminError, type EmpresaDadosExtra } from "@/lib/services/platform-admin";
 import { isValidCnpj, normalizeDocumento } from "@/lib/fiscal/documento";
 import { canRepeatCnpjForChatTest, type SelfServicePlan } from "@/lib/auth/self-service-registration";
+import { createSession } from "@/lib/auth/session";
 
 /**
  * CADASTRO PÚBLICO self-service dos planos enxutos (EMISSOR ou CHAT): cria tenant já no plano
@@ -71,7 +72,17 @@ export async function POST(request: Request) {
       },
       { plano: codigoPlano, trialDias: plano.trialDias, empresaDados }
     );
-    return NextResponse.json({ ok: true, trialDias: plano.trialDias, email: r.adminEmail });
+    await createSession(
+      r.usuarioId,
+      { tenantId: r.tenantId, empresaId: r.empresaId },
+      request.headers.get("user-agent")
+    );
+    return NextResponse.json({
+      ok: true,
+      trialDias: plano.trialDias,
+      email: r.adminEmail,
+      redirect: "/erp/configuracoes/fiscal/onboarding?novo=1"
+    });
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Não foi possível concluir o cadastro.";
     return NextResponse.json({ error: msg }, { status: error instanceof PlatformAdminError ? 400 : 500 });

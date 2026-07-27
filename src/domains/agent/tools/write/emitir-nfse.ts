@@ -10,7 +10,7 @@ import { normalizeDocumento } from "@/lib/fiscal/documento";
 export const emitirNfse: AgentTool = {
   name: "emitir_nfse",
   description:
-    "Emite uma NFS-e (nota de serviço). AÇÃO IRREVERSÍVEL (Prefeitura/Nacional). Fluxo obrigatório: 1) mostre o resumo (tomador, serviço, valor); 2) peça o usuário responder EMITIR; 3) só então chame com confirmar=true. Tomador: use clienteId (de consultar_cliente) OU informe nome+documento. Informe os serviços (descrição e valor).",
+    "Emite uma NFS-e (nota de serviço). AÇÃO IRREVERSÍVEL (Prefeitura/Nacional). Fluxo obrigatório: 1) mostre o resumo (tomador, serviço, valor); 2) peça o usuário responder EMITIR; 3) só então chame com confirmar=true. Tomador: use clienteId (de consultar_cliente) OU informe nome+documento. Informe o valor; descrição e LC 116 podem usar os padrões definidos no onboarding fiscal.",
   mode: "write",
   roles: ["GESTOR"],
   inputSchema: {
@@ -25,11 +25,11 @@ export const emitirNfse: AgentTool = {
         items: {
           type: "object",
           properties: {
-            descricao: { type: "string" },
+            descricao: { type: "string", description: "Opcional quando a empresa configurou uma descrição padrão no onboarding." },
             valor: { type: "number" },
             codigoServicoLc116: { type: "string", description: "Código LC116 do serviço (opcional; usa o padrão da empresa)." }
           },
-          required: ["descricao", "valor"]
+          required: ["valor"]
         }
       },
       aliquotaIss: { type: "number", description: "Alíquota de ISS em % (opcional; sobrepõe a regra)." },
@@ -44,7 +44,7 @@ export const emitirNfse: AgentTool = {
       return { ok: false, data: null, error: "Emissão não confirmada. Mostre o resumo e peça o usuário responder EMITIR; então chame de novo com confirmar=true." };
     }
     const servicos = Array.isArray(args.servicos) ? (args.servicos as Array<Record<string, unknown>>) : [];
-    if (!servicos.length) return { ok: false, data: null, error: "Informe ao menos um serviço (descrição e valor)." };
+    if (!servicos.length) return { ok: false, data: null, error: "Informe ao menos um serviço e o valor." };
     const clienteId = args.clienteId ? String(args.clienteId) : null;
     if (!clienteId && !(args.nome && args.documento)) {
       return { ok: false, data: null, error: "Informe o tomador: clienteId OU nome + documento (CPF/CNPJ)." };
@@ -58,7 +58,7 @@ export const emitirNfse: AgentTool = {
         aliquotaIss: args.aliquotaIss != null ? Number(args.aliquotaIss) : null,
         observacoes: args.observacoes ? String(args.observacoes) : null,
         servicos: servicos.map((s) => ({
-          descricao: String(s.descricao ?? ""),
+          descricao: s.descricao ? String(s.descricao) : undefined,
           valor: Number(s.valor) || 0,
           codigoServicoLc116: s.codigoServicoLc116 ? String(s.codigoServicoLc116) : undefined
         }))

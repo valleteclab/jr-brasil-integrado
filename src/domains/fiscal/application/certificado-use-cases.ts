@@ -4,6 +4,7 @@ import type { TenantScope } from "@/lib/auth/dev-session";
 import { scopedByTenantCompany } from "@/lib/auth/dev-session";
 import { encryptSecret, decryptSecret } from "@/lib/security/secret-crypto";
 import { pfxToPem } from "@/domains/fiscal/providers/pfx-utils";
+import { normalizeDocumento } from "@/lib/fiscal/documento";
 
 /**
  * GUARDA CRIPTOGRAFADA do certificado digital A1 (.pfx) por empresa.
@@ -89,6 +90,17 @@ export async function salvarCertificado(
   const { titularCnpj, validade } = lerMetadados(pfx, senha);
 
   const where = scopedByTenantCompany(scope);
+  if (titularCnpj) {
+    const empresa = await prisma.empresa.findFirst({
+      where: { id: where.empresaId, tenantId: where.tenantId },
+      select: { cnpj: true }
+    });
+    if (!empresa || normalizeDocumento(empresa.cnpj) !== normalizeDocumento(titularCnpj)) {
+      throw new CertificadoNacionalError(
+        `O certificado pertence ao CNPJ ${titularCnpj}, diferente do CNPJ da empresa cadastrada.`
+      );
+    }
+  }
   const pfxCriptografado = encryptSecret(pfx.toString("base64"));
   const senhaCriptografada = encryptSecret(senha);
   const arquivoNome = input.arquivoNome?.trim() || null;

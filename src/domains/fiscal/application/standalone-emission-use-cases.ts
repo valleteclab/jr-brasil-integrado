@@ -111,7 +111,7 @@ export type ServiceInvoiceAvulsaInput = {
   baseCalculoIss?: number | null;
   /** Natureza/exigibilidade do ISS (padrão: tributado no município). */
   taxationType?: TaxationTypeIss | null;
-  servicos: Array<{ descricao: string; valor: number; codigoServicoLc116?: string | null; codigoNbs?: string | null; cClassTrib?: string | null }>;
+  servicos: Array<{ descricao?: string; valor: number; codigoServicoLc116?: string | null; codigoNbs?: string | null; cClassTrib?: string | null }>;
   retencoes?: RetencoesInput | null;
   /** Informações da obra (construção civil) — exigidas no DPS para certos códigos de tributação. */
   obra?: ObraInfo | null;
@@ -418,7 +418,7 @@ export async function emitServiceInvoiceAvulsa(scope: TenantScope, input: Servic
 
   const config = await prisma.configuracaoFiscal.findUnique({
     where: { empresaId: scope.empresaId },
-    select: { codigoServicoLc116Padrao: true, codigoNbsPadrao: true }
+    select: { codigoServicoLc116Padrao: true, descricaoServicoPadrao: true, codigoNbsPadrao: true }
   });
   const fallback = docDefault ?? config?.codigoServicoLc116Padrao ?? null;
   const nbsFallback = input.codigoNbs?.trim() || config?.codigoNbsPadrao || null;
@@ -436,7 +436,8 @@ export async function emitServiceInvoiceAvulsa(scope: TenantScope, input: Servic
   const distribuirBaseIss = aliquotaIss != null && (deducoes > 0 || input.baseCalculoIss != null) && valorServicos > 0;
 
   const servicos = input.servicos.map((s, index) => {
-    if (!s.descricao?.trim()) throw new StandaloneEmissionError(`Informe a descrição do serviço ${index + 1}.`);
+    const descricao = s.descricao?.trim() || config?.descricaoServicoPadrao?.trim() || "";
+    if (!descricao) throw new StandaloneEmissionError(`Informe a descrição do serviço ${index + 1}.`);
     if (s.valor <= 0) throw new StandaloneEmissionError(`Valor inválido no serviço ${index + 1}.`);
     const codigo = s.codigoServicoLc116?.trim() || fallback;
     if (codigo && !isCodigoServicoValido(codigo)) {
@@ -446,7 +447,7 @@ export async function emitServiceInvoiceAvulsa(scope: TenantScope, input: Servic
     // serviço não trouxer os próprios. O informado pelo usuário sempre tem prioridade.
     const sug = sugerirPorLc116(codigo);
     return {
-      descricao: s.descricao.trim(),
+      descricao,
       valor: s.valor,
       itemListaServico: codigo,
       codigoNbs: s.codigoNbs?.trim() || nbsFallback || sug?.nbsPadrao || null,

@@ -37,6 +37,7 @@ export type FiscalConfigSummary = {
   emitNfse: boolean;
   codigoMunicipioIbge: string;
   codigoServicoLc116Padrao: string;
+  descricaoServicoPadrao: string;
   codigoNbsPadrao: string;
   spedyModoEmissao: string;
   certificadoInfo: string;
@@ -75,6 +76,7 @@ export type SaveFiscalConfigInput = {
   emitNfse?: boolean;
   codigoMunicipioIbge?: string;
   codigoServicoLc116Padrao?: string;
+  descricaoServicoPadrao?: string;
   codigoNbsPadrao?: string;
   spedyModoEmissao?: string;
   certificadoInfo?: string;
@@ -104,6 +106,7 @@ function toSummary(config: {
   emitirNfse: boolean;
   codigoMunicipioIbge: string | null;
   codigoServicoLc116Padrao: string | null;
+  descricaoServicoPadrao: string | null;
   codigoNbsPadrao: string | null;
   spedyModoEmissao: string | null;
   certificadoInfo: string | null;
@@ -141,6 +144,7 @@ function toSummary(config: {
     emitNfse: config?.emitirNfse ?? false,
     codigoMunicipioIbge: config?.codigoMunicipioIbge ?? "",
     codigoServicoLc116Padrao: config?.codigoServicoLc116Padrao ?? "",
+    descricaoServicoPadrao: config?.descricaoServicoPadrao ?? "",
     codigoNbsPadrao: config?.codigoNbsPadrao ?? "",
     spedyModoEmissao: config?.spedyModoEmissao ?? "COMPLETO",
     certificadoInfo: config?.certificadoInfo ?? "",
@@ -237,6 +241,7 @@ export async function saveFiscalConfig(scope: TenantScope, input: SaveFiscalConf
       emitirNfse: input.emitNfse ?? false,
       codigoMunicipioIbge: input.codigoMunicipioIbge?.trim() || null,
       codigoServicoLc116Padrao: input.codigoServicoLc116Padrao?.trim() || null,
+      descricaoServicoPadrao: input.descricaoServicoPadrao?.trim() || null,
       codigoNbsPadrao: input.codigoNbsPadrao?.trim() || null,
       spedyModoEmissao: input.spedyModoEmissao?.trim() || "COMPLETO",
       nfseAmbienteNacional: input.nfseAmbienteNacional ?? null,
@@ -268,6 +273,7 @@ export async function saveFiscalConfig(scope: TenantScope, input: SaveFiscalConf
       emitirNfse: input.emitNfse ?? false,
       codigoMunicipioIbge: input.codigoMunicipioIbge?.trim() || null,
       codigoServicoLc116Padrao: input.codigoServicoLc116Padrao?.trim() || null,
+      descricaoServicoPadrao: input.descricaoServicoPadrao?.trim() || null,
       codigoNbsPadrao: input.codigoNbsPadrao?.trim() || null,
       spedyModoEmissao: input.spedyModoEmissao?.trim() || "COMPLETO",
       nfseAmbienteNacional: input.nfseAmbienteNacional ?? null,

@@ -47,7 +47,8 @@ export function buildSystemPrompt(
       "- FLUXO COMPLETO DA VENDA pelo chat: criar_pre_venda → perguntar se confirma → confirmar_pedido (estoque+financeiro) → oferecer faturar_pedido (nota) e/ou emitir_boleto/cobrar_pix. Ao criar a pré-venda, PERGUNTE: \"Deseja que eu já confirme? E quer nota fiscal?\" — nada de mandar o usuário para a tela do sistema.",
       "- CERTIFICADO DIGITAL A1: se a emissão falhar por falta de certificado (ou o usuário perguntar como configurar), oriente: no TELEGRAM basta ANEXAR o arquivo .pfx aqui no chat e depois enviar a senha — o sistema guarda criptografado e configura todos os provedores de uma vez. Em outros canais, enviar em Configurações → Fiscal do ERP.",
       "- DESPESA MANUAL: use registrar_despesa somente após resumir estabelecimento, categoria, data, valor e se haverá lançamento financeiro; peça CONFIRMAR uma vez. lancarFinanceiro=true debita a conta bancária ativa.",
-      "- NOTA AVULSA DE PRODUTO: use emitir_nota_produto para NF-e/NFC-e sem pedido. Mostre destinatário, modelo, itens, total e baixa de estoque; exija a resposta EMITIR. Para serviços, continue usando emitir_nfse."
+      "- NOTA AVULSA DE PRODUTO: use emitir_nota_produto para NF-e/NFC-e sem pedido. Mostre destinatário, modelo, itens, total e baixa de estoque; exija a resposta EMITIR. Para serviços, continue usando emitir_nfse.",
+      "- NFS-e: quando o usuário informar somente o valor, a ferramenta pode usar o serviço principal e a descrição padrão definidos no onboarding fiscal. Confirme no resumo qual serviço será emitido e permita que o usuário personalize a descrição."
     );
   } else {
     regras.push(

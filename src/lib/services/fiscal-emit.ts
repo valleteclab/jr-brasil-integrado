@@ -38,6 +38,8 @@ export type EmissaoFormData = {
   nfseAmbienteNacional: boolean | null;
   /** Regime tributário do prestador (Simples/MEI dispensam a alíquota do ISSQN). */
   regime: string | null;
+  codigoServicoLc116Padrao: string;
+  descricaoServicoPadrao: string;
 };
 
 /** Dados para os formulários de emissão avulsa (NF-e/NFC-e/NFS-e). */
@@ -68,13 +70,20 @@ export async function getEmissaoFormData(): Promise<EmissaoFormData> {
 
   const cfgFiscal = await prisma.configuracaoFiscal.findUnique({
     where: { empresaId: scope.empresaId },
-    select: { nfseAmbienteNacional: true, regimeTributario: true }
+    select: {
+      nfseAmbienteNacional: true,
+      regimeTributario: true,
+      codigoServicoLc116Padrao: true,
+      descricaoServicoPadrao: true
+    }
   });
 
   return {
     emitterUf: empresa?.enderecoUf ?? null,
     nfseAmbienteNacional: cfgFiscal?.nfseAmbienteNacional ?? null,
     regime: cfgFiscal?.regimeTributario ?? null,
+    codigoServicoLc116Padrao: cfgFiscal?.codigoServicoLc116Padrao ?? "",
+    descricaoServicoPadrao: cfgFiscal?.descricaoServicoPadrao ?? "",
     lc116: CODIGO_SERVICO_OPTIONS,
     clientes: clientes.map((c) => {
       const endereco = c.enderecos[0];

@@ -227,6 +227,7 @@ export function FiscalSettingsForm({
           emitNfse: config.emitNfse,
           codigoMunicipioIbge: config.codigoMunicipioIbge,
           codigoServicoLc116Padrao: config.codigoServicoLc116Padrao,
+          descricaoServicoPadrao: config.descricaoServicoPadrao,
           codigoNbsPadrao: config.codigoNbsPadrao,
           spedyModoEmissao: config.spedyModoEmissao,
           nfseAmbienteNacional: config.nfseAmbienteNacional,
@@ -490,6 +491,16 @@ export function FiscalSettingsForm({
                 <option key={item.code} value={item.code}>{item.code} — {item.description}</option>
               ))}
             </select>
+          </label>
+          <label className="full">
+            Descrição padrão do serviço (NFS-e)
+            <textarea
+              value={config.descricaoServicoPadrao}
+              onChange={(e) => update("descricaoServicoPadrao", e.target.value)}
+              rows={3}
+              maxLength={2000}
+              placeholder="Descrição sugerida nas novas NFS-e; pode ser alterada em cada emissão."
+            />
           </label>
           <label className="full">
             Código NBS padrão (NFS-e) — Nomenclatura Brasileira de Serviços, 9 dígitos

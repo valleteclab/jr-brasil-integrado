@@ -100,6 +100,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
+| 2026-07-26 | A gerar | Em andamento | Onboarding fiscal continuo apos o cadastro, com login automatico, modelos de nota, numeracao, certificado A1, servico principal LC 116 e descricao personalizavel. |
 | 2026-07-26 | `6075158` | Enviado | Allowlist segura para repetir o onboarding do plano CHAT com CNPJ ja cadastrado, destinada a testes controlados sem liberar duplicacao global. |
 | 2026-07-26 | `cc920bf` | Enviado | Expansao do agente com detalhe fiscal, orcamentos, contas a pagar, fluxo de caixa, fornecedores, compras, despesa manual e NF-e/NFC-e avulsa. |
 | 2026-07-26 | `2f75f7c` | Enviado | Ferramentas do agente para listar notas fiscais e pedidos recentes, com filtros, escopo multiempresa/ambiente e `notaId` para ações posteriores. |
@@ -632,3 +633,15 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Nao ha wildcard nem alteracao de schema. Remover o CNPJ da variavel encerra imediatamente a excecao para novos cadastros.
 - Validacao: helper testado para CHAT/Emissor/CNPJ nao autorizado, endpoint de producao liberando `15130181000148` no CHAT e mantendo o bloqueio no Emissor, `npx tsc --noEmit`, `npm run lint` e build Docker/Linux das 191 paginas aprovados (dois avisos preexistentes).
 - Deploy concluido com a imagem `jrb-erp:6075158` (`sha256:669ee5bd106c`); allowlist persistida no servidor, servico convergido, sem migrations pendentes, logs limpos e `https://erp.sisgov.app.br` respondendo HTTP 200.
+
+## Atualizacao operacional - 2026-07-26 - onboarding pronto para emitir
+
+- O cadastro self-service agora cria a sessao do novo administrador e continua automaticamente no onboarding fiscal, sem exigir login manual entre as etapas.
+- O usuario escolhe se emitira NF-e, NFC-e e/ou NFS-e; os campos de serie e proximo numero aparecem somente para os modelos selecionados.
+- O certificado A1 e solicitado no proprio wizard, validado pela senha, armazenado criptografado e distribuido aos provedores fiscais em uso.
+- Quando o titular do A1 puder ser identificado, o backend rejeita certificado cujo CNPJ seja diferente da empresa cadastrada.
+- Para NFS-e, o wizard exige inscricao municipal, municipio IBGE, servico principal da lista LC 116 e uma descricao padrao personalizavel.
+- A descricao oficial do item LC 116 e sugerida automaticamente, mas pode ser adaptada ao servico real antes de concluir.
+- O codigo LC 116 e a descricao padrao passam a pre-preencher novas NFS-e no ERP; o agente tambem pode usar esses defaults quando o gestor informar somente o tomador e o valor.
+- Adicionada migration aditiva `20260726203000_descricao_servico_onboarding` para persistir `descricaoServicoPadrao` na configuracao fiscal.
+- Validacao parcial: Prisma Client regenerado, `npx tsc --noEmit`, `npm run lint` e `git diff --check` aprovados; permanecem somente os dois avisos de lint preexistentes.

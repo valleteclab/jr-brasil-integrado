@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { isValidCnpj, normalizeDocumento } from "@/lib/fiscal/documento";
 
 /**
@@ -45,6 +46,7 @@ const input = { height: 38, border: "1px solid #cbd5e1", borderRadius: 8, paddin
 const btnPrimario = { width: "100%", height: 42, background: "#2563eb", color: "#fff", border: "none", borderRadius: 8, fontWeight: 700, fontSize: 14, cursor: "pointer" } as const;
 
 export function CadastroEmissorForm({ plano = "EMISSOR" }: { plano?: "EMISSOR" | "CHAT" }) {
+  const router = useRouter();
   const [passo, setPasso] = useState<1 | 2>(1);
   const [cnpj, setCnpj] = useState("");
   const [dados, setDados] = useState<LookupDados | null>(null);
@@ -135,8 +137,12 @@ export function CadastroEmissorForm({ plano = "EMISSOR" }: { plano?: "EMISSOR" |
             : undefined
         })
       });
-      const d = (await res.json().catch(() => ({}))) as { error?: string };
+      const d = (await res.json().catch(() => ({}))) as { error?: string; redirect?: string };
       if (!res.ok) throw new Error(d.error || "Não foi possível concluir o cadastro.");
+      if (d.redirect) {
+        router.replace(d.redirect);
+        return;
+      }
       setPronto(true);
     } catch (err) {
       setErro(err instanceof Error ? err.message : "Não foi possível concluir o cadastro.");

@@ -2438,6 +2438,7 @@ model ConfiguracaoFiscal {
   emitirNfse               Boolean          @default(false)
   codigoMunicipioIbge      String?
   codigoServicoLc116Padrao String?
+  descricaoServicoPadrao   String?
   codigoNbsPadrao          String?
   // Spedy: COMPLETO envia tributacao calculada pelo ERP (/product-invoices); SIMPLIFICADO usa /orders (tributacao no backoffice da Spedy).
   spedyModoEmissao         String?          @default("COMPLETO")

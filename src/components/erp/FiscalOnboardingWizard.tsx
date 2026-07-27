@@ -6,6 +6,7 @@ import { Button } from "@/components/shared/Button";
 import { Card } from "@/components/shared/Card";
 import { useCadastroLookup } from "@/components/erp/useCadastroLookup";
 import type { FiscalOnboardingData } from "@/domains/fiscal/application/fiscal-onboarding-use-cases";
+import { LC116_LIST, lc116Description } from "@/domains/fiscal/lc116";
 
 const REGIMES = [
   { value: "SIMPLES_NACIONAL", label: "Simples Nacional" },
@@ -21,7 +22,7 @@ const UFS = [
   "RS", "RO", "RR", "SC", "SP", "SE", "TO"
 ];
 
-const STEPS = ["Empresa", "Endereço fiscal", "Emissão", "Revisão"];
+const STEPS = ["Empresa", "Endereço fiscal", "Documentos", "Certificado A1", "Revisão"];
 
 type FormState = FiscalOnboardingData["empresa"] &
   Omit<FiscalOnboardingData["config"], "hasToken" | "hasCscToken"> & {
@@ -44,6 +45,10 @@ export function FiscalOnboardingWizard({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [done, setDone] = useState<{ baselineRules: number } | null>(null);
+  const [certificateFile, setCertificateFile] = useState<File | null>(null);
+  const [certificatePassword, setCertificatePassword] = useState("");
+  const [certificateInfo, setCertificateInfo] = useState(initialData.certificado);
+  const [certificateMessage, setCertificateMessage] = useState("");
 
   const [form, setForm] = useState<FormState>({
     ...initialData.empresa,
@@ -87,8 +92,22 @@ export function FiscalOnboardingWizard({
     if (step === 1) {
       if (!form.enderecoUf.trim()) return "Selecione a UF.";
     }
+    if (step === 2) {
+      if (!form.emitNfe && !form.emitNfce && !form.emitNfse) return "Selecione ao menos um tipo de nota.";
+      if (form.emitNfe && form.proximoNumeroNfe < 1) return "Informe o próximo número da NF-e.";
+      if (form.emitNfce && form.proximoNumeroNfce < 1) return "Informe o próximo número da NFC-e.";
+      if (form.emitNfse && form.proximoNumeroNfse < 1) return "Informe o próximo número da NFS-e.";
+      if (form.emitNfse && !form.inscricaoMunicipal.trim()) return "Informe a inscrição municipal para emitir NFS-e.";
+      if (form.emitNfse && !form.codigoMunicipioIbge.trim()) return "Informe o código IBGE do município para a NFS-e.";
+      if (form.emitNfse && !form.codigoServicoLc116Padrao) return "Selecione o serviço principal na LC 116.";
+      if (form.emitNfse && !form.descricaoServicoPadrao.trim()) return "Informe a descrição padrão do serviço.";
+    }
+    if (step === 3 && !certificateInfo) {
+      if (!certificateFile) return "Selecione o certificado A1 (.pfx ou .p12).";
+      if (!certificatePassword.trim()) return "Informe a senha do certificado A1.";
+    }
     return "";
-  }, [step, form]);
+  }, [step, form, certificateFile, certificatePassword, certificateInfo]);
 
   function next() {
     if (stepError) {
@@ -108,6 +127,22 @@ export function FiscalOnboardingWizard({
     setSaving(true);
     setError("");
     try {
+      if (!certificateInfo && certificateFile) {
+        const certificateForm = new FormData();
+        certificateForm.append("file", certificateFile);
+        certificateForm.append("password", certificatePassword);
+        const certificateResponse = await fetch(`${apiBase}/certificado`, { method: "POST", body: certificateForm });
+        const certificatePayload = await certificateResponse.json();
+        if (!certificateResponse.ok) {
+          throw new Error(certificatePayload.error || "Erro ao salvar o certificado A1.");
+        }
+        setCertificateInfo({
+          titularCnpj: certificatePayload.titularCnpj ?? null,
+          validade: certificatePayload.validade ?? null,
+          arquivoNome: certificatePayload.arquivoNome ?? certificateFile.name
+        });
+        setCertificateMessage(certificatePayload.message || "Certificado A1 salvo com segurança.");
+      }
       const response = await fetch(`${apiBase}/onboarding`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -134,9 +169,14 @@ export function FiscalOnboardingWizard({
           serieNfe: form.serieNfe,
           serieNfce: form.serieNfce,
           serieNfse: form.serieNfse,
+          proximoNumeroNfe: form.proximoNumeroNfe,
+          proximoNumeroNfce: form.proximoNumeroNfce,
+          proximoNumeroNfse: form.proximoNumeroNfse,
           emitNfe: form.emitNfe,
           emitNfce: form.emitNfce,
           emitNfse: form.emitNfse,
+          codigoServicoLc116Padrao: form.codigoServicoLc116Padrao,
+          descricaoServicoPadrao: form.descricaoServicoPadrao,
           certificadoInfo: form.certificadoInfo,
           active: form.active,
           notes: form.notes,
@@ -239,7 +279,7 @@ export function FiscalOnboardingWizard({
             <input value={form.inscricaoEstadual} onChange={(e) => update("inscricaoEstadual", e.target.value)} />
           </label>
           <label>
-            Inscrição municipal
+            Inscrição municipal (necessária para NFS-e)
             <input value={form.inscricaoMunicipal} onChange={(e) => update("inscricaoMunicipal", e.target.value)} />
           </label>
         </div>
@@ -298,14 +338,17 @@ export function FiscalOnboardingWizard({
       {step === 2 && (
         <div className="form-grid two">
           <div className="full alert info" style={{ margin: 0 }}>
-            <strong>Provedor de emissão é configurado pela plataforma</strong>
+            <strong>Quais notas sua empresa vai emitir?</strong>
             <span>
-              O provedor fiscal (hoje ACBr) e as credenciais são definidos uma única vez em
-              <b> Admin · Provedor fiscal</b> e valem para todas as empresas. Aqui você define apenas o
-              <b> ambiente</b>, as <b>séries</b> e o que será emitido — depois envie o <b>certificado</b> e
-              clique em <b>“Sincronizar empresa na ACBr”</b> (seção abaixo) para cadastrar a empresa.
+              Marque somente os documentos usados no dia a dia. Para cada um, informe a série e o
+              próximo número de produção para continuar a numeração atual sem duplicidade.
             </span>
           </div>
+          <fieldset className="full" style={{ display: "flex", gap: 18, flexWrap: "wrap", border: "none", padding: 0 }}>
+            <label className="checkbox"><input type="checkbox" checked={form.emitNfe} onChange={(e) => update("emitNfe", e.target.checked)} /> NF-e · produtos (modelo 55)</label>
+            <label className="checkbox"><input type="checkbox" checked={form.emitNfce} onChange={(e) => update("emitNfce", e.target.checked)} /> NFC-e · consumidor (modelo 65)</label>
+            <label className="checkbox"><input type="checkbox" checked={form.emitNfse} onChange={(e) => update("emitNfse", e.target.checked)} /> NFS-e · serviços</label>
+          </fieldset>
           <label>
             Ambiente
             <select value={form.environment} onChange={(e) => update("environment", e.target.value as FormState["environment"])}>
@@ -313,32 +356,102 @@ export function FiscalOnboardingWizard({
               <option value="PRODUCAO">Produção</option>
             </select>
           </label>
-          <label>
-            Série NF-e
-            <input value={form.serieNfe} onChange={(e) => update("serieNfe", e.target.value)} />
+          <label className="checkbox" style={{ alignSelf: "end", marginBottom: 10 }}>
+            <input type="checkbox" checked={form.active} onChange={(e) => update("active", e.target.checked)} /> Ativar emissão ao concluir
           </label>
-          <label>
-            Série NFC-e
-            <input value={form.serieNfce} onChange={(e) => update("serieNfce", e.target.value)} />
-          </label>
-          <label>
-            Série NFS-e
-            <input value={form.serieNfse} onChange={(e) => update("serieNfse", e.target.value)} />
-          </label>
-          <label className="full">
-            Certificado A1 (descrição/identificação)
-            <input value={form.certificadoInfo} onChange={(e) => update("certificadoInfo", e.target.value)} placeholder="Ex.: CN, validade — credencial fica com o provedor" />
-          </label>
-          <fieldset className="full" style={{ display: "flex", gap: 18, flexWrap: "wrap", border: "none", padding: 0 }}>
-            <label className="checkbox"><input type="checkbox" checked={form.emitNfe} onChange={(e) => update("emitNfe", e.target.checked)} /> Emitir NF-e</label>
-            <label className="checkbox"><input type="checkbox" checked={form.emitNfce} onChange={(e) => update("emitNfce", e.target.checked)} /> Emitir NFC-e</label>
-            <label className="checkbox"><input type="checkbox" checked={form.emitNfse} onChange={(e) => update("emitNfse", e.target.checked)} /> Emitir NFS-e</label>
-            <label className="checkbox"><input type="checkbox" checked={form.active} onChange={(e) => update("active", e.target.checked)} /> Ativar emissão</label>
-          </fieldset>
+
+          {form.emitNfe && (<>
+            <label>Série NF-e
+              <input value={form.serieNfe} onChange={(e) => update("serieNfe", e.target.value)} />
+            </label>
+            <label>Próximo número da NF-e
+              <input type="number" min={1} value={form.proximoNumeroNfe} onChange={(e) => update("proximoNumeroNfe", Math.max(1, Number(e.target.value) || 1))} />
+            </label>
+          </>)}
+
+          {form.emitNfce && (<>
+            <label>Série NFC-e
+              <input value={form.serieNfce} onChange={(e) => update("serieNfce", e.target.value)} />
+            </label>
+            <label>Próximo número da NFC-e
+              <input type="number" min={1} value={form.proximoNumeroNfce} onChange={(e) => update("proximoNumeroNfce", Math.max(1, Number(e.target.value) || 1))} />
+            </label>
+          </>)}
+
+          {form.emitNfse && (<>
+            <label>Série NFS-e / DPS
+              <input value={form.serieNfse} onChange={(e) => update("serieNfse", e.target.value)} />
+            </label>
+            <label>Próximo número da NFS-e / DPS
+              <input type="number" min={1} value={form.proximoNumeroNfse} onChange={(e) => update("proximoNumeroNfse", Math.max(1, Number(e.target.value) || 1))} />
+            </label>
+            <label className="full">
+              Serviço principal · Lista da LC 116
+              <select
+                value={form.codigoServicoLc116Padrao}
+                onChange={(e) => {
+                  const previousOfficial = lc116Description(form.codigoServicoLc116Padrao) ?? "";
+                  const nextCode = e.target.value;
+                  const nextOfficial = lc116Description(nextCode) ?? "";
+                  update("codigoServicoLc116Padrao", nextCode);
+                  if (!form.descricaoServicoPadrao.trim() || form.descricaoServicoPadrao === previousOfficial) {
+                    update("descricaoServicoPadrao", nextOfficial);
+                  }
+                }}
+              >
+                <option value="">Selecione o serviço principal...</option>
+                {LC116_LIST.map((item) => <option key={item.code} value={item.code}>{item.code} — {item.description}</option>)}
+              </select>
+            </label>
+            <label className="full">
+              Descrição padrão do serviço
+              <textarea
+                value={form.descricaoServicoPadrao}
+                onChange={(e) => update("descricaoServicoPadrao", e.target.value)}
+                rows={3}
+                maxLength={2000}
+                placeholder="Personalize como o serviço deve aparecer na NFS-e. Você poderá alterar em cada emissão."
+              />
+              <small>Começamos com a descrição oficial da LC 116; personalize para refletir o serviço realmente prestado.</small>
+            </label>
+            <div className="full alert info" style={{ margin: 0 }}>
+              <span>
+                Para NFS-e também usaremos a inscrição municipal e o código IBGE informados nas etapas anteriores.
+                O NBS e a classificação tributária são sugeridos automaticamente a partir da LC 116.
+              </span>
+            </div>
+          </>)}
         </div>
       )}
 
       {step === 3 && (
+        <div className="form-grid two">
+          <div className="full alert info" style={{ margin: 0 }}>
+            <strong>Certificado digital A1</strong>
+            <span>O arquivo e a senha são criptografados e usados para assinar as notas. Eles nunca são exibidos novamente.</span>
+          </div>
+          {certificateInfo ? (
+            <div className="full alert success" style={{ margin: 0 }}>
+              <strong>Certificado já configurado</strong>
+              <span>
+                {certificateInfo.arquivoNome || "Certificado A1"}
+                {certificateInfo.titularCnpj ? ` · CNPJ ${certificateInfo.titularCnpj}` : ""}
+                {certificateInfo.validade ? ` · válido até ${new Date(certificateInfo.validade).toLocaleDateString("pt-BR")}` : ""}
+              </span>
+            </div>
+          ) : (<>
+            <label>Arquivo A1 (.pfx ou .p12)
+              <input type="file" accept=".pfx,.p12,application/x-pkcs12" onChange={(e) => setCertificateFile(e.target.files?.[0] ?? null)} />
+            </label>
+            <label>Senha do certificado
+              <input type="password" value={certificatePassword} onChange={(e) => setCertificatePassword(e.target.value)} autoComplete="off" />
+            </label>
+          </>)}
+          {certificateMessage && <div className="full alert success" style={{ margin: 0 }}><span>{certificateMessage}</span></div>}
+        </div>
+      )}
+
+      {step === 4 && (
         <div>
           <div className="form-grid two">
             <div><span className="field-label">Empresa</span><strong>{form.razaoSocial || "—"}</strong><small>{form.cnpj}</small></div>
@@ -347,6 +460,10 @@ export function FiscalOnboardingWizard({
             <div><span className="field-label">Ambiente</span><strong>{form.environment === "PRODUCAO" ? "Produção" : "Homologação"}</strong><small>Provedor: definido pela plataforma</small></div>
             <div><span className="field-label">Documentos</span><strong>{[form.emitNfe && "NF-e", form.emitNfce && "NFC-e", form.emitNfse && "NFS-e"].filter(Boolean).join(" · ") || "Nenhum"}</strong></div>
             <div><span className="field-label">Emissão ativa</span><strong>{form.active ? "Sim" : "Não"}</strong></div>
+            {form.emitNfe && <div><span className="field-label">NF-e</span><strong>Série {form.serieNfe} · próxima {form.proximoNumeroNfe}</strong></div>}
+            {form.emitNfce && <div><span className="field-label">NFC-e</span><strong>Série {form.serieNfce} · próxima {form.proximoNumeroNfce}</strong></div>}
+            {form.emitNfse && <div><span className="field-label">NFS-e</span><strong>Série {form.serieNfse} · próxima {form.proximoNumeroNfse}</strong><small>{form.codigoServicoLc116Padrao} · {form.descricaoServicoPadrao}</small></div>}
+            <div><span className="field-label">Certificado</span><strong>{certificateInfo?.arquivoNome || certificateFile?.name || "A1 selecionado"}</strong></div>
           </div>
 
           <label className="checkbox full" style={{ marginTop: 18, display: "flex", gap: 10, alignItems: "flex-start" }}>

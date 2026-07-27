@@ -16,7 +16,7 @@ export async function POST(request: Request, { params }: { params: { id: string;
     }
     const buffer = Buffer.from(await file.arrayBuffer());
     const result = await distribuirCertificadoFiscal(scope, { buffer, filename: file.name, password });
-    return NextResponse.json({ ok: result.ok, message: result.message });
+    return NextResponse.json({ ok: result.ok, message: result.message, ...result.resumo });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro ao enviar o certificado.";
     const status =

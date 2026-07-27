@@ -2,10 +2,11 @@ import type { AmbienteFiscal, ProvedorFiscal, RegimeTributario, TipoNegocio } fr
 import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import { createAuditLog } from "@/lib/audit/audit-service";
-import { saveFiscalConfig } from "./fiscal-config-use-cases";
-import { getProvedorFiscalAtivo } from "./plataforma-provedor-use-cases";
+import { getFiscalConfig, saveFiscalConfig } from "./fiscal-config-use-cases";
+import { getCertificadoInfo } from "./certificado-use-cases";
 import { applyNationalTaxBaseline, PREFIXO_BASE_NACIONAL, UFS } from "../national-tax-baseline";
 import { isValidCnpj, normalizeDocumento } from "@/lib/fiscal/documento";
+import { isValidLc116 } from "../lc116";
 
 export type FiscalOnboardingInput = {
   // Identificação da empresa emitente
@@ -38,9 +39,14 @@ export type FiscalOnboardingInput = {
   serieNfe?: string;
   serieNfce?: string;
   serieNfse?: string;
+  proximoNumeroNfe?: number;
+  proximoNumeroNfce?: number;
+  proximoNumeroNfse?: number;
   emitNfe?: boolean;
   emitNfce?: boolean;
   emitNfse?: boolean;
+  codigoServicoLc116Padrao?: string;
+  descricaoServicoPadrao?: string;
   certificadoInfo?: string;
   active?: boolean;
   notes?: string;
@@ -80,29 +86,39 @@ export type FiscalOnboardingData = {
     serieNfe: string;
     serieNfce: string;
     serieNfse: string;
+    proximoNumeroNfe: number;
+    proximoNumeroNfce: number;
+    proximoNumeroNfse: number;
     emitNfe: boolean;
     emitNfce: boolean;
     emitNfse: boolean;
+    codigoServicoLc116Padrao: string;
+    descricaoServicoPadrao: string;
     certificadoInfo: string;
     active: boolean;
     notes: string;
   };
+  certificado: {
+    titularCnpj: string | null;
+    validade: string | null;
+    arquivoNome: string | null;
+  } | null;
   baselineRules: number;
 };
 
 /** Dados atuais da empresa/config para pré-preencher o wizard de onboarding fiscal. */
 export async function getFiscalOnboardingData(scope: TenantScope): Promise<FiscalOnboardingData> {
-  const [empresa, config, baselineRules, provedorAtivo] = await Promise.all([
+  const [empresa, config, certificado, baselineRules] = await Promise.all([
     prisma.empresa.findUniqueOrThrow({ where: { id: scope.empresaId } }),
-    prisma.configuracaoFiscal.findUnique({ where: { empresaId: scope.empresaId } }),
+    getFiscalConfig(scope),
+    getCertificadoInfo(scope),
     prisma.regraTributaria.count({
       where: {
         tenantId: scope.tenantId,
         empresaId: scope.empresaId,
         nome: { startsWith: PREFIXO_BASE_NACIONAL }
       }
-    }),
-    getProvedorFiscalAtivo()
+    })
   ]);
 
   return {
@@ -126,23 +142,28 @@ export async function getFiscalOnboardingData(scope: TenantScope): Promise<Fisca
       email: empresa.email ?? ""
     },
     config: {
-      // Empresa nova herda o provedor ATIVO da plataforma (ex.: ACBr) em vez de cair em "INTERNO".
-      provider: config?.provedor ?? (provedorAtivo as ProvedorFiscal),
-      environment: config?.ambiente ?? "HOMOLOGACAO",
-      baseUrl: config?.baseUrl ?? "",
-      hasToken: Boolean(config?.tokenCriptografado),
-      cscId: config?.cscId ?? "",
-      hasCscToken: Boolean(config?.cscTokenCriptografado),
-      serieNfe: config?.serieNfe ?? "1",
-      serieNfce: config?.serieNfce ?? "1",
-      serieNfse: config?.serieNfse ?? "1",
-      emitNfe: config?.emitirNfe ?? true,
-      emitNfce: config?.emitirNfce ?? false,
-      emitNfse: config?.emitirNfse ?? false,
-      certificadoInfo: config?.certificadoInfo ?? "",
-      active: config?.ativo ?? false,
-      notes: config?.observacoes ?? ""
+      provider: config.provider,
+      environment: config.environment,
+      baseUrl: config.baseUrl,
+      hasToken: config.hasToken,
+      cscId: config.cscId,
+      hasCscToken: config.hasCscToken,
+      serieNfe: config.serieNfe,
+      serieNfce: config.serieNfce,
+      serieNfse: config.serieNfse,
+      proximoNumeroNfe: config.proximoNumeroNfe,
+      proximoNumeroNfce: config.proximoNumeroNfce,
+      proximoNumeroNfse: config.proximoNumeroNfse,
+      emitNfe: config.emitNfe,
+      emitNfce: config.emitNfce,
+      emitNfse: config.emitNfse,
+      codigoServicoLc116Padrao: config.codigoServicoLc116Padrao,
+      descricaoServicoPadrao: config.descricaoServicoPadrao,
+      certificadoInfo: config.certificadoInfo,
+      active: config.configured ? config.active : true,
+      notes: config.notes
     },
+    certificado,
     baselineRules
   };
 }
@@ -167,6 +188,24 @@ export async function completeFiscalOnboarding(scope: TenantScope, input: Fiscal
 
   if (!UFS.includes(uf as (typeof UFS)[number])) {
     throw new FiscalOnboardingError("UF inválida.");
+  }
+
+  if (!input.emitNfe && !input.emitNfce && !input.emitNfse) {
+    throw new FiscalOnboardingError("Selecione ao menos um tipo de nota para emitir.");
+  }
+  if (input.emitNfse) {
+    if (!input.inscricaoMunicipal?.trim()) {
+      throw new FiscalOnboardingError("A inscricao municipal e obrigatoria para emitir NFS-e.");
+    }
+    if (!input.codigoMunicipioIbge?.trim()) {
+      throw new FiscalOnboardingError("O codigo IBGE do municipio e obrigatorio para emitir NFS-e.");
+    }
+    if (!isValidLc116(input.codigoServicoLc116Padrao)) {
+      throw new FiscalOnboardingError("Selecione o servico principal na lista da LC 116.");
+    }
+    if (!input.descricaoServicoPadrao?.trim()) {
+      throw new FiscalOnboardingError("Informe a descricao padrao do servico.");
+    }
   }
 
   // 1) Identidade fiscal do emitente
@@ -205,10 +244,15 @@ export async function completeFiscalOnboarding(scope: TenantScope, input: Fiscal
     serieNfe: input.serieNfe,
     serieNfce: input.serieNfce,
     serieNfse: input.serieNfse,
+    proximoNumeroNfe: input.proximoNumeroNfe,
+    proximoNumeroNfce: input.proximoNumeroNfce,
+    proximoNumeroNfse: input.proximoNumeroNfse,
     emitNfe: input.emitNfe,
     emitNfce: input.emitNfce,
     emitNfse: input.emitNfse,
     codigoMunicipioIbge: input.codigoMunicipioIbge,
+    codigoServicoLc116Padrao: input.codigoServicoLc116Padrao,
+    descricaoServicoPadrao: input.descricaoServicoPadrao,
     certificadoInfo: input.certificadoInfo,
     active: input.active,
     notes: input.notes

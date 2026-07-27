@@ -154,8 +154,10 @@ export function NfseWizard({ data, initial = null }: { data: EmissaoFormData; in
   const subst = ini?.substituicao ?? null;
   const iniEndereco = ini?.destinatario.endereco;
   const iniTomadorModo: TomadorModo = ini ? (ini.clienteId ? "cadastrado" : ini.destinatario.nome ? "brasil" : "cadastrado") : "cadastrado";
-  const iniDescricao = ini?.servicos.length ? ini.servicos.map((s) => s.descricao).filter(Boolean).join("\n") : "";
-  const iniLc116 = ini?.codigoServicoLc116 || ini?.servicos[0]?.codigoServicoLc116 || "";
+  const iniDescricao = ini?.servicos.length
+    ? ini.servicos.map((s) => s.descricao).filter(Boolean).join("\n")
+    : data.descricaoServicoPadrao;
+  const iniLc116 = ini?.codigoServicoLc116 || ini?.servicos[0]?.codigoServicoLc116 || data.codigoServicoLc116Padrao;
   const iniValor = ini?.servicos.length ? ini.servicos.reduce((s, x) => s + Number(x.valor || 0), 0) : 0;
   const iniSugestao = iniLc116 ? sugerirPorLc116(iniLc116) : null;
 
