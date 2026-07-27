@@ -100,7 +100,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
-| 2026-07-26 | A gerar | Em andamento | Plano CHAT provisionado com IA operacional e chat web ampliado com imagens, PDF, arquivos de texto e audio gravado/enviado. |
+| 2026-07-26 | `26edfd1` | Enviado | Plano CHAT provisionado com IA operacional e chat web ampliado com imagens, PDF, arquivos de texto e audio gravado/enviado. |
 | 2026-07-26 | `03f5f4f` | Enviado | Complemento do onboarding fiscal com inscricao estadual obrigatoria e credenciais CSC da NFC-e separadas por ambiente. |
 | 2026-07-26 | `02600b2` | Enviado | Onboarding fiscal continuo apos o cadastro, com login automatico, modelos de nota, numeracao, certificado A1, servico principal LC 116 e descricao personalizavel. |
 | 2026-07-26 | `6075158` | Enviado | Allowlist segura para repetir o onboarding do plano CHAT com CNPJ ja cadastrado, destinada a testes controlados sem liberar duplicacao global. |
@@ -660,4 +660,5 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Imagens e PDFs sao lidos pela camada multimodal; arquivos textuais sao extraidos localmente e limitados a 40 mil caracteres. O binario nao e persistido no banco.
 - Audio pode ser anexado ou gravado pelo microfone do navegador; o Whisper privado transcreve arquivos de ate 6 MB antes de encaminhar o pedido ao agente.
 - O frontend mostra o anexo selecionado, permite remove-lo e aceita uma instrucao opcional junto do arquivo.
-- Validacao parcial aprovada: `npx tsc --noEmit`, `npm run lint`, `git diff --check`, leitura local de CSV e chamada real da IA. O build local excedeu a janela de tres minutos sem erro conclusivo e sera repetido no build Docker/Linux de producao.
+- Validacao aprovada: `npx tsc --noEmit`, `npm run lint`, `git diff --check`, leitura local de CSV, chamada real da IA e build Docker/Linux das 191 paginas; permanecem somente os dois avisos de lint preexistentes.
+- Deploy concluido com a imagem `jrb-erp:26edfd1` (`sha256:cf2301d043f9`), sem migrations pendentes e servico saudavel. Um teste autenticado de CSV no chat de producao retornou HTTP 200 e resposta da IA; sessao, conversa e consumo criados pelo teste foram removidos depois.
