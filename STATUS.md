@@ -100,6 +100,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
+| 2026-07-26 | A gerar | Em andamento | Allowlist segura para repetir o onboarding do plano CHAT com CNPJ ja cadastrado, destinada a testes controlados sem liberar duplicacao global. |
 | 2026-07-26 | `cc920bf` | Enviado | Expansao do agente com detalhe fiscal, orcamentos, contas a pagar, fluxo de caixa, fornecedores, compras, despesa manual e NF-e/NFC-e avulsa. |
 | 2026-07-26 | `2f75f7c` | Enviado | Ferramentas do agente para listar notas fiscais e pedidos recentes, com filtros, escopo multiempresa/ambiente e `notaId` para ações posteriores. |
 | 2026-07-25 | `6d5d59b` | Enviado | Painel de voz do Kokoro por empresa, com Dora, Alex e Santa, prévia em áudio e aplicação dinâmica no Telegram e WhatsApp. |
@@ -621,3 +622,12 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Seguranca: todas as consultas usam `tenantId`, `empresaId` e, quando aplicavel, ambiente fiscal; acoes permanecem restritas ao perfil GESTOR e reutilizam use cases com validacao/auditoria.
 - Validacao: sete consultas executadas com sucesso no banco de teste, bloqueios de confirmacao das duas novas acoes aprovados sem mutacao, catalogo com 33 ferramentas e sem nomes duplicados, `npx tsc --noEmit`, `npm run lint` e build Docker/Linux das 191 paginas aprovados (dois avisos preexistentes).
 - Deploy concluido com a imagem `jrb-erp:cc920bf` (`sha256:4c8e2c67bcc`); servico convergido, sem migrations pendentes, logs limpos e `https://erp.sisgov.app.br` respondendo HTTP 200.
+
+## Atualizacao operacional - 2026-07-26 - recadastro controlado do plano Chat
+
+- O cadastro publico continua bloqueando CNPJ ja existente por padrao.
+- Somente o plano `CHAT` pode repetir um documento explicitamente informado em `CADASTRO_TEST_CNPJ_ALLOWLIST`; o plano Emissor e demais CNPJs permanecem bloqueados.
+- A tela informa que o CNPJ foi liberado para teste e orienta usar um e-mail diferente, pois o login continua globalmente unico.
+- Cada cadastro cria tenant e empresa separados; o isolamento operacional continua baseado em `tenantId` e `empresaId`.
+- Nao ha wildcard nem alteracao de schema. Remover o CNPJ da variavel encerra imediatamente a excecao para novos cadastros.
+- Validacao parcial: helper testado para CHAT/Emissor/CNPJ nao autorizado, `npx tsc --noEmit` e `npm run lint` aprovados (dois avisos preexistentes).

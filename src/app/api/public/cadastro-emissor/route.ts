@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { criarClienteCore, PlatformAdminError, type EmpresaDadosExtra } from "@/lib/services/platform-admin";
 import { isValidCnpj, normalizeDocumento } from "@/lib/fiscal/documento";
+import { canRepeatCnpjForChatTest, type SelfServicePlan } from "@/lib/auth/self-service-registration";
 
 /**
  * CADASTRO PÚBLICO self-service dos planos enxutos (EMISSOR ou CHAT): cria tenant já no plano
@@ -25,14 +26,17 @@ export async function POST(request: Request) {
     const nome = (body.nome ?? "").trim();
     const email = (body.email ?? "").trim().toLowerCase();
     const senha = (body.senha ?? "").trim();
+    const codigoPlano: SelfServicePlan = body.plano === "CHAT" ? "CHAT" : "EMISSOR";
     if (!empresa || !nome || !email) return NextResponse.json({ error: "Preencha empresa, seu nome e e-mail." }, { status: 400 });
     if (!isValidCnpj(cnpj)) return NextResponse.json({ error: "Informe um CNPJ válido (14 caracteres)." }, { status: 400 });
     if (senha.length < 8) return NextResponse.json({ error: "A senha precisa de pelo menos 8 caracteres." }, { status: 400 });
-    if (await prisma.empresa.findFirst({ where: { cnpj }, select: { id: true } })) {
+    if (
+      await prisma.empresa.findFirst({ where: { cnpj }, select: { id: true } })
+      && !canRepeatCnpjForChatTest(cnpj, codigoPlano)
+    ) {
       return NextResponse.json({ error: "Este CNPJ já está cadastrado — faça login ou fale com o suporte." }, { status: 400 });
     }
 
-    const codigoPlano = body.plano === "CHAT" ? "CHAT" : "EMISSOR";
     const plano = await prisma.plataformaPlano.findUnique({ where: { codigo: codigoPlano } });
     if (!plano?.ativo) return NextResponse.json({ error: "Cadastro indisponível no momento — fale com o suporte." }, { status: 400 });
 

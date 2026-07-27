@@ -68,9 +68,9 @@ export function CadastroEmissorForm({ plano = "EMISSOR" }: { plano?: "EMISSOR" |
       const res = await fetch("/api/public/cadastro-emissor/lookup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cnpj, site })
+        body: JSON.stringify({ cnpj, site, plano })
       });
-      const d = (await res.json().catch(() => ({}))) as { jaCadastrado?: boolean; dados?: LookupDados; error?: string };
+      const d = (await res.json().catch(() => ({}))) as { jaCadastrado?: boolean; cadastroTeste?: boolean; dados?: LookupDados; error?: string };
       if (d.jaCadastrado) {
         setErro("Este CNPJ já tem conta — faça login ou fale com o suporte.");
         return;
@@ -87,6 +87,9 @@ export function CadastroEmissorForm({ plano = "EMISSOR" }: { plano?: "EMISSOR" |
       setManual(false);
       setEmpresa(d.dados.razaoSocial ?? "");
       if (d.dados.email && !email) setEmail(d.dados.email.toLowerCase());
+      if (d.cadastroTeste) {
+        setAviso("CNPJ liberado para testar o plano Chat. Use um e-mail diferente da conta existente.");
+      }
       setPasso(2);
     } catch {
       setManual(true);
