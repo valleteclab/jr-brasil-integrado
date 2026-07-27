@@ -100,7 +100,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
-| 2026-07-26 | A gerar | Em andamento | Allowlist segura para repetir o onboarding do plano CHAT com CNPJ ja cadastrado, destinada a testes controlados sem liberar duplicacao global. |
+| 2026-07-26 | `6075158` | Enviado | Allowlist segura para repetir o onboarding do plano CHAT com CNPJ ja cadastrado, destinada a testes controlados sem liberar duplicacao global. |
 | 2026-07-26 | `cc920bf` | Enviado | Expansao do agente com detalhe fiscal, orcamentos, contas a pagar, fluxo de caixa, fornecedores, compras, despesa manual e NF-e/NFC-e avulsa. |
 | 2026-07-26 | `2f75f7c` | Enviado | Ferramentas do agente para listar notas fiscais e pedidos recentes, com filtros, escopo multiempresa/ambiente e `notaId` para ações posteriores. |
 | 2026-07-25 | `6d5d59b` | Enviado | Painel de voz do Kokoro por empresa, com Dora, Alex e Santa, prévia em áudio e aplicação dinâmica no Telegram e WhatsApp. |
@@ -630,4 +630,5 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - A tela informa que o CNPJ foi liberado para teste e orienta usar um e-mail diferente, pois o login continua globalmente unico.
 - Cada cadastro cria tenant e empresa separados; o isolamento operacional continua baseado em `tenantId` e `empresaId`.
 - Nao ha wildcard nem alteracao de schema. Remover o CNPJ da variavel encerra imediatamente a excecao para novos cadastros.
-- Validacao parcial: helper testado para CHAT/Emissor/CNPJ nao autorizado, `npx tsc --noEmit` e `npm run lint` aprovados (dois avisos preexistentes).
+- Validacao: helper testado para CHAT/Emissor/CNPJ nao autorizado, endpoint de producao liberando `15130181000148` no CHAT e mantendo o bloqueio no Emissor, `npx tsc --noEmit`, `npm run lint` e build Docker/Linux das 191 paginas aprovados (dois avisos preexistentes).
+- Deploy concluido com a imagem `jrb-erp:6075158` (`sha256:669ee5bd106c`); allowlist persistida no servidor, servico convergido, sem migrations pendentes, logs limpos e `https://erp.sisgov.app.br` respondendo HTTP 200.
