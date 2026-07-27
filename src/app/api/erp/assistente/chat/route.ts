@@ -196,7 +196,11 @@ export async function POST(request: Request) {
     if (inputByVoice) {
       try {
         const voice = await getAiVoice(scope);
-        const audio = await synthesizeKokoroSpeech(result.assistantText, voice);
+        const audio = await synthesizeKokoroSpeech(
+          result.assistantText,
+          voice,
+          { responseFormat: "wav" }
+        );
         if (audio) {
           assistantAudioBase64 = audio.toString("base64");
           showAssistantText = responseNeedsText(result, result.assistantText);
@@ -214,7 +218,7 @@ export async function POST(request: Request) {
       conversaId: conversa.id,
       assistantText: result.assistantText,
       assistantAudioBase64,
-      assistantAudioMime: assistantAudioBase64 ? "audio/mpeg" : null,
+      assistantAudioMime: assistantAudioBase64 ? "audio/wav" : null,
       showAssistantText,
       draft: result.draft,
       attachmentLabel

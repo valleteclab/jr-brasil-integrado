@@ -100,7 +100,8 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
-| 2026-07-27 | A gerar | Em andamento | Chat web com envio automatico ao parar a gravacao e resposta em audio pela voz configurada, seguindo a politica do WhatsApp. |
+| 2026-07-27 | A gerar | Em andamento | Correcao da resposta de voz do chat web para WAV, contornando falha nativa do encoder MP3 do Kokoro sem alterar WhatsApp e Telegram. |
+| 2026-07-27 | `b53efc8` | Enviado | Chat web com envio automatico ao parar a gravacao e resposta em audio pela voz configurada, seguindo a politica do WhatsApp. |
 | 2026-07-26 | `26edfd1` | Enviado | Plano CHAT provisionado com IA operacional e chat web ampliado com imagens, PDF, arquivos de texto e audio gravado/enviado. |
 | 2026-07-26 | `03f5f4f` | Enviado | Complemento do onboarding fiscal com inscricao estadual obrigatoria e credenciais CSC da NFC-e separadas por ambiente. |
 | 2026-07-26 | `02600b2` | Enviado | Onboarding fiscal continuo apos o cadastro, com login automatico, modelos de nota, numeracao, certificado A1, servico principal LC 116 e descricao personalizavel. |

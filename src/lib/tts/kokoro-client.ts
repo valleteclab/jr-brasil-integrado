@@ -35,11 +35,19 @@ export function prepareTextForSpeech(input: string): string {
   return `${(naturalEnd >= Math.floor(maxChars * 0.6) ? prefix.slice(0, naturalEnd + 1) : prefix).trim()}…`;
 }
 
-/** Gera MP3 no Kokoro interno. Sem URL configurada, a integração fica desativada. */
-export async function synthesizeKokoroSpeech(text: string, selectedVoice?: KokoroVoiceId): Promise<Buffer | null> {
+/**
+ * Gera voz no Kokoro interno. MP3 continua como padrão dos canais móveis; o chat web pode pedir
+ * WAV para evitar o encoder MP3 nativo em respostas maiores.
+ */
+export async function synthesizeKokoroSpeech(
+  text: string,
+  selectedVoice?: KokoroVoiceId,
+  options?: { responseFormat?: "mp3" | "wav" }
+): Promise<Buffer | null> {
   const url = endpoint();
   const input = prepareTextForSpeech(text);
   if (!url || !input) return null;
+  const responseFormat = options?.responseFormat ?? "mp3";
 
   const timeoutMs = positiveInteger(process.env.KOKORO_TTS_TIMEOUT_MS, DEFAULT_TIMEOUT_MS);
   const response = await fetch(url, {
@@ -53,7 +61,7 @@ export async function synthesizeKokoroSpeech(text: string, selectedVoice?: Kokor
           ? sanitizeKokoroVoice(process.env.KOKORO_TTS_VOICE.trim())
           : DEFAULT_KOKORO_VOICE
       ),
-      response_format: "mp3",
+      response_format: responseFormat,
       speed: 1
     }),
     signal: AbortSignal.timeout(timeoutMs)
