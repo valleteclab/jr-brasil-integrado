@@ -100,6 +100,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
+| 2026-07-26 | A gerar | Em andamento | Complemento do onboarding fiscal com inscricao estadual obrigatoria e credenciais CSC da NFC-e separadas por ambiente. |
 | 2026-07-26 | `02600b2` | Enviado | Onboarding fiscal continuo apos o cadastro, com login automatico, modelos de nota, numeracao, certificado A1, servico principal LC 116 e descricao personalizavel. |
 | 2026-07-26 | `6075158` | Enviado | Allowlist segura para repetir o onboarding do plano CHAT com CNPJ ja cadastrado, destinada a testes controlados sem liberar duplicacao global. |
 | 2026-07-26 | `cc920bf` | Enviado | Expansao do agente com detalhe fiscal, orcamentos, contas a pagar, fluxo de caixa, fornecedores, compras, despesa manual e NF-e/NFC-e avulsa. |
@@ -638,6 +639,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 - O cadastro self-service agora cria a sessao do novo administrador e continua automaticamente no onboarding fiscal, sem exigir login manual entre as etapas.
 - O usuario escolhe se emitira NF-e, NFC-e e/ou NFS-e; os campos de serie e proximo numero aparecem somente para os modelos selecionados.
+- NF-e/NFC-e exigem inscricao estadual; quando NFC-e e selecionada, o wizard pede `idCSC` e codigo CSC do ambiente escolhido (homologacao ou producao), preservando segredo ja configurado.
 - O certificado A1 e solicitado no proprio wizard, validado pela senha, armazenado criptografado e distribuido aos provedores fiscais em uso.
 - Quando o titular do A1 puder ser identificado, o backend rejeita certificado cujo CNPJ seja diferente da empresa cadastrada.
 - Para NFS-e, o wizard exige inscricao municipal, municipio IBGE, servico principal da lista LC 116 e uma descricao padrao personalizavel.

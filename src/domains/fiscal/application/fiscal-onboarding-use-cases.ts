@@ -36,6 +36,10 @@ export type FiscalOnboardingInput = {
   token?: string;
   cscId?: string;
   cscToken?: string;
+  nfceIdCsc?: string;
+  nfceCsc?: string;
+  nfceIdCscProducao?: string;
+  nfceCscProducao?: string;
   serieNfe?: string;
   serieNfce?: string;
   serieNfse?: string;
@@ -83,6 +87,10 @@ export type FiscalOnboardingData = {
     hasToken: boolean;
     cscId: string;
     hasCscToken: boolean;
+    nfceIdCsc: string;
+    hasNfceCsc: boolean;
+    nfceIdCscProducao: string;
+    hasNfceCscProducao: boolean;
     serieNfe: string;
     serieNfce: string;
     serieNfse: string;
@@ -148,6 +156,10 @@ export async function getFiscalOnboardingData(scope: TenantScope): Promise<Fisca
       hasToken: config.hasToken,
       cscId: config.cscId,
       hasCscToken: config.hasCscToken,
+      nfceIdCsc: config.nfceIdCsc,
+      hasNfceCsc: config.hasNfceCsc,
+      nfceIdCscProducao: config.nfceIdCscProducao,
+      hasNfceCscProducao: config.hasNfceCscProducao,
       serieNfe: config.serieNfe,
       serieNfce: config.serieNfce,
       serieNfse: config.serieNfse,
@@ -192,6 +204,9 @@ export async function completeFiscalOnboarding(scope: TenantScope, input: Fiscal
 
   if (!input.emitNfe && !input.emitNfce && !input.emitNfse) {
     throw new FiscalOnboardingError("Selecione ao menos um tipo de nota para emitir.");
+  }
+  if ((input.emitNfe || input.emitNfce) && !input.inscricaoEstadual?.trim()) {
+    throw new FiscalOnboardingError("A inscricao estadual e obrigatoria para emitir NF-e ou NFC-e.");
   }
   if (input.emitNfse) {
     if (!input.inscricaoMunicipal?.trim()) {
@@ -241,6 +256,10 @@ export async function completeFiscalOnboarding(scope: TenantScope, input: Fiscal
     token: input.token,
     cscId: input.cscId,
     cscToken: input.cscToken,
+    nfceIdCsc: input.nfceIdCsc,
+    nfceCsc: input.nfceCsc,
+    nfceIdCscProducao: input.nfceIdCscProducao,
+    nfceCscProducao: input.nfceCscProducao,
     serieNfe: input.serieNfe,
     serieNfce: input.serieNfce,
     serieNfse: input.serieNfse,

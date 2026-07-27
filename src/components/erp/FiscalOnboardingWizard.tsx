@@ -49,6 +49,8 @@ export function FiscalOnboardingWizard({
   const [certificatePassword, setCertificatePassword] = useState("");
   const [certificateInfo, setCertificateInfo] = useState(initialData.certificado);
   const [certificateMessage, setCertificateMessage] = useState("");
+  const [nfceCsc, setNfceCsc] = useState("");
+  const [nfceCscProducao, setNfceCscProducao] = useState("");
 
   const [form, setForm] = useState<FormState>({
     ...initialData.empresa,
@@ -94,8 +96,13 @@ export function FiscalOnboardingWizard({
     }
     if (step === 2) {
       if (!form.emitNfe && !form.emitNfce && !form.emitNfse) return "Selecione ao menos um tipo de nota.";
+      if ((form.emitNfe || form.emitNfce) && !form.inscricaoEstadual.trim()) return "Informe a inscrição estadual para NF-e/NFC-e.";
       if (form.emitNfe && form.proximoNumeroNfe < 1) return "Informe o próximo número da NF-e.";
       if (form.emitNfce && form.proximoNumeroNfce < 1) return "Informe o próximo número da NFC-e.";
+      if (form.emitNfce && form.environment === "HOMOLOGACAO" && !form.nfceIdCsc.trim()) return "Informe o idCSC de homologação da NFC-e.";
+      if (form.emitNfce && form.environment === "HOMOLOGACAO" && !form.hasNfceCsc && !nfceCsc.trim()) return "Informe o código CSC de homologação da NFC-e.";
+      if (form.emitNfce && form.environment === "PRODUCAO" && !form.nfceIdCscProducao.trim()) return "Informe o idCSC de produção da NFC-e.";
+      if (form.emitNfce && form.environment === "PRODUCAO" && !form.hasNfceCscProducao && !nfceCscProducao.trim()) return "Informe o código CSC de produção da NFC-e.";
       if (form.emitNfse && form.proximoNumeroNfse < 1) return "Informe o próximo número da NFS-e.";
       if (form.emitNfse && !form.inscricaoMunicipal.trim()) return "Informe a inscrição municipal para emitir NFS-e.";
       if (form.emitNfse && !form.codigoMunicipioIbge.trim()) return "Informe o código IBGE do município para a NFS-e.";
@@ -107,7 +114,7 @@ export function FiscalOnboardingWizard({
       if (!certificatePassword.trim()) return "Informe a senha do certificado A1.";
     }
     return "";
-  }, [step, form, certificateFile, certificatePassword, certificateInfo]);
+  }, [step, form, certificateFile, certificatePassword, certificateInfo, nfceCsc, nfceCscProducao]);
 
   function next() {
     if (stepError) {
@@ -172,6 +179,10 @@ export function FiscalOnboardingWizard({
           proximoNumeroNfe: form.proximoNumeroNfe,
           proximoNumeroNfce: form.proximoNumeroNfce,
           proximoNumeroNfse: form.proximoNumeroNfse,
+          nfceIdCsc: form.nfceIdCsc,
+          nfceCsc: nfceCsc || undefined,
+          nfceIdCscProducao: form.nfceIdCscProducao,
+          nfceCscProducao: nfceCscProducao || undefined,
           emitNfe: form.emitNfe,
           emitNfce: form.emitNfce,
           emitNfse: form.emitNfse,
@@ -275,7 +286,7 @@ export function FiscalOnboardingWizard({
             </select>
           </label>
           <label>
-            Inscrição estadual
+            Inscrição estadual (necessária para NF-e/NFC-e)
             <input value={form.inscricaoEstadual} onChange={(e) => update("inscricaoEstadual", e.target.value)} />
           </label>
           <label>
@@ -376,6 +387,36 @@ export function FiscalOnboardingWizard({
             <label>Próximo número da NFC-e
               <input type="number" min={1} value={form.proximoNumeroNfce} onChange={(e) => update("proximoNumeroNfce", Math.max(1, Number(e.target.value) || 1))} />
             </label>
+            {form.environment === "HOMOLOGACAO" ? (<>
+              <label>idCSC da NFC-e · homologação
+                <input value={form.nfceIdCsc} onChange={(e) => update("nfceIdCsc", e.target.value)} placeholder="Ex.: 1" />
+              </label>
+              <label>Código CSC · homologação
+                <input
+                  type="password"
+                  value={nfceCsc}
+                  onChange={(e) => setNfceCsc(e.target.value)}
+                  placeholder={form.hasNfceCsc ? "Já configurado · deixe vazio para manter" : "Código fornecido pela SEFAZ"}
+                  autoComplete="off"
+                />
+              </label>
+            </>) : (<>
+              <label>idCSC da NFC-e · produção
+                <input value={form.nfceIdCscProducao} onChange={(e) => update("nfceIdCscProducao", e.target.value)} placeholder="Ex.: 1" />
+              </label>
+              <label>Código CSC · produção
+                <input
+                  type="password"
+                  value={nfceCscProducao}
+                  onChange={(e) => setNfceCscProducao(e.target.value)}
+                  placeholder={form.hasNfceCscProducao ? "Já configurado · deixe vazio para manter" : "Código fornecido pela SEFAZ"}
+                  autoComplete="off"
+                />
+              </label>
+            </>)}
+            <div className="full alert info" style={{ margin: 0 }}>
+              <span>O idCSC e o código CSC são credenciais da NFC-e fornecidas pela SEFAZ do seu estado e são diferentes entre homologação e produção.</span>
+            </div>
           </>)}
 
           {form.emitNfse && (<>
