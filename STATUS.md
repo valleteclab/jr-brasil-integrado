@@ -100,7 +100,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
-| 2026-07-26 | A gerar | Em andamento | Onboarding fiscal continuo apos o cadastro, com login automatico, modelos de nota, numeracao, certificado A1, servico principal LC 116 e descricao personalizavel. |
+| 2026-07-26 | `02600b2` | Enviado | Onboarding fiscal continuo apos o cadastro, com login automatico, modelos de nota, numeracao, certificado A1, servico principal LC 116 e descricao personalizavel. |
 | 2026-07-26 | `6075158` | Enviado | Allowlist segura para repetir o onboarding do plano CHAT com CNPJ ja cadastrado, destinada a testes controlados sem liberar duplicacao global. |
 | 2026-07-26 | `cc920bf` | Enviado | Expansao do agente com detalhe fiscal, orcamentos, contas a pagar, fluxo de caixa, fornecedores, compras, despesa manual e NF-e/NFC-e avulsa. |
 | 2026-07-26 | `2f75f7c` | Enviado | Ferramentas do agente para listar notas fiscais e pedidos recentes, com filtros, escopo multiempresa/ambiente e `notaId` para ações posteriores. |
@@ -644,4 +644,6 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - A descricao oficial do item LC 116 e sugerida automaticamente, mas pode ser adaptada ao servico real antes de concluir.
 - O codigo LC 116 e a descricao padrao passam a pre-preencher novas NFS-e no ERP; o agente tambem pode usar esses defaults quando o gestor informar somente o tomador e o valor.
 - Adicionada migration aditiva `20260726203000_descricao_servico_onboarding` para persistir `descricaoServicoPadrao` na configuracao fiscal.
-- Validacao parcial: Prisma Client regenerado, `npx tsc --noEmit`, `npm run lint` e `git diff --check` aprovados; permanecem somente os dois avisos de lint preexistentes.
+- Validacao: Prisma Client regenerado, `npx tsc --noEmit`, `npm run lint`, `git diff --check` e build Docker/Linux das 191 paginas aprovados; permanecem somente os dois avisos de lint preexistentes.
+- Deploy concluido com a imagem `jrb-erp:02600b2` (`sha256:d44948aa768f`); migration aplicada entre as 130 encontradas, servico convergido, logs limpos e cadastro CHAT respondendo HTTP 200.
+- A inspecao visual automatizada nao foi executada porque a conexao do navegador integrado nao iniciou neste ambiente; a navegacao deve ser conferida no proximo cadastro manual.
