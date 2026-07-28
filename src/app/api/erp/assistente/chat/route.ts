@@ -221,6 +221,7 @@ export async function POST(request: Request) {
       assistantAudioMime: assistantAudioBase64 ? "audio/wav" : null,
       showAssistantText,
       draft: result.draft,
+      quickActions: result.quickActions,
       attachmentLabel
     });
   } catch (error) {

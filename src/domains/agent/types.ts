@@ -20,6 +20,12 @@ export type AgentDraft = {
   href: string;
 };
 
+export type AgentQuickAction = {
+  label: string;
+  value: string;
+  variant: "primary" | "secondary" | "danger";
+};
+
 /** Resultado de um handler de tool. `data` é serializado e devolvido ao modelo. */
 export type ToolResult = {
   ok: boolean;

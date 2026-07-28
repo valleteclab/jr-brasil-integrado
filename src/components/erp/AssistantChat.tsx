@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { PERSONAS } from "@/domains/agent/runtime/persona";
-import type { AgentRole, AgentDraft } from "@/domains/agent/types";
+import type { AgentRole, AgentDraft, AgentQuickAction } from "@/domains/agent/types";
 import styles from "./AssistantChat.module.css";
 
 type ChatMsg = {
@@ -11,6 +11,7 @@ type ChatMsg = {
   anexo?: string;
   audioUrl?: string;
   draft?: AgentDraft | null;
+  quickActions?: AgentQuickAction[];
 };
 
 const ROLES: Array<{ id: AgentRole; label: string }> = [
@@ -56,6 +57,18 @@ function formatRecordingTime(totalSeconds: number) {
   const minutes = Math.floor(totalSeconds / 60).toString().padStart(2, "0");
   const seconds = (totalSeconds % 60).toString().padStart(2, "0");
   return `${minutes}:${seconds}`;
+}
+
+function FormattedMessage({ text }: { text: string }) {
+  return (
+    <span className={styles.messageText}>
+      {text.split(/(\*\*.*?\*\*)/g).map((part, index) =>
+        part.startsWith("**") && part.endsWith("**")
+          ? <strong key={index}>{part.slice(2, -2)}</strong>
+          : <span key={index}>{part}</span>
+      )}
+    </span>
+  );
 }
 
 export function AssistantChat() {
@@ -214,7 +227,7 @@ export function AssistantChat() {
     setError("");
     setInput("");
     setMensagens((cur) => [
-      ...cur,
+      ...cur.map((message) => ({ ...message, quickActions: undefined })),
       {
         papel: "user",
         texto: msg || (isAudioMessage ? "Mensagem de voz" : "Anexo enviado"),
@@ -250,6 +263,7 @@ export function AssistantChat() {
         assistantAudioBase64?: string | null;
         assistantAudioMime?: string | null;
         showAssistantText?: boolean;
+        quickActions?: AgentQuickAction[];
         error?: string;
       };
       if (!res.ok) throw new Error(data.error || "Não foi possível obter a resposta.");
@@ -266,7 +280,8 @@ export function AssistantChat() {
           papel: "assistant",
           texto: data.showAssistantText === false && assistantAudioUrl ? "" : (data.assistantText ?? ""),
           audioUrl: assistantAudioUrl,
-          draft: data.draft ?? null
+          draft: data.draft ?? null,
+          quickActions: data.quickActions ?? []
         }
       ]);
       requestAnimationFrame(() => listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" }));
@@ -416,9 +431,7 @@ export function AssistantChat() {
                         </div>
                       </div>
                     )}
-                    {message.texto && (
-                      <span className={styles.messageText}>{message.texto}</span>
-                    )}
+                    {message.texto && <FormattedMessage text={message.texto} />}
                   </div>
                   {message.draft && (
                     <a href={message.draft.href} className={styles.draftAction}>
@@ -428,6 +441,28 @@ export function AssistantChat() {
                       </span>
                       <span>Confirmar agora →</span>
                     </a>
+                  )}
+                  {message.quickActions && message.quickActions.length > 0 && (
+                    <div className={styles.quickActions} aria-label="Ações de confirmação">
+                      {message.quickActions.map((action) => (
+                        <button
+                          key={`${action.value}-${action.label}`}
+                          type="button"
+                          className={`${styles.quickAction} ${
+                            action.variant === "danger"
+                              ? styles.quickActionDanger
+                              : action.variant === "secondary"
+                                ? styles.quickActionSecondary
+                                : styles.quickActionPrimary
+                          }`}
+                          onClick={() => void enviar(action.value)}
+                          disabled={busy}
+                        >
+                          {action.variant === "primary" && <Icon name="check" size={16} />}
+                          {action.label}
+                        </button>
+                      ))}
+                    </div>
                   )}
                 </div>
               </article>

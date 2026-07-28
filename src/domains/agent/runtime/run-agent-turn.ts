@@ -2,7 +2,7 @@ import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import { createAuditLog } from "@/lib/audit/audit-service";
 import { callOpenRouterWithTools, type ToolChatMessage } from "@/domains/ai/openrouter-service";
-import type { AgentDraft, AgentRole } from "../types";
+import type { AgentDraft, AgentQuickAction, AgentRole } from "../types";
 import { getTool, getToolsForRole, toOpenAiTools } from "../tools/registry";
 import { consumirFranquiaIa } from "./franquia-ia";
 import { buildSystemPrompt } from "./system-prompt";
@@ -17,6 +17,7 @@ const MAX_MS = 90_000;
 export type AgentTurnResult = {
   assistantText: string;
   draft: AgentDraft | null;
+  quickActions: AgentQuickAction[];
   /** Mensagens novas a persistir (tool calls + resposta final), na ordem. */
   novasMensagens: Array<{
     papel: "ASSISTANT" | "TOOL";
@@ -27,6 +28,28 @@ export type AgentTurnResult = {
     draftId?: string;
   }>;
 };
+
+const CONFIRMATION_MARKER = /\[\[CONFIRMAR:(CADASTRAR|EMITIR|CANCELAR|CONFIRMAR)\]\]/gi;
+
+export function extractQuickActions(input: string): { text: string; actions: AgentQuickAction[] } {
+  const confirmation = [...input.matchAll(CONFIRMATION_MARKER)].at(-1)?.[1]?.toUpperCase();
+  const text = input.replace(CONFIRMATION_MARKER, "").replace(/\n{3,}/g, "\n\n").trim();
+  if (!confirmation) return { text, actions: [] };
+
+  const primary: Record<string, AgentQuickAction> = {
+    CADASTRAR: { label: "Cadastrar produto", value: "CADASTRAR", variant: "primary" },
+    EMITIR: { label: "Emitir agora", value: "EMITIR", variant: "primary" },
+    CANCELAR: { label: "Confirmar cancelamento", value: "CANCELAR", variant: "danger" },
+    CONFIRMAR: { label: "Confirmar", value: "CONFIRMAR", variant: "primary" }
+  };
+  return {
+    text,
+    actions: [
+      primary[confirmation],
+      { label: "Agora não", value: "NÃO", variant: "secondary" }
+    ]
+  };
+}
 
 /**
  * Executa um turno do agente: monta o contexto, roda o loop de tool-calling
@@ -54,6 +77,7 @@ export async function runAgentTurn(params: {
     return {
       assistantText: `⚠️ ${franquia.motivo}`,
       draft: null,
+      quickActions: [],
       novasMensagens: [{ papel: "ASSISTANT", conteudo: `⚠️ ${franquia.motivo}` }]
     };
   }
@@ -78,9 +102,10 @@ export async function runAgentTurn(params: {
 
     // Sem tool calls → resposta final em texto.
     if (toolCalls.length === 0) {
-      const texto = (assistant.content ?? "").trim() || "Não consegui gerar uma resposta.";
+      const parsed = extractQuickActions((assistant.content ?? "").trim() || "Não consegui gerar uma resposta.");
+      const texto = parsed.text;
       novasMensagens.push({ papel: "ASSISTANT", conteudo: texto });
-      return { assistantText: texto, draft, novasMensagens };
+      return { assistantText: texto, draft, quickActions: parsed.actions, novasMensagens };
     }
 
     // Anexa a mensagem do assistant com os tool_calls (exigência do protocolo).
@@ -144,13 +169,14 @@ export async function runAgentTurn(params: {
     const fechamento = await callOpenRouterWithTools(scope, messages, openAiTools, { toolChoice: "none" });
     const texto = (fechamento.content ?? "").trim();
     if (texto) {
-      novasMensagens.push({ papel: "ASSISTANT", conteudo: texto });
-      return { assistantText: texto, draft, novasMensagens };
+      const parsed = extractQuickActions(texto);
+      novasMensagens.push({ papel: "ASSISTANT", conteudo: parsed.text });
+      return { assistantText: parsed.text, draft, quickActions: parsed.actions, novasMensagens };
     }
   } catch {
     // cai no aviso genérico
   }
   const aviso = "Não consegui concluir a solicitação em tempo. Tente reformular ou peça um passo de cada vez.";
   novasMensagens.push({ papel: "ASSISTANT", conteudo: aviso });
-  return { assistantText: aviso, draft, novasMensagens };
+  return { assistantText: aviso, draft, quickActions: [], novasMensagens };
 }

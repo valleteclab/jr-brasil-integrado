@@ -100,6 +100,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
+| 2026-07-27 | A gerar | Em andamento | Confirmacoes estruturadas com botoes no chat web e coleta fiscal obrigatoria antes do cadastro de produtos pelo agente. |
 | 2026-07-27 | `025fda2` | Enviado | Ferramenta `cadastrar_produto` para o agente criar produtos com SKU automatico, estoque inicial, dados comerciais/fiscais e confirmacao explicita do gestor. |
 | 2026-07-27 | `fc5f2f7` | Enviado | Redesign completo do chat web como workspace de IA, com identidade do assistente, sugestoes inteligentes, mensagens aprimoradas, composer multimodal e gravacao expressiva. |
 | 2026-07-27 | `d970d38` | Enviado | Correcao da resposta de voz do chat web para WAV, contornando falha nativa do encoder MP3 do Kokoro sem alterar WhatsApp e Telegram. |
@@ -701,3 +702,13 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Produto sem NCM pode ser criado, mas a resposta alerta que a classificacao fiscal deve ser completada antes da emissao de nota.
 - Validacao: TypeScript e lint aprovados; catalogo com 34 ferramentas sem nomes duplicados, ferramenta presente para GESTOR e bloqueio sem confirmacao testado sem acesso ao banco.
 - Build Docker/Linux das 191 paginas aprovado e deploy concluido com a imagem `jrb-erp:025fda2` (`sha256:ea7557061301`); servico convergido e `https://erp.sisgov.app.br/login` respondeu HTTP 200.
+
+## Atualizacao operacional - 2026-07-27 - botoes de confirmacao e produto fiscal completo
+
+- O protocolo do agente agora aceita marcadores estruturados para `CADASTRAR`, `EMITIR`, `CANCELAR` e `CONFIRMAR`; o backend remove o marcador do texto e devolve acoes tipadas ao chat web.
+- O chat renderiza botoes contextuais como `Cadastrar produto` e `Agora nao`; ao clicar, a resposta de confirmacao e enviada na mesma conversa e os botoes anteriores sao desativados para evitar duplo acionamento.
+- Respostas do assistente passaram a interpretar negrito simples (`**texto**`), eliminando os asteriscos literais exibidos nos resumos.
+- Para produtos, o agente deve coletar antes do resumo: nome, preco, estoque inicial, unidade, NCM, origem fiscal e respostas explicitas para GTIN e CEST, aceitando `SEM GTIN` e `SEM CEST`.
+- A ferramenta agora exige esses campos no schema e no handler: NCM precisa ter 8 digitos, origem deve estar entre 0 e 8, GTIN deve ser valido ou ausente explicitamente, e CEST deve ter 7 digitos ou ser marcado como nao aplicavel.
+- O fluxo continua restrito ao GESTOR, isolado por tenant/empresa, transacional e auditado; nenhuma classificacao fiscal e inventada pela IA.
+- Validacao: TypeScript, lint e `git diff --check` aprovados; parser gerou as acoes `CADASTRAR`/`NAO`, ocultou o marcador da mensagem e o handler bloqueou cadastro sem NCM antes de acessar o banco.

@@ -24,7 +24,7 @@ function optionalNumber(value: unknown): number | undefined {
 export const cadastrarProduto: AgentTool = {
   name: "cadastrar_produto",
   description:
-    "Cadastra um produto novo no catálogo da empresa. AÇÃO DE ESCRITA: primeiro obtenha ao menos nome e preço de venda, pergunte estoque inicial se não foi informado, mostre um resumo com nome, SKU (ou automático), preço, estoque, unidade e dados fiscais e peça o usuário responder CADASTRAR. Só então chame com confirmar=true. O SKU pode ficar vazio para geração automática. Não use para alterar produto existente.",
+    "Cadastra um produto novo e fiscalmente utilizável no catálogo da empresa. Antes da confirmação, obtenha nome, preço, estoque inicial, unidade, NCM, origem e respostas explícitas para GTIN e CEST (aceite SEM GTIN/SEM CEST). Mostre o resumo e peça CADASTRAR. Só então chame com confirmar=true. SKU vazio é gerado automaticamente. Não invente classificação fiscal nem use para alterar produto existente.",
   mode: "write",
   roles: ["GESTOR"],
   inputSchema: {
@@ -32,15 +32,15 @@ export const cadastrarProduto: AgentTool = {
     properties: {
       nome: { type: "string", description: "Nome/descrição principal do produto." },
       sku: { type: "string", description: "SKU opcional; vazio gera PRD-NNNNNN automaticamente." },
-      tipo: { type: "string", enum: ["PRODUTO", "SERVICO", "KIT", "INSUMO"], description: "Padrão PRODUTO." },
+      tipo: { type: "string", enum: ["PRODUTO", "KIT", "INSUMO"], description: "Padrão PRODUTO." },
       marca: { type: "string", description: "Marca; padrão Sem marca." },
       categoria: { type: "string", description: "Categoria; padrão Sem categoria." },
-      gtin: { type: "string", description: "Código de barras GTIN/EAN com 8, 12, 13 ou 14 dígitos." },
-      unidade: { type: "string", description: "Unidade de venda, por exemplo UN, KG, LT; padrão UN." },
+      gtin: { type: "string", description: "GTIN/EAN com 8, 12, 13 ou 14 dígitos; envie SEM GTIN quando não possuir." },
+      unidade: { type: "string", description: "Unidade de venda, por exemplo UN, KG ou LT." },
       descricao: { type: "string", description: "Descrição curta opcional." },
-      ncm: { type: "string", description: "NCM com 8 dígitos (opcional)." },
-      cest: { type: "string", description: "CEST com 7 dígitos (opcional)." },
-      origem: { type: "string", description: "Origem fiscal da mercadoria (opcional)." },
+      ncm: { type: "string", description: "NCM com exatamente 8 dígitos." },
+      cest: { type: "string", description: "CEST com 7 dígitos; envie SEM CEST quando não se aplicar." },
+      origem: { type: "string", enum: ["0", "1", "2", "3", "4", "5", "6", "7", "8"], description: "Código de origem fiscal da mercadoria, de 0 a 8." },
       cfopDentroEstado: { type: "string", description: "CFOP de venda dentro do estado (opcional)." },
       cfopForaEstado: { type: "string", description: "CFOP de venda fora do estado (opcional)." },
       precoCusto: { type: "number", description: "Preço de custo; padrão zero." },
@@ -54,7 +54,7 @@ export const cadastrarProduto: AgentTool = {
       visivelEcommerce: { type: "boolean", description: "Se aparece na loja; padrão true." },
       confirmar: { type: "boolean", description: "Obrigatório true somente após o gestor responder CADASTRAR." }
     },
-    required: ["nome", "precoVenda", "confirmar"],
+    required: ["nome", "precoVenda", "estoqueInicial", "unidade", "ncm", "origem", "gtin", "cest", "confirmar"],
     additionalProperties: false
   },
   handler: async (scope, args) => {
@@ -68,12 +68,37 @@ export const cadastrarProduto: AgentTool = {
 
     const nome = optionalText(args.nome);
     const precoVenda = optionalNumber(args.precoVenda);
+    const estoqueInicial = optionalNumber(args.estoqueInicial);
+    const unidade = optionalText(args.unidade)?.toUpperCase();
+    const ncm = optionalText(args.ncm)?.replace(/\D/g, "");
+    const origem = optionalText(args.origem);
+    const gtinInformado = optionalText(args.gtin);
+    const cestInformado = optionalText(args.cest);
     if (!nome) return { ok: false, data: null, error: "Informe o nome do produto." };
     if (precoVenda === undefined || precoVenda < 0) {
       return { ok: false, data: null, error: "Informe um preço de venda válido e não negativo." };
     }
+    if (estoqueInicial === undefined || estoqueInicial < 0) {
+      return { ok: false, data: null, error: "Informe o estoque inicial, mesmo que seja zero." };
+    }
+    if (!unidade) return { ok: false, data: null, error: "Informe a unidade de venda, por exemplo UN, KG ou LT." };
+    if (!ncm || ncm.length !== 8) return { ok: false, data: null, error: "Informe o NCM com exatamente 8 dígitos." };
+    if (!origem || !/^[0-8]$/.test(origem)) {
+      return { ok: false, data: null, error: "Informe o código de origem fiscal da mercadoria, de 0 a 8." };
+    }
+    if (!gtinInformado) return { ok: false, data: null, error: "Informe o GTIN ou responda SEM GTIN." };
+    if (!cestInformado) return { ok: false, data: null, error: "Informe o CEST ou responda SEM CEST." };
 
-    const gtin = optionalText(args.gtin)?.replace(/\D/g, "");
+    const semGtin = /^SEM\s+GTIN$/i.test(gtinInformado);
+    const semCest = /^SEM\s+CEST$/i.test(cestInformado);
+    const gtin = semGtin ? undefined : gtinInformado.replace(/\D/g, "");
+    const cest = semCest ? undefined : cestInformado.replace(/\D/g, "");
+    if (!semGtin && ![8, 12, 13, 14].includes(gtin?.length ?? 0)) {
+      return { ok: false, data: null, error: "GTIN inválido. Informe 8, 12, 13 ou 14 dígitos, ou responda SEM GTIN." };
+    }
+    if (!semCest && (cest?.length ?? 0) !== 7) {
+      return { ok: false, data: null, error: "CEST inválido. Informe 7 dígitos, ou responda SEM CEST." };
+    }
     if (gtin) {
       const existente = await prisma.produto.findFirst({
         where: { ...scopedByTenantCompany(scope), gtin },
@@ -96,18 +121,18 @@ export const cadastrarProduto: AgentTool = {
         brand: optionalText(args.marca) ?? "Sem marca",
         category: optionalText(args.categoria) ?? "Sem categoria",
         barcode: gtin,
-        unit: optionalText(args.unidade) ?? "UN",
+        unit: unidade,
         shortDescription: optionalText(args.descricao),
-        ncm: optionalText(args.ncm),
-        cest: optionalText(args.cest),
-        origin: optionalText(args.origem),
+        ncm,
+        cest,
+        origin: origem,
         cfopInState: optionalText(args.cfopDentroEstado),
         cfopOutState: optionalText(args.cfopForaEstado),
         costValue: optionalNumber(args.precoCusto) ?? 0,
         priceValue: precoVenda,
         termPrice: optionalNumber(args.precoVendaPrazo) ?? 0,
         minimumPrice: optionalNumber(args.precoMinimo) ?? 0,
-        availableStock: optionalNumber(args.estoqueInicial) ?? 0,
+        availableStock: estoqueInicial,
         minimumStock: optionalNumber(args.estoqueMinimo) ?? 0,
         maxStock: optionalNumber(args.estoqueMaximo) ?? 0,
         warehouse: optionalText(args.deposito),
@@ -123,10 +148,13 @@ export const cadastrarProduto: AgentTool = {
           tipo: produto.tipo,
           unidade: produto.unidade,
           precoVenda: Number(produto.precoVenda),
-          estoqueInicial: optionalNumber(args.estoqueInicial) ?? 0,
+          estoqueInicial,
           ncm: produto.ncm,
+          origem: produto.origem,
+          gtin: produto.gtin ?? "SEM GTIN",
+          cest: produto.cest ?? "SEM CEST",
           cadastroUrl: "/erp/produtos",
-          avisoFiscal: produto.ncm ? null : "Produto criado sem NCM; complete a classificação fiscal antes de emitir nota."
+          prontoParaEmissaoFiscal: true
         }
       };
     } catch (error) {

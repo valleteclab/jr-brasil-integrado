@@ -493,6 +493,59 @@
   display: block;
 }
 
+.messageText strong {
+  color: inherit;
+  font-weight: 800;
+}
+
+.quickActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 9px;
+}
+
+.quickAction {
+  align-items: center;
+  border-radius: 10px;
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 10.5px;
+  font-weight: 800;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 13px;
+  transition: box-shadow .18s ease, transform .18s ease;
+}
+
+.quickAction:disabled {
+  cursor: not-allowed;
+  opacity: .52;
+}
+
+.quickAction:not(:disabled):hover {
+  box-shadow: 0 7px 17px rgba(15, 23, 42, .13);
+  transform: translateY(-1px);
+}
+
+.quickActionPrimary {
+  background: var(--ai-yellow);
+  border: 1px solid #e4ab00;
+  color: var(--ai-ink);
+}
+
+.quickActionSecondary {
+  background: #fff;
+  border: 1px solid #d8dde5;
+  color: #5e6877;
+}
+
+.quickActionDanger {
+  background: #d93d43;
+  border: 1px solid #bd2e34;
+  color: #fff;
+}
+
 .attachmentName {
   align-items: center;
   border-bottom: 1px solid rgba(15, 17, 23, .11);
