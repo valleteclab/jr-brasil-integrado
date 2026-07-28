@@ -123,8 +123,6 @@ async function expandFiscalSearchTerms(
 
 async function searchOfficialNcmCandidates(scope: TenantScope, descricao: string) {
   const direct = await searchNcm(descricao, 15);
-  if (direct.length >= 5) return direct;
-
   const expansion = await expandFiscalSearchTerms(scope, descricao);
   const [expanded, proposedCodes] = await Promise.all([
     Promise.all(expansion.terms.map((term) => searchNcm(term, 15))),
