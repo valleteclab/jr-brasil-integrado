@@ -739,3 +739,5 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - A API autenticada do CHAT passou a listar as ultimas 30 conversas WEB do usuario e carregar ate 100 mensagens da conversa selecionada, sempre isoladas por tenant, empresa e usuario.
 - A tela restaura a conversa ativa ao abrir, oferece painel de historico e mantem conversas encerradas disponiveis para consulta, com data, status e previa.
 - Validacao local: TypeScript, lint e `git diff --check` aprovados; inferencia de `CADASTRAR` validada com a frase real exibida no CHAT.
+- Build Docker/Linux das 191 paginas aprovado e deploy concluido com a imagem `jrb-erp:e48ed2b` (`sha256:0243ee7cd8e8`); servico convergido e login publico respondeu HTTP 200.
+- Verificacao no banco de producao encontrou 8 conversas WEB recuperaveis, todas com mensagens e escopo de usuario, incluindo 1 conversa ativa para restauracao automatica.
