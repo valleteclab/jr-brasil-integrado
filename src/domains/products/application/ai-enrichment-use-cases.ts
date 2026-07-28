@@ -61,6 +61,68 @@ const SYSTEM_PROMPT = [
   "confianca é um inteiro de 0 a 100."
 ].join(" ");
 
+const SEARCH_EXPANSION_PROMPT = [
+  "Você transforma nomes comerciais de mercadorias em termos genéricos usados na descrição fiscal oficial do NCM.",
+  "Não informe códigos NCM.",
+  "Responda SOMENTE com JSON válido no formato {\"termosBusca\":[\"termo fiscal 1\",\"termo fiscal 2\"]}.",
+  "Retorne de 1 a 3 expressões curtas e priorize a natureza/função do produto, sem marca, modelo, capacidade ou propaganda."
+].join(" ");
+
+/**
+ * Expande linguagem comercial para vocabulário fiscal somente quando a busca direta não encontra
+ * candidatos suficientes. A IA não escolhe código aqui: os termos apenas consultam a tabela oficial,
+ * e o NCM final continua ancorado/validado por findNcm.
+ */
+async function expandFiscalSearchTerms(scope: TenantScope, descricao: string): Promise<string[]> {
+  try {
+    const content = await callOpenRouter(
+      scope,
+      [
+        { role: "system", content: SEARCH_EXPANSION_PROMPT },
+        {
+          role: "user",
+          content: JSON.stringify({
+            produto: descricao,
+            exemplos: [
+              {
+                produto: "Notebook Dell i3 com SSD",
+                termosBusca: ["máquinas automáticas para processamento de dados portáteis"]
+              },
+              {
+                produto: "Parafuso sextavado aço 10mm",
+                termosBusca: ["parafusos de ferro ou aço"]
+              }
+            ]
+          })
+        }
+      ],
+      { maxTokens: 180, temperature: 0 }
+    );
+    const parsed = extractJsonObject(content);
+    if (!Array.isArray(parsed.termosBusca)) return [];
+    return parsed.termosBusca
+      .filter((term): term is string => typeof term === "string")
+      .map((term) => term.trim())
+      .filter((term) => term.length >= 3)
+      .slice(0, 3);
+  } catch {
+    return [];
+  }
+}
+
+async function searchOfficialNcmCandidates(scope: TenantScope, descricao: string) {
+  const direct = await searchNcm(descricao, 15);
+  if (direct.length >= 5) return direct;
+
+  const expandedTerms = await expandFiscalSearchTerms(scope, descricao);
+  const expanded = await Promise.all(expandedTerms.map((term) => searchNcm(term, 15)));
+  const unique = new Map<string, { codigo: string; descricao: string }>();
+  for (const candidate of [...direct, ...expanded.flat()]) {
+    if (!unique.has(candidate.codigo)) unique.set(candidate.codigo, candidate);
+  }
+  return [...unique.values()].slice(0, 25);
+}
+
 /** Sugere dados fiscais de UM produto a partir da descrição (e GTIN, se houver). */
 export async function suggestProductFiscalWithAi(
   scope: TenantScope,
@@ -71,7 +133,7 @@ export async function suggestProductFiscalWithAi(
 
   const cosmos = await tentarCosmos(scope, input.gtin);
   const termoBusca = [descricao, cosmos?.descricao].filter(Boolean).join(" ");
-  const candidatos = await searchNcm(termoBusca, 15);
+  const candidatos = await searchOfficialNcmCandidates(scope, termoBusca);
   const categoriasDisponiveis = await listProductCategories(scope);
 
   const content = await callOpenRouter(

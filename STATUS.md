@@ -100,6 +100,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
+| 2026-07-27 | A gerar | Em andamento | Expansao segura de nomes comerciais para vocabulario fiscal quando a busca direta de candidatos NCM nao encontra correspondencias. |
 | 2026-07-27 | A gerar | Em andamento | Agente conectado ao enriquecimento fiscal existente para sugerir NCM/CEST por descricao ou GTIN, com origem nacional padrao e revisao antes do cadastro. |
 | 2026-07-27 | `847f26a` | Enviado | Confirmacoes estruturadas com botoes no chat web e coleta fiscal obrigatoria antes do cadastro de produtos pelo agente. |
 | 2026-07-27 | `025fda2` | Enviado | Ferramenta `cadastrar_produto` para o agente criar produtos com SKU automatico, estoque inicial, dados comerciais/fiscais e confirmacao explicita do gestor. |
@@ -726,3 +727,4 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Origem fiscal nao trava mais o fluxo: o cadastro usa `0 - Nacional` por padrao e o agente so pergunta outro codigo quando o usuario informar que a mercadoria e importada.
 - A ferramenta de escrita ainda exige NCM validado e confirmacao explicita, preservando o bloqueio contra cadastro fiscal incompleto.
 - Validacao: TypeScript, lint e `git diff --check` aprovados; catalogo com 35 ferramentas sem duplicidade, sugestao fiscal presente para GESTOR e bloqueio de NCM ausente testado sem acesso ao banco.
+- Quando a descricao comercial nao encontra candidatos suficientes (por exemplo, `notebook`), uma etapa de expansao converte o nome em vocabulario fiscal generico (como maquinas automaticas para processamento de dados portateis) e refaz a busca oficial; nenhum codigo e criado nessa etapa e a validacao final continua obrigatoria.
