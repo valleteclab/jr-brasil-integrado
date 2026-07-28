@@ -100,8 +100,8 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
-| 2026-07-27 | A gerar | Em andamento | Expansao segura de nomes comerciais para vocabulario fiscal quando a busca direta de candidatos NCM nao encontra correspondencias. |
-| 2026-07-27 | A gerar | Em andamento | Agente conectado ao enriquecimento fiscal existente para sugerir NCM/CEST por descricao ou GTIN, com origem nacional padrao e revisao antes do cadastro. |
+| 2026-07-27 | `00dec93` | Enviado | Expansao segura e sempre ativa de nomes comerciais para candidatos oficiais NCM, com validacao dos codigos antes da selecao fiscal. |
+| 2026-07-27 | `38c127c` | Enviado | Agente conectado ao enriquecimento fiscal existente para sugerir NCM/CEST por descricao ou GTIN, com origem nacional padrao e revisao antes do cadastro. |
 | 2026-07-27 | `847f26a` | Enviado | Confirmacoes estruturadas com botoes no chat web e coleta fiscal obrigatoria antes do cadastro de produtos pelo agente. |
 | 2026-07-27 | `025fda2` | Enviado | Ferramenta `cadastrar_produto` para o agente criar produtos com SKU automatico, estoque inicial, dados comerciais/fiscais e confirmacao explicita do gestor. |
 | 2026-07-27 | `fc5f2f7` | Enviado | Redesign completo do chat web como workspace de IA, com identidade do assistente, sugestoes inteligentes, mensagens aprimoradas, composer multimodal e gravacao expressiva. |
@@ -728,3 +728,5 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - A ferramenta de escrita ainda exige NCM validado e confirmacao explicita, preservando o bloqueio contra cadastro fiscal incompleto.
 - Validacao: TypeScript, lint e `git diff --check` aprovados; catalogo com 35 ferramentas sem duplicidade, sugestao fiscal presente para GESTOR e bloqueio de NCM ausente testado sem acesso ao banco.
 - A expansao fiscal sempre complementa a busca textual, evitando que falsos positivos por termos comerciais curtos (como RAM/SSD) impeçam a recuperacao correta; ela gera vocabulario fiscal e ate cinco codigos provaveis usados somente como chaves de recuperacao. Codigos inexistentes sao descartados, os existentes viram candidatos com descricao oficial e a selecao/validacao final continua obrigatoria.
+- Producao atualizada com a imagem `jrb-erp:00dec93` (`sha256:433722b5dcdc`), build de 191 paginas e smoke test publico com HTTP 200.
+- Teste E2E real no CHAT aprovado para notebook: o agente chamou `sugerir_fiscal_produto`, retornou NCM oficial, exibiu as acoes `CADASTRAR`/`NAO` e nao perguntou origem fiscal.
