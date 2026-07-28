@@ -100,6 +100,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
+| 2026-07-27 | A gerar | Em andamento | Ferramenta `cadastrar_produto` para o agente criar produtos com SKU automatico, estoque inicial, dados comerciais/fiscais e confirmacao explicita do gestor. |
 | 2026-07-27 | `fc5f2f7` | Enviado | Redesign completo do chat web como workspace de IA, com identidade do assistente, sugestoes inteligentes, mensagens aprimoradas, composer multimodal e gravacao expressiva. |
 | 2026-07-27 | `d970d38` | Enviado | Correcao da resposta de voz do chat web para WAV, contornando falha nativa do encoder MP3 do Kokoro sem alterar WhatsApp e Telegram. |
 | 2026-07-27 | `b53efc8` | Enviado | Chat web com envio automatico ao parar a gravacao e resposta em audio pela voz configurada, seguindo a politica do WhatsApp. |
@@ -689,3 +690,13 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Validacao: TypeScript, lint, `git diff --check` e build local de producao das 191 paginas aprovados; permanecem somente os dois avisos de lint preexistentes.
 - A inspecao visual automatizada nao foi executada porque nenhum navegador integrado estava disponivel nesta sessao.
 - Build Docker/Linux das 191 paginas aprovado e deploy concluido com a imagem `jrb-erp:fc5f2f7` (`sha256:6ef676901ccb`); servico convergido e `https://erp.sisgov.app.br/login` respondeu HTTP 200.
+
+## Atualizacao operacional - 2026-07-27 - cadastro de produtos pelo agente
+
+- Adicionada a ferramenta `cadastrar_produto`, disponivel somente para o perfil GESTOR no chat web, WhatsApp, Telegram e MCP, pois todos usam o mesmo registro de ferramentas.
+- O agente coleta nome e preco de venda, pergunta o estoque inicial quando ausente e aceita SKU opcional, tipo, marca, categoria, GTIN, unidade, descricao, NCM, CEST, origem, CFOPs, custos, precos, limites de estoque, deposito e visibilidade na loja.
+- SKU vazio usa o gerador seguro `PRD-NNNNNN`; SKU duplicado e rejeitado pelo caso de uso existente e GTIN ja vinculado e bloqueado antes da criacao.
+- Antes de gravar, o agente deve mostrar nome, SKU, preco, estoque, unidade e dados fiscais e pedir a resposta `CADASTRAR`; o handler recusa chamadas sem `confirmar=true`.
+- A criacao reutiliza o caso de uso de produtos, mantendo transacao, isolamento por tenant/empresa, movimento de saldo inicial e auditoria `Produto/CREATE`.
+- Produto sem NCM pode ser criado, mas a resposta alerta que a classificacao fiscal deve ser completada antes da emissao de nota.
+- Validacao: TypeScript e lint aprovados; catalogo com 34 ferramentas sem nomes duplicados, ferramenta presente para GESTOR e bloqueio sem confirmacao testado sem acesso ao banco.

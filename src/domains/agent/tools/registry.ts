@@ -32,6 +32,7 @@ import { enviarDocumento } from "./write/enviar-documento";
 import { consultarCreditoTool } from "./write/consultar-credito";
 import { registrarDespesa } from "./write/registrar-despesa";
 import { emitirNotaProduto } from "./write/emitir-nota-produto";
+import { cadastrarProduto } from "./write/cadastrar-produto";
 
 /** Fonte única de verdade das ferramentas do agente — usada pelo chat web e pelo MCP. */
 export const ALL_TOOLS: AgentTool[] = [
@@ -67,7 +68,8 @@ export const ALL_TOOLS: AgentTool[] = [
   cancelarNota,
   enviarDocumento,
   registrarDespesa,
-  emitirNotaProduto
+  emitirNotaProduto,
+  cadastrarProduto
 ];
 
 export function getToolsForRole(role: AgentRole): AgentTool[] {
