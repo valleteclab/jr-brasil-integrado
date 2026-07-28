@@ -100,7 +100,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
-| 2026-07-27 | A gerar | Em andamento | Redesign completo do chat web como workspace de IA, com identidade do assistente, sugestoes inteligentes, mensagens aprimoradas, composer multimodal e gravacao expressiva. |
+| 2026-07-27 | `fc5f2f7` | Enviado | Redesign completo do chat web como workspace de IA, com identidade do assistente, sugestoes inteligentes, mensagens aprimoradas, composer multimodal e gravacao expressiva. |
 | 2026-07-27 | `d970d38` | Enviado | Correcao da resposta de voz do chat web para WAV, contornando falha nativa do encoder MP3 do Kokoro sem alterar WhatsApp e Telegram. |
 | 2026-07-27 | `b53efc8` | Enviado | Chat web com envio automatico ao parar a gravacao e resposta em audio pela voz configurada, seguindo a politica do WhatsApp. |
 | 2026-07-26 | `26edfd1` | Enviado | Plano CHAT provisionado com IA operacional e chat web ampliado com imagens, PDF, arquivos de texto e audio gravado/enviado. |
@@ -688,3 +688,4 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - A interface respeita movimento reduzido do sistema e possui adaptacoes para telas menores sem alterar APIs, escopo multiempresa ou regras do agente.
 - Validacao: TypeScript, lint, `git diff --check` e build local de producao das 191 paginas aprovados; permanecem somente os dois avisos de lint preexistentes.
 - A inspecao visual automatizada nao foi executada porque nenhum navegador integrado estava disponivel nesta sessao.
+- Build Docker/Linux das 191 paginas aprovado e deploy concluido com a imagem `jrb-erp:fc5f2f7` (`sha256:6ef676901ccb`); servico convergido e `https://erp.sisgov.app.br/login` respondeu HTTP 200.
