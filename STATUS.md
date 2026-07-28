@@ -100,7 +100,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
-| 2026-07-27 | A gerar | Em andamento | Confirmacoes resilientes com botoes, unidade `UN` padrao e historico persistente das conversas WEB do assistente. |
+| 2026-07-27 | `f1f8236` | Enviado | Confirmacoes resilientes com botoes, unidade `UN` padrao e historico persistente das conversas WEB do assistente. |
 | 2026-07-27 | `00dec93` | Enviado | Expansao segura e sempre ativa de nomes comerciais para candidatos oficiais NCM, com validacao dos codigos antes da selecao fiscal. |
 | 2026-07-27 | `38c127c` | Enviado | Agente conectado ao enriquecimento fiscal existente para sugerir NCM/CEST por descricao ou GTIN, com origem nacional padrao e revisao antes do cadastro. |
 | 2026-07-27 | `847f26a` | Enviado | Confirmacoes estruturadas com botoes no chat web e coleta fiscal obrigatoria antes do cadastro de produtos pelo agente. |
