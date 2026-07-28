@@ -7,7 +7,7 @@
 import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import { callOpenRouter } from "@/domains/ai/openrouter-service";
-import { findNcm, searchNcm, normalizeNcm } from "@/domains/fiscal/ncm-service";
+import { findNcm, limparDescricaoNcm, searchNcm, normalizeNcm } from "@/domains/fiscal/ncm-service";
 import { listProductCategories } from "@/lib/services/products";
 import { searchCest } from "@/lib/services/fiscal-codes";
 import { lookupProdutoGtin } from "./dataload-dados-service";
@@ -62,18 +62,22 @@ const SYSTEM_PROMPT = [
 ].join(" ");
 
 const SEARCH_EXPANSION_PROMPT = [
-  "Você transforma nomes comerciais de mercadorias em termos genéricos usados na descrição fiscal oficial do NCM.",
-  "Não informe códigos NCM.",
-  "Responda SOMENTE com JSON válido no formato {\"termosBusca\":[\"termo fiscal 1\",\"termo fiscal 2\"]}.",
-  "Retorne de 1 a 3 expressões curtas e priorize a natureza/função do produto, sem marca, modelo, capacidade ou propaganda."
+  "Você transforma nomes comerciais de mercadorias em termos fiscais e códigos NCM candidatos.",
+  "Responda SOMENTE com JSON válido no formato {\"termosBusca\":[\"termo fiscal\"],\"codigosPossiveis\":[\"00000000\"]}.",
+  "Retorne de 1 a 3 expressões curtas e no máximo 5 códigos prováveis.",
+  "Os códigos serão usados apenas para recuperar registros existentes da tabela oficial e serão descartados se não existirem.",
+  "Priorize a natureza/função do produto, sem marca, modelo ou propaganda."
 ].join(" ");
 
 /**
  * Expande linguagem comercial para vocabulário fiscal somente quando a busca direta não encontra
- * candidatos suficientes. A IA não escolhe código aqui: os termos apenas consultam a tabela oficial,
- * e o NCM final continua ancorado/validado por findNcm.
+ * candidatos suficientes. Códigos sugeridos nesta etapa servem apenas como chaves de recuperação:
+ * inexistentes são descartados por findNcm e o seletor final recebe somente registros oficiais.
  */
-async function expandFiscalSearchTerms(scope: TenantScope, descricao: string): Promise<string[]> {
+async function expandFiscalSearchTerms(
+  scope: TenantScope,
+  descricao: string
+): Promise<{ terms: string[]; codes: string[] }> {
   try {
     const content = await callOpenRouter(
       scope,
@@ -86,11 +90,13 @@ async function expandFiscalSearchTerms(scope: TenantScope, descricao: string): P
             exemplos: [
               {
                 produto: "Notebook Dell i3 com SSD",
-                termosBusca: ["máquinas automáticas para processamento de dados portáteis"]
+                termosBusca: ["computadores portáteis com tela", "máquinas para processamento de dados"],
+                codigosPossiveis: ["84713012", "84713019"]
               },
               {
                 produto: "Parafuso sextavado aço 10mm",
-                termosBusca: ["parafusos de ferro ou aço"]
+                termosBusca: ["parafusos de ferro ou aço"],
+                codigosPossiveis: ["73181500"]
               }
             ]
           })
@@ -99,14 +105,19 @@ async function expandFiscalSearchTerms(scope: TenantScope, descricao: string): P
       { maxTokens: 180, temperature: 0 }
     );
     const parsed = extractJsonObject(content);
-    if (!Array.isArray(parsed.termosBusca)) return [];
-    return parsed.termosBusca
+    const terms = (Array.isArray(parsed.termosBusca) ? parsed.termosBusca : [])
       .filter((term): term is string => typeof term === "string")
       .map((term) => term.trim())
       .filter((term) => term.length >= 3)
       .slice(0, 3);
+    const codes = (Array.isArray(parsed.codigosPossiveis) ? parsed.codigosPossiveis : [])
+      .filter((code): code is string => typeof code === "string")
+      .map(normalizeNcm)
+      .filter(Boolean)
+      .slice(0, 5);
+    return { terms, codes };
   } catch {
-    return [];
+    return { terms: [], codes: [] };
   }
 }
 
@@ -114,10 +125,19 @@ async function searchOfficialNcmCandidates(scope: TenantScope, descricao: string
   const direct = await searchNcm(descricao, 15);
   if (direct.length >= 5) return direct;
 
-  const expandedTerms = await expandFiscalSearchTerms(scope, descricao);
-  const expanded = await Promise.all(expandedTerms.map((term) => searchNcm(term, 15)));
+  const expansion = await expandFiscalSearchTerms(scope, descricao);
+  const [expanded, proposedCodes] = await Promise.all([
+    Promise.all(expansion.terms.map((term) => searchNcm(term, 15))),
+    Promise.all(expansion.codes.map((code) => findNcm(code)))
+  ]);
   const unique = new Map<string, { codigo: string; descricao: string }>();
-  for (const candidate of [...direct, ...expanded.flat()]) {
+  const verifiedCodes = proposedCodes
+    .filter((candidate): candidate is NonNullable<typeof candidate> => Boolean(candidate))
+    .map((candidate) => ({
+      codigo: candidate.codigo,
+      descricao: limparDescricaoNcm(candidate.descricao)
+    }));
+  for (const candidate of [...direct, ...verifiedCodes, ...expanded.flat()]) {
     if (!unique.has(candidate.codigo)) unique.set(candidate.codigo, candidate);
   }
   return [...unique.values()].slice(0, 25);
