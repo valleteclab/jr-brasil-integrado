@@ -18,6 +18,7 @@ import { consultarContasPagar } from "./read/consultar-contas-pagar";
 import { consultarFluxoCaixa } from "./read/consultar-fluxo-caixa";
 import { consultarFornecedores } from "./read/consultar-fornecedores";
 import { consultarCompras } from "./read/consultar-compras";
+import { sugerirFiscalProduto } from "./read/sugerir-fiscal-produto";
 import { cadastrarCliente } from "./write/cadastrar-cliente";
 import { criarOrcamento } from "./write/criar-orcamento";
 import { criarPreVenda } from "./write/criar-pre-venda";
@@ -55,6 +56,7 @@ export const ALL_TOOLS: AgentTool[] = [
   consultarFluxoCaixa,
   consultarFornecedores,
   consultarCompras,
+  sugerirFiscalProduto,
   cadastrarCliente,
   criarOrcamento,
   criarPreVenda,

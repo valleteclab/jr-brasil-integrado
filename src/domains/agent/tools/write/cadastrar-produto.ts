@@ -24,7 +24,7 @@ function optionalNumber(value: unknown): number | undefined {
 export const cadastrarProduto: AgentTool = {
   name: "cadastrar_produto",
   description:
-    "Cadastra um produto novo e fiscalmente utilizável no catálogo da empresa. Antes da confirmação, obtenha nome, preço, estoque inicial, unidade, NCM, origem e respostas explícitas para GTIN e CEST (aceite SEM GTIN/SEM CEST). Mostre o resumo e peça CADASTRAR. Só então chame com confirmar=true. SKU vazio é gerado automaticamente. Não invente classificação fiscal nem use para alterar produto existente.",
+    "Cadastra um produto novo no catálogo após aprovação do resumo. Exige NCM validado e CEST sugeridos previamente por sugerir_fiscal_produto (CEST pode ser SEM CEST). Origem usa 0/Nacional por padrão; informe outro código apenas para mercadoria importada. GTIN é opcional. Mostre a classificação sugerida e peça CADASTRAR antes de chamar com confirmar=true. SKU vazio é gerado automaticamente.",
   mode: "write",
   roles: ["GESTOR"],
   inputSchema: {
@@ -35,12 +35,12 @@ export const cadastrarProduto: AgentTool = {
       tipo: { type: "string", enum: ["PRODUTO", "KIT", "INSUMO"], description: "Padrão PRODUTO." },
       marca: { type: "string", description: "Marca; padrão Sem marca." },
       categoria: { type: "string", description: "Categoria; padrão Sem categoria." },
-      gtin: { type: "string", description: "GTIN/EAN com 8, 12, 13 ou 14 dígitos; envie SEM GTIN quando não possuir." },
+      gtin: { type: "string", description: "GTIN/EAN opcional com 8, 12, 13 ou 14 dígitos." },
       unidade: { type: "string", description: "Unidade de venda, por exemplo UN, KG ou LT." },
       descricao: { type: "string", description: "Descrição curta opcional." },
       ncm: { type: "string", description: "NCM com exatamente 8 dígitos." },
       cest: { type: "string", description: "CEST com 7 dígitos; envie SEM CEST quando não se aplicar." },
-      origem: { type: "string", enum: ["0", "1", "2", "3", "4", "5", "6", "7", "8"], description: "Código de origem fiscal da mercadoria, de 0 a 8." },
+      origem: { type: "string", enum: ["0", "1", "2", "3", "4", "5", "6", "7", "8"], description: "Origem fiscal; padrão 0/Nacional. Informe outro código para item importado." },
       cfopDentroEstado: { type: "string", description: "CFOP de venda dentro do estado (opcional)." },
       cfopForaEstado: { type: "string", description: "CFOP de venda fora do estado (opcional)." },
       precoCusto: { type: "number", description: "Preço de custo; padrão zero." },
@@ -54,7 +54,7 @@ export const cadastrarProduto: AgentTool = {
       visivelEcommerce: { type: "boolean", description: "Se aparece na loja; padrão true." },
       confirmar: { type: "boolean", description: "Obrigatório true somente após o gestor responder CADASTRAR." }
     },
-    required: ["nome", "precoVenda", "estoqueInicial", "unidade", "ncm", "origem", "gtin", "cest", "confirmar"],
+    required: ["nome", "precoVenda", "estoqueInicial", "unidade", "ncm", "cest", "confirmar"],
     additionalProperties: false
   },
   handler: async (scope, args) => {
@@ -71,7 +71,7 @@ export const cadastrarProduto: AgentTool = {
     const estoqueInicial = optionalNumber(args.estoqueInicial);
     const unidade = optionalText(args.unidade)?.toUpperCase();
     const ncm = optionalText(args.ncm)?.replace(/\D/g, "");
-    const origem = optionalText(args.origem);
+    const origem = optionalText(args.origem) ?? "0";
     const gtinInformado = optionalText(args.gtin);
     const cestInformado = optionalText(args.cest);
     if (!nome) return { ok: false, data: null, error: "Informe o nome do produto." };
@@ -86,10 +86,9 @@ export const cadastrarProduto: AgentTool = {
     if (!origem || !/^[0-8]$/.test(origem)) {
       return { ok: false, data: null, error: "Informe o código de origem fiscal da mercadoria, de 0 a 8." };
     }
-    if (!gtinInformado) return { ok: false, data: null, error: "Informe o GTIN ou responda SEM GTIN." };
     if (!cestInformado) return { ok: false, data: null, error: "Informe o CEST ou responda SEM CEST." };
 
-    const semGtin = /^SEM\s+GTIN$/i.test(gtinInformado);
+    const semGtin = !gtinInformado || /^SEM\s+GTIN$/i.test(gtinInformado);
     const semCest = /^SEM\s+CEST$/i.test(cestInformado);
     const gtin = semGtin ? undefined : gtinInformado.replace(/\D/g, "");
     const cest = semCest ? undefined : cestInformado.replace(/\D/g, "");

@@ -100,6 +100,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
+| 2026-07-27 | A gerar | Em andamento | Agente conectado ao enriquecimento fiscal existente para sugerir NCM/CEST por descricao ou GTIN, com origem nacional padrao e revisao antes do cadastro. |
 | 2026-07-27 | `847f26a` | Enviado | Confirmacoes estruturadas com botoes no chat web e coleta fiscal obrigatoria antes do cadastro de produtos pelo agente. |
 | 2026-07-27 | `025fda2` | Enviado | Ferramenta `cadastrar_produto` para o agente criar produtos com SKU automatico, estoque inicial, dados comerciais/fiscais e confirmacao explicita do gestor. |
 | 2026-07-27 | `fc5f2f7` | Enviado | Redesign completo do chat web como workspace de IA, com identidade do assistente, sugestoes inteligentes, mensagens aprimoradas, composer multimodal e gravacao expressiva. |
@@ -714,3 +715,14 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Validacao: TypeScript, lint e `git diff --check` aprovados; parser gerou as acoes `CADASTRAR`/`NAO`, ocultou o marcador da mensagem e o handler bloqueou cadastro sem NCM antes de acessar o banco.
 - Teste autenticado em producao confirmou as duas etapas: o primeiro pedido solicitou os dados fiscais sem exibir confirmacao prematura; apos NCM, origem, unidade, `SEM GTIN` e `SEM CEST`, a API retornou os botoes `CADASTRAR` e `NAO` sem expor o marcador interno. Sessao, conversa, mensagens e consumo do teste foram removidos.
 - Build Docker/Linux das 191 paginas aprovado e deploy concluido com a imagem `jrb-erp:847f26a` (`sha256:fe472664f5e2`); servico convergido e `https://erp.sisgov.app.br/login` respondeu HTTP 200.
+
+## Atualizacao operacional - 2026-07-27 - sugestao fiscal no cadastro por chat
+
+- O agente passou a expor `sugerir_fiscal_produto`, reaproveitando o enriquecimento fiscal ja usado pelo cadastro visual de produtos.
+- A ferramenta consulta Dataload/Cosmos quando houver GTIN, busca candidatos reais na tabela oficial de NCM, usa IA somente para escolher entre esses candidatos e valida novamente o codigo retornado.
+- O CEST e cruzado pelos candidatos vinculados ao NCM; ambiguidades permanecem para revisao e a resposta inclui descricao oficial, confianca, fonte, justificativa e avisos.
+- Quando o gestor nao informar NCM/CEST, o agente chama essa ferramenta, apresenta a sugestao no resumo e permite correcao antes do botao `Cadastrar produto`; a classificacao nunca e aplicada de forma oculta.
+- GTIN deixou de ser obrigatorio e nao precisa ser perguntado quando ausente. CEST pode ser confirmado como `SEM CEST`.
+- Origem fiscal nao trava mais o fluxo: o cadastro usa `0 - Nacional` por padrao e o agente so pergunta outro codigo quando o usuario informar que a mercadoria e importada.
+- A ferramenta de escrita ainda exige NCM validado e confirmacao explicita, preservando o bloqueio contra cadastro fiscal incompleto.
+- Validacao: TypeScript, lint e `git diff --check` aprovados; catalogo com 35 ferramentas sem duplicidade, sugestao fiscal presente para GESTOR e bloqueio de NCM ausente testado sem acesso ao banco.
