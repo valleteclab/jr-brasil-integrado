@@ -100,7 +100,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
-| 2026-07-27 | A gerar | Em andamento | Confirmacoes estruturadas com botoes no chat web e coleta fiscal obrigatoria antes do cadastro de produtos pelo agente. |
+| 2026-07-27 | `847f26a` | Enviado | Confirmacoes estruturadas com botoes no chat web e coleta fiscal obrigatoria antes do cadastro de produtos pelo agente. |
 | 2026-07-27 | `025fda2` | Enviado | Ferramenta `cadastrar_produto` para o agente criar produtos com SKU automatico, estoque inicial, dados comerciais/fiscais e confirmacao explicita do gestor. |
 | 2026-07-27 | `fc5f2f7` | Enviado | Redesign completo do chat web como workspace de IA, com identidade do assistente, sugestoes inteligentes, mensagens aprimoradas, composer multimodal e gravacao expressiva. |
 | 2026-07-27 | `d970d38` | Enviado | Correcao da resposta de voz do chat web para WAV, contornando falha nativa do encoder MP3 do Kokoro sem alterar WhatsApp e Telegram. |
@@ -712,3 +712,5 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - A ferramenta agora exige esses campos no schema e no handler: NCM precisa ter 8 digitos, origem deve estar entre 0 e 8, GTIN deve ser valido ou ausente explicitamente, e CEST deve ter 7 digitos ou ser marcado como nao aplicavel.
 - O fluxo continua restrito ao GESTOR, isolado por tenant/empresa, transacional e auditado; nenhuma classificacao fiscal e inventada pela IA.
 - Validacao: TypeScript, lint e `git diff --check` aprovados; parser gerou as acoes `CADASTRAR`/`NAO`, ocultou o marcador da mensagem e o handler bloqueou cadastro sem NCM antes de acessar o banco.
+- Teste autenticado em producao confirmou as duas etapas: o primeiro pedido solicitou os dados fiscais sem exibir confirmacao prematura; apos NCM, origem, unidade, `SEM GTIN` e `SEM CEST`, a API retornou os botoes `CADASTRAR` e `NAO` sem expor o marcador interno. Sessao, conversa, mensagens e consumo do teste foram removidos.
+- Build Docker/Linux das 191 paginas aprovado e deploy concluido com a imagem `jrb-erp:847f26a` (`sha256:fe472664f5e2`); servico convergido e `https://erp.sisgov.app.br/login` respondeu HTTP 200.
