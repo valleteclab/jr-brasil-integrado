@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { PERSONAS } from "@/domains/agent/runtime/persona";
 import type { AgentRole, AgentDraft } from "@/domains/agent/types";
+import styles from "./AssistantChat.module.css";
 
 type ChatMsg = {
   papel: "user" | "assistant";
@@ -17,6 +18,46 @@ const ROLES: Array<{ id: AgentRole; label: string }> = [
   { id: "VENDEDOR", label: "Vendedor" }
 ];
 
+const SUGGESTION_ICONS = ["chart", "box", "wallet", "sparkles"] as const;
+
+type IconName =
+  | "arrowUp"
+  | "attachment"
+  | "box"
+  | "chart"
+  | "check"
+  | "mic"
+  | "plus"
+  | "sparkles"
+  | "stop"
+  | "wallet";
+
+function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
+  const paths: Record<IconName, React.ReactNode> = {
+    arrowUp: <><path d="m5 12 7-7 7 7" /><path d="M12 19V5" /></>,
+    attachment: <path d="m20.5 11.5-8.9 8.9a6 6 0 0 1-8.5-8.5l9.6-9.6a4 4 0 0 1 5.7 5.7l-9.6 9.6a2 2 0 0 1-2.8-2.8l8.9-8.9" />,
+    box: <><path d="m21 8-9-5-9 5 9 5 9-5Z" /><path d="m3 8 9 5 9-5" /><path d="M12 13v9" /><path d="m21 12-9 5-9-5" /></>,
+    chart: <><path d="M3 3v18h18" /><path d="m7 16 4-5 4 3 5-7" /></>,
+    check: <path d="m5 12 4 4L19 6" />,
+    mic: <><rect x="9" y="2" width="6" height="12" rx="3" /><path d="M5 10a7 7 0 0 0 14 0" /><path d="M12 17v5" /></>,
+    plus: <><path d="M12 5v14" /><path d="M5 12h14" /></>,
+    sparkles: <><path d="m12 3-1.1 3.4a6 6 0 0 1-3.8 3.8L4 11.3l3.1 1a6 6 0 0 1 3.8 3.8L12 20l1.1-3.9a6 6 0 0 1 3.8-3.8l3.1-1-3.1-1.1a6 6 0 0 1-3.8-3.8L12 3Z" /><path d="m5 3 .4 1.2A2 2 0 0 0 6.8 5.6L8 6l-1.2.4a2 2 0 0 0-1.4 1.4L5 9l-.4-1.2a2 2 0 0 0-1.4-1.4L2 6l1.2-.4a2 2 0 0 0 1.4-1.4L5 3Z" /></>,
+    stop: <rect x="7" y="7" width="10" height="10" rx="2" />,
+    wallet: <><path d="M20 7V5a2 2 0 0 0-2-2H5a3 3 0 0 0 0 6h15v12H5a3 3 0 0 1-3-3V6" /><path d="M16 14h.01" /></>
+  };
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {paths[name]}
+    </svg>
+  );
+}
+
+function formatRecordingTime(totalSeconds: number) {
+  const minutes = Math.floor(totalSeconds / 60).toString().padStart(2, "0");
+  const seconds = (totalSeconds % 60).toString().padStart(2, "0");
+  return `${minutes}:${seconds}`;
+}
+
 export function AssistantChat() {
   const [role, setRole] = useState<AgentRole>("GESTOR");
   const [conversaId, setConversaId] = useState<string | null>(null);
@@ -26,6 +67,7 @@ export function AssistantChat() {
   const [error, setError] = useState("");
   const [attachment, setAttachment] = useState<File | null>(null);
   const [recording, setRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -44,6 +86,15 @@ export function AssistantChat() {
       localAudioUrls.clear();
     };
   }, []);
+
+  useEffect(() => {
+    if (!recording) {
+      setRecordingSeconds(0);
+      return;
+    }
+    const timer = window.setInterval(() => setRecordingSeconds((value) => value + 1), 1000);
+    return () => window.clearInterval(timer);
+  }, [recording]);
 
   function escolherAnexo(file: File | null) {
     setError("");
@@ -227,158 +278,286 @@ export function AssistantChat() {
   }
 
   return (
-    <div style={{ paddingBottom: 24 }}>
-      <div className="erp-page-head">
+    <main className={styles.page}>
+      <header className={styles.pageHeader}>
         <div>
-          <div className="erp-crumbs">Inteligência <span className="sep">/</span> Assistente</div>
-          <h1 className="erp-page-title">Assistente de IA</h1>
-          <p className="erp-page-sub">{persona.descricao}</p>
+          <div className={styles.breadcrumb}>
+            <span>Inteligência</span>
+            <span className={styles.breadcrumbDot} />
+            <span>Assistente</span>
+          </div>
+          <h1 className={styles.pageTitle}>
+            Assistente de IA <span>que entende seu negócio.</span>
+          </h1>
+          <p className={styles.pageDescription}>
+            Consulte, analise e execute tarefas usando os dados reais da sua empresa.
+          </p>
         </div>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
-          <button type="button" className="btn-erp ghost sm" onClick={novaConversa} disabled={busy || (!conversaId && mensagens.length === 0)}>
-            Nova conversa
-          </button>
-          {ROLES.map((r) => (
-            <button key={r.id} type="button" className={`btn-erp ${role === r.id ? "primary" : "ghost"} sm`} onClick={() => void trocarRole(r.id)} disabled={busy}>
-              {r.label}
-            </button>
-          ))}
+        <div className={styles.livePill}>
+          <span className={styles.liveDot} />
+          IA conectada
         </div>
-      </div>
+      </header>
 
-      <div className="erp-card" style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 240px)", minHeight: 420 }}>
-        <div ref={listRef} className="erp-card-body" style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 10 }}>
+      <section className={styles.chatShell}>
+        <div className={styles.ambientGlow} aria-hidden="true" />
+        <header className={styles.chatHeader}>
+          <div className={styles.identity}>
+            <div className={styles.avatar}>
+              <Icon name="sparkles" size={21} />
+              <span className={styles.avatarPulse} />
+            </div>
+            <div>
+              <strong>{persona.titulo}</strong>
+              <span>
+                <i />
+                Pronto para ajudar
+              </span>
+            </div>
+          </div>
+
+          <div className={styles.headerActions}>
+            <div className={styles.roleSwitch} aria-label="Perfil do assistente">
+              {ROLES.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={role === item.id ? styles.roleActive : undefined}
+                  onClick={() => void trocarRole(item.id)}
+                  disabled={busy}
+                  aria-pressed={role === item.id}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              className={styles.newChatButton}
+              onClick={novaConversa}
+              disabled={busy || (!conversaId && mensagens.length === 0)}
+            >
+              <Icon name="plus" size={17} />
+              <span>Nova conversa</span>
+            </button>
+          </div>
+        </header>
+
+        <div ref={listRef} className={styles.messageList}>
           {mensagens.length === 0 && (
-            <div className="empty-st" style={{ margin: "auto", textAlign: "center" }}>
-              <h4>Como posso ajudar?</h4>
-              <p>Escolha uma sugestão ou escreva sua pergunta.</p>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center", marginTop: 10 }}>
-                {persona.sugestoes.map((s) => (
-                  <button key={s} type="button" className="btn-erp light sm" onClick={() => enviar(s)} disabled={busy}>{s}</button>
+            <div className={styles.emptyState}>
+              <div className={styles.aiOrb} aria-hidden="true">
+                <span className={styles.orbRing} />
+                <span className={styles.orbCore}><Icon name="sparkles" size={30} /></span>
+              </div>
+              <span className={styles.emptyEyebrow}>Seu copiloto de negócios</span>
+              <h2>O que vamos resolver hoje?</h2>
+              <p>{persona.descricao}</p>
+              <div className={styles.suggestionGrid}>
+                {persona.sugestoes.map((suggestion, index) => (
+                  <button
+                    key={suggestion}
+                    type="button"
+                    className={styles.suggestionCard}
+                    onClick={() => enviar(suggestion)}
+                    disabled={busy}
+                  >
+                    <span className={styles.suggestionIcon}>
+                      <Icon name={SUGGESTION_ICONS[index % SUGGESTION_ICONS.length]} size={19} />
+                    </span>
+                    <span>{suggestion}</span>
+                    <span className={styles.suggestionArrow}>↗</span>
+                  </button>
                 ))}
+              </div>
+              <div className={styles.capabilities}>
+                <span><Icon name="check" size={14} /> Dados em tempo real</span>
+                <span><Icon name="check" size={14} /> Ações com confirmação</span>
+                <span><Icon name="check" size={14} /> Texto, voz e arquivos</span>
               </div>
             </div>
           )}
-          {mensagens.map((m, i) => (
-            <div key={i} style={{ alignSelf: m.papel === "user" ? "flex-end" : "flex-start", maxWidth: "80%" }}>
-              <div
-                style={{
-                  padding: "10px 14px",
-                  borderRadius: 10,
-                  fontSize: 13.5,
-                  whiteSpace: "pre-wrap",
-                  background: m.papel === "user" ? "var(--erp-yellow, #ffc107)" : "var(--erp-surface, #f4f5f7)",
-                  color: m.papel === "user" ? "#1a1a1a" : "inherit"
-                }}
+
+          {mensagens.map((message, index) => {
+            const userMessage = message.papel === "user";
+            return (
+              <article
+                key={index}
+                className={`${styles.messageRow} ${userMessage ? styles.userRow : styles.assistantRow}`}
               >
-                {m.anexo && (
-                  <span style={{ display: "block", fontSize: 11.5, fontWeight: 700, marginBottom: 5 }}>
-                    📎 {m.anexo}
-                  </span>
+                {!userMessage && (
+                  <div className={styles.messageAvatar}><Icon name="sparkles" size={16} /></div>
                 )}
-                {m.audioUrl && (
-                  <audio
-                    autoPlay={m.papel === "assistant"}
-                    controls
-                    preload="metadata"
-                    src={m.audioUrl}
-                    style={{ display: "block", width: "min(300px, 65vw)", maxWidth: "100%" }}
-                  />
-                )}
-                {m.texto && (
-                  <span style={{ display: "block", marginTop: m.audioUrl ? 7 : 0 }}>{m.texto}</span>
-                )}
+                <div className={styles.messageContent}>
+                  <div className={styles.messageMeta}>
+                    <strong>{userMessage ? "Você" : persona.titulo}</strong>
+                    <span>agora</span>
+                  </div>
+                  <div className={`${styles.bubble} ${userMessage ? styles.userBubble : styles.assistantBubble}`}>
+                    {message.anexo && (
+                      <span className={styles.attachmentName}>
+                        <Icon name="attachment" size={15} />
+                        {message.anexo}
+                      </span>
+                    )}
+                    {message.audioUrl && (
+                      <div className={styles.audioMessage}>
+                        <span className={styles.audioMark}>
+                          <Icon name={userMessage ? "mic" : "sparkles"} size={18} />
+                        </span>
+                        <div>
+                          <strong>{userMessage ? "Sua mensagem de voz" : "Resposta em áudio"}</strong>
+                          <audio
+                            autoPlay={!userMessage}
+                            controls
+                            preload="metadata"
+                            src={message.audioUrl}
+                          />
+                        </div>
+                      </div>
+                    )}
+                    {message.texto && (
+                      <span className={styles.messageText}>{message.texto}</span>
+                    )}
+                  </div>
+                  {message.draft && (
+                    <a href={message.draft.href} className={styles.draftAction}>
+                      <span>
+                        Abrir {message.draft.tipo === "ORCAMENTO" ? "orçamento" : message.draft.tipo === "PEDIDO_VENDA" ? "no caixa" : "cadastro"}
+                        {message.draft.numero ? ` ${message.draft.numero}` : ""}
+                      </span>
+                      <span>Confirmar agora →</span>
+                    </a>
+                  )}
+                </div>
+              </article>
+            );
+          })}
+
+          {busy && (
+            <div className={`${styles.messageRow} ${styles.assistantRow}`}>
+              <div className={styles.messageAvatar}><Icon name="sparkles" size={16} /></div>
+              <div className={styles.thinking}>
+                <span className={styles.thinkingDots}><i /><i /><i /></span>
+                <span>Analisando sua solicitação</span>
               </div>
-              {m.draft && (
-                <a
-                  href={m.draft.href}
-                  className="btn-erp primary sm"
-                  style={{ marginTop: 6, display: "inline-block", textDecoration: "none" }}
-                >
-                  Abrir {m.draft.tipo === "ORCAMENTO" ? "orçamento" : m.draft.tipo === "PEDIDO_VENDA" ? "no caixa" : "cadastro"}
-                  {m.draft.numero ? ` ${m.draft.numero}` : ""} para confirmar →
-                </a>
-              )}
             </div>
-          ))}
-          {busy && <div style={{ alignSelf: "flex-start", fontSize: 12.5, color: "var(--erp-mute)" }}>Pensando…</div>}
+          )}
         </div>
 
-        {error && <div className="alert danger" style={{ margin: "0 12px 8px" }}><span>{error}</span></div>}
+        <div className={styles.composerArea}>
+          {error && (
+            <div className={styles.errorMessage}>
+              <span>!</span>
+              {error}
+            </div>
+          )}
 
-        <form
-          className="erp-card-body"
-          style={{ display: "flex", gap: 8, flexWrap: "wrap", borderTop: "1px solid var(--erp-line)" }}
-          onSubmit={(e) => { e.preventDefault(); enviar(input); }}
-        >
           {attachment && (
-            <div
-              style={{
-                width: "100%",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 8,
-                padding: "7px 10px",
-                borderRadius: 8,
-                background: "var(--erp-surface, #f4f5f7)",
-                fontSize: 12.5
-              }}
-            >
-              <span>📎 {attachment.name} · {(attachment.size / 1024).toFixed(0)} KB</span>
+            <div className={styles.attachmentPreview}>
+              <span className={styles.fileIcon}><Icon name="attachment" size={17} /></span>
+              <div>
+                <strong>{attachment.name}</strong>
+                <span>{(attachment.size / 1024).toFixed(0)} KB · pronto para enviar</span>
+              </div>
               <button
                 type="button"
-                className="btn-erp ghost sm"
                 onClick={() => {
                   setAttachment(null);
                   if (fileInputRef.current) fileInputRef.current.value = "";
                 }}
                 disabled={busy}
+                aria-label="Remover anexo"
               >
-                Remover
+                ×
               </button>
             </div>
           )}
-          {recording && (
-            <div style={{ width: "100%", fontSize: 12.5, color: "var(--erp-danger, #b42318)" }}>
-              ● Gravando áudio… ao clicar em Parar, a mensagem será enviada automaticamente.
+
+          <form
+            className={`${styles.composer} ${recording ? styles.composerRecording : ""}`}
+            onSubmit={(event) => {
+              event.preventDefault();
+              void enviar(input);
+            }}
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,application/pdf,audio/*,.txt,.csv,.xml,.json"
+              className={styles.hiddenInput}
+              onChange={(event) => escolherAnexo(event.target.files?.[0] ?? null)}
+            />
+
+            {recording ? (
+              <div className={styles.recordingPanel}>
+                <span className={styles.recordingDot} />
+                <span className={styles.recordingTime}>{formatRecordingTime(recordingSeconds)}</span>
+                <div className={styles.waveform} aria-hidden="true">
+                  {Array.from({ length: 19 }, (_, index) => <i key={index} />)}
+                </div>
+                <span className={styles.recordingHint}>Gravando sua mensagem…</span>
+              </div>
+            ) : (
+              <textarea
+                value={input}
+                onChange={(event) => setInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault();
+                    void enviar(input);
+                  }
+                }}
+                rows={1}
+                placeholder={attachment ? "Dê uma instrução para o arquivo (opcional)" : "Converse com sua empresa…"}
+                disabled={busy}
+                aria-label="Mensagem para o assistente"
+              />
+            )}
+
+            <div className={styles.composerTools}>
+              {!recording && (
+                <button
+                  type="button"
+                  className={styles.toolButton}
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={busy}
+                  title="Anexar imagem, PDF, áudio ou arquivo"
+                  aria-label="Anexar arquivo"
+                >
+                  <Icon name="attachment" size={19} />
+                </button>
+              )}
+              <button
+                type="button"
+                className={`${styles.toolButton} ${recording ? styles.stopButton : styles.micButton}`}
+                onClick={() => void alternarGravacao()}
+                disabled={busy}
+                title={recording ? "Parar e enviar" : "Gravar áudio"}
+                aria-label={recording ? "Parar e enviar áudio" : "Gravar áudio"}
+              >
+                <Icon name={recording ? "stop" : "mic"} size={19} />
+                {recording && <span>Parar e enviar</span>}
+              </button>
+              {!recording && (
+                <button
+                  type="submit"
+                  className={styles.sendButton}
+                  disabled={busy || (!input.trim() && !attachment)}
+                  title="Enviar mensagem"
+                  aria-label="Enviar mensagem"
+                >
+                  <Icon name="arrowUp" size={20} />
+                </button>
+              )}
             </div>
-          )}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/jpeg,image/png,image/webp,application/pdf,audio/*,.txt,.csv,.xml,.json"
-            style={{ display: "none" }}
-            onChange={(event) => escolherAnexo(event.target.files?.[0] ?? null)}
-          />
-          <button
-            type="button"
-            className="btn-erp ghost"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={busy || recording}
-            title="Enviar imagem, PDF, áudio ou arquivo de texto"
-          >
-            Anexar
-          </button>
-          <button
-            type="button"
-            className={`btn-erp ${recording ? "danger" : "ghost"}`}
-            onClick={() => void alternarGravacao()}
-            disabled={busy}
-            title={recording ? "Parar gravação" : "Gravar áudio"}
-          >
-            {recording ? "Parar" : "Áudio"}
-          </button>
-          <input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder={attachment ? "Escreva uma instrução para o anexo (opcional)…" : "Escreva sua mensagem…"}
-            style={{ flex: "1 1 240px", height: 40, padding: "0 12px", border: "1px solid var(--erp-line)", borderRadius: 8, fontSize: 13.5 }}
-            disabled={busy || recording}
-          />
-          <button type="submit" className="btn-erp primary" disabled={busy || recording || (!input.trim() && !attachment)}>Enviar</button>
-        </form>
-      </div>
-    </div>
+          </form>
+          <div className={styles.composerFooter}>
+            <span>Enter para enviar · Shift + Enter para nova linha</span>
+            <span><Icon name="sparkles" size={12} /> Respostas baseadas nos dados da empresa</span>
+          </div>
+        </div>
+      </section>
+    </main>
   );
 }

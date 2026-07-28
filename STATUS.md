@@ -100,6 +100,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
+| 2026-07-27 | A gerar | Em andamento | Redesign completo do chat web como workspace de IA, com identidade do assistente, sugestoes inteligentes, mensagens aprimoradas, composer multimodal e gravacao expressiva. |
 | 2026-07-27 | `d970d38` | Enviado | Correcao da resposta de voz do chat web para WAV, contornando falha nativa do encoder MP3 do Kokoro sem alterar WhatsApp e Telegram. |
 | 2026-07-27 | `b53efc8` | Enviado | Chat web com envio automatico ao parar a gravacao e resposta em audio pela voz configurada, seguindo a politica do WhatsApp. |
 | 2026-07-26 | `26edfd1` | Enviado | Plano CHAT provisionado com IA operacional e chat web ampliado com imagens, PDF, arquivos de texto e audio gravado/enviado. |
@@ -676,3 +677,14 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Validacao: `npx tsc --noEmit`, `npm run lint`, `git diff --check` e build Docker/Linux das 191 paginas aprovados; permanecem somente os dois avisos de lint preexistentes.
 - Teste autenticado em producao enviou um MP3 sem mensagem auxiliar e recebeu HTTP 200, `audio/wav` valido com 779.186 bytes e resposta simples somente em audio; sessao, conversa, mensagens e consumo criados pelo teste foram removidos.
 - Deploy concluido com a imagem `jrb-erp:d970d38` (`sha256:cf4f0e5ba519`); ERP e Kokoro permaneceram ativos e `https://erp.sisgov.app.br/login` respondeu HTTP 200.
+
+## Atualizacao operacional - 2026-07-27 - workspace visual do assistente
+
+- O chat web foi redesenhado como um workspace de IA, preservando a identidade amarela, preta e branca do ERP.
+- O estado inicial agora apresenta a identidade do copiloto, presenca online, sugestoes em cards e capacidades de dados, confirmacao e multimodalidade, eliminando o grande vazio da tela anterior.
+- Mensagens passaram a exibir autoria, avatar do assistente, bubbles distintas, anexos, audio e acoes de rascunho com hierarquia visual consistente.
+- O estado de processamento ganhou indicador animado; a gravacao agora mostra cronometro, waveform e acao explicita de parar e enviar.
+- O composer aceita Enter para enviar, Shift + Enter para nova linha, arquivo, voz e texto em uma unica superficie responsiva.
+- A interface respeita movimento reduzido do sistema e possui adaptacoes para telas menores sem alterar APIs, escopo multiempresa ou regras do agente.
+- Validacao: TypeScript, lint, `git diff --check` e build local de producao das 191 paginas aprovados; permanecem somente os dois avisos de lint preexistentes.
+- A inspecao visual automatizada nao foi executada porque nenhum navegador integrado estava disponivel nesta sessao.
