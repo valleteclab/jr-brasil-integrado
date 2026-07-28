@@ -3,7 +3,7 @@ import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
 import { requireModulo } from "@/lib/auth/session";
 import { authErrorStatus } from "@/lib/auth/http";
 import { prisma } from "@/lib/db/prisma";
-import { runAgentTurn } from "@/domains/agent/runtime/run-agent-turn";
+import { extractQuickActions, runAgentTurn } from "@/domains/agent/runtime/run-agent-turn";
 import type { AgentRole } from "@/domains/agent/types";
 import { getAiVoice } from "@/domains/ai/openrouter-service";
 import { synthesizeKokoroSpeech } from "@/lib/tts/kokoro-client";
@@ -21,6 +21,99 @@ import {
 
 const ROLES: AgentRole[] = ["GESTOR", "VENDEDOR"];
 export const runtime = "nodejs";
+
+// Lista as conversas WEB do usuário e carrega as mensagens da conversa selecionada.
+export async function GET(request: Request) {
+  try {
+    const session = await requireModulo("assistente");
+    const scope = await getDevelopmentTenantScope();
+    const requestedConversationId = new URL(request.url).searchParams.get("conversaId");
+    const conversations = await prisma.conversaAgente.findMany({
+      where: {
+        tenantId: scope.tenantId,
+        empresaId: scope.empresaId,
+        usuarioId: session.usuarioId,
+        canal: "WEB"
+      },
+      orderBy: { atualizadoEm: "desc" },
+      take: 30,
+      select: {
+        id: true,
+        titulo: true,
+        role: true,
+        status: true,
+        criadoEm: true,
+        atualizadoEm: true,
+        mensagens: {
+          where: { papel: { in: ["USER", "ASSISTANT"] } },
+          orderBy: { criadoEm: "desc" },
+          take: 1,
+          select: { conteudo: true }
+        }
+      }
+    });
+
+    const selected =
+      conversations.find((conversation) => conversation.id === requestedConversationId) ??
+      conversations.find((conversation) => conversation.status === "ATIVA") ??
+      conversations[0] ??
+      null;
+
+    const storedMessages = selected
+      ? await prisma.mensagemAgente.findMany({
+          where: {
+            conversaId: selected.id,
+            tenantId: scope.tenantId,
+            empresaId: scope.empresaId,
+            papel: { in: ["USER", "ASSISTANT"] }
+          },
+          orderBy: { criadoEm: "desc" },
+          take: 100,
+          select: { id: true, papel: true, conteudo: true, criadoEm: true }
+        })
+      : [];
+    const orderedMessages = storedMessages.reverse();
+
+    return NextResponse.json({
+      conversations: conversations.map((conversation) => ({
+        id: conversation.id,
+        title: conversation.titulo || "Conversa sem título",
+        role: conversation.role,
+        status: conversation.status,
+        createdAt: conversation.criadoEm,
+        updatedAt: conversation.atualizadoEm,
+        preview: conversation.mensagens[0]?.conteudo.slice(0, 100) ?? ""
+      })),
+      selectedConversation: selected
+        ? {
+            id: selected.id,
+            title: selected.titulo || "Conversa sem título",
+            role: selected.role,
+            status: selected.status
+          }
+        : null,
+      messages: orderedMessages.map((message, index) => {
+        const isLastActiveAssistant =
+          selected?.status === "ATIVA" &&
+          message.papel === "ASSISTANT" &&
+          index === orderedMessages.length - 1;
+        const parsed = isLastActiveAssistant
+          ? extractQuickActions(message.conteudo)
+          : { text: message.conteudo, actions: [] };
+        return {
+          id: message.id,
+          papel: message.papel === "USER" ? "user" : "assistant",
+          texto: parsed.text,
+          quickActions: parsed.actions,
+          createdAt: message.criadoEm
+        };
+      })
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Erro ao carregar as conversas.";
+    return NextResponse.json({ error: message }, { status: authErrorStatus(error, 500) });
+  }
+}
 
 // Um turno do chat do assistente: cria/continua conversa, roda o agente e persiste.
 export async function POST(request: Request) {

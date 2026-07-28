@@ -24,7 +24,7 @@ function optionalNumber(value: unknown): number | undefined {
 export const cadastrarProduto: AgentTool = {
   name: "cadastrar_produto",
   description:
-    "Cadastra um produto novo no catálogo após aprovação do resumo. Exige NCM validado e CEST sugeridos previamente por sugerir_fiscal_produto (CEST pode ser SEM CEST). Origem usa 0/Nacional por padrão; informe outro código apenas para mercadoria importada. GTIN é opcional. Mostre a classificação sugerida e peça CADASTRAR antes de chamar com confirmar=true. SKU vazio é gerado automaticamente.",
+    "Cadastra um produto novo no catálogo após aprovação do resumo. Exige NCM validado e CEST sugeridos previamente por sugerir_fiscal_produto (CEST pode ser SEM CEST). Unidade usa UN por padrão, origem usa 0/Nacional por padrão e GTIN é opcional. Informe outra unidade ou origem apenas quando o gestor especificar. Mostre a classificação sugerida e peça CADASTRAR antes de chamar com confirmar=true. SKU vazio é gerado automaticamente.",
   mode: "write",
   roles: ["GESTOR"],
   inputSchema: {
@@ -36,7 +36,7 @@ export const cadastrarProduto: AgentTool = {
       marca: { type: "string", description: "Marca; padrão Sem marca." },
       categoria: { type: "string", description: "Categoria; padrão Sem categoria." },
       gtin: { type: "string", description: "GTIN/EAN opcional com 8, 12, 13 ou 14 dígitos." },
-      unidade: { type: "string", description: "Unidade de venda, por exemplo UN, KG ou LT." },
+      unidade: { type: "string", description: "Unidade de venda; padrão UN quando ausente." },
       descricao: { type: "string", description: "Descrição curta opcional." },
       ncm: { type: "string", description: "NCM com exatamente 8 dígitos." },
       cest: { type: "string", description: "CEST com 7 dígitos; envie SEM CEST quando não se aplicar." },
@@ -54,7 +54,7 @@ export const cadastrarProduto: AgentTool = {
       visivelEcommerce: { type: "boolean", description: "Se aparece na loja; padrão true." },
       confirmar: { type: "boolean", description: "Obrigatório true somente após o gestor responder CADASTRAR." }
     },
-    required: ["nome", "precoVenda", "estoqueInicial", "unidade", "ncm", "cest", "confirmar"],
+    required: ["nome", "precoVenda", "estoqueInicial", "ncm", "cest", "confirmar"],
     additionalProperties: false
   },
   handler: async (scope, args) => {
@@ -69,7 +69,7 @@ export const cadastrarProduto: AgentTool = {
     const nome = optionalText(args.nome);
     const precoVenda = optionalNumber(args.precoVenda);
     const estoqueInicial = optionalNumber(args.estoqueInicial);
-    const unidade = optionalText(args.unidade)?.toUpperCase();
+    const unidade = optionalText(args.unidade)?.toUpperCase() ?? "UN";
     const ncm = optionalText(args.ncm)?.replace(/\D/g, "");
     const origem = optionalText(args.origem) ?? "0";
     const gtinInformado = optionalText(args.gtin);
@@ -81,7 +81,6 @@ export const cadastrarProduto: AgentTool = {
     if (estoqueInicial === undefined || estoqueInicial < 0) {
       return { ok: false, data: null, error: "Informe o estoque inicial, mesmo que seja zero." };
     }
-    if (!unidade) return { ok: false, data: null, error: "Informe a unidade de venda, por exemplo UN, KG ou LT." };
     if (!ncm || ncm.length !== 8) return { ok: false, data: null, error: "Informe o NCM com exatamente 8 dígitos." };
     if (!origem || !/^[0-8]$/.test(origem)) {
       return { ok: false, data: null, error: "Informe o código de origem fiscal da mercadoria, de 0 a 8." };

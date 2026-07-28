@@ -31,9 +31,24 @@ export type AgentTurnResult = {
 
 const CONFIRMATION_MARKER = /\[\[CONFIRMAR:(CADASTRAR|EMITIR|CANCELAR|CONFIRMAR)\]\]/gi;
 
+function inferConfirmationFromText(input: string): "CADASTRAR" | "EMITIR" | "CANCELAR" | "CONFIRMAR" | undefined {
+  const text = input
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+  const asksConfirmation = /\b(confirma|confirmar|confirmacao|deseja prosseguir|posso prosseguir|podemos prosseguir)\b/.test(text);
+  if (!asksConfirmation) return undefined;
+  if (/\b(cancelar|cancelamento)\b/.test(text)) return "CANCELAR";
+  if (/\b(emitir|emissao|nota fiscal|nf-e|nfse|nfs-e|nfc-e)\b/.test(text)) return "EMITIR";
+  if (/\b(cadastro|cadastrar|produto)\b/.test(text)) return "CADASTRAR";
+  return "CONFIRMAR";
+}
+
 export function extractQuickActions(input: string): { text: string; actions: AgentQuickAction[] } {
-  const confirmation = [...input.matchAll(CONFIRMATION_MARKER)].at(-1)?.[1]?.toUpperCase();
+  const markerConfirmation = [...input.matchAll(CONFIRMATION_MARKER)].at(-1)?.[1]?.toUpperCase();
   const text = input.replace(CONFIRMATION_MARKER, "").replace(/\n{3,}/g, "\n\n").trim();
+  const confirmation = markerConfirmation ?? inferConfirmationFromText(text);
   if (!confirmation) return { text, actions: [] };
 
   const primary: Record<string, AgentQuickAction> = {

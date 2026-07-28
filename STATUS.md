@@ -100,6 +100,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
+| 2026-07-27 | A gerar | Em andamento | Confirmacoes resilientes com botoes, unidade `UN` padrao e historico persistente das conversas WEB do assistente. |
 | 2026-07-27 | `00dec93` | Enviado | Expansao segura e sempre ativa de nomes comerciais para candidatos oficiais NCM, com validacao dos codigos antes da selecao fiscal. |
 | 2026-07-27 | `38c127c` | Enviado | Agente conectado ao enriquecimento fiscal existente para sugerir NCM/CEST por descricao ou GTIN, com origem nacional padrao e revisao antes do cadastro. |
 | 2026-07-27 | `847f26a` | Enviado | Confirmacoes estruturadas com botoes no chat web e coleta fiscal obrigatoria antes do cadastro de produtos pelo agente. |
@@ -730,3 +731,11 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - A expansao fiscal sempre complementa a busca textual, evitando que falsos positivos por termos comerciais curtos (como RAM/SSD) impeçam a recuperacao correta; ela gera vocabulario fiscal e ate cinco codigos provaveis usados somente como chaves de recuperacao. Codigos inexistentes sao descartados, os existentes viram candidatos com descricao oficial e a selecao/validacao final continua obrigatoria.
 - Producao atualizada com a imagem `jrb-erp:00dec93` (`sha256:433722b5dcdc`), build de 191 paginas e smoke test publico com HTTP 200.
 - Teste E2E real no CHAT aprovado para notebook: o agente chamou `sugerir_fiscal_produto`, retornou NCM oficial, exibiu as acoes `CADASTRAR`/`NAO` e nao perguntou origem fiscal.
+
+## Atualizacao operacional - 2026-07-27 - confirmacao e historico do CHAT
+
+- Os botoes de confirmacao deixaram de depender exclusivamente do marcador gerado pelo modelo: respostas que pedem confirmacao de cadastro, emissao, cancelamento ou outra acao segura tambem sao reconhecidas de forma deterministica.
+- O cadastro de produto usa `UN` quando a unidade nao for informada; a unidade saiu dos campos obrigatorios da ferramenta e o agente nao deve mais interromper o fluxo para pergunta-la.
+- A API autenticada do CHAT passou a listar as ultimas 30 conversas WEB do usuario e carregar ate 100 mensagens da conversa selecionada, sempre isoladas por tenant, empresa e usuario.
+- A tela restaura a conversa ativa ao abrir, oferece painel de historico e mantem conversas encerradas disponiveis para consulta, com data, status e previa.
+- Validacao local: TypeScript, lint e `git diff --check` aprovados; inferencia de `CADASTRAR` validada com a frase real exibida no CHAT.

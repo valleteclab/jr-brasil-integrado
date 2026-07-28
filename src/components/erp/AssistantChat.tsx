@@ -6,12 +6,24 @@ import type { AgentRole, AgentDraft, AgentQuickAction } from "@/domains/agent/ty
 import styles from "./AssistantChat.module.css";
 
 type ChatMsg = {
+  id?: string;
   papel: "user" | "assistant";
   texto: string;
+  createdAt?: string;
   anexo?: string;
   audioUrl?: string;
   draft?: AgentDraft | null;
   quickActions?: AgentQuickAction[];
+};
+
+type ConversationSummary = {
+  id: string;
+  title: string;
+  role: AgentRole;
+  status: "ATIVA" | "ENCERRADA";
+  createdAt: string;
+  updatedAt: string;
+  preview: string;
 };
 
 const ROLES: Array<{ id: AgentRole; label: string }> = [
@@ -27,6 +39,7 @@ type IconName =
   | "box"
   | "chart"
   | "check"
+  | "history"
   | "mic"
   | "plus"
   | "sparkles"
@@ -40,6 +53,7 @@ function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
     box: <><path d="m21 8-9-5-9 5 9 5 9-5Z" /><path d="m3 8 9 5 9-5" /><path d="M12 13v9" /><path d="m21 12-9 5-9-5" /></>,
     chart: <><path d="M3 3v18h18" /><path d="m7 16 4-5 4 3 5-7" /></>,
     check: <path d="m5 12 4 4L19 6" />,
+    history: <><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5" /><path d="M12 7v5l3 2" /></>,
     mic: <><rect x="9" y="2" width="6" height="12" rx="3" /><path d="M5 10a7 7 0 0 0 14 0" /><path d="M12 17v5" /></>,
     plus: <><path d="M12 5v14" /><path d="M5 12h14" /></>,
     sparkles: <><path d="m12 3-1.1 3.4a6 6 0 0 1-3.8 3.8L4 11.3l3.1 1a6 6 0 0 1 3.8 3.8L12 20l1.1-3.9a6 6 0 0 1 3.8-3.8l3.1-1-3.1-1.1a6 6 0 0 1-3.8-3.8L12 3Z" /><path d="m5 3 .4 1.2A2 2 0 0 0 6.8 5.6L8 6l-1.2.4a2 2 0 0 0-1.4 1.4L5 9l-.4-1.2a2 2 0 0 0-1.4-1.4L2 6l1.2-.4a2 2 0 0 0 1.4-1.4L5 3Z" /></>,
@@ -74,6 +88,10 @@ function FormattedMessage({ text }: { text: string }) {
 export function AssistantChat() {
   const [role, setRole] = useState<AgentRole>("GESTOR");
   const [conversaId, setConversaId] = useState<string | null>(null);
+  const [conversationStatus, setConversationStatus] = useState<"ATIVA" | "ENCERRADA" | null>(null);
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [loadingHistory, setLoadingHistory] = useState(true);
   const [mensagens, setMensagens] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -89,6 +107,39 @@ export function AssistantChat() {
   const localAudioUrlsRef = useRef<Set<string>>(new Set());
 
   const persona = PERSONAS[role];
+
+  async function carregarHistorico(selectedId?: string | null) {
+    setLoadingHistory(true);
+    try {
+      const query = selectedId ? `?conversaId=${encodeURIComponent(selectedId)}` : "";
+      const res = await fetch(`/api/erp/assistente/chat${query}`, { cache: "no-store" });
+      const data = (await res.json()) as {
+        conversations?: ConversationSummary[];
+        selectedConversation?: {
+          id: string;
+          role: AgentRole;
+          status: "ATIVA" | "ENCERRADA";
+        } | null;
+        messages?: ChatMsg[];
+        error?: string;
+      };
+      if (!res.ok) throw new Error(data.error || "Não foi possível carregar o histórico.");
+      setConversations(data.conversations ?? []);
+      setConversaId(data.selectedConversation?.id ?? null);
+      setConversationStatus(data.selectedConversation?.status ?? null);
+      if (data.selectedConversation?.role) setRole(data.selectedConversation.role);
+      setMensagens(data.messages ?? []);
+      requestAnimationFrame(() => listRef.current?.scrollTo({ top: listRef.current.scrollHeight }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Falha ao carregar o histórico.");
+    } finally {
+      setLoadingHistory(false);
+    }
+  }
+
+  useEffect(() => {
+    void carregarHistorico();
+  }, []);
 
   useEffect(() => {
     const localAudioUrls = localAudioUrlsRef.current;
@@ -169,7 +220,7 @@ export function AssistantChat() {
     setError("");
     setBusy(true);
     try {
-      if (conversaId) {
+      if (conversaId && conversationStatus === "ATIVA") {
         const res = await fetch("/api/erp/assistente/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -179,6 +230,7 @@ export function AssistantChat() {
       }
       setRole(novo);
       setConversaId(null);
+      setConversationStatus(null);
       setMensagens([]);
       setAttachment(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -194,7 +246,7 @@ export function AssistantChat() {
     setError("");
     setBusy(true);
     try {
-      if (conversaId) {
+      if (conversaId && conversationStatus === "ATIVA") {
         const res = await fetch("/api/erp/assistente/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -204,9 +256,11 @@ export function AssistantChat() {
         if (!res.ok) throw new Error(data.error || "Não foi possível encerrar a conversa.");
       }
       setConversaId(null);
+      setConversationStatus(null);
       setMensagens([]);
       setInput("");
       setAttachment(null);
+      setHistoryOpen(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Falha ao iniciar uma nova conversa.");
     } finally {
@@ -217,7 +271,7 @@ export function AssistantChat() {
   async function enviar(texto: string, explicitAttachment?: File) {
     const msg = texto.trim();
     const currentAttachment = explicitAttachment ?? attachment;
-    if ((!msg && !currentAttachment) || busy || recording) return;
+    if ((!msg && !currentAttachment) || busy || recording || conversationStatus === "ENCERRADA") return;
     const isAudioMessage = Boolean(currentAttachment?.type.startsWith("audio/"));
     let localAudioUrl: string | undefined;
     if (isAudioMessage && currentAttachment) {
@@ -267,8 +321,13 @@ export function AssistantChat() {
         error?: string;
       };
       if (!res.ok) throw new Error(data.error || "Não foi possível obter a resposta.");
-      if (data.conversationEnded) setConversaId(null);
-      else if (data.conversaId) setConversaId(data.conversaId);
+      if (data.conversationEnded) {
+        setConversaId(null);
+        setConversationStatus(null);
+      } else if (data.conversaId) {
+        setConversaId(data.conversaId);
+        setConversationStatus("ATIVA");
+      }
       setAttachment(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
       const assistantAudioUrl = data.assistantAudioBase64
@@ -348,6 +407,21 @@ export function AssistantChat() {
             </div>
             <button
               type="button"
+              className={styles.historyButton}
+              onClick={() => {
+                const nextOpen = !historyOpen;
+                setHistoryOpen(nextOpen);
+                if (nextOpen) void carregarHistorico(conversaId);
+              }}
+              disabled={busy}
+              aria-expanded={historyOpen}
+              aria-label="Histórico de conversas"
+            >
+              <Icon name="history" size={17} />
+              <span>Histórico</span>
+            </button>
+            <button
+              type="button"
               className={styles.newChatButton}
               onClick={novaConversa}
               disabled={busy || (!conversaId && mensagens.length === 0)}
@@ -358,8 +432,46 @@ export function AssistantChat() {
           </div>
         </header>
 
+        {historyOpen && (
+          <aside className={styles.historyPanel} aria-label="Histórico de conversas">
+            <div className={styles.historyPanelHeader}>
+              <div>
+                <strong>Suas conversas</strong>
+                <span>As últimas 30 ficam salvas</span>
+              </div>
+              <button type="button" onClick={() => setHistoryOpen(false)} aria-label="Fechar histórico">×</button>
+            </div>
+            <div className={styles.historyList}>
+              {loadingHistory && <span className={styles.historyEmpty}>Carregando conversas…</span>}
+              {!loadingHistory && conversations.length === 0 && (
+                <span className={styles.historyEmpty}>Nenhuma conversa salva ainda.</span>
+              )}
+              {!loadingHistory && conversations.map((conversation) => (
+                <button
+                  key={conversation.id}
+                  type="button"
+                  className={`${styles.historyItem} ${conversation.id === conversaId ? styles.historyItemActive : ""}`}
+                  onClick={() => {
+                    void carregarHistorico(conversation.id);
+                    setHistoryOpen(false);
+                  }}
+                >
+                  <span className={styles.historyItemTop}>
+                    <strong>{conversation.title}</strong>
+                    <i className={conversation.status === "ATIVA" ? styles.activeStatus : undefined}>
+                      {conversation.status === "ATIVA" ? "Ativa" : "Encerrada"}
+                    </i>
+                  </span>
+                  <span>{conversation.preview || "Conversa sem prévia"}</span>
+                  <time>{new Date(conversation.updatedAt).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}</time>
+                </button>
+              ))}
+            </div>
+          </aside>
+        )}
+
         <div ref={listRef} className={styles.messageList}>
-          {mensagens.length === 0 && (
+          {!loadingHistory && mensagens.length === 0 && (
             <div className={styles.emptyState}>
               <div className={styles.aiOrb} aria-hidden="true">
                 <span className={styles.orbRing} />
@@ -406,7 +518,11 @@ export function AssistantChat() {
                 <div className={styles.messageContent}>
                   <div className={styles.messageMeta}>
                     <strong>{userMessage ? "Você" : persona.titulo}</strong>
-                    <span>agora</span>
+                    <span>
+                      {message.createdAt
+                        ? new Date(message.createdAt).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })
+                        : "agora"}
+                    </span>
                   </div>
                   <div className={`${styles.bubble} ${userMessage ? styles.userBubble : styles.assistantBubble}`}>
                     {message.anexo && (
@@ -456,7 +572,7 @@ export function AssistantChat() {
                                 : styles.quickActionPrimary
                           }`}
                           onClick={() => void enviar(action.value)}
-                          disabled={busy}
+                          disabled={busy || conversationStatus === "ENCERRADA"}
                         >
                           {action.variant === "primary" && <Icon name="check" size={16} />}
                           {action.label}
@@ -481,6 +597,12 @@ export function AssistantChat() {
         </div>
 
         <div className={styles.composerArea}>
+          {conversationStatus === "ENCERRADA" && (
+            <div className={styles.closedConversation}>
+              <span>Esta conversa está encerrada e disponível apenas para consulta.</span>
+              <button type="button" onClick={novaConversa}>Iniciar nova conversa</button>
+            </div>
+          )}
           {error && (
             <div className={styles.errorMessage}>
               <span>!</span>
@@ -501,7 +623,7 @@ export function AssistantChat() {
                   setAttachment(null);
                   if (fileInputRef.current) fileInputRef.current.value = "";
                 }}
-                disabled={busy}
+                disabled={busy || conversationStatus === "ENCERRADA"}
                 aria-label="Remover anexo"
               >
                 ×
@@ -545,7 +667,7 @@ export function AssistantChat() {
                 }}
                 rows={1}
                 placeholder={attachment ? "Dê uma instrução para o arquivo (opcional)" : "Converse com sua empresa…"}
-                disabled={busy}
+                disabled={busy || conversationStatus === "ENCERRADA"}
                 aria-label="Mensagem para o assistente"
               />
             )}
@@ -556,7 +678,7 @@ export function AssistantChat() {
                   type="button"
                   className={styles.toolButton}
                   onClick={() => fileInputRef.current?.click()}
-                  disabled={busy}
+                  disabled={busy || conversationStatus === "ENCERRADA"}
                   title="Anexar imagem, PDF, áudio ou arquivo"
                   aria-label="Anexar arquivo"
                 >
@@ -567,7 +689,7 @@ export function AssistantChat() {
                 type="button"
                 className={`${styles.toolButton} ${recording ? styles.stopButton : styles.micButton}`}
                 onClick={() => void alternarGravacao()}
-                disabled={busy}
+                disabled={busy || conversationStatus === "ENCERRADA"}
                 title={recording ? "Parar e enviar" : "Gravar áudio"}
                 aria-label={recording ? "Parar e enviar áudio" : "Gravar áudio"}
               >
@@ -578,7 +700,7 @@ export function AssistantChat() {
                 <button
                   type="submit"
                   className={styles.sendButton}
-                  disabled={busy || (!input.trim() && !attachment)}
+                  disabled={busy || conversationStatus === "ENCERRADA" || (!input.trim() && !attachment)}
                   title="Enviar mensagem"
                   aria-label="Enviar mensagem"
                 >
