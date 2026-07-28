@@ -758,3 +758,5 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Migration aditiva `20260727230000_agente_comercial_leads` cria a configuracao global, leads e interacoes sem alterar entidades operacionais existentes.
 - Validacao local: Prisma format/generate/validate, TypeScript, lint, `git diff --check` e build Next.js aprovados; permanecem apenas os dois avisos de lint preexistentes.
 - A ativacao do canal permanece pendente ate informar o novo numero, a instancia/token Z-API e a chave OpenRouter no painel administrativo.
+- Build Docker/Linux das 194 paginas aprovado e deploy concluido com a imagem `jrb-erp:1547e91` (`sha256:90cb2efe6afd`); as 131 migrations foram reconhecidas e a nova migration foi aplicada com sucesso.
+- Smoke test publico criou um lead `NOVO` com origem `LANDING_PAGE`, consentimento e interacao auditavel; o lead temporario foi removido em seguida. Login e saude responderam HTTP 200, `/admin/leads` redirecionou sem sessao e o servico permaneceu em `1/1`.
