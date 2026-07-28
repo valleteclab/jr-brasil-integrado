@@ -100,6 +100,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
+| 2026-07-28 | `A gerar` | Local | CRM global e agente comercial separado para captar, qualificar, acompanhar e converter leads do XERP por WhatsApp e formularios publicos. |
 | 2026-07-27 | `f1f8236` | Enviado | Confirmacoes resilientes com botoes, unidade `UN` padrao e historico persistente das conversas WEB do assistente. |
 | 2026-07-27 | `00dec93` | Enviado | Expansao segura e sempre ativa de nomes comerciais para candidatos oficiais NCM, com validacao dos codigos antes da selecao fiscal. |
 | 2026-07-27 | `38c127c` | Enviado | Agente conectado ao enriquecimento fiscal existente para sugerir NCM/CEST por descricao ou GTIN, com origem nacional padrao e revisao antes do cadastro. |
@@ -741,3 +742,19 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Validacao local: TypeScript, lint e `git diff --check` aprovados; inferencia de `CADASTRAR` validada com a frase real exibida no CHAT.
 - Build Docker/Linux das 191 paginas aprovado e deploy concluido com a imagem `jrb-erp:e48ed2b` (`sha256:0243ee7cd8e8`); servico convergido e login publico respondeu HTTP 200.
 - Verificacao no banco de producao encontrou 8 conversas WEB recuperaveis, todas com mensagens e escopo de usuario, incluindo 1 conversa ativa para restauracao automatica.
+
+## Atualizacao operacional - 2026-07-28 - estrutura comercial para captacao de leads
+
+- Criado um CRM global da plataforma, separado dos tenants do ERP, com funil `NOVO`, `EM_CONVERSA`, `QUALIFICADO`, `DEMONSTRACAO`, `TESTE`, `PROPOSTA`, `ASSINANTE`, `NUTRICAO`, `PERDIDO` e `OPT_OUT`.
+- Cada lead guarda contato, origem, campanha, UTMs, qualificacao fiscal/comercial, score, consentimento, opt-out, necessidade de atendimento humano, follow-up e linha do tempo auditavel.
+- O painel `/admin/leads` exibe indicadores, busca, filtros, score, status, follow-up, sinalizacao de atendimento humano e historico integral das interacoes.
+- O painel `/admin/agente-comercial` configura o numero separado, instancia Z-API, credenciais criptografadas, modelo OpenRouter, preco, link de teste, telefone humano e orientacoes comerciais.
+- Adicionado webhook exclusivo `/api/webhooks/comercial/whatsapp/[secret]`; ele nao usa o roteamento dos clientes do ERP e nunca acessa notas, produtos, empresas ou dados operacionais dos tenants.
+- O agente se identifica como IA do XERP, conduz uma pergunta por vez, qualifica tipo de empresa, dor, emissao fiscal, sistema atual e urgencia, oferece teste com link rastreavel e transfere casos comerciais sensiveis para uma pessoa.
+- Mensagens de voz recebidas no numero comercial usam o Whisper existente; reentregas sao deduplicadas e grupos, canais e mensagens da propria conta sao ignorados.
+- Opt-out por frases como `sair`, `parar` e `nao quero contato` e deterministico, cancela follow-up e impede prospeccao posterior sem nova iniciativa do contato.
+- Criado endpoint publico `/api/public/leads` para landing pages e campanhas, com honeypot, limite basico por IP, deduplicacao por telefone/e-mail/Instagram e captura de UTMs.
+- O link individual do agente inclui o `leadId`; ao concluir o cadastro, o lead vira `TESTE`, e a confirmacao de pagamento pelo Asaas promove automaticamente para `ASSINANTE`.
+- Migration aditiva `20260727230000_agente_comercial_leads` cria a configuracao global, leads e interacoes sem alterar entidades operacionais existentes.
+- Validacao local: Prisma format/generate/validate, TypeScript, lint, `git diff --check` e build Next.js aprovados; permanecem apenas os dois avisos de lint preexistentes.
+- A ativacao do canal permanece pendente ate informar o novo numero, a instancia/token Z-API e a chave OpenRouter no painel administrativo.

@@ -4,6 +4,7 @@ import { criarClienteCore, PlatformAdminError, type EmpresaDadosExtra } from "@/
 import { isValidCnpj, normalizeDocumento } from "@/lib/fiscal/documento";
 import { canRepeatCnpjForChatTest, type SelfServicePlan } from "@/lib/auth/self-service-registration";
 import { createSession } from "@/lib/auth/session";
+import { markCommercialLeadTrial } from "@/domains/platform-sales/application/commercial-lead-use-cases";
 
 /**
  * CADASTRO PÚBLICO self-service dos planos enxutos (EMISSOR ou CHAT): cria tenant já no plano
@@ -18,6 +19,7 @@ export async function POST(request: Request) {
       site?: string; // honeypot — humano deixa vazio
       /** Plano do cadastro (default EMISSOR; "CHAT" = plano chat-first com IA). */
       plano?: string;
+      leadId?: string;
       /** Dados do lookup de CNPJ (passo 1 do cadastro) — reaproveitados na Empresa criada. */
       empresaDados?: EmpresaDadosExtra & { nomeFantasia?: string | null };
     };
@@ -72,6 +74,12 @@ export async function POST(request: Request) {
       },
       { plano: codigoPlano, trialDias: plano.trialDias, empresaDados }
     );
+    await markCommercialLeadTrial({
+      leadId: typeof body.leadId === "string" ? body.leadId : null,
+      tenantId: r.tenantId,
+      empresa,
+      email
+    }).catch(() => undefined);
     await createSession(
       r.usuarioId,
       { tenantId: r.tenantId, empresaId: r.empresaId },

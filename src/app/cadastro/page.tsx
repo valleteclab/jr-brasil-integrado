@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
  * Cadastro público self-service — plano EMISSOR (padrão) ou CHAT (?plano=chat).
  * Preço/trial/nome vêm de /admin/planos (nada fixo).
  */
-export default async function CadastroEmissorPage({ searchParams }: { searchParams?: { plano?: string } }) {
+export default async function CadastroEmissorPage({ searchParams }: { searchParams?: { plano?: string; lead?: string } }) {
   const isChat = (searchParams?.plano ?? "").toUpperCase() === "CHAT";
   const codigo = isChat ? "CHAT" : "EMISSOR";
   const plano = await prisma.plataformaPlano.findUnique({ where: { codigo } }).catch(() => null);
@@ -36,7 +36,7 @@ export default async function CadastroEmissorPage({ searchParams }: { searchPara
             {isChat && " Dá até para enviá-lo pelo próprio chat."}
           </p>
         </div>
-        <CadastroEmissorForm plano={isChat ? "CHAT" : "EMISSOR"} />
+        <CadastroEmissorForm plano={isChat ? "CHAT" : "EMISSOR"} leadId={searchParams?.lead} />
         <p style={{ textAlign: "center", fontSize: 12, color: "#64748b", marginTop: 14 }}>
           Já tem conta? <a href="/login" style={{ fontWeight: 700 }}>Entrar</a>
         </p>

@@ -293,6 +293,34 @@ enum ProvedorWhatsapp {
   ZERNIO
 }
 
+enum LeadComercialStatus {
+  NOVO
+  EM_CONVERSA
+  QUALIFICADO
+  DEMONSTRACAO
+  TESTE
+  PROPOSTA
+  ASSINANTE
+  NUTRICAO
+  PERDIDO
+  OPT_OUT
+}
+
+enum LeadComercialCanal {
+  WHATSAPP
+  INSTAGRAM
+  CHAT_WEB
+  INDICACAO
+  LANDING_PAGE
+  OUTRO
+}
+
+enum LeadInteracaoDirecao {
+  ENTRADA
+  SAIDA
+  INTERNA
+}
+
 model Tenant {
   id                       String                   @id @default(cuid())
   nome                     String
@@ -624,17 +652,104 @@ model UsoIaMensal {
 
 /// Configuração única (global) da plataforma. Hoje guarda qual provedor de emissão está ativo.
 model PlataformaConfiguracao {
-  id                  String   @id @default("default")
-  provedorFiscalAtivo String   @default("ACBR")
+  id                   String   @id @default("default")
+  provedorFiscalAtivo  String   @default("ACBR")
   /// Assinatura das requisições ao QZ Tray (impressão direta no PDV). Certificado público (PEM) +
   /// chave privada criptografada. Assinar deixa o "Remember this decision" do QZ funcionar.
-  qzCertificado       String?
-  qzChaveCripto       String?
+  qzCertificado        String?
+  qzChaveCripto        String?
   /// Aplicação Mercado Pago da PLATAFORMA (OAuth marketplace): os clientes conectam a própria
   /// conta MP via "Conectar Mercado Pago". client_secret criptografado (encryptSecret).
-  mpClientId          String?
+  mpClientId           String?
   mpClientSecretCripto String?
-  atualizadoEm        DateTime @updatedAt
+  atualizadoEm         DateTime @updatedAt
+}
+
+/// Configuração GLOBAL do agente que vende o SaaS. Não pertence a um tenant cliente e nunca
+/// concede acesso aos dados operacionais do ERP. Segredos permanecem criptografados.
+model PlataformaAgenteComercial {
+  id                        String   @id @default("default")
+  ativo                     Boolean  @default(false)
+  nomeAgente                String   @default("Especialista XERP")
+  numeroWhatsapp            String?
+  whatsappInstanceId        String?
+  whatsappTokenCripto       String?
+  whatsappClientTokenCripto String?
+  webhookSecretCripto       String?
+  openrouterApiKeyCripto    String?
+  openrouterKeyFinal        String?
+  modeloIa                  String   @default("openai/gpt-4o-mini")
+  telefoneHumano            String?
+  urlCadastro               String   @default("/cadastro?plano=chat")
+  precoMensal               Decimal  @default(97) @db.Decimal(10, 2)
+  promptComplementar        String?  @db.Text
+  atualizadoEm              DateTime @updatedAt
+}
+
+/// Prospect da PLATAFORMA antes de existir um Tenant. Só o administrador global acessa.
+model PlataformaLead {
+  id                   String                    @id @default(cuid())
+  nome                 String?
+  empresa              String?
+  cnpj                 String?
+  telefone             String?
+  email                String?
+  instagramUsername    String?
+  segmento             String?
+  cidade               String?
+  uf                   String?
+  status               LeadComercialStatus       @default(NOVO)
+  canalOrigem          LeadComercialCanal        @default(OUTRO)
+  origem               String?
+  campanha             String?
+  utmSource            String?
+  utmMedium            String?
+  utmCampaign          String?
+  utmContent           String?
+  utmTerm              String?
+  dorPrincipal         String?                   @db.Text
+  sistemaAtual         String?
+  emiteNfe             Boolean?
+  emiteNfce            Boolean?
+  emiteNfse            Boolean?
+  volumeNotasMes       Int?
+  score                Int                       @default(0)
+  observacoes          String?                   @db.Text
+  consentimento        Boolean                   @default(false)
+  consentimentoEm      DateTime?
+  optOutEm             DateTime?
+  precisaHumano        Boolean                   @default(false)
+  responsavelUsuarioId String?
+  tenantConvertidoId   String?
+  ultimoContatoEm      DateTime?
+  proximoFollowupEm    DateTime?
+  interacoes           PlataformaLeadInteracao[]
+  criadoEm             DateTime                  @default(now())
+  atualizadoEm         DateTime                  @updatedAt
+
+  @@index([status, atualizadoEm])
+  @@index([telefone])
+  @@index([email])
+  @@index([canalOrigem, campanha])
+  @@index([proximoFollowupEm])
+}
+
+/// Linha do tempo auditável do lead: mensagens recebidas/enviadas e alterações internas.
+model PlataformaLeadInteracao {
+  id                String               @id @default(cuid())
+  leadId            String
+  lead              PlataformaLead       @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  canal             LeadComercialCanal
+  direcao           LeadInteracaoDirecao
+  tipo              String               @default("MENSAGEM")
+  conteudo          String               @db.Text
+  externalMessageId String?
+  usuarioId         String?
+  metadados         Json?
+  criadoEm          DateTime             @default(now())
+
+  @@unique([canal, externalMessageId])
+  @@index([leadId, criadoEm])
 }
 
 /// Config de PLATAFORMA do módulo de CRÉDITO (revenda de consultas de bureau). É a "conta da casa"
@@ -792,26 +907,26 @@ model CosmosCache {
 }
 
 model Usuario {
-  id              String           @id @default(cuid())
-  nome            String
-  email           String           @unique
-  senhaHash       String
-  status          StatusUsuario    @default(ATIVO)
-  plataformaAdmin Boolean          @default(false)
+  id                String           @id @default(cuid())
+  nome              String
+  email             String           @unique
+  senhaHash         String
+  status            StatusUsuario    @default(ATIVO)
+  plataformaAdmin   Boolean          @default(false)
   /// WhatsApp (só dígitos, com DDD) — recebe o código 2FA quando a empresa exigir.
-  whatsapp        String?
+  whatsapp          String?
   /// Proteção contra força bruta: tentativas falhas seguidas e bloqueio temporário.
-  loginFalhas     Int              @default(0)
-  bloqueadoAte    DateTime?
-  vinculos        UsuarioVinculo[]
-  auditorias      Auditoria[]
-  sessoes         Sessao[]
-  desafios2fa     Desafio2fa[]
-  ultimoAcessoEm  DateTime?
+  loginFalhas       Int              @default(0)
+  bloqueadoAte      DateTime?
+  vinculos          UsuarioVinculo[]
+  auditorias        Auditoria[]
+  sessoes           Sessao[]
+  desafios2fa       Desafio2fa[]
+  ultimoAcessoEm    DateTime?
   /// Última troca de senha (auditoria de segurança — exibida em Minha conta → Segurança).
   senhaAtualizadaEm DateTime?
-  criadoEm        DateTime         @default(now())
-  atualizadoEm    DateTime         @updatedAt
+  criadoEm          DateTime         @default(now())
+  atualizadoEm      DateTime         @updatedAt
 }
 
 /// Desafio 2FA pendente: código de 6 dígitos (hash) enviado por WhatsApp, validade curta.
@@ -912,36 +1027,36 @@ model Auditoria {
 }
 
 model Cliente {
-  id                String            @id @default(cuid())
-  tenantId          String
-  empresaId         String
-  empresa           Empresa           @relation(fields: [empresaId], references: [id])
-  razaoSocial       String
-  nomeFantasia      String?
-  documento         String
-  inscricaoEstadual String?
-  status            StatusCliente     @default(PENDENTE_APROVACAO)
-  segmento          String?
-  limiteCredito     Decimal           @default(0) @db.Decimal(14, 2)
-  creditoUsado      Decimal           @default(0) @db.Decimal(14, 2)
+  id                       String            @id @default(cuid())
+  tenantId                 String
+  empresaId                String
+  empresa                  Empresa           @relation(fields: [empresaId], references: [id])
+  razaoSocial              String
+  nomeFantasia             String?
+  documento                String
+  inscricaoEstadual        String?
+  status                   StatusCliente     @default(PENDENTE_APROVACAO)
+  segmento                 String?
+  limiteCredito            Decimal           @default(0) @db.Decimal(14, 2)
+  creditoUsado             Decimal           @default(0) @db.Decimal(14, 2)
   /// Venda FATURADA (boleto/crediário) liberada para este cliente. Só o perfil FINANCEIRO libera;
   /// sem isso, o caixa/PDV bloqueia venda a prazo e pede liberação ao financeiro.
-  vendaFaturadaLiberada   Boolean   @default(false)
+  vendaFaturadaLiberada    Boolean           @default(false)
   vendaFaturadaLiberadaPor String?
-  vendaFaturadaLiberadaEm DateTime?
-  vendaFaturadaObs        String?
-  condicaoPagamento String?
-  tabelaPrecoId     String?
-  tabelaPreco       TabelaPreco?      @relation(fields: [tabelaPrecoId], references: [id])
-  contatos          ClienteContato[]
-  enderecos         ClienteEndereco[]
-  pedidosVenda      PedidoVenda[]
-  orcamentos        Orcamento[]
-  ordensServico     OrdemServico[]
-  contasReceber     ContaReceber[]
-  notasFiscais      NotaFiscal[]
-  criadoEm          DateTime          @default(now())
-  atualizadoEm      DateTime          @updatedAt
+  vendaFaturadaLiberadaEm  DateTime?
+  vendaFaturadaObs         String?
+  condicaoPagamento        String?
+  tabelaPrecoId            String?
+  tabelaPreco              TabelaPreco?      @relation(fields: [tabelaPrecoId], references: [id])
+  contatos                 ClienteContato[]
+  enderecos                ClienteEndereco[]
+  pedidosVenda             PedidoVenda[]
+  orcamentos               Orcamento[]
+  ordensServico            OrdemServico[]
+  contasReceber            ContaReceber[]
+  notasFiscais             NotaFiscal[]
+  criadoEm                 DateTime          @default(now())
+  atualizadoEm             DateTime          @updatedAt
 
   @@unique([tenantId, documento])
   @@index([tenantId, empresaId])
@@ -1474,42 +1589,42 @@ model OrcamentoItem {
 }
 
 model OrdemServico {
-  id                String                @id @default(cuid())
-  tenantId          String
-  empresaId         String
-  empresa           Empresa               @relation(fields: [empresaId], references: [id])
+  id                   String                    @id @default(cuid())
+  tenantId             String
+  empresaId            String
+  empresa              Empresa                   @relation(fields: [empresaId], references: [id])
   // Ambiente fiscal vigente quando a OS foi criada.
-  ambiente          AmbienteFiscal        @default(HOMOLOGACAO)
-  numero            String
-  clienteId         String
-  cliente           Cliente               @relation(fields: [clienteId], references: [id])
-  status            StatusOrdemServico    @default(ABERTA)
-  equipamento       String
-  placaOuSerial     String?
+  ambiente             AmbienteFiscal            @default(HOMOLOGACAO)
+  numero               String
+  clienteId            String
+  cliente              Cliente                   @relation(fields: [clienteId], references: [id])
+  status               StatusOrdemServico        @default(ABERTA)
+  equipamento          String
+  placaOuSerial        String?
   /// KM / horímetro do veículo/equipamento na entrada (garantia e histórico).
-  km                String?
-  diagnostico       String?
-  problemaRelatado  String?
-  depositoId        String?
-  previsaoEm        DateTime?
+  km                   String?
+  diagnostico          String?
+  problemaRelatado     String?
+  depositoId           String?
+  previsaoEm           DateTime?
   /// Técnico responsável pela OS (o dono do serviço). Apontamentos podem ser de vários técnicos.
   tecnicoResponsavelId String?
-  tecnicoResponsavel   Tecnico?           @relation("OsResponsavel", fields: [tecnicoResponsavelId], references: [id])
-  totalServicos     Decimal               @default(0) @db.Decimal(14, 2)
-  totalPecas        Decimal               @default(0) @db.Decimal(14, 2)
-  desconto          Decimal               @default(0) @db.Decimal(14, 2)
-  total             Decimal               @default(0) @db.Decimal(14, 2)
-  condicaoPagamento String?
-  formaPagamento    String?
-  observacoes       String?
-  faturadoEm        DateTime?
-  servicos          OrdemServicoMaoObra[]
-  pecas             OrdemServicoPeca[]
-  apontamentos      OrdemServicoApontamento[]
-  contasReceber     ContaReceber[]
-  notasFiscais      NotaFiscal[]
-  criadoEm          DateTime              @default(now())
-  atualizadoEm      DateTime              @updatedAt
+  tecnicoResponsavel   Tecnico?                  @relation("OsResponsavel", fields: [tecnicoResponsavelId], references: [id])
+  totalServicos        Decimal                   @default(0) @db.Decimal(14, 2)
+  totalPecas           Decimal                   @default(0) @db.Decimal(14, 2)
+  desconto             Decimal                   @default(0) @db.Decimal(14, 2)
+  total                Decimal                   @default(0) @db.Decimal(14, 2)
+  condicaoPagamento    String?
+  formaPagamento       String?
+  observacoes          String?
+  faturadoEm           DateTime?
+  servicos             OrdemServicoMaoObra[]
+  pecas                OrdemServicoPeca[]
+  apontamentos         OrdemServicoApontamento[]
+  contasReceber        ContaReceber[]
+  notasFiscais         NotaFiscal[]
+  criadoEm             DateTime                  @default(now())
+  atualizadoEm         DateTime                  @updatedAt
 
   @@unique([tenantId, empresaId, numero])
   @@index([tenantId, empresaId, status])
@@ -1536,22 +1651,22 @@ model OrdemServicoMaoObra {
 /// Cadastro de TÉCNICOS/MECÂNICOS da oficina. Podem ter login vinculado (usuarioId) para
 /// atualizar as próprias OS (apontamentos). custoHora é interno (produtividade/custo real).
 model Tecnico {
-  id             String       @id @default(cuid())
-  tenantId       String
-  empresaId      String
-  empresa        Empresa      @relation(fields: [empresaId], references: [id])
-  nome           String
-  especialidade  String?
-  telefone       String?
-  custoHora      Decimal      @default(0) @db.Decimal(14, 2)
+  id                String                    @id @default(cuid())
+  tenantId          String
+  empresaId         String
+  empresa           Empresa                   @relation(fields: [empresaId], references: [id])
+  nome              String
+  especialidade     String?
+  telefone          String?
+  custoHora         Decimal                   @default(0) @db.Decimal(14, 2)
   /// Vínculo com o login do técnico (Usuario) — quem estiver logado é reconhecido como este técnico.
-  usuarioId      String?      @unique
-  ativo          Boolean      @default(true)
-  apontamentos   OrdemServicoApontamento[]
-  maoObras       OrdemServicoMaoObra[]
-  ordensResponsavel OrdemServico[]        @relation("OsResponsavel")
-  criadoEm       DateTime     @default(now())
-  atualizadoEm   DateTime     @updatedAt
+  usuarioId         String?                   @unique
+  ativo             Boolean                   @default(true)
+  apontamentos      OrdemServicoApontamento[]
+  maoObras          OrdemServicoMaoObra[]
+  ordensResponsavel OrdemServico[]            @relation("OsResponsavel")
+  criadoEm          DateTime                  @default(now())
+  atualizadoEm      DateTime                  @updatedAt
 
   @@index([tenantId, empresaId, ativo])
 }
@@ -1576,54 +1691,54 @@ model OrdemServicoApontamento {
 }
 
 model OrdemServicoPeca {
-  id             String       @id @default(cuid())
-  tenantId       String
-  empresaId      String
-  ordemServicoId String
-  produtoId      String
-  ordemServico   OrdemServico @relation(fields: [ordemServicoId], references: [id])
-  produto        Produto      @relation(fields: [produtoId], references: [id])
-  quantidade     Decimal      @db.Decimal(14, 4)
-  precoUnitario  Decimal      @db.Decimal(14, 2)
-  total          Decimal      @db.Decimal(14, 2)
+  id               String       @id @default(cuid())
+  tenantId         String
+  empresaId        String
+  ordemServicoId   String
+  produtoId        String
+  ordemServico     OrdemServico @relation(fields: [ordemServicoId], references: [id])
+  produto          Produto      @relation(fields: [produtoId], references: [id])
+  quantidade       Decimal      @db.Decimal(14, 4)
+  precoUnitario    Decimal      @db.Decimal(14, 2)
+  total            Decimal      @db.Decimal(14, 2)
   /// Peça a COMPRAR (não estava em estoque): fica esperando a nota de entrada chegar.
-  aguardandoCompra Boolean    @default(false)
+  aguardandoCompra Boolean      @default(false)
   /// Preenchido quando a peça chega (entrada fiscal do produto credita estoque) — avisa a oficina.
-  chegouEm       DateTime?
+  chegouEm         DateTime?
 
   @@index([tenantId, empresaId])
   @@index([tenantId, empresaId, produtoId, aguardandoCompra])
 }
 
 model Fornecedor {
-  id                 String              @id @default(cuid())
-  tenantId           String
-  empresaId          String
-  empresa            Empresa             @relation(fields: [empresaId], references: [id])
-  razaoSocial        String
-  nomeFantasia       String?
-  documento          String
-  inscricaoEstadual  String?
-  email              String?
-  telefone           String?
-  cep                String?
-  logradouro         String?
-  numero             String?
-  complemento        String?
-  bairro             String?
-  cidade             String?
-  uf                 String?
-  condicaoPagamento  String?
-  observacoes        String?
-  ativo              Boolean             @default(true)
-  produtosVinculados ProdutoFornecedor[]
-  entradasFiscais    EntradaFiscal[]
-  pedidosCompra      PedidoCompra[]
-  contasPagar        ContaPagar[]
-  emprestimos        Emprestimo[]
+  id                  String              @id @default(cuid())
+  tenantId            String
+  empresaId           String
+  empresa             Empresa             @relation(fields: [empresaId], references: [id])
+  razaoSocial         String
+  nomeFantasia        String?
+  documento           String
+  inscricaoEstadual   String?
+  email               String?
+  telefone            String?
+  cep                 String?
+  logradouro          String?
+  numero              String?
+  complemento         String?
+  bairro              String?
+  cidade              String?
+  uf                  String?
+  condicaoPagamento   String?
+  observacoes         String?
+  ativo               Boolean             @default(true)
+  produtosVinculados  ProdutoFornecedor[]
+  entradasFiscais     EntradaFiscal[]
+  pedidosCompra       PedidoCompra[]
+  contasPagar         ContaPagar[]
+  emprestimos         Emprestimo[]
   despesasRecorrentes DespesaRecorrente[]
-  criadoEm           DateTime            @default(now())
-  atualizadoEm       DateTime            @updatedAt
+  criadoEm            DateTime            @default(now())
+  atualizadoEm        DateTime            @updatedAt
 
   @@unique([tenantId, empresaId, documento])
   @@index([tenantId, empresaId])
@@ -1991,22 +2106,22 @@ model RegraFinalidadeEntrada {
 /// (ex.: "Mercadoria para revenda"). `codigo` é livre (o plano do cliente pode ter máscara própria).
 /// `orcamentoMensal` é o valor IDEAL/meta mensal usado no fechamento (0 = sem meta).
 model ClassificacaoFinanceira {
-  id              String         @id @default(cuid())
+  id              String                      @id @default(cuid())
   tenantId        String
   empresaId       String
-  empresa         Empresa        @relation(fields: [empresaId], references: [id])
+  empresa         Empresa                     @relation(fields: [empresaId], references: [id])
   codigo          String?
   nome            String
   grupo           String
   tipo            TipoClassificacaoFinanceira @default(DESPESA)
-  orcamentoMensal Decimal        @default(0) @db.Decimal(14, 2)
-  ativo           Boolean        @default(true)
+  orcamentoMensal Decimal                     @default(0) @db.Decimal(14, 2)
+  ativo           Boolean                     @default(true)
   contasPagar     ContaPagar[]
   contasReceber   ContaReceber[]
-  emprestimos     Emprestimo[]   @relation("EmprestimoClassificacao")
-  recorrencias    DespesaRecorrente[] @relation("RecorrenciaClassificacao")
-  criadoEm        DateTime       @default(now())
-  atualizadoEm    DateTime       @updatedAt
+  emprestimos     Emprestimo[]                @relation("EmprestimoClassificacao")
+  recorrencias    DespesaRecorrente[]         @relation("RecorrenciaClassificacao")
+  criadoEm        DateTime                    @default(now())
+  atualizadoEm    DateTime                    @updatedAt
 
   @@unique([tenantId, empresaId, nome])
   @@index([tenantId, empresaId, grupo])
@@ -2017,102 +2132,102 @@ model ClassificacaoFinanceira {
 /// (ContaPagar quitada, classificação "Juros de antecipação") — o líquido fica no saldo e o
 /// DRE/fechamento mensal batem sem lançamento manual de taxas.
 model AntecipacaoRecebivel {
-  id              String         @id @default(cuid())
-  tenantId        String
-  empresaId       String
-  empresa         Empresa        @relation(fields: [empresaId], references: [id])
-  ambiente        AmbienteFiscal @default(HOMOLOGACAO)
-  contaBancariaId String
-  contaBancaria   ContaBancaria  @relation(fields: [contaBancariaId], references: [id])
+  id               String         @id @default(cuid())
+  tenantId         String
+  empresaId        String
+  empresa          Empresa        @relation(fields: [empresaId], references: [id])
+  ambiente         AmbienteFiscal @default(HOMOLOGACAO)
+  contaBancariaId  String
+  contaBancaria    ContaBancaria  @relation(fields: [contaBancariaId], references: [id])
   /// Banco/factoring onde os títulos foram antecipados (texto livre).
-  instituicao     String?
-  dataOperacao    DateTime
-  valorBruto      Decimal        @db.Decimal(14, 2)
-  valorTaxa       Decimal        @db.Decimal(14, 2)
-  valorLiquido    Decimal        @db.Decimal(14, 2)
-  observacoes     String?
-  contaPagarTaxaId String?       @unique
-  contaPagarTaxa  ContaPagar?    @relation(fields: [contaPagarTaxaId], references: [id])
-  recebiveis      ContaReceber[]
-  criadoEm        DateTime       @default(now())
-  atualizadoEm    DateTime       @updatedAt
+  instituicao      String?
+  dataOperacao     DateTime
+  valorBruto       Decimal        @db.Decimal(14, 2)
+  valorTaxa        Decimal        @db.Decimal(14, 2)
+  valorLiquido     Decimal        @db.Decimal(14, 2)
+  observacoes      String?
+  contaPagarTaxaId String?        @unique
+  contaPagarTaxa   ContaPagar?    @relation(fields: [contaPagarTaxaId], references: [id])
+  recebiveis       ContaReceber[]
+  criadoEm         DateTime       @default(now())
+  atualizadoEm     DateTime       @updatedAt
 
   @@index([tenantId, empresaId, dataOperacao])
 }
 
 model ContaPagar {
-  id                     String                @id @default(cuid())
+  id                     String                   @id @default(cuid())
   tenantId               String
   empresaId              String
-  empresa                Empresa               @relation(fields: [empresaId], references: [id])
+  empresa                Empresa                  @relation(fields: [empresaId], references: [id])
   // Ambiente fiscal vigente quando a conta foi criada.
-  ambiente               AmbienteFiscal        @default(HOMOLOGACAO)
+  ambiente               AmbienteFiscal           @default(HOMOLOGACAO)
   fornecedorId           String?
   pedidoCompraId         String?
   entradaFiscalId        String?
-  entradaFiscalParcelaId String?               @unique
-  fornecedor             Fornecedor?           @relation(fields: [fornecedorId], references: [id])
-  pedidoCompra           PedidoCompra?         @relation(fields: [pedidoCompraId], references: [id])
-  entradaFiscal          EntradaFiscal?        @relation(fields: [entradaFiscalId], references: [id])
-  entradaFiscalParcela   EntradaFiscalParcela? @relation(fields: [entradaFiscalParcelaId], references: [id])
+  entradaFiscalParcelaId String?                  @unique
+  fornecedor             Fornecedor?              @relation(fields: [fornecedorId], references: [id])
+  pedidoCompra           PedidoCompra?            @relation(fields: [pedidoCompraId], references: [id])
+  entradaFiscal          EntradaFiscal?           @relation(fields: [entradaFiscalId], references: [id])
+  entradaFiscalParcela   EntradaFiscalParcela?    @relation(fields: [entradaFiscalParcelaId], references: [id])
   descricao              String
   numeroDocumento        String?
   formaPagamento         String?
   origem                 String?
   vencimento             DateTime
-  valor                  Decimal               @db.Decimal(14, 2)
-  valorPago              Decimal               @default(0) @db.Decimal(14, 2)
-  juros                  Decimal               @default(0) @db.Decimal(14, 2)
-  multa                  Decimal               @default(0) @db.Decimal(14, 2)
-  descontoBaixa          Decimal               @default(0) @db.Decimal(14, 2)
+  valor                  Decimal                  @db.Decimal(14, 2)
+  valorPago              Decimal                  @default(0) @db.Decimal(14, 2)
+  juros                  Decimal                  @default(0) @db.Decimal(14, 2)
+  multa                  Decimal                  @default(0) @db.Decimal(14, 2)
+  descontoBaixa          Decimal                  @default(0) @db.Decimal(14, 2)
   observacoes            String?
   contaBancariaId        String?
-  contaBancaria          ContaBancaria?        @relation(fields: [contaBancariaId], references: [id])
+  contaBancaria          ContaBancaria?           @relation(fields: [contaBancariaId], references: [id])
   classificacaoId        String?
   classificacao          ClassificacaoFinanceira? @relation(fields: [classificacaoId], references: [id])
   movimentos             MovimentoFinanceiro[]
   antecipacaoTaxa        AntecipacaoRecebivel?
   /// Parcela de um contrato de empréstimo/financiamento (cronograma gerado pelo contrato).
   emprestimoId           String?
-  emprestimo             Emprestimo?           @relation(fields: [emprestimoId], references: [id])
+  emprestimo             Emprestimo?              @relation(fields: [emprestimoId], references: [id])
   emprestimoParcela      Int?
   /// Ocorrência de uma despesa recorrente (folha, aluguel, energia...) — competência "AAAA-MM".
   recorrenciaId          String?
-  recorrencia            DespesaRecorrente?    @relation(fields: [recorrenciaId], references: [id])
+  recorrencia            DespesaRecorrente?       @relation(fields: [recorrenciaId], references: [id])
   recorrenciaCompetencia String?
-  status                 StatusFinanceiro      @default(ABERTO)
+  status                 StatusFinanceiro         @default(ABERTO)
   pagoEm                 DateTime?
-  criadoEm               DateTime              @default(now())
-  atualizadoEm           DateTime              @updatedAt
+  criadoEm               DateTime                 @default(now())
+  atualizadoEm           DateTime                 @updatedAt
 
+  // Idempotência da geração automática: uma ocorrência por recorrência+competência.
+  @@unique([recorrenciaId, recorrenciaCompetencia])
   @@index([tenantId, empresaId, status])
   @@index([tenantId, empresaId, fornecedorId, vencimento])
   @@index([tenantId, empresaId, entradaFiscalId])
   @@index([tenantId, empresaId, classificacaoId])
   @@index([tenantId, empresaId, emprestimoId])
   @@index([tenantId, empresaId, recorrenciaId])
-  // Idempotência da geração automática: uma ocorrência por recorrência+competência.
-  @@unique([recorrenciaId, recorrenciaCompetencia])
 }
 
 /// DESPESA RECORRENTE (folha salarial, aluguel, energia, contador, assinaturas...): modelo que
 /// gera automaticamente as ContaPagar por competência (cron + idempotência por recorrência+mês).
 /// Valor VARIÁVEL = o título nasce com a estimativa (último valor) e o operador ajusta na baixa.
 model DespesaRecorrente {
-  id              String         @id @default(cuid())
+  id              String                   @id @default(cuid())
   tenantId        String
   empresaId       String
-  empresa         Empresa        @relation(fields: [empresaId], references: [id])
-  ambiente        AmbienteFiscal @default(HOMOLOGACAO)
+  empresa         Empresa                  @relation(fields: [empresaId], references: [id])
+  ambiente        AmbienteFiscal           @default(HOMOLOGACAO)
   descricao       String
   fornecedorId    String?
-  fornecedor      Fornecedor?    @relation(fields: [fornecedorId], references: [id])
+  fornecedor      Fornecedor?              @relation(fields: [fornecedorId], references: [id])
   /// Valor de cada ocorrência (estimativa quando valorVariavel).
-  valor           Decimal        @db.Decimal(14, 2)
+  valor           Decimal                  @db.Decimal(14, 2)
   /// true = valor muda todo mês (energia, folha) — o título nasce como estimativa.
-  valorVariavel   Boolean        @default(false)
+  valorVariavel   Boolean                  @default(false)
   /// MENSAL | BIMESTRAL | TRIMESTRAL | SEMESTRAL | ANUAL
-  periodicidade   String         @default("MENSAL")
+  periodicidade   String                   @default("MENSAL")
   /// Dia do vencimento (1–31, ajustado ao fim do mês curto).
   diaVencimento   Int
   /// Primeira competência (a partir deste mês as ocorrências são geradas).
@@ -2121,15 +2236,15 @@ model DespesaRecorrente {
   dataFim         DateTime?
   formaPagamento  String?
   contaBancariaId String?
-  contaBancaria   ContaBancaria? @relation(fields: [contaBancariaId], references: [id])
+  contaBancaria   ContaBancaria?           @relation(fields: [contaBancariaId], references: [id])
   classificacaoId String?
   classificacao   ClassificacaoFinanceira? @relation("RecorrenciaClassificacao", fields: [classificacaoId], references: [id])
   observacoes     String?
   /// ATIVA | PAUSADA | ENCERRADA
-  status          String         @default("ATIVA")
+  status          String                   @default("ATIVA")
   ocorrencias     ContaPagar[]
-  criadoEm        DateTime       @default(now())
-  atualizadoEm    DateTime       @updatedAt
+  criadoEm        DateTime                 @default(now())
+  atualizadoEm    DateTime                 @updatedAt
 
   @@index([tenantId, empresaId, status])
 }
@@ -2140,89 +2255,89 @@ model DespesaRecorrente {
 /// contratos antigos entram com `parcelasJaPagas` e só as restantes viram título. O saldo devedor
 /// é derivado do cronograma + parcelas pagas — nada é gravado duplicado.
 model Emprestimo {
-  id                   String         @id @default(cuid())
-  tenantId             String
-  empresaId            String
-  empresa              Empresa        @relation(fields: [empresaId], references: [id])
-  ambiente             AmbienteFiscal @default(HOMOLOGACAO)
+  id                 String                   @id @default(cuid())
+  tenantId           String
+  empresaId          String
+  empresa            Empresa                  @relation(fields: [empresaId], references: [id])
+  ambiente           AmbienteFiscal           @default(HOMOLOGACAO)
   /// EMPRESTIMO | FINANCIAMENTO | CONSIGNADO | OUTRO (livre — sem lista fixa no código).
-  tipo                 String         @default("EMPRESTIMO")
+  tipo               String                   @default("EMPRESTIMO")
   /// Credor (banco/financeira/pessoa) — texto livre; opcionalmente vinculado a um fornecedor.
-  instituicao          String
-  fornecedorId         String?
-  fornecedor           Fornecedor?    @relation(fields: [fornecedorId], references: [id])
-  numeroContrato       String?
-  dataContratacao      DateTime
+  instituicao        String
+  fornecedorId       String?
+  fornecedor         Fornecedor?              @relation(fields: [fornecedorId], references: [id])
+  numeroContrato     String?
+  dataContratacao    DateTime
   /// Valor liberado/financiado (principal).
-  valorPrincipal       Decimal        @db.Decimal(14, 2)
+  valorPrincipal     Decimal                  @db.Decimal(14, 2)
   /// Taxa de juros mensal em % (ex.: 1.99). 0 = sem juros.
-  taxaJurosMensal      Decimal        @default(0) @db.Decimal(8, 4)
+  taxaJurosMensal    Decimal                  @default(0) @db.Decimal(8, 4)
   /// PRICE (parcelas iguais) | SAC (amortização constante) | PARCELA_INFORMADA (valor fixado no
   /// contrato, ex.: carnê) | SEM_JUROS (divide o principal igualmente).
-  sistemaAmortizacao   String         @default("PRICE")
-  totalParcelas        Int
+  sistemaAmortizacao String                   @default("PRICE")
+  totalParcelas      Int
   /// Contrato antigo (migração): parcelas já quitadas antes do cadastro — não viram ContaPagar.
-  parcelasJaPagas      Int            @default(0)
+  parcelasJaPagas    Int                      @default(0)
   /// Valor da parcela quando o sistema é PARCELA_INFORMADA (carnê/contrato define o valor).
-  valorParcela         Decimal?       @db.Decimal(14, 2)
+  valorParcela       Decimal?                 @db.Decimal(14, 2)
   /// Vencimento da PRIMEIRA parcela do contrato (inclui as já pagas); demais mensais.
-  primeiroVencimento   DateTime
+  primeiroVencimento DateTime
   /// Conta padrão de débito das parcelas.
-  contaBancariaId      String?
-  contaBancaria        ContaBancaria? @relation(fields: [contaBancariaId], references: [id])
+  contaBancariaId    String?
+  contaBancaria      ContaBancaria?           @relation(fields: [contaBancariaId], references: [id])
   /// Classificação financeira das parcelas (ex.: grupo Empréstimos) — escolhida pelo usuário.
-  classificacaoId      String?
-  classificacao        ClassificacaoFinanceira? @relation("EmprestimoClassificacao", fields: [classificacaoId], references: [id])
-  observacoes          String?
+  classificacaoId    String?
+  classificacao      ClassificacaoFinanceira? @relation("EmprestimoClassificacao", fields: [classificacaoId], references: [id])
+  observacoes        String?
   /// ATIVO | QUITADO | CANCELADO
-  status               String         @default("ATIVO")
-  parcelas             ContaPagar[]
-  criadoEm             DateTime       @default(now())
-  atualizadoEm         DateTime       @updatedAt
+  status             String                   @default("ATIVO")
+  parcelas           ContaPagar[]
+  criadoEm           DateTime                 @default(now())
+  atualizadoEm       DateTime                 @updatedAt
 
   @@index([tenantId, empresaId, status])
 }
 
 model ContaReceber {
-  id              String                @id @default(cuid())
+  id              String                   @id @default(cuid())
   tenantId        String
   empresaId       String
-  empresa         Empresa               @relation(fields: [empresaId], references: [id])
+  empresa         Empresa                  @relation(fields: [empresaId], references: [id])
   // Ambiente fiscal vigente quando a conta foi criada.
-  ambiente        AmbienteFiscal        @default(HOMOLOGACAO)
+  ambiente        AmbienteFiscal           @default(HOMOLOGACAO)
   clienteId       String
   pedidoVendaId   String?
   ordemServicoId  String?
   notaFiscalId    String?
-  cliente         Cliente               @relation(fields: [clienteId], references: [id])
-  pedidoVenda     PedidoVenda?          @relation(fields: [pedidoVendaId], references: [id])
-  ordemServico    OrdemServico?         @relation(fields: [ordemServicoId], references: [id])
-  notaFiscal      NotaFiscal?           @relation(fields: [notaFiscalId], references: [id])
+  cliente         Cliente                  @relation(fields: [clienteId], references: [id])
+  pedidoVenda     PedidoVenda?             @relation(fields: [pedidoVendaId], references: [id])
+  ordemServico    OrdemServico?            @relation(fields: [ordemServicoId], references: [id])
+  notaFiscal      NotaFiscal?              @relation(fields: [notaFiscalId], references: [id])
   descricao       String
   numeroDocumento String?
   origem          String?
   formaPagamento  String?
   vencimento      DateTime
-  valor           Decimal               @db.Decimal(14, 2)
-  valorPago       Decimal               @default(0) @db.Decimal(14, 2)
-  juros           Decimal               @default(0) @db.Decimal(14, 2)
-  multa           Decimal               @default(0) @db.Decimal(14, 2)
-  descontoBaixa   Decimal               @default(0) @db.Decimal(14, 2)
+  valor           Decimal                  @db.Decimal(14, 2)
+  valorPago       Decimal                  @default(0) @db.Decimal(14, 2)
+  juros           Decimal                  @default(0) @db.Decimal(14, 2)
+  multa           Decimal                  @default(0) @db.Decimal(14, 2)
+  descontoBaixa   Decimal                  @default(0) @db.Decimal(14, 2)
   observacoes     String?
   contaBancariaId String?
-  contaBancaria   ContaBancaria?        @relation(fields: [contaBancariaId], references: [id])
+  contaBancaria   ContaBancaria?           @relation(fields: [contaBancariaId], references: [id])
   classificacaoId String?
   classificacao   ClassificacaoFinanceira? @relation(fields: [classificacaoId], references: [id])
   movimentos      MovimentoFinanceiro[]
   /// Operação de antecipação que baixou este título (null = baixa normal/aberto).
   antecipacaoId   String?
-  antecipacao     AntecipacaoRecebivel? @relation(fields: [antecipacaoId], references: [id])
+  antecipacao     AntecipacaoRecebivel?    @relation(fields: [antecipacaoId], references: [id])
   boleto          BoletoCobranca?
   pixCobranca     PixCobranca?
-  status          StatusFinanceiro      @default(ABERTO)
+  status          StatusFinanceiro         @default(ABERTO)
   pagoEm          DateTime?
-  criadoEm        DateTime              @default(now())
-  atualizadoEm    DateTime              @updatedAt
+  criadoEm        DateTime                 @default(now())
+  atualizadoEm    DateTime                 @updatedAt
 
   @@index([tenantId, empresaId, status])
   @@index([tenantId, empresaId, clienteId, vencimento])
@@ -2392,10 +2507,10 @@ model NotaFiscalEvento {
 /// Certificado digital A1 (.pfx) da empresa, criptografado. Necessário para o provedor NACIONAL
 /// (assina o DPS da NFS-e e faz o mTLS na SEFIN). Guardado só criptografado; decriptado em memória.
 model CertificadoDigital {
-  id                 String   @id @default(cuid())
+  id                 String    @id @default(cuid())
   tenantId           String
-  empresaId          String   @unique
-  empresa            Empresa  @relation(fields: [empresaId], references: [id])
+  empresaId          String    @unique
+  empresa            Empresa   @relation(fields: [empresaId], references: [id])
   /// .pfx criptografado (encryptSecret) — base64 dos bytes do certificado.
   pfxCriptografado   String
   /// Senha do .pfx criptografada (encryptSecret).
@@ -2403,68 +2518,68 @@ model CertificadoDigital {
   titularCnpj        String?
   validade           DateTime?
   arquivoNome        String?
-  criadoEm           DateTime @default(now())
-  atualizadoEm       DateTime @updatedAt
+  criadoEm           DateTime  @default(now())
+  atualizadoEm       DateTime  @updatedAt
 
   @@index([tenantId, empresaId])
 }
 
 model ConfiguracaoFiscal {
-  id                       String           @id @default(cuid())
-  tenantId                 String
-  empresaId                String           @unique
-  empresa                  Empresa          @relation(fields: [empresaId], references: [id])
-  provedor                 ProvedorFiscal   @default(MANUAL)
+  id                           String           @id @default(cuid())
+  tenantId                     String
+  empresaId                    String           @unique
+  empresa                      Empresa          @relation(fields: [empresaId], references: [id])
+  provedor                     ProvedorFiscal   @default(MANUAL)
   /// Provedor da NFS-e (serviços). Quando null, usa `provedor`. Permite NF-e/NFC-e no ACBr e
   /// NFS-e no NACIONAL (direto). Roteamento por modelo na emissão.
-  provedorServicos         ProvedorFiscal?
-  ambiente                 AmbienteFiscal   @default(HOMOLOGACAO)
-  regimeTributario         RegimeTributario @default(SIMPLES_NACIONAL)
-  baseUrl                  String?
-  tokenCriptografado       String?
-  cscId                    String?
-  cscTokenCriptografado    String?
+  provedorServicos             ProvedorFiscal?
+  ambiente                     AmbienteFiscal   @default(HOMOLOGACAO)
+  regimeTributario             RegimeTributario @default(SIMPLES_NACIONAL)
+  baseUrl                      String?
+  tokenCriptografado           String?
+  cscId                        String?
+  cscTokenCriptografado        String?
   // CSC da NFC-e por AMBIENTE (códigos distintos). Os campos sem sufixo são de HOMOLOGAÇÃO; os
   // *Producao, de PRODUÇÃO. getFiscalRuntimeConfig entrega o par do ambiente ativo da empresa.
-  nfceIdCsc                String?
-  nfceCscCriptografado     String?
-  nfceIdCscProducao        String?
+  nfceIdCsc                    String?
+  nfceCscCriptografado         String?
+  nfceIdCscProducao            String?
   nfceCscProducaoCriptografado String?
-  serieNfe                 String           @default("1")
-  serieNfce                String           @default("1")
-  serieNfse                String           @default("1")
-  emitirNfe                Boolean          @default(true)
-  emitirNfce               Boolean          @default(false)
-  emitirNfse               Boolean          @default(false)
-  codigoMunicipioIbge      String?
-  codigoServicoLc116Padrao String?
-  descricaoServicoPadrao   String?
-  codigoNbsPadrao          String?
+  serieNfe                     String           @default("1")
+  serieNfce                    String           @default("1")
+  serieNfse                    String           @default("1")
+  emitirNfe                    Boolean          @default(true)
+  emitirNfce                   Boolean          @default(false)
+  emitirNfse                   Boolean          @default(false)
+  codigoMunicipioIbge          String?
+  codigoServicoLc116Padrao     String?
+  descricaoServicoPadrao       String?
+  codigoNbsPadrao              String?
   // Spedy: COMPLETO envia tributacao calculada pelo ERP (/product-invoices); SIMPLIFICADO usa /orders (tributacao no backoffice da Spedy).
-  spedyModoEmissao         String?          @default("COMPLETO")
-  regimeEspecialTributacao String?
-  incentivadorCultural     Boolean          @default(false)
-  certificadoInfo          String?
-  certificadoValidade      DateTime?
-  logotipoInfo             String?
+  spedyModoEmissao             String?          @default("COMPLETO")
+  regimeEspecialTributacao     String?
+  incentivadorCultural         Boolean          @default(false)
+  certificadoInfo              String?
+  certificadoValidade          DateTime?
+  logotipoInfo                 String?
   // Conteudo da logo (data URL base64 PNG/JPEG) para o DANFE proprio (SEFAZ direto); o ACBr guarda
   // a sua copia no backoffice deles. logotipoInfo mantem so o nome do arquivo (exibicao).
-  logotipoConteudo         String?
+  logotipoConteudo             String?
   // Última vez que a distribuição de NF-e recebidas (NFeDistribuicaoDFe) foi sincronizada — cron ou manual.
-  distribuicaoSyncEm       DateTime?
+  distribuicaoSyncEm           DateTime?
   // Quando true, o próximo ciclo do cron re-baixa o histórico do NSU 0 (re-sync) e zera o flag. Corrige
   // resumos antigos sem data de emissão (ex.: vindos do ACBr). Auto-retry enquanto houver throttling.
-  distribuicaoReprocessar  Boolean?
+  distribuicaoReprocessar      Boolean?
   // Distribuição de NFS-e (ADN): último NSU já sincronizado + quando.
-  nfseDistNsu              String?
-  nfseDistSyncEm           DateTime?
-  nfseAmbienteNacional     Boolean?
-  ativo                    Boolean          @default(false)
-  testadoEm                DateTime?
-  ultimoErro               String?
-  observacoes              String?
-  criadoEm                 DateTime         @default(now())
-  atualizadoEm             DateTime         @updatedAt
+  nfseDistNsu                  String?
+  nfseDistSyncEm               DateTime?
+  nfseAmbienteNacional         Boolean?
+  ativo                        Boolean          @default(false)
+  testadoEm                    DateTime?
+  ultimoErro                   String?
+  observacoes                  String?
+  criadoEm                     DateTime         @default(now())
+  atualizadoEm                 DateTime         @updatedAt
 
   @@index([tenantId, empresaId])
 }
@@ -2668,73 +2783,73 @@ model SpedXmlDocumento {
 // O campo `tipo` categoriza (CAIXA, CORRENTE, POUPANCA, CARTAO). Banco/agência/conta só se aplicam
 // a contas bancárias; cartões usam nome + tipo CARTAO.
 model ContaBancaria {
-  id              String                @id @default(cuid())
-  tenantId        String
-  empresaId       String
-  empresa         Empresa               @relation(fields: [empresaId], references: [id])
-  nome            String
-  banco           String?
-  agencia         String?
-  conta           String?
-  tipo            String                @default("CORRENTE")
+  id                   String                 @id @default(cuid())
+  tenantId             String
+  empresaId            String
+  empresa              Empresa                @relation(fields: [empresaId], references: [id])
+  nome                 String
+  banco                String?
+  agencia              String?
+  conta                String?
+  tipo                 String                 @default("CORRENTE")
   // Chave PIX recebedora desta conta (para escolher no recebimento). tipoChavePix: CPF|CNPJ|EMAIL|TELEFONE|ALEATORIA.
-  chavePix        String?
-  tipoChavePix    String?
-  saldoInicial    Decimal               @default(0) @db.Decimal(14, 2)
-  saldoAtual      Decimal               @default(0) @db.Decimal(14, 2)
-  ativo           Boolean               @default(true)
-  movimentos      MovimentoFinanceiro[]
-  contasPagar     ContaPagar[]
-  contasReceber   ContaReceber[]
-  formasPagamento FormaPagamento[]
-  antecipacoes    AntecipacaoRecebivel[]
+  chavePix             String?
+  tipoChavePix         String?
+  saldoInicial         Decimal                @default(0) @db.Decimal(14, 2)
+  saldoAtual           Decimal                @default(0) @db.Decimal(14, 2)
+  ativo                Boolean                @default(true)
+  movimentos           MovimentoFinanceiro[]
+  contasPagar          ContaPagar[]
+  contasReceber        ContaReceber[]
+  formasPagamento      FormaPagamento[]
+  antecipacoes         AntecipacaoRecebivel[]
   // ── Banco integrado para cobrança/Pix/extrato ──
   // Discriminador do provedor bancário desta conta (distinto de `banco`, que é o nome descritivo).
   // SICOOB (default) usa os campos sicoob* abaixo; SICREDI e ITAU usam os campos genéricos banco*.
-  bancoIntegrado        String   @default("SICOOB")
+  bancoIntegrado       String                 @default("SICOOB")
   // Credenciais genéricas dos demais bancos (Sicredi/Itaú). Segredos são guardados criptografados
   // (encryptSecret): bancoClientSecret, bancoApiKey e bancoAcesso. O mTLS reaproveita o A1 da empresa.
-  bancoClientId         String?  // client_id (Sicredi Pix / Itaú)
-  bancoClientSecret     String?  // client_secret criptografado (Sicredi Pix / Itaú)
-  bancoApiKey           String?  // x-api-key criptografado (Sicredi Cobrança — token do portal dev)
-  bancoAcesso           String?  // código de acesso/senha criptografado (Sicredi Cobrança — OAuth password)
-  bancoBeneficiario     String?  // código do beneficiário (Sicredi) / id_beneficiario (Itaú)
-  bancoCooperativa      String?  // cooperativa (Sicredi) / agência (Itaú)
-  bancoPosto            String?  // posto da cooperativa (Sicredi)
-  bancoConta            String?  // conta corrente (Itaú)
-  bancoConvenio         String?  // carteira/convênio (Itaú)
-  bancoSandbox          Boolean  @default(false)
+  bancoClientId        String? // client_id (Sicredi Pix / Itaú)
+  bancoClientSecret    String? // client_secret criptografado (Sicredi Pix / Itaú)
+  bancoApiKey          String? // x-api-key criptografado (Sicredi Cobrança — token do portal dev)
+  bancoAcesso          String? // código de acesso/senha criptografado (Sicredi Cobrança — OAuth password)
+  bancoBeneficiario    String? // código do beneficiário (Sicredi) / id_beneficiario (Itaú)
+  bancoCooperativa     String? // cooperativa (Sicredi) / agência (Itaú)
+  bancoPosto           String? // posto da cooperativa (Sicredi)
+  bancoConta           String? // conta corrente (Itaú)
+  bancoConvenio        String? // carteira/convênio (Itaú)
+  bancoSandbox         Boolean                @default(false)
   // ── Mercado Pago (bancoIntegrado = MERCADO_PAGO): conta conectada via OAuth ──
   // A aplicação (client_id/secret) é da PLATAFORMA (PlataformaConfiguracao); aqui ficam os tokens
   // da CONTA do cliente (criptografados). O refresh renova sozinho antes de expirar (~6 meses).
-  mpUserId              String?
-  mpAccessTokenCripto   String?
-  mpRefreshTokenCripto  String?
-  mpPublicKey           String?
-  mpTokenExpiraEm       DateTime?
+  mpUserId             String?
+  mpAccessTokenCripto  String?
+  mpRefreshTokenCripto String?
+  mpPublicKey          String?
+  mpTokenExpiraEm      DateTime?
   // ── Cobrança Sicoob (emissão de boleto pela API oficial) ──
   // Credenciamento por conta: client_id (obtido no Sicoob Desenvolvedores), número do cliente
   // (código do beneficiário/cooperado) e conta corrente de cobrança. O mTLS de produção usa o
   // A1 e-CNPJ da empresa (CertificadoDigital, o mesmo do fiscal). Sandbox usa token do portal.
-  sicoobClientId        String?
-  sicoobNumeroCliente   Int?
-  sicoobContaCorrente   String?
+  sicoobClientId       String?
+  sicoobNumeroCliente  Int?
+  sicoobContaCorrente  String?
   /// Modalidade de cobrança (1 = simples com registro).
-  sicoobModalidade      Int      @default(1)
+  sicoobModalidade     Int                    @default(1)
   /// Ambiente da API: true = sandbox (token do portal, sem mTLS).
-  sicoobSandbox         Boolean  @default(false)
+  sicoobSandbox        Boolean                @default(false)
   /// Token do sandbox (criptografado com encryptSecret).
-  sicoobSandboxToken    String?
+  sicoobSandboxToken   String?
   /// Webhook de liquidação da cobrança (baixa em tempo real): id devolvido pelo Sicoob no cadastro
   /// e segredo aleatório embutido na URL pública (autentica a chamada do banco sem depender do corpo).
-  sicoobWebhookId       Int?
-  sicoobWebhookSecret   String?
-  boletos               BoletoCobranca[]
-  pixCobrancas          PixCobranca[]
-  emprestimos           Emprestimo[]
-  despesasRecorrentes   DespesaRecorrente[]
-  criadoEm        DateTime              @default(now())
-  atualizadoEm    DateTime              @updatedAt
+  sicoobWebhookId      Int?
+  sicoobWebhookSecret  String?
+  boletos              BoletoCobranca[]
+  pixCobrancas         PixCobranca[]
+  emprestimos          Emprestimo[]
+  despesasRecorrentes  DespesaRecorrente[]
+  criadoEm             DateTime               @default(now())
+  atualizadoEm         DateTime               @updatedAt
 
   @@unique([tenantId, empresaId, nome])
   @@index([tenantId, empresaId])
@@ -2774,38 +2889,38 @@ model BoletoCobranca {
 /// (a guia acompanha o transporte). v1: o ERP calcula, registra e controla (pendente/paga); a
 /// guia em si é emitida no portal GNRE Online — webservice é fase futura.
 model GuiaRecolhimento {
-  id           String         @id @default(cuid())
-  tenantId     String
-  empresaId    String
-  empresa      Empresa        @relation(fields: [empresaId], references: [id])
-  ambiente     AmbienteFiscal @default(HOMOLOGACAO)
-  notaFiscalId String
-  notaFiscal   NotaFiscal     @relation(fields: [notaFiscalId], references: [id])
+  id                String         @id @default(cuid())
+  tenantId          String
+  empresaId         String
+  empresa           Empresa        @relation(fields: [empresaId], references: [id])
+  ambiente          AmbienteFiscal @default(HOMOLOGACAO)
+  notaFiscalId      String
+  notaFiscal        NotaFiscal     @relation(fields: [notaFiscalId], references: [id])
   /// GNRE_ICMS_ST | GNRE_DIFAL
-  tipo         String         @default("GNRE_ICMS_ST")
-  ufFavorecida String
-  valor        Decimal        @db.Decimal(14, 2)
+  tipo              String         @default("GNRE_ICMS_ST")
+  ufFavorecida      String
+  valor             Decimal        @db.Decimal(14, 2)
   /// PENDENTE | PAGA | CANCELADA
-  status       String         @default("PENDENTE")
-  numeroGuia   String?
-  pagoEm       DateTime?
-  observacoes  String?
+  status            String         @default("PENDENTE")
+  numeroGuia        String?
+  pagoEm            DateTime?
+  observacoes       String?
   /// Código de PRODUTO da GNRE exigido por algumas UFs (tabela da UF via GnreConfigUF).
-  produtoGnre    String?
+  produtoGnre       String?
   /// Código de RECEITA da GNRE da UF favorecida (default 100048; PR usa 100099 p/ operação).
-  receitaGnre    String?
+  receitaGnre       String?
   /// Tipo de doc de origem, detalhamento e campos extras (JSON) herdados da regra da UF.
   tipoDocOrigemGnre String?
   detalhamentoGnre  String?
   camposExtrasGnre  String?
   /// Emissão pelo webservice GNRE: recibo do lote, linha digitável, código de barras e PDF.
-  reciboLote     String?
-  linhaDigitavel String?
-  codigoBarras   String?
-  pdfBase64      String?
-  situacaoWs     String?
-  criadoEm     DateTime       @default(now())
-  atualizadoEm DateTime       @updatedAt
+  reciboLote        String?
+  linhaDigitavel    String?
+  codigoBarras      String?
+  pdfBase64         String?
+  situacaoWs        String?
+  criadoEm          DateTime       @default(now())
+  atualizadoEm      DateTime       @updatedAt
 
   @@unique([notaFiscalId, tipo])
   @@index([tenantId, empresaId, status])
@@ -3114,23 +3229,23 @@ model MaquinaCartao {
 }
 
 model ConversaAgente {
-  id           String           @id @default(cuid())
-  tenantId     String
-  empresaId    String
-  tenant       Tenant           @relation(fields: [tenantId], references: [id])
-  empresa      Empresa          @relation(fields: [empresaId], references: [id])
-  usuarioId    String?
-  role         AgentRole
-  titulo       String?
-  canal        String           @default("WEB")
-  telefone     String?
-  mensagens    MensagemAgente[]
-  status       ConversaAgenteStatus @default(ATIVA)
-  resumo       String?          @db.Text
-  encerradaEm  DateTime?
+  id                 String               @id @default(cuid())
+  tenantId           String
+  empresaId          String
+  tenant             Tenant               @relation(fields: [tenantId], references: [id])
+  empresa            Empresa              @relation(fields: [empresaId], references: [id])
+  usuarioId          String?
+  role               AgentRole
+  titulo             String?
+  canal              String               @default("WEB")
+  telefone           String?
+  mensagens          MensagemAgente[]
+  status             ConversaAgenteStatus @default(ATIVA)
+  resumo             String?              @db.Text
+  encerradaEm        DateTime?
   motivoEncerramento String?
-  criadoEm     DateTime         @default(now())
-  atualizadoEm DateTime         @updatedAt
+  criadoEm           DateTime             @default(now())
+  atualizadoEm       DateTime             @updatedAt
 
   @@index([tenantId, empresaId])
   @@index([tenantId, empresaId, canal, status, atualizadoEm])
@@ -3154,19 +3269,19 @@ model MensagemAgente {
 }
 
 model MemoriaAgente {
-  id             String    @id @default(cuid())
-  tenantId       String
-  empresaId      String
-  tenant         Tenant    @relation(fields: [tenantId], references: [id])
-  empresa        Empresa   @relation(fields: [empresaId], references: [id])
-  conteudo       String    @db.Text
-  criadoPorRole  AgentRole
-  origemCanal    String
-  origemChave    String?
-  ativa          Boolean   @default(true)
-  removidaEm     DateTime?
-  criadoEm       DateTime  @default(now())
-  atualizadoEm   DateTime  @updatedAt
+  id            String    @id @default(cuid())
+  tenantId      String
+  empresaId     String
+  tenant        Tenant    @relation(fields: [tenantId], references: [id])
+  empresa       Empresa   @relation(fields: [empresaId], references: [id])
+  conteudo      String    @db.Text
+  criadoPorRole AgentRole
+  origemCanal   String
+  origemChave   String?
+  ativa         Boolean   @default(true)
+  removidaEm    DateTime?
+  criadoEm      DateTime  @default(now())
+  atualizadoEm  DateTime  @updatedAt
 
   @@index([tenantId, empresaId, ativa, criadoEm])
 }
@@ -3226,27 +3341,27 @@ model ChatEmpresaAtiva {
 }
 
 model ConfiguracaoWhatsapp {
-  id                String           @id @default(cuid())
-  tenantId          String
-  empresaId         String           @unique
-  tenant            Tenant           @relation(fields: [tenantId], references: [id])
-  empresa           Empresa          @relation(fields: [empresaId], references: [id])
-  provedor          ProvedorWhatsapp @default(ZAPI)
-  ativo             Boolean          @default(false)
+  id                   String           @id @default(cuid())
+  tenantId             String
+  empresaId            String           @unique
+  tenant               Tenant           @relation(fields: [tenantId], references: [id])
+  empresa              Empresa          @relation(fields: [empresaId], references: [id])
+  provedor             ProvedorWhatsapp @default(ZAPI)
+  ativo                Boolean          @default(false)
   // Z-API: instanceId + tokenCripto + clientTokenCripto.
   // ZERNIO: tokenCripto guarda a API key (sk_...); os campos zernio* completam a config.
-  instanceId        String?
-  tokenCripto       String?
-  clientTokenCripto String?
-  webhookSecret     String?
-  atenderClientes   Boolean          @default(true)
+  instanceId           String?
+  tokenCripto          String?
+  clientTokenCripto    String?
+  webhookSecret        String?
+  atenderClientes      Boolean          @default(true)
   /// Zernio: ID da conta WhatsApp (WABA) conectada na Zernio (accounts._id).
   zernioAccountId      String?
   /// Zernio: template APROVADO na Meta usado para iniciar conversa (corpo com {{1}} = mensagem).
   zernioTemplateNome   String?
   zernioTemplateIdioma String?
-  criadoEm          DateTime         @default(now())
-  atualizadoEm      DateTime         @updatedAt
+  criadoEm             DateTime         @default(now())
+  atualizadoEm         DateTime         @updatedAt
 
   @@index([tenantId, empresaId])
 }

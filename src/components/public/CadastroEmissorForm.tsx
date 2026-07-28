@@ -45,7 +45,7 @@ const campo = { display: "flex", flexDirection: "column" as const, gap: 4, fontS
 const input = { height: 38, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px" };
 const btnPrimario = { width: "100%", height: 42, background: "#2563eb", color: "#fff", border: "none", borderRadius: 8, fontWeight: 700, fontSize: 14, cursor: "pointer" } as const;
 
-export function CadastroEmissorForm({ plano = "EMISSOR" }: { plano?: "EMISSOR" | "CHAT" }) {
+export function CadastroEmissorForm({ plano = "EMISSOR", leadId }: { plano?: "EMISSOR" | "CHAT"; leadId?: string }) {
   const router = useRouter();
   const [passo, setPasso] = useState<1 | 2>(1);
   const [cnpj, setCnpj] = useState("");
@@ -118,6 +118,7 @@ export function CadastroEmissorForm({ plano = "EMISSOR" }: { plano?: "EMISSOR" |
           senha,
           site,
           plano,
+          leadId,
           empresaDados: dados
             ? {
                 nomeFantasia: dados.nomeFantasia,

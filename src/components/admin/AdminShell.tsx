@@ -8,6 +8,8 @@ type AdminNavItem = { label: string; href: string; icon: string; accent?: boolea
 
 const navItems: AdminNavItem[] = [
   { label: "Visão geral", href: "/admin", icon: "▦" },
+  { label: "Leads", href: "/admin/leads", icon: "◎", accent: true },
+  { label: "Agente comercial", href: "/admin/agente-comercial", icon: "✦" },
   { label: "Clientes", href: "/admin/clientes", icon: "🏢" },
   { label: "Novo cliente", href: "/admin/clientes/novo", icon: "＋", accent: true },
   { label: "Usuários", href: "/admin/usuarios", icon: "👤" },

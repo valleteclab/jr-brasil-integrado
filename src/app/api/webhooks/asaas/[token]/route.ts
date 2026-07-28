@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { confirmarRecargaPorPagamento } from "@/domains/credito/application/carteira-use-cases";
+import { markCommercialLeadSubscriber } from "@/domains/platform-sales/application/commercial-lead-use-cases";
 
 /**
  * WEBHOOK do ASAAS (plano da plataforma): confirma o pagamento da recarga de créditos em tempo real
@@ -40,6 +41,7 @@ export async function POST(request: Request, { params }: { params: { token: stri
             where: { id: tenant.id },
             data: { trialFimEm: null, mensalidadeVencidaEm: null, mensalidadeFaturaUrl: null }
           });
+          await markCommercialLeadSubscriber(tenant.id).catch(() => undefined);
           console.info("[webhook asaas] mensalidade confirmada — tenant liberado:", tenant.id);
         }
       } else {
