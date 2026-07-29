@@ -773,3 +773,5 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Validacao local: TypeScript, lint e `git diff --check` aprovados; a rota respondeu HTTP 200 em servidor local e entregou hero, formulario e FAQ no HTML. Permanecem somente os dois avisos de lint preexistentes.
 - O build local do Next gerou a rota, mas o worker do Windows nao encerrou antes do limite e nao concluiu o manifesto final; o build Docker/Linux de producao permanece como validacao definitiva.
 - A inspecao visual automatizada nao foi executada porque nenhum navegador integrado estava disponivel nesta sessao.
+- Build Docker/Linux das 195 paginas aprovado e deploy concluido com a imagem `jrb-erp:28b9f2c` (`sha256:d725ea911504`); servico convergido em `1/1`, sem migrations pendentes.
+- A URL publica `https://erp.sisgov.app.br/nota-por-audio` respondeu HTTP 200 com hero, formulario e FAQ. O smoke test criou um lead com origem da landing, Instagram/Reels, conteudo UTM, consentimento e interacao; o registro temporario foi removido em seguida.
