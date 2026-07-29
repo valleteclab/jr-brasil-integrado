@@ -100,7 +100,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
-| 2026-07-28 | `A gerar` | Local | Landing page de lancamento `/nota-por-audio`, com narrativa de dores, demonstracao do agente, oferta do plano CHAT e captacao rastreada no CRM. |
+| 2026-07-28 | `8bd0123` | Enviado | Landing page de lancamento `/nota-por-audio`, com narrativa de dores, demonstracao do agente, oferta do plano CHAT e captacao rastreada no CRM. |
 | 2026-07-28 | `5055223` | Enviado | CRM global e agente comercial separado para captar, qualificar, acompanhar e converter leads do XERP por WhatsApp e formularios publicos. |
 | 2026-07-27 | `f1f8236` | Enviado | Confirmacoes resilientes com botoes, unidade `UN` padrao e historico persistente das conversas WEB do assistente. |
 | 2026-07-27 | `00dec93` | Enviado | Expansao segura e sempre ativa de nomes comerciais para candidatos oficiais NCM, com validacao dos codigos antes da selecao fiscal. |
