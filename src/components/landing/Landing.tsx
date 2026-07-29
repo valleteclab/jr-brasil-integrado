@@ -30,6 +30,7 @@ export function Landing() {
             <a href="#segmentos">Para quem</a>
             <Link href="/emissor">Emissor de Notas</Link>
             <Link href="/chat">Assistente IA</Link>
+            <Link href="/nota-por-audio">Nota por áudio</Link>
             <Link href="/manual">Manual</Link>
           </div>
           <Link className={`${s.btn} ${s.btnPrimary}`} href="/erp">Acessar o sistema</Link>

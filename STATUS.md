@@ -100,6 +100,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
+| 2026-07-28 | `A gerar` | Local | Landing page de lancamento `/nota-por-audio`, com narrativa de dores, demonstracao do agente, oferta do plano CHAT e captacao rastreada no CRM. |
 | 2026-07-28 | `5055223` | Enviado | CRM global e agente comercial separado para captar, qualificar, acompanhar e converter leads do XERP por WhatsApp e formularios publicos. |
 | 2026-07-27 | `f1f8236` | Enviado | Confirmacoes resilientes com botoes, unidade `UN` padrao e historico persistente das conversas WEB do assistente. |
 | 2026-07-27 | `00dec93` | Enviado | Expansao segura e sempre ativa de nomes comerciais para candidatos oficiais NCM, com validacao dos codigos antes da selecao fiscal. |
@@ -760,3 +761,15 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - A ativacao do canal permanece pendente ate informar o novo numero, a instancia/token Z-API e a chave OpenRouter no painel administrativo.
 - Build Docker/Linux das 194 paginas aprovado e deploy concluido com a imagem `jrb-erp:1547e91` (`sha256:90cb2efe6afd`); as 131 migrations foram reconhecidas e a nova migration foi aplicada com sucesso.
 - Smoke test publico criou um lead `NOVO` com origem `LANDING_PAGE`, consentimento e interacao auditavel; o lead temporario foi removido em seguida. Login e saude responderam HTTP 200, `/admin/leads` redirecionou sem sessao e o servico permaneceu em `1/1`.
+
+## Atualizacao operacional - 2026-07-28 - landing de lancamento da nota por audio
+
+- Criada a campanha publica `/nota-por-audio`, pensada como destino de videos curtos e anuncios sobre emissao fiscal por voz.
+- A narrativa parte das dores reais da pequena empresa — nota deixada para depois, operacao espalhada, dependencia da memoria e sistemas burocraticos — antes de apresentar o mecanismo `Fale. Confira. Resolvido.`.
+- O hero demonstra uma mensagem de voz sendo organizada como NFS-e, com resumo, botoes de confirmacao e retorno de autorizacao, sem prometer execucao automatica sem consentimento.
+- A pagina contrasta a rotina antes/depois, explica as capacidades reais do XERP, oferece exemplos de pedidos, apresenta preco/trial vindos do plano `CHAT` e responde duvidas fiscais e operacionais sem depoimentos ou escassez inventados.
+- O formulario captura nome, WhatsApp, segmento, consentimento, origem e UTMs pelo endpoint global de leads; apos a captura, encaminha ao cadastro CHAT com `leadId`, preservando a conversao automatica para `TESTE` e `ASSINANTE`.
+- A home publica ganhou acesso direto para `Nota por audio`; a campanha possui CTA fixo no celular, navegacao por secoes, foco visivel, layout responsivo e respeito a movimento reduzido.
+- Validacao local: TypeScript, lint e `git diff --check` aprovados; a rota respondeu HTTP 200 em servidor local e entregou hero, formulario e FAQ no HTML. Permanecem somente os dois avisos de lint preexistentes.
+- O build local do Next gerou a rota, mas o worker do Windows nao encerrou antes do limite e nao concluiu o manifesto final; o build Docker/Linux de producao permanece como validacao definitiva.
+- A inspecao visual automatizada nao foi executada porque nenhum navegador integrado estava disponivel nesta sessao.
