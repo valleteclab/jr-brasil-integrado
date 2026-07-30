@@ -776,3 +776,9 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - A inspecao visual automatizada nao foi executada porque nenhum navegador integrado estava disponivel nesta sessao.
 - Build Docker/Linux das 195 paginas aprovado e deploy concluido com a imagem `jrb-erp:28b9f2c` (`sha256:d725ea911504`); servico convergido em `1/1`, sem migrations pendentes.
 - A URL publica `https://erp.sisgov.app.br/nota-por-audio` respondeu HTTP 200 com hero, formulario e FAQ. O smoke test criou um lead com origem da landing, Instagram/Reels, conteudo UTM, consentimento e interacao; o registro temporario foi removido em seguida.
+
+## Atualizacao operacional - 2026-07-29 - landing nota por audio versao B
+
+- Build Docker/Linux das 196 paginas aprovado e deploy da `main` concluido com a imagem `jrb-erp:latest` (`sha256:e16f01e79bca430e65b1515b66ec7d1e9f01d964576faf00a3f5275f8fd45d1b`).
+- O servico `erp_erp` convergiu em `1/1`, iniciou sem migrations pendentes e o endpoint `/api/health` respondeu HTTP 200.
+- As URLs publicas `/nota-por-audio` e `/nota-por-audio-v2` responderam HTTP 200; a versao B entregou o titulo SEO e o hero `Fale. A nota sai sozinha.` esperados.
