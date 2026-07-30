@@ -15,18 +15,30 @@ const INITIAL: FormState = {
   segmento: ""
 };
 
-function campaignParams() {
+type LaunchLeadFormProps = {
+  compact?: boolean;
+  origem?: string;
+  campanha?: string;
+  dorPrincipal?: string;
+};
+
+function campaignParams(defaultCampaign: string) {
   const params = new URLSearchParams(window.location.search);
   return {
     utmSource: params.get("utm_source") || "landing",
     utmMedium: params.get("utm_medium") || "organic",
-    utmCampaign: params.get("utm_campaign") || "nota-por-audio",
+    utmCampaign: params.get("utm_campaign") || defaultCampaign,
     utmContent: params.get("utm_content") || undefined,
     utmTerm: params.get("utm_term") || undefined
   };
 }
 
-export function LaunchLeadForm({ compact = false }: { compact?: boolean }) {
+export function LaunchLeadForm({
+  compact = false,
+  origem = "Landing Nota por Áudio",
+  campanha = "nota-por-audio",
+  dorPrincipal = "Quer testar a operação do XERP por áudio."
+}: LaunchLeadFormProps) {
   const [form, setForm] = useState<FormState>(INITIAL);
   const [consentimento, setConsentimento] = useState(true);
   const [site, setSite] = useState("");
@@ -47,10 +59,10 @@ export function LaunchLeadForm({ compact = false }: { compact?: boolean }) {
           site,
           consentimento,
           canalOrigem: "LANDING_PAGE",
-          origem: "Landing Nota por Áudio",
-          campanha: "nota-por-audio",
-          dorPrincipal: "Quer testar a operação do XERP por áudio.",
-          ...campaignParams()
+          origem,
+          campanha,
+          dorPrincipal,
+          ...campaignParams(campanha)
         })
       });
       const data = (await response.json()) as { leadId?: string; error?: string };
