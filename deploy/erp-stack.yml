@@ -28,7 +28,8 @@ services:
       JRB_AGENT_API_KEY: "${JRB_AGENT_API_KEY}"
       # TTS interno: sem porta pública; falha de voz não interrompe a resposta em texto.
       KOKORO_TTS_URL: "http://kokoro_api:8880"
-      KOKORO_TTS_VOICE: "pf_dora"
+      KOKORO_TTS_VOICE: "pf_dora+af_bella"
+      KOKORO_TTS_SPEED: "1.2"
       KOKORO_TTS_MAX_CHARS: "1200"
       KOKORO_TTS_TIMEOUT_MS: "60000"
       # STT interno: voz recebida no Telegram -> texto para o agente.

@@ -1,5 +1,7 @@
 export const KOKORO_VOICES = [
   { id: "pf_dora", name: "Dora", description: "Voz feminina, clara e natural" },
+  // Mistura de vozes (o Kokoro aceita "a+b" e faz a média dos timbres — mesma velocidade de geração).
+  { id: "pf_dora+af_bella", name: "Bela", description: "Voz feminina exclusiva — mistura Dora + Bella" },
   { id: "pm_alex", name: "Alex", description: "Voz masculina, firme e direta" },
   { id: "pm_santa", name: "Santa", description: "Voz masculina, mais encorpada" }
 ] as const;

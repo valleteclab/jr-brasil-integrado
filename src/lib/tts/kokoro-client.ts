@@ -62,7 +62,11 @@ export async function synthesizeKokoroSpeech(
           : DEFAULT_KOKORO_VOICE
       ),
       response_format: responseFormat,
-      speed: 1
+      // Andamento da fala (1 = natural). Configurável por env — ex.: 1.2 deixa o assistente mais ágil.
+      speed: (() => {
+        const s = Number(process.env.KOKORO_TTS_SPEED);
+        return Number.isFinite(s) && s >= 0.5 && s <= 2 ? s : 1;
+      })()
     }),
     signal: AbortSignal.timeout(timeoutMs)
   });
