@@ -100,7 +100,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
-| 2026-07-29 | A gerar | Em andamento | Segunda versão comparativa da landing `/nota-por-audio-v2`, reconstruída com narrativa de recuperação de tempo, demonstração por voz, transparência, objeções e SEO estruturado a partir do estudo de conversão. |
+| 2026-07-29 | `c906d8e` | Enviado | Segunda versão comparativa da landing `/nota-por-audio-v2`, reconstruída com narrativa de recuperação de tempo, demonstração por voz, transparência, objeções e SEO estruturado a partir do estudo de conversão. |
 | 2026-07-28 | `8bd0123` | Enviado | Landing page de lancamento `/nota-por-audio`, com narrativa de dores, demonstracao do agente, oferta do plano CHAT e captacao rastreada no CRM. |
 | 2026-07-28 | `5055223` | Enviado | CRM global e agente comercial separado para captar, qualificar, acompanhar e converter leads do XERP por WhatsApp e formularios publicos. |
 | 2026-07-27 | `f1f8236` | Enviado | Confirmacoes resilientes com botoes, unidade `UN` padrao e historico persistente das conversas WEB do assistente. |
