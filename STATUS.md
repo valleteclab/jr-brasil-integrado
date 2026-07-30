@@ -100,7 +100,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
-| 2026-07-29 | A gerar | Enviado | Quarta versão da landing em `/nota-por-audio-v4` (XERP Vox, "o microfone é o novo teclado"), com orbe interativo de demonstração, identidade midnight/violeta/âmbar e captacao rastreada no CRM. |
+| 2026-07-29 | `d69bb30` | Enviado | Quarta versão da landing em `/nota-por-audio-v4` (XERP Vox, "o microfone é o novo teclado"), com orbe interativo de demonstração, identidade midnight/violeta/âmbar e captacao rastreada no CRM. |
 | 2026-07-29 | `c906d8e` | Enviado | Segunda versão comparativa da landing `/nota-por-audio-v2`, reconstruída com narrativa de recuperação de tempo, demonstração por voz, transparência, objeções e SEO estruturado a partir do estudo de conversão. |
 | 2026-07-28 | `8bd0123` | Enviado | Landing page de lancamento `/nota-por-audio`, com narrativa de dores, demonstracao do agente, oferta do plano CHAT e captacao rastreada no CRM. |
 | 2026-07-28 | `5055223` | Enviado | CRM global e agente comercial separado para captar, qualificar, acompanhar e converter leads do XERP por WhatsApp e formularios publicos. |
@@ -793,3 +793,5 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Metadados OpenGraph e FAQ JSON-LD proprios; FAQ reforca confirmacao explicita (EMITIR) e IA propria (audio processado no Brasil, sem big tech).
 - Os arquivos da v3 (Fable) estavam untracked nesta working tree e NAO foram incluidos neste commit; apenas os arquivos da v4, o MP3 publico compartilhado e o STATUS foram versionados.
 - Validacao local: TypeScript (`tsc --noEmit`) e ESLint aprovados sem avisos; build de producao validado no deploy Docker/Linux da VPS.
+- Build Docker/Linux das 198 paginas aprovado e deploy concluido com a imagem `jrb-erp:latest` (`sha256:191da7caf845`); servico `erp_erp` convergido em `1/1`, sem migrations pendentes.
+- Smoke test: `https://erp.sisgov.app.br/nota-por-audio-v4` respondeu HTTP 200 com hero `O microfone e o novo teclado.`, marca XERP Vox e campanha `nota-por-audio-v4`; `/api/health` e `/audio/voz-assistente.mp3` tambem responderam HTTP 200.
