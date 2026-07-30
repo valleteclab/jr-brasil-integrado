@@ -100,6 +100,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
+| 2026-07-29 | A gerar | Enviado | Quarta versão da landing em `/nota-por-audio-v4` (XERP Vox, "o microfone é o novo teclado"), com orbe interativo de demonstração, identidade midnight/violeta/âmbar e captacao rastreada no CRM. |
 | 2026-07-29 | `c906d8e` | Enviado | Segunda versão comparativa da landing `/nota-por-audio-v2`, reconstruída com narrativa de recuperação de tempo, demonstração por voz, transparência, objeções e SEO estruturado a partir do estudo de conversão. |
 | 2026-07-28 | `8bd0123` | Enviado | Landing page de lancamento `/nota-por-audio`, com narrativa de dores, demonstracao do agente, oferta do plano CHAT e captacao rastreada no CRM. |
 | 2026-07-28 | `5055223` | Enviado | CRM global e agente comercial separado para captar, qualificar, acompanhar e converter leads do XERP por WhatsApp e formularios publicos. |
@@ -782,3 +783,13 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Build Docker/Linux das 196 paginas aprovado e deploy da `main` concluido com a imagem `jrb-erp:latest` (`sha256:e16f01e79bca430e65b1515b66ec7d1e9f01d964576faf00a3f5275f8fd45d1b`).
 - O servico `erp_erp` convergiu em `1/1`, iniciou sem migrations pendentes e o endpoint `/api/health` respondeu HTTP 200.
 - As URLs publicas `/nota-por-audio` e `/nota-por-audio-v2` responderam HTTP 200; a versao B entregou o titulo SEO e o hero `Fale. A nota sai sozinha.` esperados.
+
+## Atualizacao operacional - 2026-07-29 - landing nota por audio v4 (XERP Vox)
+
+- Criada a quarta versao da campanha em `/nota-por-audio-v4`, com identidade e nome proprios: **XERP Vox — "o microfone e o novo teclado"**, em paleta midnight/violeta/ambar (diferente do verde-conversa da v3).
+- O hero e um ORBE de microfone interativo: ao apertar (ou ao entrar na tela), o ciclo completo acontece — gravacao com cronometro e forma de onda orbital, transcricao sendo digitada, nota se montando linha a linha e carimbo `AUTORIZADA`, fechando com a voz real do assistente (MP3 Kokoro em `/audio/voz-assistente.mp3`).
+- Secoes novas: marquee de frases reais de comando, abas "fale uma frase, escolha o final" (nota, cobranca Pix, pergunta de vendas, gasto por foto), linha do tempo segundo a segundo (0s→31s), comparador teclado × voz e calculadora com dois eixos (notas/mes e minutos por nota).
+- Reaproveita `LaunchLeadForm` com campanha `nota-por-audio-v4` e origem propria, mantendo o rastreamento de leads no CRM; preco/trial seguem vindos do plano `CHAT` no banco.
+- Metadados OpenGraph e FAQ JSON-LD proprios; FAQ reforca confirmacao explicita (EMITIR) e IA propria (audio processado no Brasil, sem big tech).
+- Os arquivos da v3 (Fable) estavam untracked nesta working tree e NAO foram incluidos neste commit; apenas os arquivos da v4, o MP3 publico compartilhado e o STATUS foram versionados.
+- Validacao local: TypeScript (`tsc --noEmit`) e ESLint aprovados sem avisos; build de producao validado no deploy Docker/Linux da VPS.
