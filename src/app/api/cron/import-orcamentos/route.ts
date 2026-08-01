@@ -28,7 +28,9 @@ export async function POST(request: Request) {
     const empresas = await prisma.empresa.findMany({ select: { id: true, tenantId: true, cnpj: true, razaoSocial: true } });
     const empresa = empresas.find((e) => normalizeDocumento(e.cnpj) === cnpjParam);
     if (!empresa) return NextResponse.json({ error: "Empresa não encontrada." }, { status: 404 });
-    const scope = { tenantId: empresa.tenantId, empresaId: empresa.id };
+    // Ambiente fiscal da empresa — sem isso o orçamento cai em HOMOLOGACAO e some da tela.
+    const cfgFiscal = await prisma.configuracaoFiscal.findUnique({ where: { empresaId: empresa.id }, select: { ambiente: true } });
+    const scope = { tenantId: empresa.tenantId, empresaId: empresa.id, ambiente: cfgFiscal?.ambiente ?? "PRODUCAO" as const };
 
     const rows = (await request.text()).split(/\r?\n/).filter((l) => l.trim());
     const header = rows.shift()?.split(";") ?? [];
@@ -58,13 +60,39 @@ export async function POST(request: Request) {
     const marcados = new Set(jaImportados.map((o) => /\[migrado #(\S+)\]/.exec(o.observacaoVendedor ?? "")?.[1]).filter(Boolean));
 
     const lista = [...orcs.values()];
+    // ?criarFaltantes=1 → cadastra produto (sku=referência, nome=descrição, preço do orçamento;
+    // fiscal genérico p/ revisão) e cliente (código+nome) que faltarem no De/Para.
+    const criarFaltantes = url.searchParams.get("criarFaltantes") === "1";
+    let produtosCriados = 0, clientesCriados = 0;
+    const categoria = criarFaltantes
+      ? await prisma.produtoCategoria.findFirst({ where: { tenantId: scope.tenantId, empresaId: scope.empresaId }, select: { id: true } })
+      : null;
+
     let criados = 0, pulados = 0, semCliente = 0, itensSemSku = 0, semItens = 0;
     const avisos: string[] = [];
     for (const o of lista) {
       if (marcados.has(o.numero)) { pulados++; continue; }
-      const clienteId = porCodigo.get(o.codParceiro);
+      let clienteId = porCodigo.get(o.codParceiro);
+      if (!clienteId && criarFaltantes && !dry && o.codParceiro) {
+        const novo = await prisma.cliente.create({
+          data: { ...scope, razaoSocial: o.parceiro, documento: "", codigoExterno: o.codParceiro, status: "ATIVO" }
+        });
+        porCodigo.set(o.codParceiro, novo.id);
+        clienteId = novo.id; clientesCriados++;
+      }
       if (!clienteId) { semCliente++; avisos.push(`orç ${o.numero}: cliente cód ${o.codParceiro} (${o.parceiro}) sem De/Para`); continue; }
-      const casados = o.itens.map((i) => ({ ...i, produtoId: porSku.get(i.ref.toUpperCase()) ?? null }));
+      if (criarFaltantes && !dry && categoria) {
+        for (const i of o.itens) {
+          const sku = (i.ref || i.codigo).toUpperCase();
+          if (!porSku.has(sku)) {
+            const p = await prisma.produto.create({
+              data: { ...scope, sku, nome: i.descricao, categoriaId: categoria.id, precoVenda: i.preco }
+            });
+            porSku.set(sku, p.id); produtosCriados++;
+          }
+        }
+      }
+      const casados = o.itens.map((i) => ({ ...i, produtoId: porSku.get((i.ref || i.codigo).toUpperCase()) ?? null }));
       const validos = casados.filter((i) => i.produtoId);
       const perdidos = casados.filter((i) => !i.produtoId);
       itensSemSku += perdidos.length;
@@ -82,7 +110,7 @@ export async function POST(request: Request) {
       });
       criados++;
     }
-    return NextResponse.json({ dry, empresa: empresa.razaoSocial, orcamentos: lista.length, criados, pulados, semCliente, semItensCasados: semItens, itensSemSku, avisos: avisos.slice(0, 20) });
+    return NextResponse.json({ dry, empresa: empresa.razaoSocial, orcamentos: lista.length, criados, pulados, semCliente, semItensCasados: semItens, itensSemSku, produtosCriados, clientesCriados, avisos: avisos.slice(0, 20) });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Erro na importação." }, { status: 500 });
   }
