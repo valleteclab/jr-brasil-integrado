@@ -1035,6 +1035,8 @@ model Cliente {
   nomeFantasia             String?
   documento                String
   inscricaoEstadual        String?
+  /// Código do cliente no sistema ANTERIOR (migração) — chave do De/Para na importação de vendas.
+  codigoExterno            String?
   status                   StatusCliente     @default(PENDENTE_APROVACAO)
   segmento                 String?
   limiteCredito            Decimal           @default(0) @db.Decimal(14, 2)
