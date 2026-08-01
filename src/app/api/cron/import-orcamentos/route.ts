@@ -30,7 +30,8 @@ export async function POST(request: Request) {
     if (!empresa) return NextResponse.json({ error: "Empresa não encontrada." }, { status: 404 });
     // Ambiente fiscal da empresa — sem isso o orçamento cai em HOMOLOGACAO e some da tela.
     const cfgFiscal = await prisma.configuracaoFiscal.findUnique({ where: { empresaId: empresa.id }, select: { ambiente: true } });
-    const scope = { tenantId: empresa.tenantId, empresaId: empresa.id, ambiente: cfgFiscal?.ambiente ?? "PRODUCAO" as const };
+    const base = { tenantId: empresa.tenantId, empresaId: empresa.id };
+    const scope = { ...base, ambiente: cfgFiscal?.ambiente ?? "PRODUCAO" as const };
 
     const rows = (await request.text()).split(/\r?\n/).filter((l) => l.trim());
     const header = rows.shift()?.split(";") ?? [];
@@ -49,13 +50,13 @@ export async function POST(request: Request) {
     }
 
     const clientes = await prisma.cliente.findMany({
-      where: { ...scope, codigoExterno: { not: null } }, select: { id: true, codigoExterno: true }
+      where: { ...base, codigoExterno: { not: null } }, select: { id: true, codigoExterno: true }
     });
     const porCodigo = new Map(clientes.map((cl) => [cl.codigoExterno as string, cl.id]));
-    const produtos = await prisma.produto.findMany({ where: scope, select: { id: true, sku: true } });
+    const produtos = await prisma.produto.findMany({ where: base, select: { id: true, sku: true } });
     const porSku = new Map(produtos.map((p) => [p.sku.toUpperCase(), p.id]));
     const jaImportados = await prisma.orcamento.findMany({
-      where: { ...scope, observacaoVendedor: { contains: "[migrado #" } }, select: { observacaoVendedor: true }
+      where: { ...base, observacaoVendedor: { contains: "[migrado #" } }, select: { observacaoVendedor: true }
     });
     const marcados = new Set(jaImportados.map((o) => /\[migrado #(\S+)\]/.exec(o.observacaoVendedor ?? "")?.[1]).filter(Boolean));
 
@@ -65,7 +66,7 @@ export async function POST(request: Request) {
     const criarFaltantes = url.searchParams.get("criarFaltantes") === "1";
     let produtosCriados = 0, clientesCriados = 0;
     const categoria = criarFaltantes
-      ? await prisma.produtoCategoria.findFirst({ where: { tenantId: scope.tenantId, empresaId: scope.empresaId }, select: { id: true } })
+      ? await prisma.produtoCategoria.findFirst({ where: base, select: { id: true } })
       : null;
 
     let criados = 0, pulados = 0, semCliente = 0, itensSemSku = 0, semItens = 0;
@@ -75,7 +76,7 @@ export async function POST(request: Request) {
       let clienteId = porCodigo.get(o.codParceiro);
       if (!clienteId && criarFaltantes && !dry && o.codParceiro) {
         const novo = await prisma.cliente.create({
-          data: { ...scope, razaoSocial: o.parceiro, documento: "", codigoExterno: o.codParceiro, status: "ATIVO" }
+          data: { ...base, razaoSocial: o.parceiro, documento: "", codigoExterno: o.codParceiro, status: "ATIVO" }
         });
         porCodigo.set(o.codParceiro, novo.id);
         clienteId = novo.id; clientesCriados++;
@@ -86,7 +87,7 @@ export async function POST(request: Request) {
           const sku = (i.ref || i.codigo).toUpperCase();
           if (!porSku.has(sku)) {
             const p = await prisma.produto.create({
-              data: { ...scope, sku, nome: i.descricao, categoriaId: categoria.id, precoVenda: i.preco }
+              data: { ...base, sku, nome: i.descricao, categoriaId: categoria.id, precoVenda: i.preco }
             });
             porSku.set(sku, p.id); produtosCriados++;
           }
