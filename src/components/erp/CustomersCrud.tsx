@@ -138,6 +138,9 @@ export function CustomersCrud({ initialCustomers, tabelasPreco, podeFinanceiro =
   const [customers, setCustomers] = useState<CustomerDetailedSummary[]>(initialCustomers);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("todos");
+  // Paginação client-side (a busca/KPIs seguem sobre a base completa). 50 linhas por página
+  // mantém o DOM leve com centenas de clientes; base com milhares → migrar p/ paginação no servidor.
+  const [page, setPage] = useState(1);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<CustomerTab>("dados");
   const [form, setForm] = useState<CustomerFormState>(emptyForm());
@@ -224,6 +227,17 @@ export function CustomersCrud({ initialCustomers, tabelasPreco, podeFinanceiro =
       .filter((c) => statusFilter === "todos" || c.status === statusFilter)
       .sort((a, b) => a.razaoSocial.localeCompare(b.razaoSocial));
   }, [customers, query, statusFilter]);
+
+  // Mudou a busca/filtro → volta para a primeira página.
+  useEffect(() => { setPage(1); }, [query, statusFilter]);
+
+  const PAGE_SIZE = 50;
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const pageSafe = Math.min(page, totalPages);
+  const paginated = useMemo(
+    () => filtered.slice((pageSafe - 1) * PAGE_SIZE, pageSafe * PAGE_SIZE),
+    [filtered, pageSafe]
+  );
 
   // ---------------------------------------------------------------------------
   // Drawer helpers
@@ -825,7 +839,7 @@ export function CustomersCrud({ initialCustomers, tabelasPreco, podeFinanceiro =
               </tr>
             </thead>
             <tbody>
-              {filtered.map((c) => (
+              {paginated.map((c) => (
                 <tr key={c.id}>
                   <td>
                     <div style={{ fontWeight: 600, fontSize: 13 }}>{c.nomeFantasia ?? c.razaoSocial}</div>
@@ -910,8 +924,23 @@ export function CustomersCrud({ initialCustomers, tabelasPreco, podeFinanceiro =
               )}
             </tbody>
           </table>
-          <div className="erp-table-foot">
-            <span>{filtered.length} clientes exibidos</span>
+          <div className="erp-table-foot" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+            <span>
+              {filtered.length} cliente(s){filtered.length > PAGE_SIZE
+                ? ` · exibindo ${(pageSafe - 1) * PAGE_SIZE + 1}–${Math.min(pageSafe * PAGE_SIZE, filtered.length)}`
+                : ""}
+            </span>
+            {totalPages > 1 && (
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                <button type="button" className="btn-erp ghost xs" disabled={pageSafe <= 1} onClick={() => setPage(pageSafe - 1)}>
+                  ‹ Anterior
+                </button>
+                <span style={{ fontSize: 12.5 }}>página {pageSafe} de {totalPages}</span>
+                <button type="button" className="btn-erp ghost xs" disabled={pageSafe >= totalPages} onClick={() => setPage(pageSafe + 1)}>
+                  Próxima ›
+                </button>
+              </span>
+            )}
           </div>
       </div>
 
