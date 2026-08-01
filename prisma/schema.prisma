@@ -3519,3 +3519,40 @@ model MensalidadeNotaFiscal {
 
   @@index([tenantId])
 }
+
+/// Venda do SISTEMA ANTERIOR (migração) — histórico READ-ONLY, fora de estoque/financeiro/relatórios.
+/// Vinculada ao cliente pelo De/Para (codigoExterno) e ao produto quando o código casa com o SKU.
+model VendaMigrada {
+  id             String             @id @default(cuid())
+  tenantId       String
+  empresaId      String
+  numero         String
+  tipo           String
+  data           DateTime?
+  codigoParceiro String?
+  parceiroNome   String
+  clienteId      String?
+  total          Decimal            @db.Decimal(14, 2)
+  itens          VendaMigradaItem[]
+  criadoEm       DateTime           @default(now())
+
+  @@unique([tenantId, empresaId, numero])
+  @@index([tenantId, clienteId])
+}
+
+model VendaMigradaItem {
+  id             String       @id @default(cuid())
+  tenantId       String
+  empresaId      String
+  vendaMigradaId String
+  vendaMigrada   VendaMigrada @relation(fields: [vendaMigradaId], references: [id])
+  codigo         String
+  descricao      String
+  produtoId      String?
+  preco          Decimal      @db.Decimal(14, 2)
+  quantidade     Decimal      @db.Decimal(14, 3)
+  desconto       Decimal      @db.Decimal(14, 2)
+  total          Decimal      @db.Decimal(14, 2)
+
+  @@index([vendaMigradaId])
+}
