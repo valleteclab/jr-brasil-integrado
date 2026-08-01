@@ -30,6 +30,15 @@ export default async function OrcamentosPage() {
   const aprovados = quotes.filter((q) => q.status === "APROVADO").length;
   const convertidos = quotes.filter((q) => q.status === "CONVERTIDO").length;
 
+  // Valores em R$ por situação (parse do total formatado — "R$ 1.234,56").
+  const valorDe = (lista: QuoteSummary[]) =>
+    lista.reduce((s, q) => s + (Number(q.total.replace(/[^\d,]/g, "").replace(",", ".")) || 0), 0);
+  const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  const emAnalise = quotes.filter((q) => q.status === "EM_ANALISE");
+  const valorEmAnalise = valorDe(emAnalise);
+  const valorAprovados = valorDe(quotes.filter((q) => q.status === "APROVADO"));
+  const valorCarteira = valorEmAnalise + valorAprovados;
+
   return (
     <>
       <PageHeader
@@ -50,14 +59,10 @@ export default async function OrcamentosPage() {
       )}
 
       <div className="kpi-row">
-        <KpiCard label="Total" value={String(total)} />
-        <KpiCard label="Aprovados" value={String(aprovados)} tone="success" />
-        <KpiCard label="Convertidos" value={String(convertidos)} tone="info" />
-        <KpiCard
-          label="Em análise"
-          value={String(quotes.filter((q) => q.status === "EM_ANALISE").length)}
-          tone="warn"
-        />
+        <KpiCard label={`Em análise (${emAnalise.length})`} value={brl(valorEmAnalise)} tone="warn" />
+        <KpiCard label={`Aprovados (${aprovados})`} value={brl(valorAprovados)} tone="success" />
+        <KpiCard label="Carteira aberta" value={brl(valorCarteira)} tone="info" />
+        <KpiCard label={`Convertidos (${convertidos})`} value={`${total} no total`} />
       </div>
 
       <QuotesList quotes={quotes} isAdmin={isAdmin} />

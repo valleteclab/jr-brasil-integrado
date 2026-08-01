@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db/prisma";
+import { gerarRelatorioPdf } from "@/lib/pdf/relatorio-pdf";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import { scopedByTenantCompany } from "@/lib/auth/dev-session";
 import { createAuditLog } from "@/lib/audit/audit-service";
@@ -152,6 +153,18 @@ async function despachar(
 export async function enviarOrcamento(scope: TenantScope, orcamentoId: string, input: EnvioInput): Promise<EnvioResultado> {
   const { orcamento, empresa } = await getOrcamentoParaImpressao(scope, orcamentoId);
   const empresaNome = empresa?.nomeFantasia || empresa?.razaoSocial || "Empresa";
+  // Dados completos p/ assinatura do e-mail e cabeçalho do PDF (tudo do cadastro — nada fixo).
+  const empresaFull = await prisma.empresa.findUnique({
+    where: { id: scope.empresaId },
+    select: {
+      razaoSocial: true, nomeFantasia: true, cnpj: true, telefone: true, email: true,
+      enderecoLogradouro: true, enderecoNumero: true, enderecoBairro: true,
+      enderecoCidade: true, enderecoUf: true
+    }
+  });
+  const cfgFiscalEnv = await prisma.configuracaoFiscal.findUnique({
+    where: { empresaId: scope.empresaId }, select: { logotipoConteudo: true }
+  });
   const clienteNome = orcamento.cliente?.nomeFantasia || orcamento.cliente?.razaoSocial || "Cliente";
 
   const linhas = orcamento.itens.map((item) => ({
@@ -192,6 +205,18 @@ export async function enviarOrcamento(scope: TenantScope, orcamentoId: string, i
       ${validade ? `<p>Válido até <strong>${validade}</strong>.</p>` : ""}
       ${orcamento.observacaoVendedor ? `<p style="color:#475569">${esc(orcamento.observacaoVendedor)}</p>` : ""}
       <p style="color:#64748b;font-size:12px">Qualquer dúvida, responda este e-mail ou fale conosco.</p>
+      <hr style="border:none;border-top:1px solid #e2e8f0;margin:20px 0 12px" />
+      <table style="font-size:12.5px;color:#334155"><tr>
+        <td style="padding-right:14px;border-right:3px solid #2563eb"></td>
+        <td>
+          <strong style="font-size:14px;color:#0f172a">${esc(empresaNome)}</strong><br/>
+          ${empresaFull?.razaoSocial && empresaFull.razaoSocial !== empresaNome ? `${esc(empresaFull.razaoSocial)}<br/>` : ""}
+          ${empresaFull?.cnpj ? `CNPJ ${esc(empresaFull.cnpj)}<br/>` : ""}
+          ${[empresaFull?.enderecoLogradouro, empresaFull?.enderecoNumero].filter(Boolean).join(", ")}${empresaFull?.enderecoBairro ? ` — ${esc(empresaFull.enderecoBairro)}` : ""}<br/>
+          ${[empresaFull?.enderecoCidade, empresaFull?.enderecoUf].filter(Boolean).join("/")}<br/>
+          ${empresaFull?.telefone ? `📞 ${esc(empresaFull.telefone)} · ` : ""}${empresaFull?.email ? `✉ ${esc(empresaFull.email)}` : ""}
+        </td>
+      </tr></table>
     </div>`;
 
   const textoWhatsapp = [
@@ -204,6 +229,34 @@ export async function enviarOrcamento(scope: TenantScope, orcamentoId: string, i
     orcamento.observacaoVendedor ? orcamento.observacaoVendedor : null
   ].filter((l): l is string => l !== null).join("\n");
 
+  // PDF do orçamento (identidade da empresa + logo) — anexo no e-mail e documento no WhatsApp.
+  const pdfOrcamento = await gerarRelatorioPdf({
+    titulo: `Orçamento Nº ${orcamento.numero}`,
+    subtitulo: `${clienteNome}${validade ? ` · válido até ${validade}` : ""}${orcamento.condicaoPagamento ? ` · ${orcamento.condicaoPagamento}` : ""}`,
+    empresa: {
+      razaoSocial: empresaFull?.razaoSocial ?? empresaNome,
+      cnpj: empresaFull?.cnpj ?? null,
+      logoDataUrl: cfgFiscalEnv?.logotipoConteudo ?? null
+    },
+    kpis: [{ label: "Total", valor: brl(total) }, ...(validade ? [{ label: "Validade", valor: validade }] : [])],
+    secoes: [
+      {
+        titulo: "Itens",
+        tabela: {
+          colunas: [
+            { label: "Produto", peso: 3 }, { label: "Qtd", align: "right" as const },
+            { label: "Unitário", align: "right" as const }, { label: "Total", align: "right" as const }
+          ],
+          linhas: linhas.map((l) => [`${l.nome}${l.sku ? ` (${l.sku})` : ""}`, String(l.quantidade), brl(l.unitario), brl(l.total)]),
+          total: ["Total", "", "", brl(total)]
+        }
+      },
+      ...(orcamento.observacaoVendedor ? [{ titulo: "Observações", texto: orcamento.observacaoVendedor }] : [])
+    ],
+    rodape: `${empresaNome}${empresaFull?.telefone ? ` · ${empresaFull.telefone}` : ""}${empresaFull?.email ? ` · ${empresaFull.email}` : ""}`
+  });
+  const nomePdf = `orcamento-${orcamento.numero}.pdf`;
+
   return despachar(scope, {
     input,
     clienteId: orcamento.clienteId,
@@ -211,7 +264,9 @@ export async function enviarOrcamento(scope: TenantScope, orcamentoId: string, i
     entidadeId: orcamento.id,
     assunto: `Orçamento Nº ${orcamento.numero} — ${empresaNome}`,
     corpoHtml,
-    textoWhatsapp
+    textoWhatsapp,
+    anexos: [{ filename: nomePdf, content: pdfOrcamento, contentType: "application/pdf" }],
+    docWhatsapp: { base64: pdfOrcamento.toString("base64"), fileName: nomePdf }
   });
 }
 

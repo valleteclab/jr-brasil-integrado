@@ -16,6 +16,9 @@ type Props = {
 export function QuotesList({ quotes, isAdmin = false }: Props) {
   const [rows, setRows] = useState(quotes);
   const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("todos");
+  // Paginação client-side (50/página) — busca e filtros seguem sobre a lista completa.
+  const [page, setPage] = useState(1);
   const [error, setError] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
   // Orçamento sendo enviado ao cliente (e-mail/WhatsApp) pelo modal compartilhado.
@@ -23,11 +26,24 @@ export function QuotesList({ quotes, isAdmin = false }: Props) {
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter((r) =>
-      [r.numero, r.cliente, r.vendedor, r.statusLabel].some((f) => f.toLowerCase().includes(q))
-    );
-  }, [query, rows]);
+    return rows
+      .filter((r) => !q || [r.numero, r.cliente, r.vendedor, r.statusLabel].some((f) => f.toLowerCase().includes(q)))
+      .filter((r) => statusFilter === "todos" || r.status === statusFilter);
+  }, [query, rows, statusFilter]);
+
+  const statusOpcoes = useMemo(() => {
+    const vistos = new Map<string, string>();
+    rows.forEach((r) => vistos.set(r.status, r.statusLabel));
+    return [...vistos.entries()];
+  }, [rows]);
+
+  const PAGE_SIZE = 50;
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const pageSafe = Math.min(page, totalPages);
+  const paginated = useMemo(
+    () => filtered.slice((pageSafe - 1) * PAGE_SIZE, pageSafe * PAGE_SIZE),
+    [filtered, pageSafe]
+  );
 
   async function renovar(id: string) {
     setBusyId(id); setError("");
@@ -135,9 +151,19 @@ export function QuotesList({ quotes, isAdmin = false }: Props) {
             className="search"
             placeholder="Buscar por número, cliente, vendedor..."
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => { setQuery(e.target.value); setPage(1); }}
           />
         </div>
+        <select
+          className="search"
+          style={{ maxWidth: 190 }}
+          value={statusFilter}
+          onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
+          aria-label="Filtrar por situação"
+        >
+          <option value="todos">Todas as situações</option>
+          {statusOpcoes.map(([valor, rotulo]) => <option key={valor} value={valor}>{rotulo}</option>)}
+        </select>
         <div className="toolbar-grow" />
         <Button href="/erp/orcamentos/novo" variant="primary">+ Novo orçamento</Button>
       </div>
@@ -163,7 +189,7 @@ export function QuotesList({ quotes, isAdmin = false }: Props) {
             </tr>
           </thead>
           <tbody>
-            {filtered.map((orc) => (
+            {paginated.map((orc) => (
               <tr key={orc.id}>
                 <td>
                   <Link className="mono bold link-detalhe" href={`/erp/orcamentos/${orc.id}`}>{orc.numero}</Link>
@@ -278,11 +304,25 @@ export function QuotesList({ quotes, isAdmin = false }: Props) {
             )}
           </tbody>
         </table>
+        <div className="erp-table-foot" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+          <span>
+            {filtered.length} orçamento(s){filtered.length > PAGE_SIZE
+              ? ` · exibindo ${(pageSafe - 1) * PAGE_SIZE + 1}–${Math.min(pageSafe * PAGE_SIZE, filtered.length)}`
+              : ""}
+          </span>
+          {totalPages > 1 && (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+              <button type="button" className="btn-erp ghost xs" disabled={pageSafe <= 1} onClick={() => setPage(pageSafe - 1)}>‹ Anterior</button>
+              <span style={{ fontSize: 12.5 }}>página {pageSafe} de {totalPages}</span>
+              <button type="button" className="btn-erp ghost xs" disabled={pageSafe >= totalPages} onClick={() => setPage(pageSafe + 1)}>Próxima ›</button>
+            </span>
+          )}
+        </div>
       </div>
       {enviando && (
         <EnviarDocumentoModal
           titulo={`Enviar orçamento ${enviando.numero}`}
-          descricao={`Cliente: ${enviando.cliente}. No WhatsApp o orçamento vai como mensagem com itens e total; no e-mail, com a tabela completa.`}
+          descricao={`Cliente: ${enviando.cliente}. O PDF do orçamento vai ANEXO nos dois canais — no e-mail com a tabela completa e assinatura da empresa; no WhatsApp como documento com resumo na legenda.`}
           endpoint={`/api/erp/orcamentos/${enviando.id}/enviar`}
           onClose={() => setEnviando(null)}
         />
