@@ -54,7 +54,16 @@ type CustomerFormState = {
   enderecos: EnderecoForm[];
 };
 
-type CustomerTab = "dados" | "contatos" | "enderecos" | "comercial";
+type CustomerTab = "dados" | "contatos" | "enderecos" | "comercial" | "historico";
+
+/** Venda do sistema ANTERIOR (migração) — read-only, carregada sob demanda na aba Histórico. */
+type VendaLegado = {
+  numero: string;
+  tipo: string;
+  data: string | null;
+  total: number;
+  itens: { codigo: string; descricao: string; preco: number; quantidade: number; desconto: number; total: number }[];
+};
 
 type CustomersCrudProps = {
   initialCustomers: CustomerDetailedSummary[];
@@ -150,6 +159,22 @@ export function CustomersCrud({ initialCustomers, tabelasPreco, podeFinanceiro =
   const [loadingDetail, setLoadingDetail] = useState<string | null>(null);
   // Municípios carregados por UF (cache), usados nos datalists dos endereços.
   const [municipiosPorUf, setMunicipiosPorUf] = useState<Record<string, Municipio[]>>({});
+  // Histórico do sistema anterior (migração): carregado quando a aba abre; null = ainda não buscou.
+  const [historicoLegado, setHistoricoLegado] = useState<VendaLegado[] | null>(null);
+  const [historicoErro, setHistoricoErro] = useState("");
+
+  // Trocou de cliente → zera o cache do histórico (evita mostrar compras do cliente anterior).
+  useEffect(() => { setHistoricoLegado(null); setHistoricoErro(""); }, [form.id]);
+
+  useEffect(() => {
+    if (activeTab !== "historico" || !form.id || historicoLegado !== null) return;
+    let ativo = true;
+    fetch(`/api/erp/clientes/${form.id}/historico-legado`)
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error("Falha ao carregar o histórico."))))
+      .then((d: { vendas?: VendaLegado[] }) => { if (ativo) setHistoricoLegado(d.vendas ?? []); })
+      .catch((e) => { if (ativo) setHistoricoErro(e instanceof Error ? e.message : "Falha ao carregar."); });
+    return () => { ativo = false; };
+  }, [activeTab, form.id, historicoLegado]);
 
   const editing = Boolean(form.id);
 
@@ -665,6 +690,38 @@ export function CustomersCrud({ initialCustomers, tabelasPreco, podeFinanceiro =
       );
     }
 
+    if (activeTab === "historico") {
+      return (
+        <div style={{ padding: 16, display: "grid", gap: 10 }}>
+          <p style={{ margin: 0, fontSize: 12.5, color: "var(--erp-mute)" }}>
+            Compras registradas no sistema ANTERIOR (somente consulta — preço praticado é ouro na negociação).
+          </p>
+          {historicoErro && <div className="alert danger"><span>{historicoErro}</span></div>}
+          {historicoLegado === null && !historicoErro && <span style={{ fontSize: 13 }}>Carregando…</span>}
+          {historicoLegado?.length === 0 && <div className="empty-st"><span>Nenhuma compra no sistema anterior.</span></div>}
+          {historicoLegado?.map((v) => (
+            <details key={v.numero} style={{ border: "1px solid var(--erp-line)", borderRadius: 10, padding: "8px 12px" }}>
+              <summary style={{ cursor: "pointer", fontSize: 13.5 }}>
+                <strong>Pedido {v.numero}</strong> · {v.data ? v.data.split("-").reverse().join("/") : "s/ data"} · {v.tipo} ·{" "}
+                <strong>{formatBrl(v.total)}</strong> · {v.itens.length} item(ns)
+              </summary>
+              <table className="erp-table" style={{ marginTop: 8 }}>
+                <thead><tr><th>Código</th><th>Descrição</th><th>Qtd</th><th>Preço</th><th>Desc.</th><th>Total</th></tr></thead>
+                <tbody>
+                  {v.itens.map((i, idx) => (
+                    <tr key={idx}>
+                      <td>{i.codigo}</td><td>{i.descricao}</td><td>{i.quantidade}</td>
+                      <td>{formatBrl(i.preco)}</td><td>{formatBrl(i.desconto)}</td><td>{formatBrl(i.total)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </details>
+          ))}
+        </div>
+      );
+    }
+
     if (activeTab === "enderecos") {
       return (
         <div className="erp-form">
@@ -957,12 +1014,15 @@ export function CustomersCrud({ initialCustomers, tabelasPreco, podeFinanceiro =
               <button type="button" className="btn-erp ghost sm" onClick={closeDrawer}>Fechar</button>
             </div>
             <nav className="tabs">
-              {(["dados", "contatos", "enderecos", "comercial"] as CustomerTab[]).map((tab) => {
+              {(["dados", "contatos", "enderecos", "comercial", "historico"] as CustomerTab[])
+                .filter((tab) => tab !== "historico" || editing)
+                .map((tab) => {
                 const labels: Record<CustomerTab, string> = {
                   dados: "Dados",
                   contatos: "Contatos",
                   enderecos: "Endereços",
-                  comercial: "Comercial"
+                  comercial: "Comercial",
+                  historico: "Histórico (sist. anterior)"
                 };
                 return (
                   <button

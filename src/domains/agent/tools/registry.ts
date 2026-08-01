@@ -2,6 +2,7 @@ import type { AgentRole, AgentTool } from "../types";
 import { buscarProduto } from "./read/buscar-produto";
 import { consultarEstoque } from "./read/consultar-estoque";
 import { consultarCliente } from "./read/consultar-cliente";
+import { historicoComprasCliente } from "./read/historico-compras-cliente";
 import { consultarPedido } from "./read/consultar-pedido";
 import { relatorioVendas } from "./read/relatorio-vendas";
 import { relatorioEstoque } from "./read/relatorio-estoque";
@@ -40,6 +41,7 @@ export const ALL_TOOLS: AgentTool[] = [
   buscarProduto,
   consultarEstoque,
   consultarCliente,
+  historicoComprasCliente,
   consultarPedido,
   relatorioVendas,
   relatorioEstoque,
