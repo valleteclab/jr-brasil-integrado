@@ -95,6 +95,7 @@ const groups: ErpNavGroup[] = [
     group: "Análises",
     items: [
       { label: "Relatórios", href: "/erp/relatorios", icon: "📊" },
+      { label: "Inteligência de vendas", href: "/erp/inteligencia", icon: "🧠" },
       { label: "Assistente IA", href: "/erp/assistente", icon: "✦" }
     ]
   },
