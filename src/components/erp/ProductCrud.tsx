@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { correspondeBusca } from "@/lib/search/normalize";
+import { MoneyInput, PercentInput, QtyStepper } from "@/components/shared/NumericInputs";
 import type { ErpProductSummary, ProductTaxRuleOption } from "@/lib/services/products";
 import { resolveCfopVenda, isSubstituicaoTributaria } from "@/domains/fiscal/cfop";
 
@@ -316,9 +317,9 @@ function toForm(product: ProductRecord): ProductFormState {
 }
 
 function toProduct(form: ProductFormState): ProductRecord {
-  const availableStock = Number(form.availableStock) || 0;
-  const minimumStock = Number(form.minimumStock) || 0;
-  const priceValue = Number(form.priceValue.replace(",", ".")) || 0;
+  const availableStock = Number(form.availableStock.replace(/\./g, "").replace(",", ".")) || 0;
+  const minimumStock = Number(form.minimumStock.replace(/\./g, "").replace(",", ".")) || 0;
+  const priceValue = currencyToNumber(form.priceValue);
   const sku = form.sku.trim().toUpperCase();
   const name = form.name.trim();
 
@@ -350,6 +351,13 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
   const [importResult, setImportResult] = useState<XmlImportResult | null>(null);
   const [cosmosBuscando, setCosmosBuscando] = useState(false);
   const [gerandoSku, setGerandoSku] = useState(false);
+  // Cadastro rápido: modal de uma tela com o essencial (fiscal herda depois no completo).
+  const emptyQuick = { name: "", category: "", unit: "UN", barcode: "", costValue: "", marginPercent: "", priceValue: "", stock: "1" };
+  const [quickOpen, setQuickOpen] = useState(false);
+  const [quick, setQuick] = useState(emptyQuick);
+  const [quickError, setQuickError] = useState("");
+  const [quickSaving, setQuickSaving] = useState(false);
+
   const [saving, setSaving] = useState(false);
   const [cosmosMsg, setCosmosMsg] = useState("");
   const [cosmosQuery, setCosmosQuery] = useState("");
@@ -824,6 +832,43 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
     }
   }
 
+  function updateQuick(patch: Partial<typeof emptyQuick>) {
+    setQuick((cur) => {
+      const next = { ...cur, ...patch };
+      // margem digitada recalcula o preço a partir do custo (mesma formação da aba Preços)
+      const custo = currencyToNumber(next.costValue);
+      const margem = currencyToNumber(next.marginPercent);
+      if (custo > 0 && margem > 0 && (patch.marginPercent !== undefined || patch.costValue !== undefined)) {
+        next.priceValue = precoPorMargem(custo, margem);
+      }
+      return next;
+    });
+  }
+
+  async function saveQuickProduct() {
+    if (!quick.name.trim()) { setQuickError("Informe o nome do produto."); return; }
+    if (!currencyToNumber(quick.priceValue)) { setQuickError("Informe o preço de venda (direto ou via custo + margem)."); return; }
+    setQuickSaving(true); setQuickError("");
+    try {
+      const product = toProduct({
+        ...emptyForm,
+        name: quick.name,
+        category: quick.category,
+        unit: quick.unit,
+        barcode: quick.barcode,
+        costValue: quick.costValue,
+        cashMarginPercent: quick.marginPercent,
+        priceValue: quick.priceValue,
+        availableStock: quick.stock || "0"
+      });
+      const savedId = await persistProduct(product);
+      setProducts((current) => [{ ...product, id: savedId }, ...current]);
+      setQuickOpen(false); setQuick(emptyQuick);
+    } catch (err) {
+      setQuickError(err instanceof Error ? err.message : "Não foi possível salvar o produto.");
+    } finally { setQuickSaving(false); }
+  }
+
   function editProduct(product: ProductRecord) {
     setForm(toForm(product));
     setError("");
@@ -1182,47 +1227,80 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
 
     if (activeTab === "precos") {
       const custoAtual = custoBase(form);
+      const pVista = currencyToNumber(form.priceValue);
+      const pPrazo = currencyToNumber(form.priceTerm);
+      const pMin = currencyToNumber(form.minimumPrice);
+      const efetivaVista = custoAtual > 0 && pVista > 0 ? ((pVista / custoAtual - 1) * 100) : null;
+      const efetivaPrazo = custoAtual > 0 && pPrazo > 0 ? ((pPrazo / custoAtual - 1) * 100) : null;
+      const pct = (v: number) => `${v.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`;
+      const alertas = [
+        pVista > 0 && custoAtual > 0 && pVista < custoAtual ? "Preço à vista está ABAIXO do custo." : null,
+        pPrazo > 0 && custoAtual > 0 && pPrazo < custoAtual ? "Preço a prazo está ABAIXO do custo." : null,
+        pMin > 0 && pVista > 0 && pMin > pVista ? "Preço mínimo é maior que o preço à vista." : null
+      ].filter((a): a is string => a !== null);
       return (
         <div className="erp-form">
+          <p style={{ gridColumn: "1 / -1", margin: "0 0 2px", fontSize: 12, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase", color: "var(--erp-mute, #64748b)" }}>Custo</p>
           <label>
             Custo médio
-            <input value={form.costValue} onChange={(event) => updateCusto("costValue", event.target.value)} />
+            <MoneyInput value={form.costValue} onChange={(v) => updateCusto("costValue", v)} />
           </label>
           <label>
             Último custo
-            <input value={form.lastCost} onChange={(event) => updateCusto("lastCost", event.target.value)} />
+            <MoneyInput value={form.lastCost} onChange={(v) => updateCusto("lastCost", v)} />
+            <small className="field-hint">Base da formação: custo médio (ou, sem ele, o último custo){custoAtual > 0 ? ` — hoje ${formatBrl(custoAtual)}` : ""}.</small>
           </label>
+
+          <p style={{ gridColumn: "1 / -1", margin: "10px 0 2px", fontSize: 12, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase", color: "var(--erp-mute, #64748b)" }}>Formação do preço &nbsp;·&nbsp; custo → margem → preço</p>
           <label>
-            Margem à vista %
-            <input inputMode="decimal" placeholder="Ex.: 50" value={form.cashMarginPercent} onChange={(event) => updateMargem("vista", event.target.value)} />
-            <small className="field-hint">Calcula o preço à vista: custo × (1 + margem/100){custoAtual > 0 ? ` — custo atual ${formatBrl(custoAtual)}` : ""}.</small>
+            Margem à vista
+            <PercentInput value={form.cashMarginPercent} onChange={(v) => updateMargem("vista", v)} placeholder="Ex.: 50" />
           </label>
           <label>
             Preço de venda à vista
-            <input value={form.priceValue} onChange={(event) => updateField("priceValue", event.target.value)} />
+            <MoneyInput value={form.priceValue} onChange={(v) => updateField("priceValue", v)} />
+            {efetivaVista !== null && (
+              <small className="field-hint" style={efetivaVista < 0 ? { color: "var(--erp-danger, #dc2626)", fontWeight: 600 } : undefined}>
+                Margem efetiva: {pct(efetivaVista)} sobre o custo.
+              </small>
+            )}
           </label>
           <label>
-            Margem a prazo %
-            <input inputMode="decimal" placeholder="Ex.: 65" value={form.termMarginPercent} onChange={(event) => updateMargem("prazo", event.target.value)} />
-            <small className="field-hint">Calcula o preço a prazo (crediário/parcelado) a partir do custo.</small>
+            Margem a prazo
+            <PercentInput value={form.termMarginPercent} onChange={(v) => updateMargem("prazo", v)} placeholder="Ex.: 65" />
           </label>
           <label>
             Preço de venda a prazo
-            <input placeholder="Opcional (vale o à vista)" value={form.priceTerm} onChange={(event) => updateField("priceTerm", event.target.value)} />
+            <MoneyInput value={form.priceTerm} onChange={(v) => updateField("priceTerm", v)} placeholder="Opcional (vale o à vista)" />
+            {efetivaPrazo !== null && (
+              <small className="field-hint" style={efetivaPrazo < 0 ? { color: "var(--erp-danger, #dc2626)", fontWeight: 600 } : undefined}>
+                Margem efetiva: {pct(efetivaPrazo)} sobre o custo.
+              </small>
+            )}
           </label>
+
+          <p style={{ gridColumn: "1 / -1", margin: "10px 0 2px", fontSize: 12, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase", color: "var(--erp-mute, #64748b)" }}>Limites de venda</p>
           <label>
             Preço mínimo
-            <input value={form.minimumPrice} onChange={(event) => updateField("minimumPrice", event.target.value)} />
+            <MoneyInput value={form.minimumPrice} onChange={(v) => updateField("minimumPrice", v)} />
           </label>
           <label>
-            Desconto máximo %
-            <input value={form.maxDiscount} onChange={(event) => updateField("maxDiscount", event.target.value)} />
+            Desconto máximo
+            <PercentInput value={form.maxDiscount} onChange={(v) => updateField("maxDiscount", v)} />
           </label>
+          {alertas.length > 0 && (
+            <div style={{ gridColumn: "1 / -1", background: "var(--erp-danger-bg, #fef2f2)", border: "1px solid var(--erp-danger, #dc2626)", borderRadius: 10, padding: "8px 12px", fontSize: 13 }}>
+              {alertas.map((a) => <div key={a}>⚠ {a}</div>)}
+            </div>
+          )}
         </div>
       );
     }
 
     if (activeTab === "estoque") {
+      const fracionavel = !["UN", "PC", "PÇ", "CX", "PAR", "JG", "KIT"].includes((form.unit || "UN").toUpperCase());
+      const qty = (v: string) => Number(v.replace(/\./g, "").replace(",", ".")) || 0;
+      const disponivel = qty(form.availableStock) - qty(form.reservedStock);
       return (
         <div className="erp-form">
           <label>
@@ -1236,23 +1314,31 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
           </label>
           <label>
             Endereço físico
-            <input value={form.location} onChange={(event) => updateField("location", event.target.value)} />
+            <input value={form.location} onChange={(event) => updateField("location", event.target.value)} placeholder="Ex.: corredor 3, prateleira B" />
           </label>
+
+          <p style={{ gridColumn: "1 / -1", margin: "10px 0 2px", fontSize: 12, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase", color: "var(--erp-mute, #64748b)" }}>Posição atual &nbsp;·&nbsp; em {form.unit || "UN"}</p>
           <label>
             Estoque físico
-            <input value={form.availableStock} onChange={(event) => updateField("availableStock", event.target.value)} />
+            <QtyStepper value={form.availableStock} onChange={(v) => updateField("availableStock", v)} allowDecimal={fracionavel} />
           </label>
           <label>
-            Reservado
-            <input value={form.reservedStock} onChange={(event) => updateField("reservedStock", event.target.value)} />
+            Reservado (pedidos)
+            <QtyStepper value={form.reservedStock} onChange={(v) => updateField("reservedStock", v)} allowDecimal={fracionavel} />
+            <small className="field-hint" style={disponivel < 0 ? { color: "var(--erp-danger, #dc2626)", fontWeight: 600 } : undefined}>
+              Disponível para venda: <strong>{disponivel.toLocaleString("pt-BR")}</strong> (físico − reservado).
+            </small>
           </label>
+
+          <p style={{ gridColumn: "1 / -1", margin: "10px 0 2px", fontSize: 12, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase", color: "var(--erp-mute, #64748b)" }}>Política de reposição</p>
           <label>
             Estoque mínimo
-            <input value={form.minimumStock} onChange={(event) => updateField("minimumStock", event.target.value)} />
+            <QtyStepper value={form.minimumStock} onChange={(v) => updateField("minimumStock", v)} allowDecimal={fracionavel} />
+            <small className="field-hint">Abaixo disso o produto entra no alerta de reposição.</small>
           </label>
           <label>
             Estoque máximo
-            <input value={form.maxStock} onChange={(event) => updateField("maxStock", event.target.value)} />
+            <QtyStepper value={form.maxStock} onChange={(v) => updateField("maxStock", v)} allowDecimal={fracionavel} />
           </label>
           <label className="check-row">
             <input checked={form.allowNegativeStock} type="checkbox" onChange={(event) => updateField("allowNegativeStock", event.target.checked)} />
@@ -1386,6 +1472,7 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
           ref={xmlInputRef}
           type="file"
         />
+        <button type="button" className="btn-erp light sm" title="Só o essencial: nome, preço e estoque — o resto edita depois" onClick={() => { setQuick(emptyQuick); setQuickError(""); setQuickOpen(true); }}>⚡ Cadastro rápido</button>
         <button type="button" className="btn-erp primary sm" onClick={() => openNewProduct()}>+ Novo produto</button>
       </div>
 
@@ -1616,6 +1703,61 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
         </div>
       </section>
 
+      {quickOpen && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.45)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={() => setQuickOpen(false)}>
+          <div className="erp-card" style={{ width: "min(560px, 100%)", maxHeight: "90vh", overflow: "auto", padding: 20 }} onClick={(e) => e.stopPropagation()}>
+            <h2 style={{ margin: "0 0 2px" }}>⚡ Cadastro rápido</h2>
+            <p style={{ margin: "0 0 14px", fontSize: 13, color: "var(--erp-mute, #64748b)" }}>Só o essencial para vender agora. Fiscal e demais detalhes você completa depois em Editar.</p>
+            <div className="erp-form">
+              <label style={{ gridColumn: "1 / -1" }}>
+                Nome do produto *
+                <input autoFocus value={quick.name} onChange={(e) => updateQuick({ name: e.target.value })} placeholder="Ex.: Cruzeta cardan 28x77" />
+              </label>
+              <label>
+                Categoria
+                <input list="quick-categorias" value={quick.category} onChange={(e) => updateQuick({ category: e.target.value })} />
+                <datalist id="quick-categorias">
+                  {categories.map((c) => <option key={c} value={c} />)}
+                </datalist>
+              </label>
+              <label>
+                Unidade
+                <input list="quick-unidades" value={quick.unit} onChange={(e) => updateQuick({ unit: e.target.value })} />
+                <datalist id="quick-unidades">
+                  {unitOptions.map((u) => <option key={u} value={u} />)}
+                </datalist>
+              </label>
+              <label style={{ gridColumn: "1 / -1" }}>
+                Código de barras (EAN)
+                <input inputMode="numeric" value={quick.barcode} onChange={(e) => updateQuick({ barcode: e.target.value.replace(/\D/g, "") })} placeholder="Opcional — bipe ou digite" />
+              </label>
+              <label>
+                Custo
+                <MoneyInput value={quick.costValue} onChange={(v) => updateQuick({ costValue: v })} />
+              </label>
+              <label>
+                Margem
+                <PercentInput value={quick.marginPercent} onChange={(v) => updateQuick({ marginPercent: v })} placeholder="Ex.: 50" />
+              </label>
+              <label>
+                Preço de venda *
+                <MoneyInput value={quick.priceValue} onChange={(v) => setQuick((c) => ({ ...c, priceValue: v }))} />
+              </label>
+              <label>
+                Estoque inicial
+                <QtyStepper value={quick.stock} onChange={(v) => setQuick((c) => ({ ...c, stock: v }))} />
+              </label>
+            </div>
+            {quickError && <p className="form-error" style={{ marginTop: 10 }}>{quickError}</p>}
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 16 }}>
+              <button type="button" className="btn-erp ghost" onClick={() => setQuickOpen(false)}>Cancelar</button>
+              <button type="button" className="btn-erp primary" disabled={quickSaving} onClick={() => void saveQuickProduct()}>
+                {quickSaving ? "Salvando…" : "Salvar produto"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {drawerOpen && (
         <>
           <div className="drawer-bd" onClick={closeDrawer} />
