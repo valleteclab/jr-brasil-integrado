@@ -357,6 +357,8 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
   const [quick, setQuick] = useState(emptyQuick);
   const [quickError, setQuickError] = useState("");
   const [quickSaving, setQuickSaving] = useState(false);
+  const [quickIa, setQuickIa] = useState(false);
+  const [quickIaMsg, setQuickIaMsg] = useState("");
 
   const [saving, setSaving] = useState(false);
   const [cosmosMsg, setCosmosMsg] = useState("");
@@ -843,6 +845,37 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
       }
       return next;
     });
+  }
+
+  async function sugerirQuickComIa() {
+    const descricao = quick.name.trim();
+    setQuickIaMsg("");
+    if (descricao.length < 3) { setQuickError("Digite o nome do produto para a IA sugerir o fiscal."); return; }
+    setQuickError(""); setQuickIa(true);
+    try {
+      const response = await fetch("/api/erp/produtos/ia/fiscal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ descricao, gtin: quick.barcode.replace(/\D/g, "") || null, ncmAtual: quick.ncm || null, marca: null })
+      });
+      const data = (await response.json()) as {
+        descricaoLimpa: string | null; categoria: string | null; ncmSugerido: string | null;
+        ncmDescricao: string | null; confianca: number; avisos: string[]; error?: string;
+      };
+      if (!response.ok) throw new Error(data.error || "Não foi possível sugerir com IA.");
+      setQuick((cur) => ({
+        ...cur,
+        ncm: data.ncmSugerido || cur.ncm,
+        category: cur.category.trim() || data.categoria || cur.category
+      }));
+      setQuickIaMsg(
+        data.ncmSugerido
+          ? `IA sugeriu NCM ${data.ncmSugerido}${data.ncmDescricao ? ` (${data.ncmDescricao})` : ""} · confiança ${data.confianca}%. ${(data.avisos ?? []).join(" ")}`
+          : "A IA não encontrou um NCM com confiança — preencha manualmente ou complete depois."
+      );
+    } catch (e) {
+      setQuickError(e instanceof Error ? e.message : "Não foi possível sugerir com IA.");
+    } finally { setQuickIa(false); }
   }
 
   async function saveQuickProduct() {
@@ -1493,7 +1526,7 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
           ref={xmlInputRef}
           type="file"
         />
-        <button type="button" className="btn-erp light sm" title="Só o essencial: nome, preço e estoque — o resto edita depois" onClick={() => { setQuick(emptyQuick); setQuickError(""); setQuickOpen(true); }}>⚡ Cadastro rápido</button>
+        <button type="button" className="btn-erp light sm" title="Só o essencial: nome, preço e estoque — o resto edita depois" onClick={() => { setQuick(emptyQuick); setQuickError(""); setQuickIaMsg(""); setQuickOpen(true); }}>⚡ Cadastro rápido</button>
         <button type="button" className="btn-erp primary sm" onClick={() => openNewProduct()}>+ Novo produto</button>
       </div>
 
@@ -1769,6 +1802,12 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
                 <QtyStepper value={quick.stock} onChange={(v) => setQuick((c) => ({ ...c, stock: v }))} />
               </label>
               <p className="form-sec">Fiscal · para a nota sair certa</p>
+              <div style={{ gridColumn: "1 / -1", display: "flex", flexDirection: "column", gap: 6 }}>
+                <button type="button" className="btn-erp light sm" style={{ alignSelf: "flex-start" }} onClick={() => void sugerirQuickComIa()} disabled={quickIa}>
+                  {quickIa ? "Consultando IA…" : "🤖 Sugerir NCM e categoria com IA"}
+                </button>
+                {quickIaMsg && <small className="field-hint" style={{ color: "var(--erp-warn, #92400e)" }}>{quickIaMsg}</small>}
+              </div>
               <label>
                 NCM
                 <input inputMode="numeric" value={quick.ncm} onChange={(e) => setQuick((c) => ({ ...c, ncm: e.target.value.replace(/\D/g, "").slice(0, 8) }))} placeholder="8 dígitos" />
