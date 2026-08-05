@@ -935,6 +935,7 @@ p {
 }
 
 .erp-form label {
+  align-content: start;
   color: var(--erp-slate);
   display: grid;
   font-size: 11.5px;
@@ -944,6 +945,51 @@ p {
 
 .erp-form label.span-2 {
   grid-column: span 2;
+}
+
+/* Título de seção dentro do formulário (agrupa campos relacionados) */
+.erp-form .form-sec {
+  border-top: 1px solid var(--erp-line);
+  color: var(--erp-mute, #64748b);
+  font-size: 11px;
+  font-weight: 800;
+  grid-column: 1 / -1;
+  letter-spacing: 0.6px;
+  margin: 6px 0 0;
+  padding-top: 12px;
+  text-transform: uppercase;
+}
+
+.erp-form .form-sec:first-child {
+  border-top: none;
+  margin-top: 0;
+  padding-top: 0;
+}
+
+/* Caixa de valor calculado (margem efetiva, disponível etc.) — mesma altura dos inputs */
+.erp-form .calc-box {
+  align-content: start;
+  display: grid;
+  gap: 5px;
+}
+
+.erp-form .calc-box .calc-label {
+  color: var(--erp-slate);
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+.erp-form .calc-box .calc-value {
+  align-items: center;
+  background: var(--erp-bg-soft, #f8fafc);
+  border: 1px dashed var(--erp-line);
+  border-radius: 5px;
+  color: var(--erp-ink);
+  display: flex;
+  font-size: 13px;
+  font-weight: 700;
+  height: 34px;
+  padding: 0 10px;
 }
 
 .erp-form input,

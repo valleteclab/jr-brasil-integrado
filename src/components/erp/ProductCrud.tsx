@@ -352,7 +352,7 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
   const [cosmosBuscando, setCosmosBuscando] = useState(false);
   const [gerandoSku, setGerandoSku] = useState(false);
   // Cadastro rápido: modal de uma tela com o essencial (fiscal herda depois no completo).
-  const emptyQuick = { name: "", category: "", unit: "UN", barcode: "", costValue: "", marginPercent: "", priceValue: "", stock: "1" };
+  const emptyQuick = { name: "", category: "", unit: "UN", barcode: "", costValue: "", marginPercent: "", priceValue: "", stock: "1", ncm: "", origin: "0 - Nacional", taxRuleId: "" };
   const [quickOpen, setQuickOpen] = useState(false);
   const [quick, setQuick] = useState(emptyQuick);
   const [quickError, setQuickError] = useState("");
@@ -859,7 +859,11 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
         costValue: quick.costValue,
         cashMarginPercent: quick.marginPercent,
         priceValue: quick.priceValue,
-        availableStock: quick.stock || "0"
+        availableStock: quick.stock || "0",
+        ncm: quick.ncm,
+        origin: quick.origin,
+        taxRuleId: quick.taxRuleId,
+        taxRuleName: taxRules.find((r) => r.id === quick.taxRuleId)?.name ?? ""
       });
       const savedId = await persistProduct(product);
       setProducts((current) => [{ ...product, id: savedId }, ...current]);
@@ -1031,46 +1035,7 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
               </ul>
             )}
           </label>
-          <label className="full">
-            Imagem do produto (loja/catálogo)
-            <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-              {form.imageUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={form.imageUrl} alt={form.name} style={{ width: 60, height: 60, objectFit: "contain", border: "1px solid var(--erp-line)", borderRadius: 8, background: "#fff", flexShrink: 0 }} />
-              ) : (
-                <span style={{ width: 60, height: 60, display: "grid", placeItems: "center", border: "1px dashed var(--erp-line)", borderRadius: 8, background: "#fff", color: "#94a3b8", flexShrink: 0 }}>⊙</span>
-              )}
-              <input value={form.imageUrl} onChange={(event) => updateField("imageUrl", event.target.value)} placeholder="Cole o link da imagem (https://...)" style={{ flex: 1, minWidth: 0 }} />
-              <label className="btn-erp ghost sm" style={{ cursor: "pointer", margin: 0, whiteSpace: "nowrap" }}>
-                ⬆️ Subir
-                <input type="file" accept="image/*" onChange={onUploadImagem} style={{ display: "none" }} />
-              </label>
-              {form.imageUrl && <button type="button" className="btn-erp ghost sm" onClick={() => updateField("imageUrl", "")}>Remover</button>}
-            </div>
-            <small className="field-hint">Preenchida automaticamente pelo GTIN (Buscar); ou cole um link, ou suba uma imagem do computador.</small>
-          </label>
-          <label>
-            SKU interno (deixe em branco para gerar automaticamente)
-            <div style={{ display: "flex", gap: 6 }}>
-              <input value={form.sku} onChange={(event) => updateField("sku", event.target.value)} placeholder="Gerado automaticamente se vazio" style={{ flex: 1 }} />
-              <button type="button" className="btn-erp ghost sm" onClick={gerarSku} disabled={gerandoSku} title="Gerar um SKU disponível automaticamente">
-                {gerandoSku ? "..." : "Gerar"}
-              </button>
-            </div>
-          </label>
-          <label>
-            Código original
-            <input value={form.originalCode} onChange={(event) => updateField("originalCode", event.target.value)} />
-          </label>
-          <label className="full">
-            GTIN / EAN
-            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-              <input value={form.barcode} onChange={(event) => updateField("barcode", event.target.value)} style={{ flex: 1, minWidth: 0 }} />
-              <button type="button" className="btn-erp ghost sm" style={{ whiteSpace: "nowrap" }} onClick={buscarPorCodigoBarras} disabled={cosmosBuscando} title="Buscar nome, NCM, CEST e imagem pelo código de barras">
-                {cosmosBuscando ? "..." : "🔎 Buscar"}
-              </button>
-            </div>
-          </label>
+          <p className="form-sec">Identificação</p>
           <label className="full">
             Nome do produto
             <input value={form.name} onChange={(event) => updateField("name", event.target.value)} />
@@ -1107,6 +1072,30 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
               {unidadeOpcoes.map((u) => <option key={u} value={u}>{u}</option>)}
             </select>
           </label>
+          <p className="form-sec">Códigos</p>
+          <label>
+            GTIN / EAN
+            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <input value={form.barcode} onChange={(event) => updateField("barcode", event.target.value)} style={{ flex: 1, minWidth: 0 }} />
+              <button type="button" className="btn-erp ghost sm" style={{ whiteSpace: "nowrap" }} onClick={buscarPorCodigoBarras} disabled={cosmosBuscando} title="Buscar nome, NCM, CEST e imagem pelo código de barras">
+                {cosmosBuscando ? "..." : "🔎 Buscar"}
+              </button>
+            </div>
+          </label>
+          <label>
+            SKU interno (deixe em branco para gerar automaticamente)
+            <div style={{ display: "flex", gap: 6 }}>
+              <input value={form.sku} onChange={(event) => updateField("sku", event.target.value)} placeholder="Gerado automaticamente se vazio" style={{ flex: 1 }} />
+              <button type="button" className="btn-erp ghost sm" onClick={gerarSku} disabled={gerandoSku} title="Gerar um SKU disponível automaticamente">
+                {gerandoSku ? "..." : "Gerar"}
+              </button>
+            </div>
+          </label>
+          <label>
+            Código original
+            <input value={form.originalCode} onChange={(event) => updateField("originalCode", event.target.value)} />
+          </label>
+          <p className="form-sec">Descrições e imagem</p>
           <label className="full">
             Descrição curta
             <input value={form.shortDescription} onChange={(event) => updateField("shortDescription", event.target.value)} />
@@ -1114,6 +1103,24 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
           <label className="full">
             Descrição técnica
             <textarea value={form.technicalDescription} onChange={(event) => updateField("technicalDescription", event.target.value)} />
+          </label>
+          <label className="full">
+            Imagem do produto (loja/catálogo)
+            <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+              {form.imageUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={form.imageUrl} alt={form.name} style={{ width: 60, height: 60, objectFit: "contain", border: "1px solid var(--erp-line)", borderRadius: 8, background: "#fff", flexShrink: 0 }} />
+              ) : (
+                <span style={{ width: 60, height: 60, display: "grid", placeItems: "center", border: "1px dashed var(--erp-line)", borderRadius: 8, background: "#fff", color: "#94a3b8", flexShrink: 0 }}>⊙</span>
+              )}
+              <input value={form.imageUrl} onChange={(event) => updateField("imageUrl", event.target.value)} placeholder="Cole o link da imagem (https://...)" style={{ flex: 1, minWidth: 0 }} />
+              <label className="btn-erp ghost sm" style={{ cursor: "pointer", margin: 0, whiteSpace: "nowrap" }}>
+                ⬆️ Subir
+                <input type="file" accept="image/*" onChange={onUploadImagem} style={{ display: "none" }} />
+              </label>
+              {form.imageUrl && <button type="button" className="btn-erp ghost sm" onClick={() => updateField("imageUrl", "")}>Remover</button>}
+            </div>
+            <small className="field-hint">Preenchida automaticamente pelo GTIN (Buscar); ou cole um link, ou suba uma imagem do computador.</small>
           </label>
         </div>
       );
@@ -1238,9 +1245,17 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
         pPrazo > 0 && custoAtual > 0 && pPrazo < custoAtual ? "Preço a prazo está ABAIXO do custo." : null,
         pMin > 0 && pVista > 0 && pMin > pVista ? "Preço mínimo é maior que o preço à vista." : null
       ].filter((a): a is string => a !== null);
+      const lucroBox = (efetiva: number | null, preco: number) => (
+        <div className="calc-box">
+          <span className="calc-label">Margem sobre o custo</span>
+          <span className="calc-value" style={efetiva !== null && efetiva < 0 ? { color: "var(--erp-danger, #dc2626)" } : undefined}>
+            {efetiva === null ? "—" : `${pct(efetiva)} · lucro ${formatBrl(preco - custoAtual)}`}
+          </span>
+        </div>
+      );
       return (
         <div className="erp-form">
-          <p style={{ gridColumn: "1 / -1", margin: "0 0 2px", fontSize: 12, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase", color: "var(--erp-mute, #64748b)" }}>Custo</p>
+          <p className="form-sec">Custo</p>
           <label>
             Custo médio
             <MoneyInput value={form.costValue} onChange={(v) => updateCusto("costValue", v)} />
@@ -1248,48 +1263,45 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
           <label>
             Último custo
             <MoneyInput value={form.lastCost} onChange={(v) => updateCusto("lastCost", v)} />
-            <small className="field-hint">Base da formação: custo médio (ou, sem ele, o último custo){custoAtual > 0 ? ` — hoje ${formatBrl(custoAtual)}` : ""}.</small>
           </label>
+          <div className="calc-box">
+            <span className="calc-label">Base da formação</span>
+            <span className="calc-value">{custoAtual > 0 ? formatBrl(custoAtual) : "—"}</span>
+          </div>
 
-          <p style={{ gridColumn: "1 / -1", margin: "10px 0 2px", fontSize: 12, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase", color: "var(--erp-mute, #64748b)" }}>Formação do preço &nbsp;·&nbsp; custo → margem → preço</p>
+          <p className="form-sec">Venda à vista · margem calcula o preço</p>
           <label>
             Margem à vista
             <PercentInput value={form.cashMarginPercent} onChange={(v) => updateMargem("vista", v)} placeholder="Ex.: 50" />
           </label>
           <label>
-            Preço de venda à vista
+            Preço à vista
             <MoneyInput value={form.priceValue} onChange={(v) => updateField("priceValue", v)} />
-            {efetivaVista !== null && (
-              <small className="field-hint" style={efetivaVista < 0 ? { color: "var(--erp-danger, #dc2626)", fontWeight: 600 } : undefined}>
-                Margem efetiva: {pct(efetivaVista)} sobre o custo.
-              </small>
-            )}
           </label>
+          {lucroBox(efetivaVista, pVista)}
+
+          <p className="form-sec">Venda a prazo (crediário/parcelado)</p>
           <label>
             Margem a prazo
             <PercentInput value={form.termMarginPercent} onChange={(v) => updateMargem("prazo", v)} placeholder="Ex.: 65" />
           </label>
           <label>
-            Preço de venda a prazo
+            Preço a prazo
             <MoneyInput value={form.priceTerm} onChange={(v) => updateField("priceTerm", v)} placeholder="Opcional (vale o à vista)" />
-            {efetivaPrazo !== null && (
-              <small className="field-hint" style={efetivaPrazo < 0 ? { color: "var(--erp-danger, #dc2626)", fontWeight: 600 } : undefined}>
-                Margem efetiva: {pct(efetivaPrazo)} sobre o custo.
-              </small>
-            )}
           </label>
+          {lucroBox(efetivaPrazo, pPrazo)}
 
-          <p style={{ gridColumn: "1 / -1", margin: "10px 0 2px", fontSize: 12, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase", color: "var(--erp-mute, #64748b)" }}>Limites de venda</p>
+          <p className="form-sec">Limites de venda</p>
           <label>
             Preço mínimo
             <MoneyInput value={form.minimumPrice} onChange={(v) => updateField("minimumPrice", v)} />
           </label>
           <label>
-            Desconto máximo
+            Desconto máximo do vendedor
             <PercentInput value={form.maxDiscount} onChange={(v) => updateField("maxDiscount", v)} />
           </label>
           {alertas.length > 0 && (
-            <div style={{ gridColumn: "1 / -1", background: "var(--erp-danger-bg, #fef2f2)", border: "1px solid var(--erp-danger, #dc2626)", borderRadius: 10, padding: "8px 12px", fontSize: 13 }}>
+            <div className="full" style={{ background: "var(--erp-danger-bg, #fef2f2)", border: "1px solid var(--erp-danger, #dc2626)", borderRadius: 10, padding: "8px 12px", fontSize: 13 }}>
               {alertas.map((a) => <div key={a}>⚠ {a}</div>)}
             </div>
           )}
@@ -1303,6 +1315,7 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
       const disponivel = qty(form.availableStock) - qty(form.reservedStock);
       return (
         <div className="erp-form">
+          <p className="form-sec">Onde fica</p>
           <label>
             Depósito padrão
             <input list="produto-depositos" value={form.warehouse} onChange={(event) => updateField("warehouse", event.target.value)} />
@@ -1312,12 +1325,12 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
               ))}
             </datalist>
           </label>
-          <label>
+          <label className="span-2">
             Endereço físico
             <input value={form.location} onChange={(event) => updateField("location", event.target.value)} placeholder="Ex.: corredor 3, prateleira B" />
           </label>
 
-          <p style={{ gridColumn: "1 / -1", margin: "10px 0 2px", fontSize: 12, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase", color: "var(--erp-mute, #64748b)" }}>Posição atual &nbsp;·&nbsp; em {form.unit || "UN"}</p>
+          <p className="form-sec">Posição atual · em {form.unit || "UN"}</p>
           <label>
             Estoque físico
             <QtyStepper value={form.availableStock} onChange={(v) => updateField("availableStock", v)} allowDecimal={fracionavel} />
@@ -1325,29 +1338,37 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
           <label>
             Reservado (pedidos)
             <QtyStepper value={form.reservedStock} onChange={(v) => updateField("reservedStock", v)} allowDecimal={fracionavel} />
-            <small className="field-hint" style={disponivel < 0 ? { color: "var(--erp-danger, #dc2626)", fontWeight: 600 } : undefined}>
-              Disponível para venda: <strong>{disponivel.toLocaleString("pt-BR")}</strong> (físico − reservado).
-            </small>
           </label>
+          <div className="calc-box">
+            <span className="calc-label">Disponível para venda</span>
+            <span className="calc-value" style={disponivel < 0 ? { color: "var(--erp-danger, #dc2626)" } : undefined}>
+              {disponivel.toLocaleString("pt-BR")} {form.unit || "UN"}
+            </span>
+          </div>
 
-          <p style={{ gridColumn: "1 / -1", margin: "10px 0 2px", fontSize: 12, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase", color: "var(--erp-mute, #64748b)" }}>Política de reposição</p>
+          <p className="form-sec">Política de reposição</p>
           <label>
             Estoque mínimo
             <QtyStepper value={form.minimumStock} onChange={(v) => updateField("minimumStock", v)} allowDecimal={fracionavel} />
-            <small className="field-hint">Abaixo disso o produto entra no alerta de reposição.</small>
+            <small className="field-hint">Abaixo disso entra no alerta de reposição.</small>
           </label>
           <label>
             Estoque máximo
             <QtyStepper value={form.maxStock} onChange={(v) => updateField("maxStock", v)} allowDecimal={fracionavel} />
           </label>
-          <label className="check-row">
-            <input checked={form.allowNegativeStock} type="checkbox" onChange={(event) => updateField("allowNegativeStock", event.target.checked)} />
-            Permitir estoque negativo
-          </label>
-          <label className="check-row">
-            <input checked={form.allowBackorder} type="checkbox" onChange={(event) => updateField("allowBackorder", event.target.checked)} />
-            Permitir venda sob encomenda
-          </label>
+          <div className="calc-box">
+            <span className="calc-label">Exceções de venda</span>
+            <div style={{ display: "grid", gap: 4 }}>
+              <label className="check-row" style={{ margin: 0 }}>
+                <input checked={form.allowNegativeStock} type="checkbox" onChange={(event) => updateField("allowNegativeStock", event.target.checked)} />
+                Permitir estoque negativo
+              </label>
+              <label className="check-row" style={{ margin: 0 }}>
+                <input checked={form.allowBackorder} type="checkbox" onChange={(event) => updateField("allowBackorder", event.target.checked)} />
+                Venda sob encomenda
+              </label>
+            </div>
+          </div>
         </div>
       );
     }
@@ -1746,6 +1767,26 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
               <label>
                 Estoque inicial
                 <QtyStepper value={quick.stock} onChange={(v) => setQuick((c) => ({ ...c, stock: v }))} />
+              </label>
+              <p className="form-sec">Fiscal · para a nota sair certa</p>
+              <label>
+                NCM
+                <input inputMode="numeric" value={quick.ncm} onChange={(e) => setQuick((c) => ({ ...c, ncm: e.target.value.replace(/\D/g, "").slice(0, 8) }))} placeholder="8 dígitos" />
+              </label>
+              <label>
+                Origem
+                <select value={quick.origin} onChange={(e) => setQuick((c) => ({ ...c, origin: e.target.value }))}>
+                  <option>0 - Nacional</option>
+                  <option>1 - Estrangeira (importação direta)</option>
+                  <option>2 - Estrangeira (adquirida no Brasil)</option>
+                </select>
+              </label>
+              <label style={{ gridColumn: "1 / -1" }}>
+                Regra tributária para emissão
+                <select value={quick.taxRuleId} onChange={(e) => setQuick((c) => ({ ...c, taxRuleId: e.target.value }))}>
+                  <option value="">Sem regra (herda o padrão / edita depois)</option>
+                  {taxRules.map((rule) => <option key={rule.id} value={rule.id}>{rule.name}</option>)}
+                </select>
               </label>
             </div>
             {quickError && <p className="form-error" style={{ marginTop: 10 }}>{quickError}</p>}
