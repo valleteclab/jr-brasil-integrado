@@ -58,10 +58,24 @@ const FONTES: Fonte[] = [
     url: "https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica/documentacao-atual",
     extrair: extrairDocsGovBr,
   },
+  {
+    id: "pes-paa",
+    nome: "PES/PAA — Plataforma de Emissão Simplificada (SVRS)",
+    // Vigia o surgimento de manual de adesão/edital de credenciamento PAA e novas versões
+    // do MOPAA/schemas — gatilho do plano "XERP vira PAA" (pré-cadastro abre 01/09/2026).
+    url: "https://dfe-portal.svrs.rs.gov.br/Pes/Documentos",
+    extrair: (html) =>
+      dedupe(
+        (html.match(/[\wÀ-ú&#;,_ .%()-]{8,120}\.(?:pdf|zip)/g) ?? [])
+          .map(decodeEntities)
+          .map((t) => t.replace(/\s+/g, " ").trim())
+      ).slice(0, 60),
+  },
 ];
 
 function decodeEntities(s: string): string {
   return s
+    .replace(/&#(\d+);/g, (_, n: string) => String.fromCharCode(Number(n)))
     .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, " ")
     .replace(/&aacute;/g, "á").replace(/&eacute;/g, "é").replace(/&iacute;/g, "í")
