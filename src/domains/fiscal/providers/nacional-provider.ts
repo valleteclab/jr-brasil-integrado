@@ -622,6 +622,25 @@ export class NacionalFiscalProvider implements FiscalProvider {
       const { xml } = buildCancelEventoXml(chave, ctx.ambiente, input.justificativa);
       const { privateKeyPem, certPem } = pfxToPem(ctx.certificado.pfx, ctx.certificado.senha);
       const signed = signInfoEl(xml, "infPedReg", privateKeyPem, certPem);
+
+      // Nota de Brasília (chave começa no cMun 5300108): cancela pelo ISSnet — mesmo
+      // pedRegEvento e101101 assinado, embrulhado em CancelarNfseEnvio via SOAP.
+      if (chave.startsWith(ISSNET_DF_MUN)) {
+        const corpoEvt = signed.replace(/^<\?xml[^>]*\?>/, "");
+        const dados = `<CancelarNfseEnvio xmlns="${NFSE_NS}">${corpoEvt}</CancelarNfseEnvio>`;
+        const resDf = await issnetSoapCall("CancelarNfse", dados, ctx.ambiente, ctx.certificado);
+        const errosDf = issnetErros(resDf.body).filter((e) => !/^A/.test(e.codigo)); // A* = alertas
+        if (errosDf.length) {
+          const ja = errosDf.some((e) => /cancelad/i.test(e.mensagem));
+          if (ja) return { status: "AUTORIZADO", motivo: "NFS-e já constava cancelada no ISSnet-DF." };
+          return { status: "REJEITADO", motivo: errosDf.map((e) => `${e.codigo}: ${e.mensagem}`).join(" | ").slice(0, 900) };
+        }
+        if (resDf.statusCode !== 200) {
+          return { status: "ERRO", motivo: `ISSnet-DF: HTTP ${resDf.statusCode} no cancelamento.` };
+        }
+        return { status: "AUTORIZADO", motivo: null } as unknown as CancelResult;
+      }
+
       const gzipB64 = gzipSync(Buffer.from(signed, "utf8")).toString("base64");
       const res = await postEventoNfse(SEFIN[ctx.ambiente], chave, gzipB64, ctx.certificado);
 
@@ -664,6 +683,12 @@ export class NacionalFiscalProvider implements FiscalProvider {
       return { status: "PROCESSANDO", motivo: "Chave da NFS-e ausente/inválida para consulta." };
     }
     const cert = { pfx: ctx.certificado.pfx, senha: ctx.certificado.senha };
+
+    // Nota de Brasília: a SEFIN não conhece a chave (emissor é o ISSnet) — sem guard, o 404
+    // da SEFIN marcaria a nota como REJEITADA indevidamente. Consulta própria fica p/ fase 3.
+    if (chave.startsWith(ISSNET_DF_MUN)) {
+      return { status: "PROCESSANDO", chaveAcesso: chave, motivo: "Consulta de situação no ISSnet-DF ainda não implementada — status mantido." } as EmitResult;
+    }
 
     const nfse = await getSefin(SEFIN[ctx.ambiente], `/nfse/${chave}`, cert);
     if (nfse.statusCode === 404) {
