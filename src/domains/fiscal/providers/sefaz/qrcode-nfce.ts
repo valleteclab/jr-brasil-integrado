@@ -29,6 +29,19 @@ const NFCE_URLS: Partial<Record<string, Record<AmbienteFiscal, NfceQrUrls>>> = {
       qrCode: "http://hnfe.sefaz.ba.gov.br/servicos/nfce/qrcode.aspx",
       urlChave: "http://hinternet.sefaz.ba.gov.br/nfce/consulta"
     }
+  },
+  // DF — carta de serviços da Receita-DF (NFC-e 4.00): mesma URL nos dois ambientes (o DF não
+  // publica host de homologação separado p/ QR). Validar com emissão em HOM antes do 1º cliente DF
+  // (divergência = cStat 395 na SVRS).
+  DF: {
+    PRODUCAO: {
+      qrCode: "http://www.fazenda.df.gov.br/nfce/qrcode",
+      urlChave: "http://www.fazenda.df.gov.br/nfce/consulta"
+    },
+    HOMOLOGACAO: {
+      qrCode: "http://www.fazenda.df.gov.br/nfce/qrcode",
+      urlChave: "http://www.fazenda.df.gov.br/nfce/consulta"
+    }
   }
 };
 
