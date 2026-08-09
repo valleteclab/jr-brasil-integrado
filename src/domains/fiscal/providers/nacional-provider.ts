@@ -587,4 +587,4 @@ export class NacionalFiscalProvider implements FiscalProvider {
 }
 
 /** Exporto o builder para o harness/teste da F1 validar o DPS contra a produção restrita. */
-export { buildDpsXml, signDps };
+export { buildDpsXml, signDps, pfxToPem };
