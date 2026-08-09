@@ -383,8 +383,97 @@ export function extrairCamposImutaveisSubstituicao(notaXmlRaw: string): {
   };
 }
 
+// ─── ISSnet-DF (Brasília) ─────────────────────────────────────────────────────
+// O DF NÃO usa a SEFIN: emissor próprio (ISSnet) com o MESMO DPS nacional via SOAP.
+// Contrato validado em HOM (2026-08-05): params nfseCabecMsg/nfseDadosMsg com XML
+// CRU inline (escapar/CDATA => E183/E160 falsos); resposta ListaMensagemRetorno.
+const ISSNET_DF_MUN = "5300108";
+const ISSNET_DF = {
+  PRODUCAO: { host: "nfse.fazenda.df.gov.br", path: "/wsnfsenacional/nfse.asmx" },
+  HOMOLOGACAO: { host: "nfse.issnetonline.com.br", path: "/wsnfsenacional/homologacao/nfse.asmx" }
+} as const;
+const NFSE_NS = "http://www.sped.fazenda.gov.br/nfse";
+
+function issnetSoapCall(
+  operacao: string,
+  dadosXml: string,
+  ambiente: "PRODUCAO" | "HOMOLOGACAO",
+  certificado: { pfx: Buffer; senha: string },
+  versaoDados = "1.00"
+): Promise<{ statusCode: number; body: string }> {
+  const alvo = ISSNET_DF[ambiente];
+  const cabec = `<cabecalho versao="${versaoDados}" xmlns="${NFSE_NS}"><versaoDados>${versaoDados}</versaoDados></cabecalho>`;
+  const body =
+    `<?xml version="1.0" encoding="utf-8"?>` +
+    `<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">` +
+    `<soap:Body><${operacao} xmlns="${NFSE_NS}">` +
+    `<nfseCabecMsg>${cabec}</nfseCabecMsg>` +
+    `<nfseDadosMsg>${dadosXml}</nfseDadosMsg>` +
+    `</${operacao}></soap:Body></soap:Envelope>`;
+  return new Promise((resolve, reject) => {
+    const req = https.request(
+      {
+        host: alvo.host, path: alvo.path, method: "POST",
+        ...pfxTlsOptions(certificado),
+        rejectUnauthorized: false, timeout: 60000,
+        headers: {
+          "Content-Type": "text/xml; charset=utf-8",
+          SOAPAction: `${NFSE_NS}/${operacao}`,
+          "User-Agent": "Mozilla/5.0",
+          "Content-Length": Buffer.byteLength(body)
+        }
+      },
+      (res) => {
+        let d = "";
+        res.on("data", (c) => (d += c));
+        res.on("end", () => resolve({ statusCode: res.statusCode ?? 0, body: d }));
+      }
+    );
+    req.on("error", reject);
+    req.on("timeout", () => { req.destroy(); reject(new Error("Timeout no webservice do ISSnet-DF.")); });
+    req.write(body);
+    req.end();
+  });
+}
+
+function issnetErros(body: string): Array<{ codigo: string; mensagem: string }> {
+  const plain = body.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+  return [...plain.matchAll(/<Codigo>([^<]+)<\/Codigo>\s*<Mensagem>([^<]+)<\/Mensagem>/g)]
+    .map((m) => ({ codigo: m[1], mensagem: m[2] }));
+}
+
 export class NacionalFiscalProvider implements FiscalProvider {
   readonly id: ProvedorFiscal = "NACIONAL" as ProvedorFiscal;
+
+  /** Emissão via ISSnet-DF (GerarNfse síncrono). DPS idêntico ao da SEFIN. */
+  private async emitViaIssnetDf(signedDps: string, input: EmitInput, ctx: ProviderContext): Promise<EmitResult> {
+    const corpo = signedDps.replace(/^<\?xml[^>]*\?>/, "");
+    const dados = `<GerarNfseEnvio xmlns="${NFSE_NS}">${corpo}</GerarNfseEnvio>`;
+    const res = await issnetSoapCall("GerarNfse", dados, ctx.ambiente, ctx.certificado!);
+    const erros = issnetErros(res.body);
+    if (erros.length) {
+      return {
+        status: "REJEITADA",
+        motivo: erros.map((e) => `${e.codigo}: ${e.mensagem}`).join(" | ").slice(0, 900),
+        numero: String(input.numero)
+      } as EmitResult;
+    }
+    const plain = res.body.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+    const chave = /Id="NFS([A-Za-z0-9]{50})"/.exec(plain)?.[1] ?? /<ChaveAcesso>([A-Za-z0-9]{44,50})<\/ChaveAcesso>/.exec(plain)?.[1];
+    const nNfse = /<nNFSe>(\d+)<\/nNFSe>/.exec(plain)?.[1];
+    if (res.statusCode !== 200 || !chave) {
+      return { status: "ERRO", motivo: `ISSnet-DF: resposta inesperada (HTTP ${res.statusCode}).`, numero: String(input.numero) } as EmitResult;
+    }
+    const infNfse = /<NFSe[\s\S]*?<\/NFSe>/.exec(plain)?.[0] ?? null;
+    return {
+      status: "AUTORIZADA",
+      chave,
+      numero: String(input.numero),
+      numeroNfse: nNfse ?? undefined,
+      xml: infNfse ?? signedDps,
+      motivo: null
+    } as unknown as EmitResult;
+  }
 
   async emit(input: EmitInput, ctx: ProviderContext): Promise<EmitResult> {
     if (input.document.modelo !== "NFSE") {
@@ -395,12 +484,20 @@ export class NacionalFiscalProvider implements FiscalProvider {
     }
     // Numeração: confirma com a SEFIN um nDPS livre (HEAD /dps) e pula os já usados — evita o E0014
     // (duplicidade de série+número) quando a sequência local não acompanha o que a SEFIN já registrou.
-    const numero = await this.resolveNumeroLivre(input, ctx);
+    // No DF a numeração é conferida pelo próprio ISSnet (a SEFIN não conhece a série de lá).
+    const numero = String(input.emitter.codigoMunicipioIbge ?? '') === ISSNET_DF_MUN
+      ? input.numero
+      : await this.resolveNumeroLivre(input, ctx);
     const emitInput = numero === input.numero ? input : { ...input, numero };
 
     const { xml } = buildDpsXml(emitInput, ctx);
     const { privateKeyPem, certPem } = pfxToPem(ctx.certificado.pfx, ctx.certificado.senha);
     const signed = signDps(xml, privateKeyPem, certPem);
+
+    // Brasília: o DF não usa a SEFIN — mesmo DPS assinado, transporte SOAP do ISSnet.
+    if (String(input.emitter.codigoMunicipioIbge ?? "") === ISSNET_DF_MUN) {
+      return this.emitViaIssnetDf(signed, emitInput, ctx);
+    }
     const dpsXmlGZipB64 = gzipSync(Buffer.from(signed, "utf8")).toString("base64");
 
     const res = await postSefinNfse(SEFIN[ctx.ambiente], dpsXmlGZipB64, ctx.certificado);
