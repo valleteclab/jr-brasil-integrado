@@ -73,7 +73,9 @@ function buildDpsXml(input: EmitInput, ctx: ProviderContext): { xml: string; id:
   const e = input.emitter;
   const cMun = pad(e.codigoMunicipioIbge ?? "", 7);
   const cnpjEmit = normalizeDocumento(e.cnpj);
-  const serie = doc.serie?.trim() || "1";
+  const serieBruta = doc.serie?.trim() || "1";
+  // ISSnet-DF: XSD exige série com zeros à esquerda (5 díg.); a SEFIN aceita sem pad.
+  const serie = String(input.emitter.codigoMunicipioIbge ?? "") === "5300108" ? serieBruta.padStart(5, "0") : serieBruta;
   const nDPS = String(input.numero);
   const id = dpsId(cMun, cnpjEmit, serie, nDPS);
   const tpAmb = ctx.ambiente === "PRODUCAO" ? "1" : "2";
@@ -173,7 +175,14 @@ function buildDpsXml(input: EmitInput, ctx: ProviderContext): { xml: string; id:
   const cLocPrestacao = substituindo && onlyDigits(sub?.cLocPrestacaoOriginal).length >= 7
     ? onlyDigits(sub!.cLocPrestacaoOriginal)
     : cMun;
-  const cTribMun = substituindo ? onlyDigits(sub?.cTribMunOriginal) : "";
+  const noDf = String(input.emitter.codigoMunicipioIbge ?? "") === "5300108";
+  const cTribMun = substituindo
+    ? onlyDigits(sub?.cTribMunOriginal)
+    : noDf
+      // DF (ISSnet): cTribMun é 1-1 no XSD. Sem código municipal específico no cadastro,
+      // usa o próprio cTribNac (6 díg.) — revisar com a tabela CTISS do DF no 1º piloto.
+      ? "" // preenchido abaixo com cTribNacFinal (declarado depois deste ponto)
+      : "";
 
   const infDPS =
     `<infDPS Id="${id}">` +
@@ -190,7 +199,7 @@ function buildDpsXml(input: EmitInput, ctx: ProviderContext): { xml: string; id:
         `<regTrib><opSimpNac>${opSimpNac}</opSimpNac><regEspTrib>0</regEspTrib></regTrib></prest>` +
       toma +
       `<serv><locPrest><cLocPrestacao>${cLocPrestacao}</cLocPrestacao></locPrest>` +
-        `<cServ><cTribNac>${cTribNacFinal}</cTribNac>${cTribMun ? `<cTribMun>${cTribMun}</cTribMun>` : ""}<xDescServ>${esc(xDescServ)}</xDescServ>${cNBS.length === 9 ? `<cNBS>${cNBS}</cNBS>` : ""}</cServ>${obra}</serv>` +
+        `<cServ><cTribNac>${cTribNacFinal}</cTribNac>${cTribMun ? `<cTribMun>${cTribMun}</cTribMun>` : noDf ? `<cTribMun>${cTribNacFinal}</cTribMun>` : ""}<xDescServ>${esc(xDescServ)}</xDescServ>${cNBS.length === 9 ? `<cNBS>${cNBS}</cNBS>` : ""}</cServ>${obra}</serv>` +
       `<valores><vServPrest><vServ>${vServ}</vServ></vServPrest>` +
         `<trib><tribMun><tribISSQN>1</tribISSQN><tpRetISSQN>${issRetido ? "2" : "1"}</tpRetISSQN></tribMun>` +
         tribFed +

@@ -6,7 +6,7 @@
  * Uso: PFX_PATH=cert.pfx PFX_PASS=senha npx tsx scripts/issnet-df-emit-test.ts
  * O DF exige leiaute nacional: DPS v1.00 (sem IBS/CBS) é aceito até a NT exigir 1.01.
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import https from "node:https";
 import { buildDpsXml, signDps, pfxToPem } from "@/domains/fiscal/providers/nacional-provider";
 import type { EmitInput, ProviderContext } from "@/domains/fiscal/providers/types";
@@ -121,6 +121,7 @@ async function main() {
   const { privateKeyPem, certPem } = pfxToPem(ctx.certificado!.pfx, ctx.certificado!.senha);
   const assinado = signDps(xml, privateKeyPem, certPem);
   console.log("DPS id:", id, "| bytes:", assinado.length);
+  writeFileSync(process.env.DPS_OUT || "dps-df.xml", assinado);
 
   const corpoDps = assinado.replace(/^<\?xml[^>]*\?>/, "");
   const PROLOG = `<?xml version="1.0" encoding="utf-8"?>`;
