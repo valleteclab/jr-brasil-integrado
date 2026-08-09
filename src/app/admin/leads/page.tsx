@@ -2,6 +2,7 @@ import { PageHeader } from "@/components/shared/PageHeader";
 import { Button } from "@/components/shared/Button";
 import { KpiCard } from "@/components/shared/KpiCard";
 import { CommercialLeadsPanel } from "@/components/admin/CommercialLeadsPanel";
+import { ImportadorLeadsPanel } from "@/components/admin/ImportadorLeadsPanel";
 import {
   getCommercialLeadMetrics,
   listCommercialLeads
@@ -81,6 +82,7 @@ export default async function AdminLeadsPage() {
             <KpiCard label="Follow-ups vencidos" value={String(metrics.followupsPendentes)} tone={metrics.followupsPendentes ? "warn" : "default"} />
             <KpiCard label="Meta ativa" value="500" />
           </div>
+          <ImportadorLeadsPanel />
           <CommercialLeadsPanel initialLeads={serialized} />
         </>
       )}
