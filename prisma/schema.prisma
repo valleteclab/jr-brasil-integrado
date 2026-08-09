@@ -689,6 +689,23 @@ model PlataformaAgenteComercial {
 /// Prospect da PLATAFORMA antes de existir um Tenant. Só o administrador global acessa.
 /// Base de prospecção da PLATAFORMA (dados abertos CNPJ/RFB, ingerida por UF via
 /// deploy/prospeccao-ingest.sh). Alimenta o importador de leads do admin.
+/// Config do SDR outbound (prospecção ativa via WhatsApp da plataforma). Singleton id="default".
+model PlataformaProspeccaoConfig {
+  id              String   @id @default("default")
+  ativo           Boolean  @default(false)
+  limiteDia       Int      @default(30)
+  porExecucao     Int      @default(2)
+  horaInicio      Int      @default(9)
+  horaFim         Int      @default(18)
+  somenteDiasUteis Boolean @default(true)
+  maxToques       Int      @default(3)
+  diasEntreToques Int      @default(2)
+  toque1          String   @db.Text
+  toque2          String   @db.Text
+  toque3          String   @db.Text
+  atualizadoEm    DateTime @updatedAt
+}
+
 model ProspeccaoEmpresa {
   cnpj         String   @id
   nomeFantasia String?
@@ -731,6 +748,8 @@ model PlataformaLead {
   utmContent           String?
   utmTerm              String?
   dorPrincipal         String?                   @db.Text
+  toquesProspeccao     Int                       @default(0)
+  ultimoToqueEm        DateTime?
   sistemaAtual         String?
   emiteNfe             Boolean?
   emiteNfce            Boolean?

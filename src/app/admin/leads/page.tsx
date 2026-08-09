@@ -3,6 +3,7 @@ import { Button } from "@/components/shared/Button";
 import { KpiCard } from "@/components/shared/KpiCard";
 import { CommercialLeadsPanel } from "@/components/admin/CommercialLeadsPanel";
 import { ImportadorLeadsPanel } from "@/components/admin/ImportadorLeadsPanel";
+import { ProspeccaoAtivaPanel } from "@/components/admin/ProspeccaoAtivaPanel";
 import {
   getCommercialLeadMetrics,
   listCommercialLeads
@@ -83,6 +84,7 @@ export default async function AdminLeadsPage() {
             <KpiCard label="Meta ativa" value="500" />
           </div>
           <ImportadorLeadsPanel />
+          <ProspeccaoAtivaPanel />
           <CommercialLeadsPanel initialLeads={serialized} />
         </>
       )}
