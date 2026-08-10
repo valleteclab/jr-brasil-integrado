@@ -90,6 +90,30 @@ const BA_HOM: SefazEndpoints = {
   consultaCadastro: "https://hnfe.sefaz.ba.gov.br/webservices/CadConsultaCadastro4/CadConsultaCadastro4.asmx"
 };
 
+
+// GO (Goiás) — autorizadora PRÓPRIA. NF-e e NFC-e usam os MESMOS web services (confirmado no
+// FAQ oficial da NFC-e/GO). Homologação verificada na página da Secretaria da Economia
+// (Endereços da Versão 4.0); produção confirmada por sondagem mTLS (WSDL 200 em 2026-08-09).
+const GO_PROD: SefazEndpoints = {
+  autorizacao: "https://nfe.sefaz.go.gov.br/nfe/services/NFeAutorizacao4",
+  retAutorizacao: "https://nfe.sefaz.go.gov.br/nfe/services/NFeRetAutorizacao4",
+  consultaProtocolo: "https://nfe.sefaz.go.gov.br/nfe/services/NFeConsultaProtocolo4",
+  statusServico: "https://nfe.sefaz.go.gov.br/nfe/services/NFeStatusServico4",
+  inutilizacao: "https://nfe.sefaz.go.gov.br/nfe/services/NFeInutilizacao4",
+  recepcaoEvento: "https://nfe.sefaz.go.gov.br/nfe/services/NFeRecepcaoEvento4",
+  consultaCadastro: "https://nfe.sefaz.go.gov.br/nfe/services/CadConsultaCadastro4"
+};
+
+const GO_HOM: SefazEndpoints = {
+  autorizacao: "https://homolog.sefaz.go.gov.br/nfe/services/NFeAutorizacao4",
+  retAutorizacao: "https://homolog.sefaz.go.gov.br/nfe/services/NFeRetAutorizacao4",
+  consultaProtocolo: "https://homolog.sefaz.go.gov.br/nfe/services/NFeConsultaProtocolo4",
+  statusServico: "https://homolog.sefaz.go.gov.br/nfe/services/NFeStatusServico4",
+  inutilizacao: "https://homolog.sefaz.go.gov.br/nfe/services/NFeInutilizacao4",
+  recepcaoEvento: "https://homolog.sefaz.go.gov.br/nfe/services/NFeRecepcaoEvento4",
+  consultaCadastro: "https://homolog.sefaz.go.gov.br/nfe/services/CadConsultaCadastro4"
+};
+
 /** UFs cuja NF-e é autorizada pela SVRS. */
 const UF_SVRS = new Set([
   "AC", "AL", "AP", "CE", "DF", "ES", "PA", "PB", "PI", "RJ", "RN", "RO", "RR", "SC", "SE", "TO"
@@ -97,7 +121,8 @@ const UF_SVRS = new Set([
 
 /** UFs com autorizadora PRÓPRIA já suportada (cada uma com seu conjunto de endpoints). */
 const UF_PROPRIA: Record<string, { PRODUCAO: SefazEndpoints; HOMOLOGACAO: SefazEndpoints }> = {
-  BA: { PRODUCAO: BA_PROD, HOMOLOGACAO: BA_HOM }
+  BA: { PRODUCAO: BA_PROD, HOMOLOGACAO: BA_HOM },
+  GO: { PRODUCAO: GO_PROD, HOMOLOGACAO: GO_HOM }
 };
 
 /** Autorizadora (conjunto de endpoints) para a UF + ambiente. Lança se a UF ainda não é suportada. */
@@ -148,9 +173,15 @@ const NFCE_SVRS_HOM: SefazEndpoints = {
  */
 const UF_NFCE_SVRS = new Set<string>([...UF_SVRS, "BA"]);
 
+/** UFs com autorizador PRÓPRIO de NFC-e que compartilham os web services da 55 (ex.: GO). */
+const UF_NFCE_PROPRIA_MESMOS_WS = new Set(["GO"]);
+
 /** Endpoints de NFC-e (modelo 65) para a UF + ambiente. Lança se a UF ainda não é suportada. */
 export function resolveNfceEndpoints(uf: string, ambiente: AmbienteFiscal): SefazEndpoints {
   const sigla = (uf ?? "").trim().toUpperCase();
+  if (UF_NFCE_PROPRIA_MESMOS_WS.has(sigla)) {
+    return resolveSefazEndpoints(sigla, ambiente);
+  }
   if (UF_NFCE_SVRS.has(sigla)) {
     return ambiente === "PRODUCAO" ? NFCE_SVRS_PROD : NFCE_SVRS_HOM;
   }
@@ -169,6 +200,6 @@ export function cUFFromUF(uf: string): string {
 export function listCoberturaSefaz(): { nfe: string[]; nfceEndpoints: string[] } {
   return {
     nfe: [...Object.keys(UF_PROPRIA), ...UF_SVRS].sort(),
-    nfceEndpoints: [...UF_NFCE_SVRS].sort()
+    nfceEndpoints: [...UF_NFCE_SVRS, ...UF_NFCE_PROPRIA_MESMOS_WS].sort()
   };
 }

@@ -30,6 +30,18 @@ const NFCE_URLS: Partial<Record<string, Record<AmbienteFiscal, NfceQrUrls>>> = {
       urlChave: "http://hinternet.sefaz.ba.gov.br/nfce/consulta"
     }
   },
+  // GO — Informe Técnico 2025.003 (URLs HTTPS obrigatórias desde ago/2025; urlChave = MESMA
+  // URL do QR Code, regra explícita da SEFAZ-GO — a antiga http dá rejeição Zx02-20).
+  GO: {
+    PRODUCAO: {
+      qrCode: "https://nfeweb.sefaz.go.gov.br/nfeweb/sites/nfce/danfeNFCe",
+      urlChave: "https://nfeweb.sefaz.go.gov.br/nfeweb/sites/nfce/danfeNFCe"
+    },
+    HOMOLOGACAO: {
+      qrCode: "https://nfewebhomolog.sefaz.go.gov.br/nfeweb/sites/nfce/danfeNFCe",
+      urlChave: "https://nfewebhomolog.sefaz.go.gov.br/nfeweb/sites/nfce/danfeNFCe"
+    }
+  },
   // DF — carta de serviços da Receita-DF (NFC-e 4.00): mesma URL nos dois ambientes (o DF não
   // publica host de homologação separado p/ QR). Validar com emissão em HOM antes do 1º cliente DF
   // (divergência = cStat 395 na SVRS).
