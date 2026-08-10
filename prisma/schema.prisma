@@ -2577,6 +2577,9 @@ model ConfiguracaoFiscal {
   /// Provedor da NFS-e (serviços). Quando null, usa `provedor`. Permite NF-e/NFC-e no ACBr e
   /// NFS-e no NACIONAL (direto). Roteamento por modelo na emissão.
   provedorServicos             ProvedorFiscal?
+  /// Credenciais do PORTAL municipal de NFS-e (provedores com login próprio — ex.: CENTI/GO).
+  nfsePortalUsuario            String?
+  nfsePortalSenhaCripto        String?
   ambiente                     AmbienteFiscal   @default(HOMOLOGACAO)
   regimeTributario             RegimeTributario @default(SIMPLES_NACIONAL)
   baseUrl                      String?

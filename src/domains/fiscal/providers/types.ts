@@ -54,6 +54,8 @@ export type ProviderContext = {
    * TLS-mútuo nos web services). Nunca logar/persistir em claro.
    */
   certificado?: { pfx: Buffer; senha: string } | null;
+  /** Login do portal municipal de NFS-e (CENTI e afins) — vem do cadastro fiscal do tenant. */
+  nfsePortal?: { usuario: string; senha: string } | null;
   /**
    * UF do emitente (sigla, ex.: "RS"). Necessária SÓ para o provedor SEFAZ — resolve a
    * autorizadora da NF-e (SVRS/própria) e compõe o cUF da chave de acesso.

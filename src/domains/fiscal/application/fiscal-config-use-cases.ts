@@ -43,6 +43,8 @@ export type FiscalConfigSummary = {
   certificadoInfo: string;
   logotipoInfo: string;
   nfseAmbienteNacional: boolean | null;
+  nfsePortalUsuario: string;
+  nfsePortalSenhaDefinida: boolean;
   active: boolean;
   testedAt: string | null;
   lastError: string | null;
@@ -81,6 +83,8 @@ export type SaveFiscalConfigInput = {
   spedyModoEmissao?: string;
   certificadoInfo?: string;
   nfseAmbienteNacional?: boolean | null;
+  nfsePortalUsuario?: string | null;
+  nfsePortalSenha?: string | null;
   active?: boolean;
   notes?: string;
 };
@@ -112,6 +116,8 @@ function toSummary(config: {
   certificadoInfo: string | null;
   logotipoInfo: string | null;
   nfseAmbienteNacional: boolean | null;
+  nfsePortalUsuario: string | null;
+  nfsePortalSenhaCripto: string | null;
   ativo: boolean;
   testadoEm: Date | null;
   ultimoErro: string | null;
@@ -150,6 +156,8 @@ function toSummary(config: {
     certificadoInfo: config?.certificadoInfo ?? "",
     logotipoInfo: config?.logotipoInfo ?? "",
     nfseAmbienteNacional: config?.nfseAmbienteNacional ?? null,
+    nfsePortalUsuario: config?.nfsePortalUsuario ?? "",
+    nfsePortalSenhaDefinida: Boolean(config?.nfsePortalSenhaCripto),
     active: config?.ativo ?? false,
     testedAt: config?.testadoEm?.toISOString() ?? null,
     lastError: config?.ultimoErro ?? null,
@@ -245,6 +253,9 @@ export async function saveFiscalConfig(scope: TenantScope, input: SaveFiscalConf
       codigoNbsPadrao: input.codigoNbsPadrao?.trim() || null,
       spedyModoEmissao: input.spedyModoEmissao?.trim() || "COMPLETO",
       nfseAmbienteNacional: input.nfseAmbienteNacional ?? null,
+      nfsePortalUsuario: input.nfsePortalUsuario?.trim() || null,
+      // Senha do portal: só sobrescreve quando informada (string vazia mantém a atual).
+      ...(input.nfsePortalSenha ? { nfsePortalSenhaCripto: encryptSecret(input.nfsePortalSenha) } : {}),
       certificadoInfo: input.certificadoInfo?.trim() || null,
       ativo: input.active ?? false,
       observacoes: input.notes?.trim() || null,
@@ -277,6 +288,9 @@ export async function saveFiscalConfig(scope: TenantScope, input: SaveFiscalConf
       codigoNbsPadrao: input.codigoNbsPadrao?.trim() || null,
       spedyModoEmissao: input.spedyModoEmissao?.trim() || "COMPLETO",
       nfseAmbienteNacional: input.nfseAmbienteNacional ?? null,
+      nfsePortalUsuario: input.nfsePortalUsuario?.trim() || null,
+      // Senha do portal: só sobrescreve quando informada (string vazia mantém a atual).
+      ...(input.nfsePortalSenha ? { nfsePortalSenhaCripto: encryptSecret(input.nfsePortalSenha) } : {}),
       certificadoInfo: input.certificadoInfo?.trim() || null,
       ativo: input.active ?? false,
       observacoes: input.notes?.trim() || null,
@@ -388,6 +402,10 @@ export async function getFiscalRuntimeConfig(scope: TenantScope) {
     baseUrl: plataforma?.baseUrl ?? config?.baseUrl ?? null,
     emissionMode: config?.spedyModoEmissao ?? "COMPLETO",
     nfseAmbienteNacional: config?.nfseAmbienteNacional ?? null,
+    // Login do portal municipal de NFS-e (CENTI e afins) — senha criptografada no banco.
+    nfsePortal: config?.nfsePortalUsuario && config?.nfsePortalSenhaCripto
+      ? { usuario: config.nfsePortalUsuario, senha: decryptSecret(config.nfsePortalSenhaCripto) }
+      : null,
     token: tokenRuntime,
     cscId: cscIdRuntime,
     cscToken: config?.cscTokenCriptografado ? decryptSecret(config.cscTokenCriptografado) : null,

@@ -792,7 +792,7 @@ export async function emitFiscalDocument(
     cscId: config.cscId,
     cscToken: config.cscToken,
     // Certificado A1 só é necessário (e só é carregado) para o NACIONAL na NFS-e.
-    ...(isNfse && provedorAlvo === "NACIONAL" ? { certificado: config.certificado } : {}),
+    ...(isNfse && provedorAlvo === "NACIONAL" ? { certificado: config.certificado, nfsePortal: config.nfsePortal } : {}),
     // NF-e direto na SEFAZ: precisa do A1 (assinar + TLS-mútuo) e da UF do emitente (autorizadora/cUF).
     // NFC-e (mod 65) usa, além disso, o CSC + idCSC do cadastro para o QR Code (infNFeSupl).
     ...(!isNfse && provedorAlvo === "SEFAZ"
@@ -968,7 +968,7 @@ export async function cancelNotaFiscal(scope: TenantScope, notaId: string, justi
       // Provedores DIRETOS exigem assinatura + mTLS com o A1: NACIONAL (NFS-e) e SEFAZ (NF-e). O
       // SEFAZ ainda precisa da UF do emitente para resolver a autorizadora.
       ...((nota.modelo === "NFSE" && nota.provedor === "NACIONAL") || nota.provedor === "SEFAZ"
-        ? { certificado: config.certificado }
+        ? { certificado: config.certificado, nfsePortal: config.nfsePortal }
         : {}),
       ...(nota.provedor === "SEFAZ" ? { ufEmitente: config.emitter.uf } : {})
     }

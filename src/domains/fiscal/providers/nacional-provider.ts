@@ -20,6 +20,7 @@ import type {
 } from "./types";
 import { normalizeDocumento } from "@/lib/fiscal/documento";
 import { normalizeDfeKey } from "./sefaz/chave";
+import { CENTI_MUNICIPIOS, buildCentiGerarXml, signCentiXml, buildCentiCancelarXml, signCentiCancelamento, centiApiCall, parseCentiRetorno } from "./centi/rps-builder";
 
 export { consultaPublicaNfseUrl };
 
@@ -454,6 +455,72 @@ function issnetErros(body: string): Array<{ codigo: string; mensagem: string }> 
 export class NacionalFiscalProvider implements FiscalProvider {
   readonly id: ProvedorFiscal = "NACIONAL" as ProvedorFiscal;
 
+  /** Emissão via CENTI (REST ABRASF). Exige credenciais do portal municipal no cadastro fiscal. */
+  private async emitViaCenti(input: EmitInput, ctx: ProviderContext): Promise<EmitResult> {
+    const municipio = CENTI_MUNICIPIOS[String(input.emitter.codigoMunicipioIbge ?? "")];
+    if (!ctx.nfsePortal?.usuario || !ctx.nfsePortal.senha) {
+      return { status: "ERRO", motivo: "Informe usuário e senha do portal municipal de NFS-e (Configurações → Fiscal) para emitir neste município." };
+    }
+    const { xml } = buildCentiGerarXml(input);
+    const { privateKeyPem, certPem } = pfxToPem(ctx.certificado!.pfx, ctx.certificado!.senha);
+    const assinado = signCentiXml(xml, privateKeyPem, certPem);
+    const res = await centiApiCall({
+      operacao: "gerar", municipio,
+      usuario: ctx.nfsePortal.usuario, senha: ctx.nfsePortal.senha,
+      xmlAssinado: assinado
+    });
+    const ret = parseCentiRetorno(res.body);
+    if (ret.erros.length) {
+      return {
+        status: "REJEITADA",
+        motivo: ret.erros.map((e) => `${e.codigo}: ${e.mensagem}`).join(" | ").slice(0, 900),
+        numero: String(input.numero)
+      } as EmitResult;
+    }
+    if (res.status < 200 || res.status >= 300 || !ret.numeroNfse) {
+      return { status: "ERRO", motivo: `CENTI: resposta inesperada (HTTP ${res.status}) — ${res.body.slice(0, 200)}`, numero: String(input.numero) } as EmitResult;
+    }
+    return {
+      status: "AUTORIZADA",
+      chave: ret.chaveNacional ?? ret.codigoVerificacao ?? ret.numeroNfse,
+      numero: String(input.numero),
+      numeroNfse: ret.numeroNfse,
+      xml: ret.xmlNota ?? assinado,
+      motivo: null
+    } as unknown as EmitResult;
+  }
+
+  /** Cancelamento via CENTI (Pedido ABRASF assinado). */
+  private async cancelViaCenti(nota: { chave: string; municipioIbge: string; cnpj: string; im: string | null; numeroNfse: string }, ctx: ProviderContext): Promise<CancelResult> {
+    const municipio = CENTI_MUNICIPIOS[nota.municipioIbge];
+    if (!ctx.nfsePortal?.usuario || !ctx.nfsePortal.senha) {
+      return { status: "ERRO", motivo: "Credenciais do portal municipal ausentes para cancelar no CENTI." };
+    }
+    const { xml } = buildCentiCancelarXml({
+      chaveOuNumeroNfse: nota.numeroNfse || nota.chave,
+      cnpjPrestador: nota.cnpj,
+      inscricaoMunicipal: nota.im,
+      codigoMunicipioIbge: nota.municipioIbge
+    });
+    const { privateKeyPem, certPem } = pfxToPem(ctx.certificado!.pfx, ctx.certificado!.senha);
+    const assinado = signCentiCancelamento(xml, privateKeyPem, certPem);
+    const res = await centiApiCall({
+      operacao: "cancelar", municipio,
+      usuario: ctx.nfsePortal.usuario, senha: ctx.nfsePortal.senha,
+      xmlAssinado: assinado
+    });
+    const ret = parseCentiRetorno(res.body);
+    const errosReais = ret.erros.filter((e) => !/cancelad/i.test(e.mensagem));
+    if (ret.erros.length && errosReais.length === ret.erros.length && ret.erros.length > 0) {
+      const ja = ret.erros.some((e) => /cancelad/i.test(e.mensagem));
+      if (!ja) return { status: "REJEITADO", motivo: ret.erros.map((e) => `${e.codigo}: ${e.mensagem}`).join(" | ").slice(0, 900) };
+    }
+    if (res.status < 200 || res.status >= 300) {
+      return { status: "ERRO", motivo: `CENTI: HTTP ${res.status} no cancelamento.` };
+    }
+    return { status: "AUTORIZADO", motivo: null } as unknown as CancelResult;
+  }
+
   /** Emissão via ISSnet-DF (GerarNfse síncrono). DPS idêntico ao da SEFIN. */
   private async emitViaIssnetDf(signedDps: string, input: EmitInput, ctx: ProviderContext): Promise<EmitResult> {
     const corpo = signedDps.replace(/^<\?xml[^>]*\?>/, "");
@@ -493,6 +560,11 @@ export class NacionalFiscalProvider implements FiscalProvider {
     }
     // Numeração: confirma com a SEFIN um nDPS livre (HEAD /dps) e pula os já usados — evita o E0014
     // (duplicidade de série+número) quando a sequência local não acompanha o que a SEFIN já registrou.
+    // Municípios CENTI (ex.: Posse-GO): leiaute ABRASF próprio + REST com login do portal.
+    if (CENTI_MUNICIPIOS[String(input.emitter.codigoMunicipioIbge ?? "")]) {
+      return this.emitViaCenti(input, ctx);
+    }
+
     // No DF a numeração é conferida pelo próprio ISSnet (a SEFIN não conhece a série de lá).
     const numero = String(input.emitter.codigoMunicipioIbge ?? '') === ISSNET_DF_MUN
       ? input.numero
@@ -623,6 +695,15 @@ export class NacionalFiscalProvider implements FiscalProvider {
       const { privateKeyPem, certPem } = pfxToPem(ctx.certificado.pfx, ctx.certificado.senha);
       const signed = signInfoEl(xml, "infPedReg", privateKeyPem, certPem);
 
+      // Nota de município CENTI (chave nacional começa no cMun): cancela pela API deles.
+      const munCenti = Object.keys(CENTI_MUNICIPIOS).find((m) => chave.startsWith(m));
+      if (munCenti) {
+        // chNFSe: cMun(0-6) + amb[7] + tpInsc[8] + inscFed(9..22) + nNFSe(23..35).
+        const cnpj = chave.slice(9, 23);
+        const nNfse = chave.slice(23, 36).replace(/^0+/, "");
+        return this.cancelViaCenti({ chave, municipioIbge: munCenti, cnpj, im: null, numeroNfse: nNfse }, ctx);
+      }
+
       // Nota de Brasília (chave começa no cMun 5300108): cancela pelo ISSnet — mesmo
       // pedRegEvento e101101 assinado, embrulhado em CancelarNfseEnvio via SOAP.
       if (chave.startsWith(ISSNET_DF_MUN)) {
@@ -688,6 +769,9 @@ export class NacionalFiscalProvider implements FiscalProvider {
     // da SEFIN marcaria a nota como REJEITADA indevidamente. Consulta própria fica p/ fase 3.
     if (chave.startsWith(ISSNET_DF_MUN)) {
       return { status: "PROCESSANDO", chaveAcesso: chave, motivo: "Consulta de situação no ISSnet-DF ainda não implementada — status mantido." } as EmitResult;
+    }
+    if (Object.keys(CENTI_MUNICIPIOS).some((m) => chave.startsWith(m))) {
+      return { status: "PROCESSANDO", chaveAcesso: chave, motivo: "Consulta de situação no provedor municipal (CENTI) ainda não implementada — status mantido." } as EmitResult;
     }
 
     const nfse = await getSefin(SEFIN[ctx.ambiente], `/nfse/${chave}`, cert);

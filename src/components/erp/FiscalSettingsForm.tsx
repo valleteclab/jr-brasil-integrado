@@ -34,6 +34,8 @@ export function FiscalSettingsForm({
   simplificado?: boolean;
 }) {
   const [config, setConfig] = useState(initialConfig);
+  // Senha do portal municipal: write-only (só envia quando digitada).
+  const [nfsePortalSenha, setNfsePortalSenha] = useState("");
   const [token, setToken] = useState("");
   const [cscToken, setCscToken] = useState("");
   const [nfceCsc, setNfceCsc] = useState("");
@@ -231,6 +233,8 @@ export function FiscalSettingsForm({
           codigoNbsPadrao: config.codigoNbsPadrao,
           spedyModoEmissao: config.spedyModoEmissao,
           nfseAmbienteNacional: config.nfseAmbienteNacional,
+          nfsePortalUsuario: config.nfsePortalUsuario,
+          nfsePortalSenha: nfsePortalSenha || null,
           certificadoInfo: config.certificadoInfo,
           active: config.active,
           notes: config.notes
@@ -521,6 +525,24 @@ export function FiscalSettingsForm({
               <option value="nacional">Ambiente Nacional — alíquota definida pelo sistema (não informar)</option>
               <option value="padrao">Padrão do município — informar alíquota</option>
             </select>
+          </label>
+          <label>
+            Usuário do portal municipal de NFS-e
+            <input
+              value={config.nfsePortalUsuario}
+              onChange={(e) => update("nfsePortalUsuario", e.target.value)}
+              placeholder="Quando o município usa sistema próprio (ex.: CENTI/GO)"
+            />
+            <small className="field-hint">O mesmo login usado para emitir no site da prefeitura. Necessário em municípios como Posse-GO.</small>
+          </label>
+          <label>
+            Senha do portal municipal
+            <input
+              type="password"
+              value={nfsePortalSenha}
+              onChange={(e) => setNfsePortalSenha(e.target.value)}
+              placeholder={config.nfsePortalSenhaDefinida ? "•••••• (definida — digite p/ trocar)" : "Senha do portal"}
+            />
           </label>
           {!simplificado && (
           <label>
