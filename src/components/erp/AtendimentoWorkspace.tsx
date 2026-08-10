@@ -101,6 +101,8 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO", allow
     return boletoValores.length === n ? boletoValores : dividirIgualBoleto(totalVenda, n);
   };
   const [descGlobal, setDescGlobal] = useState(0);
+  // Desconto global em % ou em R$ (valor absoluto) — o payload sempre vai em R$ (descontoVal).
+  const [descModo, setDescModo] = useState<"pct" | "valor">("pct");
   const [frete, setFrete] = useState(0);
   const [obs, setObs] = useState("");
   /** Senha de admin validada (vai junto no payload — o servidor revalida). Some quando muda o desconto. */
@@ -141,7 +143,9 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO", allow
   );
   const subtotalServ = isOs ? servicos.reduce((s, sv) => s + sv.horas * sv.valorHora, 0) : 0;
   const subtotal = subtotalItens + subtotalServ;
-  const descontoVal = subtotal * (descGlobal / 100);
+  const descontoVal = descModo === "pct"
+    ? subtotal * (descGlobal / 100)
+    : Math.min(Math.max(descGlobal, 0), subtotal);
   const total = Math.max(subtotal - descontoVal + (isVendaPedido ? Number(frete) || 0 : 0), 0);
 
   // Desconto % efetivo sobre a REFERÊNCIA de tabela (mesma conta do servidor): desconto de linha
@@ -647,8 +651,21 @@ export function AtendimentoWorkspace({ data, defaultTipo = "VENDA_BALCAO", allow
               <div className="atend-total-row">
                 <span>Desconto global</span>
                 <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                  <input className="pct-input" type="number" min={0} max={100} value={descGlobal} onChange={(e) => { setSenhaAdmin(""); setDescGlobal(Math.min(100, Math.max(0, Number(e.target.value) || 0))); }} /> %
-                  <span style={{ minWidth: 70, textAlign: "right", color: "var(--erp-danger)", fontWeight: 600 }}>{descontoVal > 0 ? `-${brl(descontoVal)}` : "—"}</span>
+                  <button
+                    type="button"
+                    className="btn-erp ghost xs"
+                    title={descModo === "pct" ? "Trocar para desconto em R$" : "Trocar para desconto em %"}
+                    onClick={() => { setSenhaAdmin(""); setDescGlobal(0); setDescModo((m) => (m === "pct" ? "valor" : "pct")); }}
+                    style={{ minWidth: 34, fontWeight: 700 }}
+                  >
+                    {descModo === "pct" ? "%" : "R$"}
+                  </button>
+                  {descModo === "pct" ? (
+                    <input className="pct-input" type="number" min={0} max={100} value={descGlobal} onChange={(e) => { setSenhaAdmin(""); setDescGlobal(Math.min(100, Math.max(0, Number(e.target.value) || 0))); }} />
+                  ) : (
+                    <input className="pct-input" style={{ width: 90 }} type="number" min={0} step="0.01" value={descGlobal} onChange={(e) => { setSenhaAdmin(""); setDescGlobal(Math.max(0, Number(e.target.value) || 0)); }} />
+                  )}
+                  <span style={{ minWidth: 70, textAlign: "right", color: "var(--erp-danger)", fontWeight: 600 }}>{descontoVal > 0 ? `-${brl(descontoVal)}${descModo === "valor" && subtotal > 0 ? ` (${((descontoVal / subtotal) * 100).toFixed(1)}%)` : ""}` : "—"}</span>
                 </span>
               </div>
               {isVendaPedido && (
