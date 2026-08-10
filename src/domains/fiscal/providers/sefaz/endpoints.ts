@@ -164,3 +164,11 @@ export function cUFFromUF(uf: string): string {
   if (!code) throw new Error(`UF inválida para cUF: "${uf}".`);
   return code;
 }
+
+/** Cobertura atual por modelo (para o painel do admin) — derivada dos mapas reais. */
+export function listCoberturaSefaz(): { nfe: string[]; nfceEndpoints: string[] } {
+  return {
+    nfe: [...Object.keys(UF_PROPRIA), ...UF_SVRS].sort(),
+    nfceEndpoints: [...UF_NFCE_SVRS].sort()
+  };
+}

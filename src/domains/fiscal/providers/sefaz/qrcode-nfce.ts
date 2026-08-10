@@ -78,3 +78,8 @@ export function buildNfceQrCode(input: NfceQrInput): NfceQrUrls {
   const hash = createHash("sha1").update(dados + input.csc, "utf8").digest("hex").toUpperCase();
   return { qrCode: `${urls.qrCode}?p=${dados}|${hash}`, urlChave: urls.urlChave };
 }
+
+/** UFs com QR Code configurado — NFC-e só é operável nelas (endpoint + QR). */
+export function listUfsComQrCode(): string[] {
+  return Object.keys(NFCE_URLS).sort();
+}

@@ -1,5 +1,6 @@
 import { PageHeader } from "@/components/shared/PageHeader";
 import { getFiscalStatus } from "@/lib/services/fiscal-status";
+import { getFiscalCoverage } from "@/lib/services/fiscal-coverage";
 import type { FiscalStatusResult } from "@/lib/services/fiscal-status";
 
 // Cada visita refaz a checagem em tempo real (consulta os web services).
@@ -19,11 +20,47 @@ export default async function AdminStatusFiscalPage() {
     loadError = error instanceof Error ? error.message : "Não foi possível verificar os serviços fiscais.";
   }
 
+  const cobertura = getFiscalCoverage();
+
   return (
     <>
       <PageHeader eyebrow="Plataforma" title="Status dos serviços fiscais">
         <p>Saúde dos web services de emissão (NF-e, NFC-e, NFS-e) e resumo das emissões nas últimas 24h.</p>
       </PageHeader>
+
+      <section className="erp-card" style={{ marginBottom: 18 }}>
+        <div className="erp-card-head">
+          <h3>🗺️ Cobertura por UF (derivada do código — sempre atual)</h3>
+        </div>
+        <div style={{ padding: "0 16px 16px", display: "grid", gap: 10 }}>
+          <div>
+            <strong>NF-e (55):</strong>{" "}
+            {cobertura.nfe.map((uf) => (
+              <span key={uf} className="mono" style={{ display: "inline-block", margin: "2px 4px 2px 0", padding: "2px 8px", borderRadius: 6, background: "var(--erp-bg-soft, #f0fdf4)", border: "1px solid #16a34a", fontSize: 12 }}>{uf}</span>
+            ))}
+          </div>
+          <div>
+            <strong>NFC-e (65) operável:</strong>{" "}
+            {cobertura.nfce.map((uf) => (
+              <span key={uf} className="mono" style={{ display: "inline-block", margin: "2px 4px 2px 0", padding: "2px 8px", borderRadius: 6, background: "var(--erp-bg-soft, #f0fdf4)", border: "1px solid #16a34a", fontSize: 12 }}>{uf}</span>
+            ))}
+            {cobertura.nfceSoEndpoint.length > 0 && (
+              <span className="muted" style={{ fontSize: 12 }}>
+                {" "}· com endpoint mas sem QR configurado (1 passo p/ habilitar): {cobertura.nfceSoEndpoint.join(", ")}
+              </span>
+            )}
+          </div>
+          <div>
+            <strong>NFS-e:</strong>
+            <ul style={{ margin: "4px 0 0 18px", fontSize: 13 }}>
+              {cobertura.nfse.map((n) => (
+                <li key={n.escopo}><strong>{n.escopo}</strong> — {n.detalhe}</li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </section>
+
 
       {loadError && (
         <div className="system-error">
