@@ -458,6 +458,8 @@ export function FiscalEntryWizard({ initialDraft = null, products, formasPagamen
   // que o usuário volta e avança sem mudar nada. Começa true: a primeira passagem sempre grava.
   const [itemsDirty, setItemsDirty] = useState(true);
   const [installments, setInstallments] = useState<Installment[]>(initialDraft ? installmentsFromDraft(initialDraft) : []);
+  // Custos EXTERNOS à nota (frete FOB/2ª perna, taxas) — rateados no custo real dos itens.
+  const [custosExternos, setCustosExternos] = useState<Array<{ descricao: string; valor: string }>>([]);
 
   const productsById = useMemo(() => new Map(products.map((product) => [product.id, product])), [products]);
   const totalInvoice = draft?.totals?.invoice ?? 0;
@@ -844,6 +846,9 @@ export function FiscalEntryWizard({ initialDraft = null, products, formasPagamen
     try {
       const response = await fetch(`/api/erp/entradas-fiscais/${draft.id}/processar`, {
         body: JSON.stringify({
+          custosExternos: custosExternos
+            .map((c) => ({ descricao: c.descricao.trim(), valor: Number(c.valor.replace(/\./g, "").replace(",", ".")) || 0 }))
+            .filter((c) => c.valor > 0),
           installments: installments.map((installment) => ({
             number: installment.label,
             dueDate: installment.dueDate,
@@ -1282,6 +1287,37 @@ export function FiscalEntryWizard({ initialDraft = null, products, formasPagamen
             <label>Frete<input readOnly value={formatBrl(draft.totals?.freight ?? 0)} /></label>
             <label>Desconto<input readOnly value={formatBrl(draft.totals?.discount ?? 0)} /></label>
           </div>
+          <h3>Custos externos da compra (fora da nota)</h3>
+          <p className="field-hint" style={{ margin: "0 0 8px" }}>
+            Frete contratado à parte (2ª perna), taxas e outros custos que NÃO estão no XML — serão
+            rateados entre os itens no custo real de aquisição.
+          </p>
+          {custosExternos.map((c, idx) => (
+            <div key={idx} style={{ display: "flex", gap: 8, marginBottom: 6, alignItems: "center" }}>
+              <input
+                placeholder="Descrição (ex.: Frete Transportadora X — trecho SP→LEM)"
+                value={c.descricao}
+                onChange={(e) => setCustosExternos((cur) => cur.map((x, i) => (i === idx ? { ...x, descricao: e.target.value } : x)))}
+                style={{ flex: 2 }}
+              />
+              <input
+                placeholder="Valor (R$)"
+                inputMode="numeric"
+                value={c.valor}
+                onChange={(e) => {
+                  const digits = e.target.value.replace(/\D/g, "").slice(0, 12);
+                  const fmt = digits ? (parseInt(digits, 10) / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2 }) : "";
+                  setCustosExternos((cur) => cur.map((x, i) => (i === idx ? { ...x, valor: fmt } : x)));
+                }}
+                style={{ width: 140, textAlign: "right" }}
+              />
+              <button type="button" className="btn-erp ghost xs" onClick={() => setCustosExternos((cur) => cur.filter((_, i) => i !== idx))}>✕</button>
+            </div>
+          ))}
+          <button type="button" className="btn-erp light sm" style={{ marginBottom: 14 }} onClick={() => setCustosExternos((cur) => [...cur, { descricao: "", valor: "" }])}>
+            + Adicionar custo externo
+          </button>
+
           <h3>Parcelas / duplicatas</h3>
           <table className="erp-table fiscal-installments">
             <thead><tr><th>Nº</th><th>Vencimento</th><th className="num">Valor</th><th>Forma de pagamento</th><th>Conta / cartão</th><th>Já paga?</th></tr></thead>

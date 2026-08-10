@@ -850,7 +850,7 @@ export async function importNfeXml(scope: TenantScope, xmlText: string) {
 export async function processFiscalEntry(
   scope: TenantScope,
   entradaFiscalId: string,
-  input?: { installments?: FiscalEntryInstallmentInput[] }
+  input?: { installments?: FiscalEntryInstallmentInput[]; custosExternos?: Array<{ descricao: string; valor: number }> }
 ) {
   // Categorização automática por IA — feita FORA da transação (chamada externa). Mapa itemId→categoria.
   const itensParaCategorizar = await prisma.entradaFiscalItem.findMany({
@@ -1008,7 +1008,32 @@ export async function processFiscalEntry(
 
     // Rastreia o item em processamento para que uma falha de runtime diga QUAL item quebrou (em vez
     // do rollback opaco). A nota continua atômica — o objetivo é o erro claro para corrigir e reprocessar.
+    // Custos externos informados na conferência (frete FOB/2ª perna, taxas): persiste na
+    // entrada (auditoria) e entra no rateio abaixo.
+    const custosExternosInput = (input?.custosExternos ?? [])
+      .map((c) => ({ descricao: String(c.descricao ?? "").slice(0, 120), valor: Number(c.valor) || 0 }))
+      .filter((c) => c.valor > 0);
+    if (custosExternosInput.length) {
+      await tx.entradaFiscal.update({ where: { id: entrada.id }, data: { custosExternos: custosExternosInput } });
+    }
+
     let itemEmProcessamento: { numero: number; descricao: string } | null = null;
+
+    // ── CUSTO REAL DE AQUISIÇÃO (landed cost) ─────────────────────────────────
+    // Custo = mercadoria + IPI + ICMS-ST/FCP-ST (por fora) − desconto + rateio do
+    // frete/seguro/outras da NOTA + rateio dos CUSTOS EXTERNOS (frete FOB de 2ª perna,
+    // taxas — informados na conferência). Rateio proporcional ao valorTotal do item.
+    const totalMercadoria = entrada.itens.reduce((soma, i) => soma + Number(i.valorTotal), 0);
+    const custosExternosLista = custosExternosInput.length
+      ? custosExternosInput
+      : Array.isArray(entrada.custosExternos)
+        ? (entrada.custosExternos as Array<{ descricao?: string; valor?: number | string }>)
+        : [];
+    const totalCustosExternos = custosExternosLista.reduce((soma, c) => soma + (Number(c?.valor) || 0), 0);
+    const extrasNota =
+      Number(entrada.valorFrete ?? 0) + Number(entrada.valorSeguro ?? 0) - Number(entrada.valorDesconto ?? 0);
+    const extrasTotais = extrasNota + totalCustosExternos;
+
     try {
     for (const item of entrada.itens) {
       itemEmProcessamento = { numero: item.itemNumero, descricao: item.descricaoFornecedor };
@@ -1019,7 +1044,17 @@ export async function processFiscalEntry(
       // custo unitário vira valorUnitario ÷ fator. valorTotal não muda (qtd×custo permanece igual).
       const fatorConv = Number(item.fatorConversao) > 0 ? Number(item.fatorConversao) : 1;
       const qtdEstoque = Number(item.quantidade) * fatorConv;
-      const custoUnitConv = Number(item.valorUnitario) / fatorConv;
+      // Custo real: IPI e ICMS-ST do item vêm dos impostos (por fora do preço); frete/seguro
+      // da nota, desconto e custos externos entram por rateio (participação no total).
+      const ipiItem = Number(item.impostos.find((imp) => imp.tributo === "IPI")?.valor ?? 0);
+      // TODO fase 2: somar vICMSST/vFCPST do item (valor ainda não persistido no parse do XML).
+      const stItem = 0;
+      const participacao = totalMercadoria > 0 ? Number(item.valorTotal) / totalMercadoria : 0;
+      const rateioExtras = extrasTotais * participacao;
+      const custoTotalReal =
+        Number(item.valorTotal) - Number(item.valorDesconto ?? 0) + ipiItem + stItem + rateioExtras;
+      const qtdComercial = Number(item.quantidade) > 0 ? Number(item.quantidade) : 1;
+      const custoUnitConv = custoTotalReal / qtdComercial / fatorConv;
       const unidadeVendaItem = item.unidadeVenda?.trim() || item.unidade;
       // Mercadoria substituída (ICMS-ST já recolhido): memorizada no produto para que a revenda
       // saia sem ICMS próprio (CST 60 / CSOSN 500) e com CFOP de ST.

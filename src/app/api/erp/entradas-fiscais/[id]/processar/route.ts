@@ -10,7 +10,8 @@ export async function POST(request: Request, { params }: { params: { id: string 
     const scope = await getDevelopmentTenantScope();
     const body = await request.json().catch(() => ({}));
     const result = await processFiscalEntry(scope, params.id, {
-      installments: Array.isArray(body.installments) ? body.installments : undefined
+      installments: Array.isArray(body.installments) ? body.installments : undefined,
+      custosExternos: Array.isArray(body.custosExternos) ? body.custosExternos : undefined
     });
 
     return NextResponse.json(result);

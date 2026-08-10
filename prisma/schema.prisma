@@ -1888,6 +1888,9 @@ model EntradaFiscal {
   valorFrete                Decimal                    @default(0) @db.Decimal(14, 2)
   valorSeguro               Decimal                    @default(0) @db.Decimal(14, 2)
   valorDesconto             Decimal                    @default(0) @db.Decimal(14, 2)
+  /// Custos EXTERNOS à nota (frete FOB contratado à parte, 2ª perna, taxas): [{descricao, valor}].
+  /// Rateados sobre os itens no custo real de aquisição.
+  custosExternos            Json?
   outrasDespesas            Decimal                    @default(0) @db.Decimal(14, 2)
   // Informações complementares do XML (infAdic/infCpl) — exibidas na conferência; fornecedores
   // do Simples costumam informar aqui o crédito de ICMS permitido (LC 123, art. 23).
