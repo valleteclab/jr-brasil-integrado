@@ -675,6 +675,8 @@ export async function importNfeXml(scope: TenantScope, xmlText: string) {
           valorUnitario: item.unitValue,
           valorTotal: item.totalValue,
           valorDesconto: item.discountValue,
+          valorIcmsSt: item.taxes.find((t) => t.tax === "ICMS")?.stValue ?? 0,
+          valorFcpSt: item.taxes.find((t) => t.tax === "ICMS")?.fcpStValue ?? 0,
           // Conversão de embalagem sugerida pelo XML (qTrib/qCom); editável na conferência.
           fatorConversao: item.suggestedConversion && item.suggestedConversion > 0 ? item.suggestedConversion : 1,
           unidadeVenda: item.suggestedConversion && item.suggestedConversion > 1 ? (item.taxableUnit ?? null) : null,
@@ -1047,8 +1049,8 @@ export async function processFiscalEntry(
       // Custo real: IPI e ICMS-ST do item vêm dos impostos (por fora do preço); frete/seguro
       // da nota, desconto e custos externos entram por rateio (participação no total).
       const ipiItem = Number(item.impostos.find((imp) => imp.tributo === "IPI")?.valor ?? 0);
-      // TODO fase 2: somar vICMSST/vFCPST do item (valor ainda não persistido no parse do XML).
-      const stItem = 0;
+      // ST/FCP-ST cobrados por fora pelo substituto: parte do que se pagou pela mercadoria.
+      const stItem = Number(item.valorIcmsSt ?? 0) + Number(item.valorFcpSt ?? 0);
       const participacao = totalMercadoria > 0 ? Number(item.valorTotal) / totalMercadoria : 0;
       const rateioExtras = extrasTotais * participacao;
       const custoTotalReal =

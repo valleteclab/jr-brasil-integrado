@@ -2022,6 +2022,9 @@ model EntradaFiscalItem {
   valorUnitario                   Decimal                    @db.Decimal(14, 4)
   valorTotal                      Decimal                    @db.Decimal(14, 2)
   valorDesconto                   Decimal                    @default(0) @db.Decimal(14, 2)
+  /// ICMS-ST/FCP-ST cobrados por fora na nota (fornecedor substituto) — somam no custo real.
+  valorIcmsSt                     Decimal                    @default(0) @db.Decimal(14, 2)
+  valorFcpSt                      Decimal                    @default(0) @db.Decimal(14, 2)
   // Conversão de embalagem: 1 unidade de compra (`unidade`, ex.: CX/FD) = `fatorConversao` unidades de
   // venda (`unidadeVenda`, ex.: UN). Ao lançar, o estoque entra em unidadeVenda (quantidade × fator) e
   // o custo unitário vira valorUnitario ÷ fator. `quantidade`/`unidade` permanecem o COMERCIAL da nota

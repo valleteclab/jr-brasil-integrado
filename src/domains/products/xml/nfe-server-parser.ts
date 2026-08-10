@@ -36,6 +36,9 @@ export type ParsedNfeTax = {
   base?: number;
   rate?: number;
   value?: number;
+  /** ICMS-ST/FCP-ST cobrados por fora (quando o fornecedor é substituto). */
+  stValue?: number;
+  fcpStValue?: number;
   /** Crédito de ICMS de fornecedor do Simples (LC 123, art. 23): pCredSN/vCredICMSSN. */
   credSnRate?: number;
   credSnValue?: number;
@@ -124,6 +127,9 @@ function readTax(group: unknown, tax: ParsedNfeTax["tax"]): ParsedNfeTax | undef
     // Fornecedor do Simples (ICMSSN101/900): crédito permitido ao adquirente (LC 123, art. 23).
     credSnRate: tax === "ICMS" ? numberValue(node.pCredSN) || undefined : undefined,
     credSnValue: tax === "ICMS" ? numberValue(node.vCredICMSSN) || undefined : undefined,
+    // ST cobrado por fora na nota (substituto): entra no CUSTO real do item.
+    stValue: tax === "ICMS" ? numberValue(node.vICMSST) || undefined : undefined,
+    fcpStValue: tax === "ICMS" ? numberValue(node.vFCPST) || undefined : undefined,
     raw: node
   };
 }
