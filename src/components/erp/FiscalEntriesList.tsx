@@ -123,6 +123,18 @@ export function FiscalEntriesList({ entries, receivedDocuments, ultimaSync, nfse
   const [avisoLancada, setAvisoLancada] = useState<string | null>(lancada ?? null);
   const [syncEm, setSyncEm] = useState<string | null>(ultimaSync ?? null);
   const [receivedRows, setReceivedRows] = useState(receivedDocuments);
+  // Voltar do estorno/exclusão sem F5: o App Router serve a página do cache com a lista velha —
+  // refetch no mount garante que o documento excluído reapareça como importável na hora.
+  useEffect(() => {
+    let ativo = true;
+    fetch("/api/erp/entradas-fiscais/distribuicao")
+      .then((r) => r.json())
+      .then((data: { documents?: NfeDistributionSummary[] }) => {
+        if (ativo && Array.isArray(data.documents)) setReceivedRows(data.documents);
+      })
+      .catch(() => {});
+    return () => { ativo = false; };
+  }, []);
   const [periodo, setPeriodo] = useState<PeriodoFiltro>("todos");
   const [dataDe, setDataDe] = useState("");
   const [dataAte, setDataAte] = useState("");

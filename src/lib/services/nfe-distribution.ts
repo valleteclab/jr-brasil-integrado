@@ -770,7 +770,20 @@ export async function importDistributedNfe(scope: TenantScope, localDocumentId: 
   });
   if (!doc) throw new NfeDistributionError("Documento de distribuição não encontrado.");
   if (!doc.chaveAcesso) throw new NfeDistributionError("Documento sem chave de acesso.");
-  if (doc.entradaFiscalId) return { entradaFiscalId: doc.entradaFiscalId, alreadyImported: true };
+  if (doc.entradaFiscalId) {
+    // Autocura: se a entrada vinculada foi excluída, limpa o vínculo e reimporta do zero.
+    const vinculada = await prisma.entradaFiscal.findFirst({
+      where: { id: doc.entradaFiscalId, tenantId: scope.tenantId, empresaId: scope.empresaId },
+      select: { id: true }
+    });
+    if (vinculada) return { entradaFiscalId: doc.entradaFiscalId, alreadyImported: true };
+    await prisma.distribuicaoNfeDocumento.update({
+      where: { id: doc.id },
+      data: { entradaFiscalId: null, xmlImportacaoId: null, status: "LISTADO", ultimoErro: null }
+    });
+    doc.entradaFiscalId = null;
+    doc.xmlImportacaoId = null;
+  }
 
   const existingEntry = await prisma.entradaFiscal.findFirst({
     where: {

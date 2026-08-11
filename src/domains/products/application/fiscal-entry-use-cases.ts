@@ -1755,6 +1755,13 @@ export async function deleteFiscalEntry(scope: TenantScope, entradaFiscalId: str
       }
     });
 
+    // Nota veio da distribuição DF-e? Devolve o documento para "Notas recebidas" (senão o
+    // vínculo aponta para uma entrada morta e o reimporte quebra até alguém limpar na mão).
+    await tx.distribuicaoNfeDocumento.updateMany({
+      where: { tenantId: scope.tenantId, empresaId: scope.empresaId, entradaFiscalId },
+      data: { entradaFiscalId: null, xmlImportacaoId: null, status: "LISTADO", ultimoErro: null }
+    });
+
     await tx.entradaFiscal.delete({
       where: { id: entrada.id }
     });
