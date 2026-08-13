@@ -12,7 +12,7 @@
 #   ./deploy/vps.sh deploy          # git pull + build + update do servico erp_erp
 set -euo pipefail
 
-HOST="erp-vps"          # definido em ~/.ssh/config (212.85.0.166, user root)
+HOST="vps-nova"         # VPS nova (179.198.126.125) — migração 2026-08-12; a antiga (erp-vps) é backup até ~2026-08-19
 APP_DIR="/root/projetos/jrb-erp"
 
 case "${1:-}" in

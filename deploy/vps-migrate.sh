@@ -37,7 +37,7 @@ case "$FASE" in
     ;;
   sync)
     # Projetos (código+envs+ymls) e utilitários — rsync via pipe local (chaves distintas)
-    ssho 'tar czf - /root/projetos /root/*.yml /root/*.sh 2>/dev/null' | sshn 'tar xzf - -C /'
+    ssho 'tar czf - /root/projetos /root/*.yaml /root/*.sh /root/*.py /root/cidadaoai /root/cidadaoai-env /root/dados_vps /root/backups 2>/dev/null || true' | sshn 'tar xzf - -C /'
     # Volumes de ARQUIVOS (não-DB): chatwoot storage/public/mailers, portainer, kokoro/whisper cache
     for vol in chatwoot_storage chatwoot_public chatwoot_mailer chatwoot_mailers portainer_data cidadaoai_cidadaoai_media whisper_whisper_cache; do
       echo ">> volume $vol..."
@@ -55,7 +55,7 @@ case "$FASE" in
     echo "OK dbs (pgvector/cidadaoai: rodar cutover que refaz o delta de todos)"
     ;;
   up)
-    sshn 'cd /root && for f in traefik*.yml portainer*.yml pgvector*.yml chatwoot*.yml kokoro*.yml whisper*.yml; do [ -f "$f" ] && n=$(basename "$f" .yml | sed "s/-stack//") && docker stack deploy -c "$f" "$n"; done; true'
+    sshn 'cd /root && for f in traefik.yaml portainer.yaml pgvector.yaml chatwoot.yaml; do [ -f "$f" ] && n=$(basename "$f" .yaml) && docker stack deploy -c "$f" "$n"; done; cd /root/projetos/jrb-erp && docker stack deploy -c deploy/kokoro-stack.yml kokoro && docker stack deploy -c deploy/whisper-stack.yml whisper; true'
     sshn 'cd /root/projetos/jrb-erp && docker stack deploy -c deploy/erp-stack.yml erp'
     echo "OK stacks na nova — confira: ssh $NEW docker service ls"
     ;;
