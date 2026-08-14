@@ -109,5 +109,33 @@ export async function nextFiscalNumber(
     }
   });
 
+  // AUTOCURA: se a sequência estiver ATRÁS de notas já gravadas (seed manual, migração,
+  // rejeição persistida...), o create da nota estouraria a unique (tenant,empresa,modelo,
+  // serie,numero). Alinha para MAX(numero existente) + 1 e persiste o salto.
+  const candidatos = await tx.notaFiscal.findMany({
+    where: { tenantId: scope.tenantId, empresaId: scope.empresaId, modelo, serie, ambiente },
+    select: { numero: true }
+  });
+  const maxExistente = candidatos.reduce((m, n) => {
+    const v = Number.parseInt(String(n.numero).replace(/\D/g, ""), 10);
+    return Number.isFinite(v) && v > m ? v : m;
+  }, 0);
+  if (maxExistente >= seq.ultimoNumero) {
+    const corrigido = maxExistente + 1;
+    await tx.sequenciaFiscal.update({
+      where: {
+        tenantId_empresaId_modelo_serie_ambiente: {
+          tenantId: scope.tenantId,
+          empresaId: scope.empresaId,
+          modelo,
+          serie,
+          ambiente
+        }
+      },
+      data: { ultimoNumero: corrigido }
+    });
+    return corrigido;
+  }
+
   return seq.ultimoNumero;
 }
