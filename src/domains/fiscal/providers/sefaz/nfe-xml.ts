@@ -473,7 +473,29 @@ export function buildNfeXml(input: EmitInput): BuildNfeResult {
   const modFrete = doc.valorFrete > 0
     ? (doc.modalidadeFrete != null && doc.modalidadeFrete !== 9 ? doc.modalidadeFrete : 0)
     : (doc.modalidadeFrete ?? 9);
-  const transp = `<transp><modFrete>${modFrete}</modFrete></transp>`;
+  // Transportadora + volumes (opcionais; só fazem sentido na 55 — a NFC-e é presencial).
+  const t = doc.modelo === "NFE" ? doc.transporte : null;
+  const docTransp = (t?.documento ?? "").replace(/\D/g, "");
+  const transporta = t?.nome
+    ? `<transporta>` +
+        (docTransp.length === 14 ? `<CNPJ>${docTransp}</CNPJ>` : docTransp.length === 11 ? `<CPF>${docTransp}</CPF>` : "") +
+        `<xNome>${esc(t.nome.slice(0, 60))}</xNome>` +
+        (t.inscricaoEstadual ? `<IE>${esc(t.inscricaoEstadual)}</IE>` : "") +
+        (t.enderecoCompleto ? `<xEnder>${esc(t.enderecoCompleto.slice(0, 60))}</xEnder>` : "") +
+        (t.municipio ? `<xMun>${esc(t.municipio.slice(0, 60))}</xMun>` : "") +
+        (t.uf ? `<UF>${esc(t.uf)}</UF>` : "") +
+      `</transporta>`
+    : "";
+  const v = t?.volumes;
+  const vol = v && (v.quantidade || v.pesoBruto || v.pesoLiquido || v.especie)
+    ? `<vol>` +
+        (v.quantidade ? `<qVol>${Math.round(v.quantidade)}</qVol>` : "") +
+        (v.especie ? `<esp>${esc(v.especie.slice(0, 60))}</esp>` : "") +
+        (v.pesoLiquido ? `<pesoL>${v.pesoLiquido.toFixed(3)}</pesoL>` : "") +
+        (v.pesoBruto ? `<pesoB>${v.pesoBruto.toFixed(3)}</pesoB>` : "") +
+      `</vol>`
+    : "";
+  const transp = `<transp><modFrete>${modFrete}</modFrete>${transporta}${vol}</transp>`;
 
   // cobr: FATURA + duplicatas SÓ em venda A PRAZO (alguma parcela vence APÓS a emissão). À vista
   // com cobr = Rejeição 853 ("Dados de cobrança não devem ser informados para pagamento à vista");

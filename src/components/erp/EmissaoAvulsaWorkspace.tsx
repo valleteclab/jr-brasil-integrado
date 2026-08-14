@@ -206,6 +206,16 @@ export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormDat
   // Totais editáveis (apenas NF-e/NFC-e)
   const [frete, setFrete] = useState(initial?.frete ?? 0);
   const [modalidadeFrete, setModalidadeFrete] = useState(9); // 9 = sem ocorrência de transporte
+  // Transportadora + volumes (grupo transp da NF-e) — aparecem quando há transporte (modalidade ≠ 9).
+  const [transpNome, setTranspNome] = useState("");
+  const [transpDoc, setTranspDoc] = useState("");
+  const [transpIe, setTranspIe] = useState("");
+  const [transpMun, setTranspMun] = useState("");
+  const [transpUf, setTranspUf] = useState("");
+  const [volQtd, setVolQtd] = useState("");
+  const [volEspecie, setVolEspecie] = useState("");
+  const [volPesoL, setVolPesoL] = useState("");
+  const [volPesoB, setVolPesoB] = useState("");
   const [descontoGlobal, setDescontoGlobal] = useState(initial?.desconto ?? 0);
 
   const [obs, setObs] = useState(initial?.observacoes ?? "");
@@ -406,6 +416,23 @@ export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormDat
       observacoes: obs.trim() || undefined,
       frete: Number(frete) || 0,
       modalidadeFrete,
+      transporte: modalidadeFrete !== 9 && (transpNome.trim() || volQtd || volPesoB)
+        ? {
+            nome: transpNome.trim() || null,
+            documento: transpDoc.replace(/\D/g, "") || null,
+            inscricaoEstadual: transpIe.trim() || null,
+            municipio: transpMun.trim() || null,
+            uf: transpUf.trim().toUpperCase() || null,
+            volumes: volQtd || volEspecie || volPesoL || volPesoB
+              ? {
+                  quantidade: Number(volQtd) || null,
+                  especie: volEspecie.trim() || null,
+                  pesoLiquido: Number(volPesoL.replace(",", ".")) || null,
+                  pesoBruto: Number(volPesoB.replace(",", ".")) || null
+                }
+              : null
+          }
+        : undefined,
       desconto: Number(descontoGlobal) || 0,
       baixarEstoque,
       itens: itens.map((it) => ({
@@ -912,6 +939,29 @@ export function EmissaoAvulsaWorkspace({ data, initial }: { data: EmissaoFormDat
                       {FRETE_MODALIDADES.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
                     </select>
                   </div>
+                  {modalidadeFrete !== 9 && (
+                    <div style={{ borderTop: "1px dashed var(--erp-line, #e2e8f0)", paddingTop: 8, marginTop: 4, display: "grid", gap: 6 }}>
+                      <strong style={{ fontSize: 11.5, textTransform: "uppercase", letterSpacing: 0.4, color: "var(--erp-mute, #64748b)" }}>Transportadora (opcional)</strong>
+                      <input placeholder="Nome / razão social da transportadora" value={transpNome} onChange={(e) => setTranspNome(e.target.value)} />
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <input placeholder="CNPJ/CPF" inputMode="numeric" value={transpDoc} onChange={(e) => setTranspDoc(e.target.value.replace(/\D/g, "").slice(0, 14))} style={{ flex: 1 }} />
+                        <input placeholder="IE" value={transpIe} onChange={(e) => setTranspIe(e.target.value)} style={{ width: 110 }} />
+                      </div>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <input placeholder="Município" value={transpMun} onChange={(e) => setTranspMun(e.target.value)} style={{ flex: 1 }} />
+                        <input placeholder="UF" maxLength={2} value={transpUf} onChange={(e) => setTranspUf(e.target.value.toUpperCase())} style={{ width: 50 }} />
+                      </div>
+                      <strong style={{ fontSize: 11.5, textTransform: "uppercase", letterSpacing: 0.4, color: "var(--erp-mute, #64748b)" }}>Volumes (opcional)</strong>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <input placeholder="Qtd" inputMode="numeric" value={volQtd} onChange={(e) => setVolQtd(e.target.value.replace(/\D/g, ""))} style={{ width: 60 }} />
+                        <input placeholder="Espécie (ex.: VOLUMES, CAIXAS)" value={volEspecie} onChange={(e) => setVolEspecie(e.target.value)} style={{ flex: 1 }} />
+                      </div>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <input placeholder="Peso líquido (kg)" inputMode="decimal" value={volPesoL} onChange={(e) => setVolPesoL(e.target.value.replace(/[^\d.,]/g, ""))} style={{ flex: 1 }} />
+                        <input placeholder="Peso bruto (kg)" inputMode="decimal" value={volPesoB} onChange={(e) => setVolPesoB(e.target.value.replace(/[^\d.,]/g, ""))} style={{ flex: 1 }} />
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
               <div className="atend-total-row grand"><span>Total</span><strong>{brl(total)}</strong></div>

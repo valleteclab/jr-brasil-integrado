@@ -1,4 +1,5 @@
 import type { FinalidadeNfe } from "@prisma/client";
+import type { NormalizedFiscalDocument } from "@/domains/fiscal/types";
 import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import { scopedByTenantCompany } from "@/lib/auth/dev-session";
@@ -84,6 +85,7 @@ export type ProductInvoiceAvulsaInput = {
   frete?: number;
   /** Modalidade do frete (modFrete): 0=CIF,1=FOB,2=terceiros,3/4=próprio,9=sem transporte. */
   modalidadeFrete?: number | null;
+  transporte?: NormalizedFiscalDocument["transporte"];
   seguro?: number;
   desconto?: number;
   outrasDespesas?: number;
@@ -299,6 +301,7 @@ export async function buildProductInvoiceDocument(scope: TenantScope, input: Pro
     observacoes: input.observacoes ?? null,
     frete: input.frete ?? 0,
     modalidadeFrete: input.modalidadeFrete ?? null,
+    transporte: input.transporte ?? null,
     valorSeguro: input.seguro ?? 0,
     desconto: input.desconto ?? 0,
     outrasDespesas: input.outrasDespesas ?? 0,

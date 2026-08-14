@@ -127,6 +127,21 @@ export type NormalizedFiscalDocument = {
    * Quando ausente, o provedor deriva: 9 se não há frete, senão 0.
    */
   modalidadeFrete?: number | null;
+  /** Transportadora + volumes (grupo transp da NF-e). Opcional — só modelo 55. */
+  transporte?: {
+    documento?: string | null;      // CNPJ (14) ou CPF (11) da transportadora
+    nome?: string | null;
+    inscricaoEstadual?: string | null;
+    enderecoCompleto?: string | null;
+    municipio?: string | null;
+    uf?: string | null;
+    volumes?: {
+      quantidade?: number | null;
+      especie?: string | null;
+      pesoLiquido?: number | null;
+      pesoBruto?: number | null;
+    } | null;
+  } | null;
   valorSeguro: number;
   valorDesconto: number;
   outrasDespesas: number;

@@ -95,6 +95,7 @@ export type PedidoFiscalInput = {
   frete?: number;
   /** Modalidade do frete (modFrete). Quando ausente, o provedor deriva pelo valor do frete. */
   modalidadeFrete?: number | null;
+  transporte?: NormalizedFiscalDocument["transporte"];
   desconto?: number;
   modelo?: ModeloFiscal;
   finalidade?: FinalidadeNfe;
@@ -173,6 +174,7 @@ export function buildDocumentFromPedido(input: PedidoFiscalInput): NormalizedFis
     ].filter(Boolean).join(" ") || null,
     valorFrete: input.frete ?? 0,
     modalidadeFrete: input.modalidadeFrete ?? null,
+    transporte: input.transporte ?? null,
     valorSeguro: input.valorSeguro ?? 0,
     // Rateado em itens acima — zerar aqui evita dupla contagem em ICMSTot.vDesc.
     valorDesconto: 0,
