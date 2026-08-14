@@ -450,6 +450,7 @@ model Empresa {
   telefonesAgente           AgenteTelefone[]
   configWhatsapp            ConfiguracaoWhatsapp[]
   configTelegram            ConfiguracaoTelegram[]
+  manifestos                Manifesto[]
   vinculosTelegram          TelegramVinculo[]
   configEmail               ConfiguracaoEmail[]
   enderecoLogradouro        String?
@@ -704,6 +705,42 @@ model PlataformaProspeccaoConfig {
   toque2          String   @db.Text
   toque3          String   @db.Text
   atualizadoEm    DateTime @updatedAt
+}
+
+/// MDF-e (modelo 58) — manifesto de transporte de carga própria. Ciclo: AUTORIZADO → ENCERRADO.
+model Manifesto {
+  id                   String         @id @default(cuid())
+  tenantId             String
+  empresaId            String
+  empresa              Empresa        @relation(fields: [empresaId], references: [id])
+  ambiente             AmbienteFiscal @default(HOMOLOGACAO)
+  serie                Int            @default(1)
+  numero               Int
+  chave                String?        @unique
+  status               String         @default("PENDENTE")
+  protocolo            String?
+  motivo               String?        @db.Text
+  xml                  String?        @db.Text
+  ufInicio             String
+  ufFim                String
+  municipioCarregaNome String
+  municipioCarregaIbge String
+  municipioDescargaNome String
+  municipioDescargaIbge String
+  veiculoPlaca         String
+  veiculoTara          Int
+  tipoRodado           String         @default("06")
+  tipoCarroceria       String         @default("02")
+  condutorNome         String
+  condutorCpf          String
+  chavesNfe            Json
+  valorCarga           Decimal        @default(0) @db.Decimal(14, 2)
+  pesoBrutoKg          Decimal        @default(0) @db.Decimal(14, 4)
+  encerradoEm          DateTime?
+  criadoEm             DateTime       @default(now())
+  atualizadoEm         DateTime       @updatedAt
+
+  @@index([tenantId, empresaId, criadoEm])
 }
 
 model ProspeccaoEmpresa {

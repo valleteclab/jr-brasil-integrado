@@ -87,6 +87,7 @@ const groups: ErpNavGroup[] = [
       { label: "NF-e emitidas", href: "/erp/fiscal", icon: "🧾" },
       { label: "NFS-e (Nacional)", href: "/erp/nfse-recebidas", icon: "📑" },
       { label: "SPED Fiscal", href: "/erp/sped-fiscal", icon: "🗂" },
+      { label: "MDF-e (transporte)", href: "/erp/mdfe", icon: "🚛" },
       { label: "Regras tributárias", href: "/erp/regras-tributarias", icon: "⚖" },
       { label: "Regras de finalidade", href: "/erp/regras-finalidade", icon: "🏷" }
     ]
