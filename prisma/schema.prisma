@@ -2511,7 +2511,9 @@ model NotaFiscal {
   atualizadoEm              DateTime           @updatedAt
 
   @@unique([tenantId, empresaId, chaveAcesso])
-  @@unique([tenantId, empresaId, modelo, serie, numero])
+  /// Unicidade POR AMBIENTE: homologação e produção têm faixas independentes (nota de teste
+  /// nº N não pode bloquear a nota real nº N — causa do bug de colisão de 2026-08-14).
+  @@unique([tenantId, empresaId, modelo, serie, ambiente, numero])
   @@index([tenantId, empresaId, status])
   @@index([tenantId, empresaId, modelo, status])
   @@index([tenantId, empresaId, clienteId])
