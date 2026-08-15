@@ -178,6 +178,11 @@ export function MdfeManager() {
                     </>
                   )}
                   {m.chave && (
+                    <a className="btn-erp ghost xs" href={`/api/erp/mdfe/${m.id}/damdfe`} target="_blank" rel="noreferrer" title="Imprimir o DAMDFE (documento que viaja com o motorista)">
+                      🖨 DAMDFE
+                    </a>
+                  )}
+                  {m.chave && (
                     <a className="btn-erp ghost xs" href={`https://dfe-portal.svrs.rs.gov.br/mdfe/qrCode?chMDFe=${m.chave}&tpAmb=1`} target="_blank" rel="noreferrer" title="Consulta pública / DAMDFE">
                       🔍 Consultar
                     </a>
