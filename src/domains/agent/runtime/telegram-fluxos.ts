@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db/prisma";
+import { abrirSeletorEmpresa, contarEmpresasDoTelefone } from "./selecao-empresa";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import { scopedByTenantCompany } from "@/lib/auth/dev-session";
 import QRCode from "qrcode";
@@ -33,7 +34,7 @@ type Estado =
 type Ctx = {
   runtime: TelegramRuntime & { tenantId: string; empresaId: string };
   scope: TenantScope;
-  vinculo: { id: string; role: string; estado: unknown; chatId: string };
+  vinculo: { id: string; role: string; estado: unknown; chatId: string; telefone?: string | null };
   chatId: string;
   baseUrl: string | null;
 };
@@ -51,12 +52,14 @@ const NAV: BotaoInline[] = [B("🏠 Menu", "menu"), B("🏁 Encerrar", "encerrar
 /** Menu principal (GESTOR vê tudo; VENDEDOR não fatura/cobra). */
 export async function mostrarMenu(ctx: Ctx, titulo = "O que deseja fazer?") {
   const gestor = ctx.vinculo.role === "GESTOR";
+  const multiEmpresa = (await contarEmpresasDoTelefone(ctx.vinculo.telefone ?? "")) > 1;
   const linhas: BotaoInline[][] = [
     [B("🛒 Nova venda", "fluxo:venda")],
     [B("📋 Consultar pedido", "fluxo:consultar"), B("🔧 OS abertas", "fluxo:os")],
     ...(gestor ? [[B("🧾 Faturar (emitir NF)", "fluxo:faturar"), B("💳 Boletos do pedido", "fluxo:boleto")]] : []),
     [B("📦 Buscar produto", "fluxo:produto")],
     [B("💬 Conversar com a IA", "fluxo:ia")],
+    ...(multiEmpresa ? [[B("🏢 Trocar empresa", "empresa")]] : []),
     [B("🏁 Encerrar atendimento", "encerrar")]
   ];
   await sendTelegramBotoes(ctx.runtime, ctx.chatId, titulo, linhas);
@@ -69,7 +72,15 @@ async function encerrar(ctx: Ctx) {
     where: { tenantId: ctx.scope.tenantId, empresaId: ctx.scope.empresaId, canal: "TELEGRAM", telefone: ctx.chatId },
     data: { canal: "TELEGRAM_ARQ" }
   });
-  await sendTelegramBotoes(ctx.runtime, ctx.chatId, "Atendimento encerrado ✅ Obrigado!", [[B("🏠 Novo atendimento", "menu")]]);
+  const multiEnc = (await contarEmpresasDoTelefone(ctx.vinculo.telefone ?? "")) > 1;
+  let msgEnc = "Atendimento encerrado ✅ Obrigado!";
+  const botoesEnc: BotaoInline[][] = [[B("🏠 Novo atendimento", "menu")]];
+  if (multiEnc) {
+    const emp = await prisma.empresa.findUnique({ where: { id: ctx.scope.empresaId }, select: { nomeFantasia: true, razaoSocial: true } });
+    msgEnc += `\n\n🏢 Empresa ativa continua: ${emp?.nomeFantasia ?? emp?.razaoSocial ?? ""} — toque abaixo para alternar.`;
+    botoesEnc.push([B("🏢 Trocar empresa", "empresa")]);
+  }
+  await sendTelegramBotoes(ctx.runtime, ctx.chatId, msgEnc, botoesEnc);
 }
 
 function resumoVenda(e: Extract<Estado, { fluxo: "venda" }>): string {
@@ -118,6 +129,11 @@ export async function handleTelegramCallback(ctx: Ctx, data: string): Promise<vo
 
   if (data === "menu") { await salvarEstado(ctx, { fluxo: "ia" }); await mostrarMenu(ctx); return; }
   if (data === "encerrar") { await encerrar(ctx); return; }
+    if (data === "empresa") {
+      const msg = await abrirSeletorEmpresa({ canal: "TELEGRAM", chave: ctx.chatId, telefone: ctx.vinculo.telefone ?? "" });
+      if (msg) await sendTelegramText(ctx.runtime, ctx.chatId, msg);
+      return;
+    }
   if (data === "fluxo:ia") {
     await salvarEstado(ctx, { fluxo: "ia" });
     await sendTelegramBotoes(ctx.runtime, ctx.chatId, "Modo livre: escreva o que precisa (consultas, relatórios, ações). Para voltar aos botões, toque em Menu.", [NAV]);

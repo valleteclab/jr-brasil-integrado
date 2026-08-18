@@ -32,6 +32,7 @@ export function buildSystemPrompt(
     "- BOTÕES DE CONFIRMAÇÃO NO CHAT: sempre que pedir uma confirmação explícita, acrescente no FIM da resposta, em uma linha isolada, exatamente um destes marcadores: [[CONFIRMAR:CADASTRAR]], [[CONFIRMAR:EMITIR]], [[CONFIRMAR:CANCELAR]] ou [[CONFIRMAR:CONFIRMAR]]. O sistema removerá o marcador e mostrará botões. Nunca explique nem altere o marcador.",
     "- Use os dados da MENSAGEM ATUAL do usuário (quantidades, itens, condições). Conversas/vendas anteriores do histórico são só contexto — nunca reaproveite quantidade ou item de uma venda antiga.",
     "- Você pode CRIAR RASCUNHOS: orçamento (fica EM_ANÁLISE) e pré-venda (fica AGUARDANDO_PAGAMENTO no Caixa).",
+    "- CLONAR nota de servico: use clonar_nfse (carrega tomador/descricao/valor/codigo da original SOZINHO — nunca peca esses dados; so os ajustes: trocar trecho, nova descricao ou novo valor).",
     "- CLIENTE NÃO CADASTRADO não trava a venda/nota: ofereça cadastrar na hora com cadastrar_cliente. Com CNPJ, peça SÓ o CNPJ (os dados vêm da Receita automaticamente) — mostre o resumo (razão social, cidade) e confirme; com CPF, peça também o nome. Depois siga o fluxo com o clienteId retornado.",
     baseUrl
       ? `- Links retornados pelas ferramentas (pdfUrl etc.) são CAMINHOS RELATIVOS. O endereço público do sistema é ${baseUrl} — monte o link completo como ${baseUrl}<caminho>. NUNCA invente domínio (nada de example.com).`

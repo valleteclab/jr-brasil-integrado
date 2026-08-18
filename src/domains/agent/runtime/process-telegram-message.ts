@@ -179,7 +179,7 @@ export async function processTelegramMessage(
       if (identidade.role !== "CLIENTE") {
         const novoVinculo = await prisma.telegramVinculo.findUnique({ where: { empresaId_chatId: { empresaId: scope.empresaId, chatId } } });
         if (novoVinculo) {
-          await mostrarMenu({ runtime, scope, vinculo: { id: novoVinculo.id, role: novoVinculo.role, estado: novoVinculo.estado, chatId }, chatId, baseUrl: baseUrl ?? null });
+          await mostrarMenu({ runtime, scope, vinculo: { id: novoVinculo.id, role: novoVinculo.role, estado: novoVinculo.estado, chatId, telefone: novoVinculo.telefone }, chatId, baseUrl: baseUrl ?? null });
         }
       }
       return;
@@ -377,7 +377,7 @@ export async function processTelegramMessage(
   if (role !== "CLIENTE") {
     try {
       const tratado = await handleTelegramTexto(
-        { runtime, scope, vinculo: { id: vinculo.id, role: vinculo.role, estado: vinculo.estado, chatId }, chatId, baseUrl: baseUrl ?? null },
+        { runtime, scope, vinculo: { id: vinculo.id, role: vinculo.role, estado: vinculo.estado, chatId, telefone: vinculo.telefone }, chatId, baseUrl: baseUrl ?? null },
         texto
       );
       if (tratado) return;
@@ -545,7 +545,7 @@ export async function processTelegramCallback(
 
   try {
     await handleTelegramCallback(
-      { runtime, scope, vinculo: { id: vinculo.id, role: vinculo.role, estado: vinculo.estado, chatId }, chatId, baseUrl: baseUrl ?? null },
+      { runtime, scope, vinculo: { id: vinculo.id, role: vinculo.role, estado: vinculo.estado, chatId, telefone: vinculo.telefone }, chatId, baseUrl: baseUrl ?? null },
       data
     );
   } catch (err) {

@@ -69,7 +69,13 @@ export async function resolverEmpresaAtiva(params: { canal: string; chave: strin
   const sessao = await prisma.chatEmpresaAtiva.findUnique({ where: { canal_chave: { canal, chave } } });
 
   // Comando de troca — reabre o seletor.
-  if (["trocar", "trocar empresa", "empresas", "mudar empresa"].includes(texto)) {
+  const textoNorm = texto.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const COMANDOS_TROCA = [
+    "trocar", "trocar empresa", "trocar de empresa", "mudar empresa", "mudar de empresa",
+    "empresas", "listar empresas", "selecionar empresa", "escolher empresa",
+    "outra empresa", "alternar empresa", "ver empresas"
+  ];
+  if (COMANDOS_TROCA.includes(textoNorm)) {
     await prisma.chatEmpresaAtiva.upsert({
       where: { canal_chave: { canal, chave } },
       create: { canal, chave, tenantId: vinculos[0].tenantId, empresaId: vinculos[0].empresaId, aguardandoSelecao: true },
@@ -122,4 +128,21 @@ export async function empresaAtivaSemTexto(params: { canal: string; chave: strin
     if (ativo) return { tipo: "ok", vinculo: ativo, multi: true };
   }
   return { tipo: "responder", mensagem: menuEmpresas(vinculos) };
+}
+
+/** Abre o seletor de empresas para o chat (usado pelo botão "Trocar empresa" do menu). */
+export async function abrirSeletorEmpresa(params: { canal: string; chave: string; telefone: string }): Promise<string | null> {
+  const vinculos = await listarVinculos(params.telefone);
+  if (vinculos.length <= 1) return null;
+  await prisma.chatEmpresaAtiva.upsert({
+    where: { canal_chave: { canal: params.canal, chave: params.chave } },
+    create: { canal: params.canal, chave: params.chave, tenantId: vinculos[0].tenantId, empresaId: vinculos[0].empresaId, aguardandoSelecao: true },
+    update: { aguardandoSelecao: true }
+  });
+  return menuEmpresas(vinculos);
+}
+
+/** Quantidade de empresas vinculadas ao telefone (mostra/esconde o botão de troca). */
+export async function contarEmpresasDoTelefone(telefone: string): Promise<number> {
+  return (await listarVinculos(telefone)).length;
 }

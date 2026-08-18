@@ -28,6 +28,7 @@ import { emitirBoleto } from "./write/emitir-boleto";
 import { cobrarPix } from "./write/cobrar-pix";
 import { faturarPedido } from "./write/faturar-pedido";
 import { emitirNfse } from "./write/emitir-nfse";
+import { clonarNfse } from "./write/clonar-nfse";
 import { cancelarBoleto } from "./write/cancelar-boleto";
 import { cancelarNota } from "./write/cancelar-nota";
 import { enviarDocumento } from "./write/enviar-documento";
@@ -68,6 +69,7 @@ export const ALL_TOOLS: AgentTool[] = [
   cobrarPix,
   faturarPedido,
   emitirNfse,
+  clonarNfse,
   cancelarBoleto,
   cancelarNota,
   enviarDocumento,
