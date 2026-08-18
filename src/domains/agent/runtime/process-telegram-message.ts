@@ -452,10 +452,24 @@ export async function processTelegramMessage(
     resposta = `🏢 ${empresaAtivaNome}\n\n${resposta}`;
   }
   if (entradaPorVoz) {
+    // NOTA EMITIDA pela IA: o link /api/erp/fiscal/.../pdf exige login (inutil no chat) —
+    // remove o link da resposta e ANEXA o PDF de verdade no Telegram.
+    const notaPdfIds = [...new Set([...resposta.matchAll(/\/api\/erp\/fiscal\/([a-z0-9]+)\/pdf/gi)].map((m) => m[1]))];
+    if (notaPdfIds.length) {
+      resposta = resposta
+        .replace(/\[([^\]]*)\]\((?:[^)]*\/api\/erp\/fiscal\/[a-z0-9]+\/pdf[^)]*)\)/gi, "$1")
+        .replace(/https?:\/\/\S*\/api\/erp\/fiscal\/[a-z0-9]+\/pdf\S*/gi, "")
+        .replace(/\/api\/erp\/fiscal\/[a-z0-9]+\/pdf/gi, "")
+        .replace(/[ \t]+\n/g, "\n").trim() + "\n\n\ud83d\udcce O PDF da nota segue anexo.";
+    }
+
     const manterTexto = responseNeedsText(result, resposta);
     if (manterTexto) await sendTelegramText(runtime, chatId, resposta);
     const voice = await getAiVoice(scope);
     enfileirarRespostaPorVoz(runtime, chatId, resposta, !manterTexto, voice);
+    for (const notaId of notaPdfIds) {
+      await enviarPdfNota({ runtime, scope, chatId }, notaId, "\ud83d\udcc4 PDF da nota fiscal");
+    }
   } else {
     await sendTelegramText(runtime, chatId, resposta);
   }
