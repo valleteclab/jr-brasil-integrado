@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import { scopedByTenantCompany } from "@/lib/auth/dev-session";
+import { correspondeBusca } from "@/lib/search/normalize";
 
 /**
  * Busca de clientes para o agente (read-only, scope-first). Filtra por
@@ -13,23 +14,19 @@ export async function searchCustomers(
   const termo = (args.termo ?? "").trim();
   const limite = Math.min(Math.max(args.limite ?? 10, 1), 30);
 
-  const clientes = await prisma.cliente.findMany({
-    where: {
-      ...scopedByTenantCompany(scope),
-      ...(termo
-        ? {
-            OR: [
-              { razaoSocial: { contains: termo, mode: "insensitive" } },
-              { nomeFantasia: { contains: termo, mode: "insensitive" } },
-              { documento: { contains: termo.replace(/\D/g, "") || termo } }
-            ]
-          }
-        : {})
-    },
-    take: limite,
+  // Busca ACENTO-insensivel: `contains` do banco nao casa "Luis" com "Luis" acentuado
+  // (bug real: Camara Municipal de Luis Eduardo Magalhaes sumia da busca). Puxa os
+  // candidatos do scope e filtra com correspondeBusca (mesma regra dos produtos).
+  const candidatos = await prisma.cliente.findMany({
+    where: scopedByTenantCompany(scope),
+    take: 800,
     orderBy: { razaoSocial: "asc" },
     select: { id: true, razaoSocial: true, nomeFantasia: true, documento: true, status: true }
   });
+  const clientes = (termo
+    ? candidatos.filter((c) => correspondeBusca(termo, c.razaoSocial, c.nomeFantasia, c.documento))
+    : candidatos
+  ).slice(0, limite);
 
   return clientes.map((c) => ({
     id: c.id,

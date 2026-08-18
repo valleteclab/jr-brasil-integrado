@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db/prisma";
+import { correspondeBusca } from "@/lib/search/normalize";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import { scopedByTenantCompany } from "@/lib/auth/dev-session";
 import { normalizeDocumento } from "@/lib/fiscal/documento";
@@ -30,19 +31,16 @@ export async function resolverCliente(
   const porDocumento = documento.length >= 8
     ? await prisma.cliente.findMany({ where: { ...scopedByTenantCompany(scope), documento: { contains: documento } }, select: { id: true, razaoSocial: true, nomeFantasia: true }, take: 4 })
     : [];
+  // Nome: filtro acento-insensivel em memoria (contains do banco falha com acentos).
   const candidatos = porDocumento.length
     ? porDocumento
-    : await prisma.cliente.findMany({
-        where: {
-          ...scopedByTenantCompany(scope),
-          OR: [
-            { razaoSocial: { contains: busca, mode: "insensitive" } },
-            { nomeFantasia: { contains: busca, mode: "insensitive" } }
-          ]
-        },
-        select: { id: true, razaoSocial: true, nomeFantasia: true },
-        take: 4
-      });
+    : (
+        await prisma.cliente.findMany({
+          where: scopedByTenantCompany(scope),
+          select: { id: true, razaoSocial: true, nomeFantasia: true },
+          take: 800
+        })
+      ).filter((c) => correspondeBusca(busca, c.razaoSocial, c.nomeFantasia)).slice(0, 4);
 
   if (candidatos.length === 1) return { id: candidatos[0].id };
   if (candidatos.length === 0) return { erro: `Nenhum cliente encontrado para "${busca}". Confirme o nome/CNPJ ou cadastre o cliente.` };

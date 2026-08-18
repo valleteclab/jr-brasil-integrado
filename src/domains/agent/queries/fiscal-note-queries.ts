@@ -1,5 +1,6 @@
 import type { ModeloFiscal, Prisma, StatusNotaFiscal } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
+import { correspondeBusca } from "@/lib/search/normalize";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import { scopedByTenantCompanyAmbiente } from "@/lib/auth/dev-session";
 import { normalizeDocumento } from "@/lib/fiscal/documento";
@@ -49,13 +50,10 @@ export async function listFiscalNotes(scope: TenantScope, input: ListFiscalNotes
     ...(modelo ? { modelo } : {}),
     ...(status ? { status } : {}),
     ...(criadoDepoisDe ? { criadoEm: { gte: criadoDepoisDe } } : {}),
-    ...(cliente
-      ? {
-          OR: [
-            { destinatarioNome: { contains: cliente, mode: "insensitive" } },
-            ...(documento ? [{ destinatarioDocumento: { contains: documento } } as Prisma.NotaFiscalWhereInput] : [])
-          ]
-        }
+    // Filtro por nome do cliente sai do WHERE (acentos) e e feito em memoria abaixo;
+    // documento (so digitos) continua no banco.
+    ...(cliente && documento
+      ? { OR: [{ destinatarioDocumento: { contains: documento } } as Prisma.NotaFiscalWhereInput] }
       : {}),
     ...(numero
       ? {
@@ -72,12 +70,15 @@ export async function listFiscalNotes(scope: TenantScope, input: ListFiscalNotes
       : {})
   };
 
-  const [totalEncontrado, notas] = await prisma.$transaction([
+  // Com filtro de cliente por NOME, busca um lote maior e filtra acento-insensivel
+  // em memoria (correspondeBusca) — o contains do banco nao casa acentos.
+  const filtraPorNome = Boolean(cliente && !documento);
+  const [totalBruto, notasBrutas] = await prisma.$transaction([
     prisma.notaFiscal.count({ where }),
     prisma.notaFiscal.findMany({
       where,
       orderBy: { criadoEm: "desc" },
-      take: limite,
+      take: filtraPorNome ? 400 : limite,
       select: {
         id: true,
         modelo: true,
@@ -98,6 +99,12 @@ export async function listFiscalNotes(scope: TenantScope, input: ListFiscalNotes
       }
     })
   ]);
+
+  const notas = (filtraPorNome
+    ? notasBrutas.filter((n) => correspondeBusca(cliente as string, n.destinatarioNome, n.destinatarioDocumento))
+    : notasBrutas
+  ).slice(0, limite);
+  const totalEncontrado = filtraPorNome ? notas.length : totalBruto;
 
   return {
     totalEncontrado,
