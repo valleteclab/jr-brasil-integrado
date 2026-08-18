@@ -150,6 +150,9 @@ export type NormalizedFiscalDocument = {
   retencoes?: RetencoesFiscais | null;
   /** NFS-e: natureza/exigibilidade do ISS (valor do enum do provedor). */
   taxationType?: TaxationTypeIss | null;
+  /** Código tribISSQN do DPS nacional (1=tributável, 2=imunidade, 3=exportação, 4=não incidência).
+   *  Usado na clonagem para replicar a natureza da nota original. */
+  tribIssqnCodigo?: string | null;
   /** NFS-e de obra/construção civil: grupo de informações da obra (exigido em alguns subitens). */
   obra?: ObraInfo | null;
   /** NFS-e de substituição: grupo `subst` do DPS (chave da NFS-e substituída + motivo). */

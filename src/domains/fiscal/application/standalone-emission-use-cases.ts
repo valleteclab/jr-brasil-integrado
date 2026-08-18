@@ -115,6 +115,7 @@ export type ServiceInvoiceAvulsaInput = {
   taxationType?: TaxationTypeIss | null;
   servicos: Array<{ descricao?: string; valor: number; codigoServicoLc116?: string | null; codigoNbs?: string | null; cClassTrib?: string | null }>;
   retencoes?: RetencoesInput | null;
+  tribIssqnCodigo?: string | null;
   /** Informações da obra (construção civil) — exigidas no DPS para certos códigos de tributação. */
   obra?: ObraInfo | null;
   /** Substituição de NFS-e: nota a ser substituída (id no nosso banco) + chave + motivo. */
@@ -492,6 +493,7 @@ export async function emitServiceInvoiceAvulsa(scope: TenantScope, input: Servic
     servicos,
     retencoes,
     taxationType: input.taxationType ?? null,
+    tribIssqnCodigo: input.tribIssqnCodigo ?? null,
     obra: input.obra ?? null,
     substituicao: input.substituicao
       ? {

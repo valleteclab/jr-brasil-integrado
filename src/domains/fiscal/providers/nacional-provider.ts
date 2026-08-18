@@ -202,7 +202,7 @@ function buildDpsXml(input: EmitInput, ctx: ProviderContext): { xml: string; id:
       `<serv><locPrest><cLocPrestacao>${cLocPrestacao}</cLocPrestacao></locPrest>` +
         `<cServ><cTribNac>${cTribNacFinal}</cTribNac>${cTribMun ? `<cTribMun>${cTribMun}</cTribMun>` : noDf ? `<cTribMun>${cTribNacFinal}</cTribMun>` : ""}<xDescServ>${esc(xDescServ)}</xDescServ>${cNBS.length === 9 ? `<cNBS>${cNBS}</cNBS>` : ""}</cServ>${obra}</serv>` +
       `<valores><vServPrest><vServ>${vServ}</vServ></vServPrest>` +
-        `<trib><tribMun><tribISSQN>1</tribISSQN><tpRetISSQN>${issRetido ? "2" : "1"}</tpRetISSQN></tribMun>` +
+        `<trib><tribMun><tribISSQN>${doc.tribIssqnCodigo ?? "1"}</tribISSQN><tpRetISSQN>${issRetido ? "2" : "1"}</tpRetISSQN></tribMun>` +
         tribFed +
         `<totTrib><vTotTrib><vTotTribFed>${vTotFed}</vTotTribFed><vTotTribEst>0.00</vTotTribEst><vTotTribMun>${vISSQN}</vTotTribMun></vTotTrib></totTrib>` +
         `</trib></valores>` +
@@ -803,3 +803,18 @@ export class NacionalFiscalProvider implements FiscalProvider {
 
 /** Exporto o builder para o harness/teste da F1 validar o DPS contra a produção restrita. */
 export { buildDpsXml, signDps, pfxToPem };
+
+/** Baixa o XML autorizado da NFS-e nacional pela CHAVE (uso: clonagem de notas antigas do
+ *  ACBr cujo xml não foi salvo no banco). mTLS com o A1 da empresa. */
+export async function baixarNfseXmlPelaChave(
+  chave: string,
+  cert: { pfx: Buffer; senha: string },
+  ambiente: AmbienteFiscal
+): Promise<string | null> {
+  const res = await getSefin(SEFIN[ambiente], `/nfse/${chave}`, cert);
+  if (res.statusCode < 200 || res.statusCode >= 300) return null;
+  let data: { nfseXmlGZipB64?: string } = {};
+  try { data = JSON.parse(res.body); } catch { return null; }
+  if (!data.nfseXmlGZipB64) return null;
+  return gunzipSync(Buffer.from(data.nfseXmlGZipB64, "base64")).toString("utf8");
+}

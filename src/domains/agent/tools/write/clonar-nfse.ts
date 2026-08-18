@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/db/prisma";
 import { emitServiceInvoiceAvulsa } from "@/domains/fiscal/application/standalone-emission-use-cases";
+import { getFiscalRuntimeConfig } from "@/domains/fiscal/application/fiscal-config-use-cases";
+import { baixarNfseXmlPelaChave } from "@/domains/fiscal/providers/nacional-provider";
 import type { AgentTool } from "../../types";
 
 /**
@@ -18,17 +20,18 @@ type RetencoesClonadas = {
 };
 
 function extrairDoXml(xml: string | null): {
-  descricao: string | null; codigo: string | null; nbs: string | null; classTrib: string | null;
+  descricao: string | null; codigo: string | null; nbs: string | null; classTrib: string | null; tribIssqn: string | null;
   valor: number | null; retencoes: RetencoesClonadas;
 } {
   const vazio: RetencoesClonadas = { issRetido: false, ir: null, pis: null, cofins: null, csll: null, inss: null };
-  if (!xml) return { descricao: null, codigo: null, nbs: null, classTrib: null, valor: null, retencoes: vazio };
+  if (!xml) return { descricao: null, codigo: null, nbs: null, classTrib: null, tribIssqn: null, valor: null, retencoes: vazio };
   const plain = xml.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
   const tag = (t: string) => new RegExp(`<${t}>([\\d.]+)</${t}>`).exec(plain)?.[1] ?? null;
   const descricao = /<xDescServ>([\s\S]*?)<\/xDescServ>/.exec(plain)?.[1]?.trim() ?? null;
   const codigo = /<cTribNac>(\d{6})<\/cTribNac>/.exec(plain)?.[1] ?? null;
   const nbs = /<cNBS>(\d{9})<\/cNBS>/.exec(plain)?.[1] ?? null;
   const classTrib = /<cClassTrib>(\w{6,7})<\/cClassTrib>/.exec(plain)?.[1] ?? null;
+  const tribIssqn = /<tribISSQN>(\d)<\/tribISSQN>/.exec(plain)?.[1] ?? null;
   const valor = dec(tag("vServ")) ?? dec(tag("vLiq"));
   // Retenções da original: ISS retido (tpRetISSQN=2) + federais em VALOR (vPis/vCofins/vRetCP/vRetIRRF/vRetCSLL).
   const retencoes: RetencoesClonadas = {
@@ -39,7 +42,7 @@ function extrairDoXml(xml: string | null): {
     ir: dec(tag("vRetIRRF")),
     csll: dec(tag("vRetCSLL"))
   };
-  return { descricao, codigo, nbs, classTrib, valor, retencoes };
+  return { descricao, codigo, nbs, classTrib, tribIssqn, valor, retencoes };
 }
 
 /** Converte os VALORES retidos da original em alíquotas sobre a base (replica na clonada;
@@ -89,14 +92,32 @@ export const clonarNfse: AgentTool = {
       orderBy: { criadoEm: "desc" },
       select: {
         id: true, numero: true, numeroNfse: true, clienteId: true,
-        destinatarioNome: true, destinatarioDocumento: true, total: true, xml: true
+        destinatarioNome: true, destinatarioDocumento: true, total: true, xml: true, chaveAcesso: true, providerRef: true, ambiente: true
       }
     });
     if (!original) {
       return { ok: false, data: null, error: `NFS-e autorizada nº ${numero ?? notaId} não encontrada nesta empresa.` };
     }
 
-    const doXml = extrairDoXml(original.xml);
+    // Notas antigas (ACBr) não têm o XML salvo — baixa da SEFIN pela chave (mTLS com o A1)
+    // e persiste para as próximas clonagens.
+    let xmlOriginal = original.xml;
+    if (!xmlOriginal || xmlOriginal.length < 100) {
+      const chaveNacional = (original.chaveAcesso ?? original.providerRef ?? "").replace(/\D/g, "");
+      if (chaveNacional.length === 50) {
+        const runtime = await getFiscalRuntimeConfig(scope);
+        if (runtime.certificado?.pfx) {
+          xmlOriginal = await baixarNfseXmlPelaChave(chaveNacional, runtime.certificado, original.ambiente ?? runtime.ambiente);
+          if (xmlOriginal) {
+            await prisma.notaFiscal.update({ where: { id: original.id }, data: { xml: xmlOriginal } });
+          }
+        }
+      }
+      if (!xmlOriginal) {
+        return { ok: false, data: null, error: "Não consegui recuperar o XML da nota original (nem no banco, nem na SEFIN). Sem ele a clonagem fiel não é possível — verifique o certificado A1 e a chave da nota." };
+      }
+    }
+    const doXml = extrairDoXml(xmlOriginal);
     let descricao = args.novaDescricao
       ? String(args.novaDescricao)
       : doXml.descricao ?? "Serviços prestados conforme nota anterior.";
@@ -126,6 +147,7 @@ export const clonarNfse: AgentTool = {
       codigoServicoLc116: doXml.codigo,
       codigoNbs: doXml.nbs,
       classificacaoTributaria: doXml.classTrib,
+      naturezaIss: doXml.tribIssqn === "2" ? "Imunidade (sem ISS)" : doXml.tribIssqn === "3" ? "Exportação" : doXml.tribIssqn === "4" ? "Não incidência (sem ISS)" : "Tributável",
       retencoes: retInput
         ? {
             issRetido: doXml.retencoes.issRetido,
@@ -153,6 +175,7 @@ export const clonarNfse: AgentTool = {
         aliquotaIss: null,
         observacoes: null,
         retencoes: retInput,
+        tribIssqnCodigo: doXml.tribIssqn ?? null,
         servicos: [{ descricao, valor, codigoServicoLc116: doXml.codigo ?? undefined, codigoNbs: doXml.nbs ?? undefined, cClassTrib: doXml.classTrib ?? undefined }]
       });
       return {

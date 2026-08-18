@@ -196,6 +196,7 @@ export type OrdemServicoFiscalInput = {
   servicos: Array<{ descricao: string; valor: number; itemListaServico?: string | null; codigoNbs?: string | null; cClassTrib?: string | null; aliquotaIss?: number | null; baseIss?: number | null }>;
   retencoes?: RetencoesFiscais | null;
   taxationType?: TaxationTypeIss | null;
+  tribIssqnCodigo?: string | null;
   obra?: ObraInfo | null;
   substituicao?: SubstituicaoNfse | null;
 };
@@ -240,6 +241,7 @@ export function buildNfseFromOrdemServico(input: OrdemServicoFiscalInput): Norma
     })),
     retencoes: input.retencoes ?? null,
     taxationType: input.taxationType ?? null,
+    tribIssqnCodigo: input.tribIssqnCodigo ?? null,
     obra: input.obra ?? null,
     substituicao: input.substituicao ?? null
   };
