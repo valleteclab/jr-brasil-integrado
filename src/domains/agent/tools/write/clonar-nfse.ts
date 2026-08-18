@@ -1,7 +1,6 @@
 import { prisma } from "@/lib/db/prisma";
 import { emitServiceInvoiceAvulsa } from "@/domains/fiscal/application/standalone-emission-use-cases";
-import { getFiscalRuntimeConfig } from "@/domains/fiscal/application/fiscal-config-use-cases";
-import { baixarNfseXmlPelaChave } from "@/domains/fiscal/providers/nacional-provider";
+import { resgatarXmlNfse } from "@/domains/fiscal/nfse-clone";
 import type { AgentTool } from "../../types";
 
 /**
@@ -101,18 +100,10 @@ export const clonarNfse: AgentTool = {
 
     // Notas antigas (ACBr) não têm o XML salvo — baixa da SEFIN pela chave (mTLS com o A1)
     // e persiste para as próximas clonagens.
-    let xmlOriginal = original.xml;
-    if (!xmlOriginal || xmlOriginal.length < 100) {
-      const chaveNacional = (original.chaveAcesso ?? original.providerRef ?? "").replace(/\D/g, "");
-      if (chaveNacional.length === 50) {
-        const runtime = await getFiscalRuntimeConfig(scope);
-        if (runtime.certificado?.pfx) {
-          xmlOriginal = await baixarNfseXmlPelaChave(chaveNacional, runtime.certificado, original.ambiente ?? runtime.ambiente);
-          if (xmlOriginal) {
-            await prisma.notaFiscal.update({ where: { id: original.id }, data: { xml: xmlOriginal } });
-          }
-        }
-      }
+    let xmlOriginal = await resgatarXmlNfse(scope, {
+      id: original.id, xml: original.xml, chaveAcesso: original.chaveAcesso, providerRef: original.providerRef, ambiente: original.ambiente
+    });
+    {
       if (!xmlOriginal) {
         return { ok: false, data: null, error: "Não consegui recuperar o XML da nota original (nem no banco, nem na SEFIN). Sem ele a clonagem fiel não é possível — verifique o certificado A1 e a chave da nota." };
       }

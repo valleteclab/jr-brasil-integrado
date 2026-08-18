@@ -1,6 +1,7 @@
 import type { FinalidadeNfe, ModeloFiscal, StatusNotaFiscal } from "@prisma/client";
 import { getDevelopmentTenantScope, scopedByTenantCompanyAmbiente } from "@/lib/auth/dev-session";
 import { prisma } from "@/lib/db/prisma";
+import { extrairDadosNfseXml, resgatarXmlNfse, retencoesValoresParaAliquotas, tribIssqnParaTaxationType } from "@/domains/fiscal/nfse-clone";
 import { formatBrl } from "@/lib/formatters/currency";
 
 export type NotaFiscalSummary = {
@@ -289,6 +290,10 @@ export type EmissaoPrefillServico = {
   codigoServicoLc116: string;
 };
 
+export type EmissaoPrefillRetencoes = {
+  ir: number | null; pis: number | null; cofins: number | null; csll: number | null; inss: number | null;
+};
+
 export type EmissaoPrefill = {
   modo: "CLONE" | "DEVOLUCAO" | "SUBSTITUICAO";
   origemId: string;
@@ -325,6 +330,12 @@ export type EmissaoPrefill = {
   itens: EmissaoPrefillItem[];
   // NFS-e (clone de nota de serviço):
   servicos: EmissaoPrefillServico[];
+  /** Clonagem 100%: dados extraídos do XML autorizado da original (motor nfse-clone). */
+  retencoesAliquotas?: EmissaoPrefillRetencoes | null;
+  codigoNbs?: string | null;
+  cClassTrib?: string | null;
+  /** tipoOperacao do wizard (immune/nonIncidence/exportation) mapeado do tribISSQN. */
+  tipoOperacao?: string | null;
   codigoServicoLc116: string;
   aliquotaIss: number;
   issRetido: boolean;
@@ -420,6 +431,37 @@ export async function getNotaFiscalPrefill(
     : [];
   const primeiroItemServico = isServico ? nota.itens[0] : undefined;
 
+  // CLONE de NFS-e: extrai do XML autorizado (resgatando da SEFIN se preciso) descrição fiel,
+  // códigos, natureza do ISS e retenções — clonagem 100%, igual à tool do agente.
+  let cloneNfse: {
+    issRetido?: boolean; retencoesAliquotas?: EmissaoPrefillRetencoes | null;
+    codigoNbs?: string | null; cClassTrib?: string | null; tipoOperacao?: string | null;
+    descricaoXml?: string | null; valorXml?: number | null; lc116Xml?: string | null;
+  } = {};
+  if (isServico && modo === "CLONE") {
+    const xml = await resgatarXmlNfse(scope, {
+      id: nota.id, xml: nota.xml, chaveAcesso: nota.chaveAcesso, providerRef: nota.providerRef, ambiente: nota.ambiente
+    });
+    if (xml) {
+      const dados = extrairDadosNfseXml(xml);
+      const base = dados.valor ?? Number(nota.total);
+      const aliq = retencoesValoresParaAliquotas(dados.retencoes, base);
+      cloneNfse = {
+        issRetido: dados.retencoes.issRetido,
+        retencoesAliquotas: { ir: aliq.ir, pis: aliq.pis, cofins: aliq.cofins, csll: aliq.csll, inss: aliq.inss },
+        codigoNbs: dados.codigoNbs,
+        cClassTrib: dados.cClassTrib,
+        tipoOperacao: tribIssqnParaTaxationType(dados.tribIssqn),
+        descricaoXml: dados.descricao,
+        valorXml: dados.valor,
+        lc116Xml: dados.codigoLc116
+      };
+    }
+  }
+  const servicosFinal: EmissaoPrefillServico[] = cloneNfse.descricaoXml
+    ? [{ descricao: cloneNfse.descricaoXml, valor: cloneNfse.valorXml ?? Number(nota.total), codigoServicoLc116: cloneNfse.lc116Xml ?? servicos[0]?.codigoServicoLc116 ?? "" }]
+    : servicos;
+
   return {
     modo,
     origemId: nota.id,
@@ -459,10 +501,14 @@ export async function getNotaFiscalPrefill(
           precoUnitario: Number(it.valorUnitario),
           desconto: Number(it.desconto)
         })),
-    servicos,
-    codigoServicoLc116: primeiroItemServico?.itemListaServico ?? "",
+    servicos: servicosFinal,
+    retencoesAliquotas: cloneNfse.retencoesAliquotas ?? null,
+    codigoNbs: cloneNfse.codigoNbs ?? null,
+    cClassTrib: cloneNfse.cClassTrib ?? null,
+    tipoOperacao: cloneNfse.tipoOperacao ?? null,
+    codigoServicoLc116: cloneNfse.lc116Xml ?? primeiroItemServico?.itemListaServico ?? "",
     aliquotaIss: primeiroItemServico?.aliquotaIss != null ? Number(primeiroItemServico.aliquotaIss) : 0,
-    issRetido: nota.issRetido,
+    issRetido: cloneNfse.issRetido ?? nota.issRetido,
     substituicao: isSubstituicao ? { notaId: nota.id, chaveSubstituida: nota.chaveAcesso ?? "" } : null
   };
 }

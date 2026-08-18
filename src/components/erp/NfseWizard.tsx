@@ -188,8 +188,8 @@ export function NfseWizard({ data, initial = null }: { data: EmissaoFormData; in
   // Passo 2 — Serviço
   const [codigoLc116, setCodigoLc116] = useState(iniLc116);
   const [descricao, setDescricao] = useState(iniDescricao);
-  const [itemNbs, setItemNbs] = useState(iniSugestao?.nbsPadrao ?? "");
-  const [cClassTrib, setCClassTrib] = useState(iniSugestao?.classTribPadrao ?? "");
+  const [itemNbs, setItemNbs] = useState(ini?.codigoNbs ?? iniSugestao?.nbsPadrao ?? "");
+  const [cClassTrib, setCClassTrib] = useState(ini?.cClassTrib ?? iniSugestao?.classTribPadrao ?? "");
   const [codigoInterno, setCodigoInterno] = useState("");
 
   // Sugestões de NBS e cClassTrib a partir do LC 116 escolhido (tabela oficial de correlação).
@@ -211,7 +211,7 @@ export function NfseWizard({ data, initial = null }: { data: EmissaoFormData; in
   const [descontoIncondicionado, setDescontoIncondicionado] = useState(0);
   const [descontoCondicionado, setDescontoCondicionado] = useState(0);
   const [deducaoBc, setDeducaoBc] = useState(0);
-  const [tipoOperacao, setTipoOperacao] = useState("taxationInMunicipality");
+  const [tipoOperacao, setTipoOperacao] = useState(ini?.tipoOperacao ?? "taxationInMunicipality");
   const [aliquotaIss, setAliquotaIss] = useState(ini?.aliquotaIss ?? 0);
   const [suspensao, setSuspensao] = useState(false);
   const [suspensaoTipo, setSuspensaoTipo] = useState("suspendedByCourt");
@@ -219,11 +219,11 @@ export function NfseWizard({ data, initial = null }: { data: EmissaoFormData; in
   const [issRetido, setIssRetido] = useState(ini?.issRetido ?? false);
   const [issRetidoPor, setIssRetidoPor] = useState("tomador");
   // Tributação federal (retenções)
-  const [retIr, setRetIr] = useState(0);
-  const [retCsll, setRetCsll] = useState(0);
-  const [retInss, setRetInss] = useState(0);
-  const [retPis, setRetPis] = useState(0);
-  const [retCofins, setRetCofins] = useState(0);
+  const [retIr, setRetIr] = useState(ini?.retencoesAliquotas?.ir ?? 0);
+  const [retCsll, setRetCsll] = useState(ini?.retencoesAliquotas?.csll ?? 0);
+  const [retInss, setRetInss] = useState(ini?.retencoesAliquotas?.inss ?? 0);
+  const [retPis, setRetPis] = useState(ini?.retencoesAliquotas?.pis ?? 0);
+  const [retCofins, setRetCofins] = useState(ini?.retencoesAliquotas?.cofins ?? 0);
   const [baseRetencao, setBaseRetencao] = useState(0);
   // Material embutido no serviço (nota de obra): deduz só a base do INSS.
   const [valorMaterial, setValorMaterial] = useState(0);
