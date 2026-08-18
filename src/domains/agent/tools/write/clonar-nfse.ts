@@ -18,14 +18,17 @@ type RetencoesClonadas = {
 };
 
 function extrairDoXml(xml: string | null): {
-  descricao: string | null; codigo: string | null; valor: number | null; retencoes: RetencoesClonadas;
+  descricao: string | null; codigo: string | null; nbs: string | null; classTrib: string | null;
+  valor: number | null; retencoes: RetencoesClonadas;
 } {
   const vazio: RetencoesClonadas = { issRetido: false, ir: null, pis: null, cofins: null, csll: null, inss: null };
-  if (!xml) return { descricao: null, codigo: null, valor: null, retencoes: vazio };
+  if (!xml) return { descricao: null, codigo: null, nbs: null, classTrib: null, valor: null, retencoes: vazio };
   const plain = xml.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
   const tag = (t: string) => new RegExp(`<${t}>([\\d.]+)</${t}>`).exec(plain)?.[1] ?? null;
   const descricao = /<xDescServ>([\s\S]*?)<\/xDescServ>/.exec(plain)?.[1]?.trim() ?? null;
   const codigo = /<cTribNac>(\d{6})<\/cTribNac>/.exec(plain)?.[1] ?? null;
+  const nbs = /<cNBS>(\d{9})<\/cNBS>/.exec(plain)?.[1] ?? null;
+  const classTrib = /<cClassTrib>(\w{6,7})<\/cClassTrib>/.exec(plain)?.[1] ?? null;
   const valor = dec(tag("vServ")) ?? dec(tag("vLiq"));
   // Retenções da original: ISS retido (tpRetISSQN=2) + federais em VALOR (vPis/vCofins/vRetCP/vRetIRRF/vRetCSLL).
   const retencoes: RetencoesClonadas = {
@@ -36,7 +39,7 @@ function extrairDoXml(xml: string | null): {
     ir: dec(tag("vRetIRRF")),
     csll: dec(tag("vRetCSLL"))
   };
-  return { descricao, codigo, valor, retencoes };
+  return { descricao, codigo, nbs, classTrib, valor, retencoes };
 }
 
 /** Converte os VALORES retidos da original em alíquotas sobre a base (replica na clonada;
@@ -121,6 +124,8 @@ export const clonarNfse: AgentTool = {
       descricao,
       valor,
       codigoServicoLc116: doXml.codigo,
+      codigoNbs: doXml.nbs,
+      classificacaoTributaria: doXml.classTrib,
       retencoes: retInput
         ? {
             issRetido: doXml.retencoes.issRetido,
@@ -148,7 +153,7 @@ export const clonarNfse: AgentTool = {
         aliquotaIss: null,
         observacoes: null,
         retencoes: retInput,
-        servicos: [{ descricao, valor, codigoServicoLc116: doXml.codigo ?? undefined }]
+        servicos: [{ descricao, valor, codigoServicoLc116: doXml.codigo ?? undefined, codigoNbs: doXml.nbs ?? undefined, cClassTrib: doXml.classTrib ?? undefined }]
       });
       return {
         ok: true,
