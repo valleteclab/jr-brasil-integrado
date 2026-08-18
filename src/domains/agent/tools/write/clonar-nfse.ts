@@ -12,13 +12,44 @@ import type { AgentTool } from "../../types";
 
 const dec = (v: string | null | undefined) => (v ? Number(v) : null);
 
-function extrairDoXml(xml: string | null): { descricao: string | null; codigo: string | null; valor: number | null } {
-  if (!xml) return { descricao: null, codigo: null, valor: null };
+type RetencoesClonadas = {
+  issRetido: boolean;
+  ir: number | null; pis: number | null; cofins: number | null; csll: number | null; inss: number | null;
+};
+
+function extrairDoXml(xml: string | null): {
+  descricao: string | null; codigo: string | null; valor: number | null; retencoes: RetencoesClonadas;
+} {
+  const vazio: RetencoesClonadas = { issRetido: false, ir: null, pis: null, cofins: null, csll: null, inss: null };
+  if (!xml) return { descricao: null, codigo: null, valor: null, retencoes: vazio };
   const plain = xml.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+  const tag = (t: string) => new RegExp(`<${t}>([\\d.]+)</${t}>`).exec(plain)?.[1] ?? null;
   const descricao = /<xDescServ>([\s\S]*?)<\/xDescServ>/.exec(plain)?.[1]?.trim() ?? null;
   const codigo = /<cTribNac>(\d{6})<\/cTribNac>/.exec(plain)?.[1] ?? null;
-  const valor = dec(/<vServ>([\d.]+)<\/vServ>/.exec(plain)?.[1]) ?? dec(/<vLiq>([\d.]+)<\/vLiq>/.exec(plain)?.[1]);
-  return { descricao, codigo, valor };
+  const valor = dec(tag("vServ")) ?? dec(tag("vLiq"));
+  // Retenções da original: ISS retido (tpRetISSQN=2) + federais em VALOR (vPis/vCofins/vRetCP/vRetIRRF/vRetCSLL).
+  const retencoes: RetencoesClonadas = {
+    issRetido: /<tpRetISSQN>2<\/tpRetISSQN>/.test(plain),
+    pis: dec(tag("vPis")),
+    cofins: dec(tag("vCofins")),
+    inss: dec(tag("vRetCP")),
+    ir: dec(tag("vRetIRRF")),
+    csll: dec(tag("vRetCSLL"))
+  };
+  return { descricao, codigo, valor, retencoes };
+}
+
+/** Converte os VALORES retidos da original em alíquotas sobre a base (replica na clonada;
+ *  se o valor da nota mudar, as retenções acompanham proporcionalmente). */
+function retencoesParaInput(r: RetencoesClonadas, base: number) {
+  if (base <= 0) return null;
+  const aliq = (v: number | null) => (v && v > 0 ? { aliquota: (v / base) * 100 } : null);
+  const input = {
+    issRetido: r.issRetido,
+    ir: aliq(r.ir), pis: aliq(r.pis), cofins: aliq(r.cofins), csll: aliq(r.csll), inss: aliq(r.inss)
+  };
+  const temAlgo = input.issRetido || input.ir || input.pis || input.cofins || input.csll || input.inss;
+  return temAlgo ? input : null;
 }
 
 export const clonarNfse: AgentTool = {
@@ -80,13 +111,26 @@ export const clonarNfse: AgentTool = {
     }
     const valor = args.novoValor != null ? Number(args.novoValor) : doXml.valor ?? Number(original.total);
 
+    const baseOriginal = doXml.valor ?? Number(original.total);
+    const retInput = retencoesParaInput(doXml.retencoes, baseOriginal);
+    const fator = baseOriginal > 0 ? valor / baseOriginal : 1;
     const resumo = {
       baseadaNa: `NFS-e nº ${original.numeroNfse ?? original.numero}`,
       tomador: original.destinatarioNome,
       documento: original.destinatarioDocumento,
       descricao,
       valor,
-      codigoServicoLc116: doXml.codigo
+      codigoServicoLc116: doXml.codigo,
+      retencoes: retInput
+        ? {
+            issRetido: doXml.retencoes.issRetido,
+            irrf: doXml.retencoes.ir ? Number((doXml.retencoes.ir * fator).toFixed(2)) : null,
+            inss: doXml.retencoes.inss ? Number((doXml.retencoes.inss * fator).toFixed(2)) : null,
+            csll: doXml.retencoes.csll ? Number((doXml.retencoes.csll * fator).toFixed(2)) : null,
+            pis: doXml.retencoes.pis ? Number((doXml.retencoes.pis * fator).toFixed(2)) : null,
+            cofins: doXml.retencoes.cofins ? Number((doXml.retencoes.cofins * fator).toFixed(2)) : null
+          }
+        : null
     };
 
     if (args.confirmar !== true) {
@@ -103,6 +147,7 @@ export const clonarNfse: AgentTool = {
           : { nome: original.destinatarioNome ?? "Tomador", documento: (original.destinatarioDocumento ?? "").replace(/\D/g, "") },
         aliquotaIss: null,
         observacoes: null,
+        retencoes: retInput,
         servicos: [{ descricao, valor, codigoServicoLc116: doXml.codigo ?? undefined }]
       });
       return {
