@@ -10,8 +10,10 @@
 
 const LS_METODO = "xerp.impressaoMetodo"; // "iframe" | "qz"
 const LS_PRINTER = "xerp.qzPrinter";
+const LS_PAPEL = "xerp.qzPapel"; // "80" | "58" | "auto"
 
 export type MetodoImpressao = "iframe" | "qz";
+export type PapelQz = "80" | "58" | "auto";
 
 export function metodoImpressao(): MetodoImpressao {
   if (typeof window === "undefined") return "iframe";
@@ -30,6 +32,17 @@ export function impressoraQzSalva(): string {
 }
 export function setImpressoraQz(nome: string): void {
   try { localStorage.setItem(LS_PRINTER, nome); } catch { /* ignore */ }
+}
+/** Largura da bobina desta máquina (padrão 80mm — o layout dos nossos cupons). */
+export function papelQzSalvo(): PapelQz {
+  if (typeof window === "undefined") return "80";
+  try {
+    const v = localStorage.getItem(LS_PAPEL);
+    return v === "58" || v === "auto" ? v : "80";
+  } catch { return "80"; }
+}
+export function setPapelQz(p: PapelQz): void {
+  try { localStorage.setItem(LS_PAPEL, p); } catch { /* ignore */ }
 }
 
 async function getQz(): Promise<any> {
@@ -98,17 +111,44 @@ function arrayBufferToBase64(buf: ArrayBuffer): string {
   return btoa(binary);
 }
 
-/** Imprime um PDF (buscado autenticado no navegador) direto na impressora via QZ Tray. */
+/**
+ * Config de impressão afinada para bobina térmica: sem margens, tons de cinza e, com a largura da
+ * bobina definida (80/58mm), rasteriza o documento na densidade da térmica (203dpi) já no tamanho
+ * do papel — o resultado independe do papel configurado no driver do Windows. "Automática" mantém
+ * o comportamento antigo (entrega o documento ao driver como está).
+ */
+function configCupom(qz: any, alvo: string) {
+  const papel = papelQzSalvo();
+  const base: Record<string, unknown> = { margins: 0, scaleContent: true, colorType: "grayscale" };
+  if (papel === "auto") {
+    base.rasterize = false;
+  } else {
+    base.units = "mm";
+    base.size = { width: papel === "58" ? 48 : 72 }; // área útil de impressão da bobina
+    base.rasterize = true;
+    base.density = 203; // dpi padrão de impressora térmica
+    base.interpolation = "nearest-neighbor"; // texto pequeno mais nítido no rasterizado
+  }
+  return qz.configs.create(alvo, base);
+}
+
+/** Imprime um documento (PDF ou HTML, buscado autenticado no navegador) direto via QZ Tray. */
 export async function imprimirPdfViaQz(pdfUrl: string, printer?: string): Promise<void> {
   const qz = await conectarQz();
   const alvo = printer || impressoraQzSalva() || (await impressoraPadraoQz()) || "";
   if (!alvo) throw new Error("Nenhuma impressora selecionada no QZ Tray.");
   const resp = await fetch(pdfUrl, { credentials: "include" });
   if (!resp.ok) throw new Error(`Falha ao carregar o documento (HTTP ${resp.status}).`);
+  const cfg = configCupom(qz, alvo);
+  const contentType = resp.headers.get("content-type") ?? "";
+  if (contentType.includes("text/html")) {
+    // Recibos são HTML: o QZ renderiza e imprime direto (sem abrir aba). O window.print() do
+    // onload é do fluxo de navegador — removido aqui para não interferir no renderizador do QZ.
+    const html = (await resp.text()).replace(/\sonload="window\.print\(\)"/, "");
+    await qz.print(cfg, [{ type: "pixel", format: "html", flavor: "plain", data: html }]);
+    return;
+  }
   const base64 = arrayBufferToBase64(await resp.arrayBuffer());
-  // Config afinada para cupom de bobina (ex.: Epson TM-T20, 80mm): sem margens, escala o conteúdo
-  // para a largura do papel e imprime em tons de cinza (impressora térmica é monocromática).
-  const cfg = qz.configs.create(alvo, { margins: 0, scaleContent: true, colorType: "grayscale", rasterize: false });
   await qz.print(cfg, [{ type: "pixel", format: "pdf", flavor: "base64", data: base64 }]);
 }
 

@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { impressaoAutoAtiva, setImpressaoAuto } from "./util-impressao";
 import {
   metodoImpressao, setMetodoImpressao, impressoraQzSalva, setImpressoraQz,
-  listarImpressorasQz, imprimirTesteQz, type MetodoImpressao
+  listarImpressorasQz, imprimirTesteQz, papelQzSalvo, setPapelQz,
+  type MetodoImpressao, type PapelQz
 } from "./qz-print";
 
 /**
@@ -17,6 +18,7 @@ export function ImpressaoConfig() {
   const [metodo, setMetodo] = useState<MetodoImpressao>("iframe");
   const [auto, setAuto] = useState(true);
   const [printer, setPrinter] = useState("");
+  const [papel, setPapel] = useState<PapelQz>("80");
   const [impressoras, setImpressoras] = useState<string[]>([]);
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
@@ -26,6 +28,7 @@ export function ImpressaoConfig() {
     setMetodo(metodoImpressao());
     setAuto(impressaoAutoAtiva());
     setPrinter(impressoraQzSalva());
+    setPapel(papelQzSalvo());
   }, []);
 
   // Fecha ao clicar fora.
@@ -114,11 +117,19 @@ export function ImpressaoConfig() {
                 </select>
                 <button type="button" className="btn-erp light xs" disabled={busy} onClick={conectar}>Conectar</button>
               </div>
+              <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <span style={{ whiteSpace: "nowrap" }}>Bobina:</span>
+                <select value={papel} onChange={(e) => { const p = e.target.value as PapelQz; setPapel(p); setPapelQz(p); }} style={{ flex: 1, height: 30, border: "1px solid var(--erp-line)", borderRadius: 6, padding: "0 6px" }}>
+                  <option value="80">80 mm (padrão)</option>
+                  <option value="58">58 mm</option>
+                  <option value="auto">Automática (usar config. do driver)</option>
+                </select>
+              </label>
               <div style={{ display: "flex", gap: 6 }}>
                 <button type="button" className="btn-erp primary xs" disabled={busy || !printer} onClick={testar}>Imprimir teste</button>
               </div>
               <span className="block-muted" style={{ fontSize: 11 }}>
-                Precisa do <strong>QZ Tray</strong> instalado e aberto nesta máquina (qz.io). Na primeira impressão ele pede para permitir — marque &ldquo;lembrar&rdquo;.
+                Precisa do <strong>QZ Tray</strong> instalado e aberto nesta máquina (qz.io). Com 80/58&nbsp;mm o cupom sai no tamanho da bobina, independente do papel configurado no driver.
               </span>
             </div>
           )}
