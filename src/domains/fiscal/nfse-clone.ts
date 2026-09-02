@@ -1,3 +1,4 @@
+import { gunzipSync } from "node:zlib";
 import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import type { AmbienteFiscal } from "@prisma/client";
@@ -34,13 +35,23 @@ export type DadosNfseOriginal = {
 
 const dec = (v: string | null | undefined) => (v ? Number(v) : null);
 
+/**
+ * NotaFiscal.xml do provider nacional fica em GZip+Base64 (como a SEFIN devolve); notas resgatadas
+ * pela chave ficam em XML puro. Aceita os dois — mesma convenção do unwrapNfseXml do provider.
+ */
+function desempacotarXml(raw: string): string {
+  const t = raw.trim();
+  if (t.startsWith("<")) return t;
+  try { return gunzipSync(Buffer.from(t, "base64")).toString("utf8"); } catch { return t; }
+}
+
 export function extrairDadosNfseXml(xml: string | null): DadosNfseOriginal {
   const vazio: DadosNfseOriginal = {
     descricao: null, codigoLc116: null, codigoNbs: null, cClassTrib: null, tribIssqn: null, valor: null,
     retencoes: { issRetido: false, ir: null, pis: null, cofins: null, csll: null, inss: null }
   };
   if (!xml) return vazio;
-  const plain = xml.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+  const plain = desempacotarXml(xml).replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
   const tag = (t: string) => new RegExp(`<${t}>([\\d.]+)</${t}>`).exec(plain)?.[1] ?? null;
   return {
     descricao: /<xDescServ>([\s\S]*?)<\/xDescServ>/.exec(plain)?.[1]?.trim() ?? null,
@@ -84,7 +95,7 @@ export async function resgatarXmlNfse(
   scope: TenantScope,
   nota: { id: string; xml: string | null; chaveAcesso: string | null; providerRef: string | null; ambiente: AmbienteFiscal | null }
 ): Promise<string | null> {
-  if (nota.xml && nota.xml.length >= 100) return nota.xml;
+  if (nota.xml && nota.xml.length >= 100) return desempacotarXml(nota.xml);
   const chave = (nota.chaveAcesso ?? nota.providerRef ?? "").replace(/\D/g, "");
   if (chave.length !== 50) return null;
   const runtime = await getFiscalRuntimeConfig(scope);
