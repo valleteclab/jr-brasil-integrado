@@ -24,16 +24,18 @@ async function main() {
   assert.equal(validEvolutionSecret(null, "secret"), false);
   const calls: Array<{ url: string; init?: RequestInit }> = [];
   let connected = false;
+  let qrRequests = 0;
   globalThis.fetch = async (url, init) => {
     calls.push({ url: String(url), init });
     if (String(url).includes("connectionState")) return Response.json({ instance: { state: connected ? "open" : "close" } });
-    if (String(url).includes("instance/connect/")) return Response.json({ code: "test-qr" });
+    if (String(url).includes("instance/connect/")) return Response.json(++qrRequests === 1 ? {} : { code: "test-qr" });
     return Response.json({ key: { id: "sent" } });
   };
   assert.deepEqual(await evolutionConnection(), { status: "disconnected", qrCode: null });
   assert.equal(calls.length, 1); // GET status nunca conecta nem troca webhook.
   const qr = await evolutionConnection(true);
   assert.ok(qr.qrCode?.startsWith("data:image/png;base64,"));
+  assert.equal(qrRequests, 2, "primeiro QR deve aguardar preparação assíncrona do provedor");
   const webhook = calls.find(c => c.url.includes("webhook/set"))!;
   const body = JSON.parse(String(webhook.init?.body));
   assert.equal(body.webhook.url, "https://erp.test/api/webhooks/comercial/evolution");

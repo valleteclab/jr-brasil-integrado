@@ -38,6 +38,7 @@ export function CommercialWhatsappConnection() {
     <h3>WhatsApp próprio</h3>
     <p role="status">{({ connected: "Conectado", connecting: "Aguardando conexão", disconnected: "Desconectado", loading: "Consultando conexão…", unknown: "Conexão não verificada" })[status]}</p>
     {error && <p role="alert" className="alert danger">{error}</p>}
+    {status === "connecting" && !qr && !busy && <p>Se o QR Code ainda não apareceu ou expirou, clique em Gerar QR Code para tentar novamente.</p>}
     {qr && <>
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src={qr} alt="QR Code para conectar o WhatsApp comercial" width={280} height={280} style={{ maxWidth: "100%", height: "auto" }} />

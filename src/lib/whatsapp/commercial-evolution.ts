@@ -58,7 +58,12 @@ export async function evolutionConnection(connect = false) {
   const state = await commercialEvolutionRequest<{ instance?: { state?: string } }>("/instance/connectionState");
   if (state.instance?.state === "open") return { status: "connected", qrCode: null };
   if (!connect) return { status: state.instance?.state === "connecting" ? "connecting" : "disconnected", qrCode: null };
-  const qr = await commercialEvolutionRequest<{ base64?: string; code?: string }>("/instance/connect");
+  let qr = await commercialEvolutionRequest<{ base64?: string; code?: string }>("/instance/connect");
+  // A primeira conexão pode responder antes do evento de QR do Baileys.
+  for (let attempt = 0; attempt < 3 && !qr.base64 && !qr.code; attempt++) {
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    qr = await commercialEvolutionRequest<{ base64?: string; code?: string }>("/instance/connect");
+  }
   // Renderizamos apenas PNG validado ou geramos o QR a partir do código retornado.
   let qrCode = qr.base64?.match(/^data:image\/png;base64,[A-Za-z0-9+/=]+$/)?.[0] ?? null;
   if (!qrCode && qr.code) {

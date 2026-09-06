@@ -100,6 +100,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
+| 2026-09-06 | A gerar | Em andamento | Espera limitada pela preparação do primeiro QR Code na Evolution, identificada no smoke test real. |
 | 2026-09-06 | A gerar | Em andamento | Bloqueio de retry comercial antigo após opt-out mais recente, coberto por teste. |
 | 2026-09-06 | A gerar | Em andamento | WhatsApp comercial próprio via Evolution, instância isolada, QR Code no admin, webhook autenticado e recuperação de respostas. |
 | 2026-07-29 | `d69bb30` | Enviado | Quarta versão da landing em `/nota-por-audio-v4` (XERP Vox, "o microfone é o novo teclado"), com orbe interativo de demonstração, identidade midnight/violeta/âmbar e captacao rastreada no CRM. |
