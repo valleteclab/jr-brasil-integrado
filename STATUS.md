@@ -215,6 +215,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Correção em `findOrCreateWhatsappLead` para não reativar leads com status `OPT_OUT` nem zerar `optOutEm` em novas mensagens.
 - `process-commercial-whatsapp.ts` agora ignora mensagens pós-opt-out e não consulta a IA nesses casos.
 - Validação executada: `npx tsx scripts/test-commercial-delivery.ts`, `npx tsx scripts/test-commercial-evolution.ts`, `npx tsc --noEmit`, `npm run lint`, `npm run build`.
+- Commit/push registrado: `20dbcc0`.
 
 ## Atualizacao operacional - 2026-05-27 - ficha de produtos
 
