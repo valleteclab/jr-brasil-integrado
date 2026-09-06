@@ -100,7 +100,8 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
-| 2026-09-06 | `633716f` | Enviado | Guardrails comerciais de escopo e revisão, fatos de CHAT/SPED, fallback humano e revalidação de respostas pendentes, com testes simulados; deploy pendente. |
+| 2026-09-06 | A gerar | Em andamento | Registro do deploy dos guardrails na VPS nova: imagem `jrb-erp:48b1fa0`, serviço saudável e smoke checks aprovados. |
+| 2026-09-06 | `633716f` | Enviado | Guardrails comerciais de escopo e revisão, fatos de CHAT/SPED, fallback humano e revalidação de respostas pendentes; implantado com imagem `jrb-erp:48b1fa0`. |
 | 2026-09-06 | A gerar | Em andamento | Espera limitada pela preparação do primeiro QR Code na Evolution, identificada no smoke test real. |
 | 2026-09-06 | A gerar | Em andamento | Bloqueio de retry comercial antigo após opt-out mais recente, coberto por teste. |
 | 2026-09-06 | A gerar | Em andamento | WhatsApp comercial próprio via Evolution, instância isolada, QR Code no admin, webhook autenticado e recuperação de respostas. |
@@ -833,4 +834,8 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Teste de regressão primeiro falhou ao enviar conteúdo sobre PHP; após a implementação, testes simulados cobrem desvio, instruções adversariais, revisão de SPED, falhas/timeout, JSON inválido, pedido humano, histórico, retry legado e opt-out. Nenhuma IA, banco ou mensagem real usados nos testes.
 - Validação: testes `test-commercial-delivery.ts` e `test-commercial-evolution.ts` aprovados; TypeScript aprovado; lint sem erros, com os dois avisos preexistentes. `npm run build` local aprovado (201 páginas geradas).
 - Sem novas dependências, mudanças de schema ou migrations. Arquivos: `commercial-guardrails.ts`, `process-commercial-whatsapp.ts`, `scripts/test-commercial-delivery.ts`, README e STATUS.
-- Entrega concluída no código: commit `633716f`, enviado para `origin/main`. Deploy NÃO realizado. Após implantação autorizada na `vps-nova` via `deploy/vps.sh`, repetir os testes reais de conversa, áudio curto, SPED e opt-out.
+- Entrega concluída no código: commit `633716f`, enviado para `origin/main`; registro de status em `48b1fa0`.
+- Deploy autorizado concluído na `vps-nova` em 2026-09-06, às 10:45 BRT: checkout `48b1fa0`, build Docker/Linux aprovado (201 páginas), imagem `jrb-erp:48b1fa0` e atualização `start-first` do serviço `erp_erp`, com rollback automático preservado. Tag anterior `jrb-erp:74badce` mantida.
+- Verificação pós-deploy: atualização `completed`, ERP e PostgreSQL em `1/1`, container `healthy`; `/api/health` confirmou `status=ok` e `db=up`, landing v4 HTTP 200, painel comercial sem sessão redireciona ao login (307). Logs de inicialização sem erros e sem migrations pendentes.
+- Variáveis, referências de Docker secrets e mounts do serviço preservados, conferidos por hash antes/depois sem expor valores. Nenhuma mensagem de teste real enviada por esta sessão.
+- Pendente: reteste humano no WhatsApp (perguntas fora de escopo, SPED, conversa comercial, áudio curto e opt-out). A saúde do deploy não comprova a qualidade semântica da IA.
