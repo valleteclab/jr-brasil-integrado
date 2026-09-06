@@ -150,16 +150,12 @@ export async function findOrCreateWhatsappLead(input: {
       }
     });
   } else {
+    const reactivate = lead.status !== LeadComercialStatus.OPT_OUT;
     lead = await prisma.plataformaLead.update({
       where: { id: lead.id },
       data: {
         ultimoContatoEm: now,
-        consentimento: true,
-        consentimentoEm: lead.consentimentoEm ?? now,
-        optOutEm: null,
-        ...(lead.status === LeadComercialStatus.OPT_OUT
-          ? { status: LeadComercialStatus.EM_CONVERSA }
-          : {})
+        ...(reactivate ? { consentimento: true, consentimentoEm: lead.consentimentoEm ?? now, optOutEm: null } : {})
       }
     });
   }

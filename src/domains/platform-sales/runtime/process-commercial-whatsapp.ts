@@ -3,9 +3,9 @@ import { prisma } from "@/lib/db/prisma";
 import { sendCommercialWhatsappText } from "./commercial-whatsapp-transport";
 import { getCommercialAgentRuntime } from "../application/commercial-agent-config";
 import {
-  checkCommercialReply, checkCommercialScope, commercialFacts, COMMERCIAL_GUARDRAIL_VERSION,
+  checkCommercialReply, checkCommercialScope, commercialConversation, commercialFacts, COMMERCIAL_GUARDRAIL_VERSION,
   COMMERCIAL_HANDOFF, COMMERCIAL_POLICY, COMMERCIAL_REDIRECT,
-  type CommercialGuardDecision, type CommercialMessage
+  type CommercialGuardDecision, type CommercialGuardStage
 } from "./commercial-guardrails";
 import {
   findOrCreateWhatsappLead,
@@ -74,7 +74,15 @@ function isOptOut(message: string): boolean {
     .trim()
     .toLowerCase()
     .replace(/[.!?]+$/g, "");
-  return ["sair", "parar", "pare", "cancelar mensagens", "nao quero contato", "nao me chame", "opt out"].includes(normalized);
+  const patterns = [
+    /\b(sair|parar?|pare|cancel[ae]r?|desinscrever)\b/,
+    /\b(nao|não)\s+(quero|queremos|desejo|preciso)\s+(mais\s+)?(mensagens?|contato|falar|receber|propagandas?)\b/,
+    /\b(remover|retirar|apagar|tirar)\s+(meu|minha|o|a|esse|esta)?\s*(contato|telefone|numero|número|cadastro|nome)\b/,
+    /\bopt[\s-]?out\b/,
+    /\b(nao|não)\s+(me\s+)?(chame|ligue|mande)\s+(mais|de\s+novo)\b/,
+    /\bquero\s+(sair|cancelar|parar)(\s+(do\s+)?cadastro)?\b/
+  ];
+  return patterns.some(re => re.test(normalized));
 }
 
 function absoluteSignupUrl(baseUrl: string | null | undefined, configuredUrl: string, leadId: string): string {
@@ -160,22 +168,16 @@ export async function processCommercialWhatsappMessage(input: {
   async function guardContext() {
     if (!config?.openrouterApiKey) throw new Error("OpenRouter não configurada.");
     const history = await prisma.plataformaLeadInteracao.findMany({
-      where: { leadId: lead.id, direcao: { in: [LeadInteracaoDirecao.ENTRADA, LeadInteracaoDirecao.SAIDA] } },
+      where: { leadId: lead.id, canal: LeadComercialCanal.WHATSAPP, direcao: { in: [LeadInteracaoDirecao.ENTRADA, LeadInteracaoDirecao.SAIDA] } },
       orderBy: { criadoEm: "desc" }, take: 20,
       select: { direcao: true, conteudo: true, metadados: true, externalMessageId: true }
     });
-    const messages: CommercialMessage[] = history.reverse().filter(item => {
-      if (input.messageId && item.externalMessageId === input.messageId) return false;
-      if (item.direcao === LeadInteracaoDirecao.ENTRADA) return true;
-      const metadata = item.metadados as { guardrailVersion?: number; guardrailDecision?: string } | null;
-      return metadata?.guardrailVersion === COMMERCIAL_GUARDRAIL_VERSION && metadata.guardrailDecision === "APPROVED";
-    }).map(item => ({ role: item.direcao === LeadInteracaoDirecao.ENTRADA ? "user" : "assistant", content: item.conteudo }));
-    messages.push({ role: "user", content: input.mensagem.slice(0, 4000) });
+    const messages = commercialConversation(history.reverse(), input.mensagem, input.messageId);
     return { apiKey: config.openrouterApiKey, model: config.modeloIa, facts, messages };
   }
 
-  async function recordGuardDecision(decision: CommercialGuardDecision) {
-    console.info("[agente-comercial/guardrail]", { leadId: lead.id, decision, version: COMMERCIAL_GUARDRAIL_VERSION });
+  async function recordGuardDecision(decision: CommercialGuardDecision, stage: CommercialGuardStage) {
+    console.info("[agente-comercial/guardrail]", { leadId: lead.id, decision, stage, version: COMMERCIAL_GUARDRAIL_VERSION });
     if (decision === "HUMAN" || decision === "UNAVAILABLE") {
       await prisma.plataformaLead.update({ where: { id: lead.id }, data: { precisaHumano: true } });
     }
@@ -183,23 +185,28 @@ export async function processCommercialWhatsappMessage(input: {
 
   const previousReply = replyId ? await prisma.plataformaLeadInteracao.findUnique({ where: { canal_externalMessageId: { canal: "WHATSAPP", externalMessageId: replyId } } }) : null;
   if (previousReply) {
-    let metadata = previousReply.metadados as { entregue?: boolean; guardrailVersion?: number; guardrailDecision?: CommercialGuardDecision } | null;
+    let metadata = previousReply.metadados as { entregue?: boolean; guardrailVersion?: number; guardrailDecision?: CommercialGuardDecision; guardrailStage?: CommercialGuardStage } | null;
     if (!metadata?.entregue) {
       let reply = previousReply.conteudo;
       if (metadata?.guardrailVersion !== COMMERCIAL_GUARDRAIL_VERSION) {
         let decision: CommercialGuardDecision = "APPROVED";
+        let stage: CommercialGuardStage = "scope";
         if (isOptOut(input.mensagem)) {
+          stage = "optout";
           reply = "Tudo certo. Não enviaremos novas mensagens. Se quiser voltar, é só chamar este número.";
         } else {
           try {
             const context = await guardContext();
             const scope = await checkCommercialScope(context);
-            decision = scope === "ALLOW" ? await checkCommercialReply({ ...context, reply }) ? "APPROVED" : "HUMAN" : scope;
+            if (scope === "ALLOW") {
+              stage = "review";
+              decision = await checkCommercialReply({ ...context, reply }) ? "APPROVED" : "HUMAN";
+            } else { decision = scope; }
           } catch { decision = "UNAVAILABLE"; }
         }
         if (decision !== "APPROVED") reply = decision === "REDIRECT" ? COMMERCIAL_REDIRECT : COMMERCIAL_HANDOFF;
-        metadata = { ...metadata, entregue: false, guardrailVersion: COMMERCIAL_GUARDRAIL_VERSION, guardrailDecision: decision };
-        await recordGuardDecision(decision);
+        metadata = { ...metadata, entregue: false, guardrailVersion: COMMERCIAL_GUARDRAIL_VERSION, guardrailDecision: decision, guardrailStage: stage };
+        await recordGuardDecision(decision, stage);
         await prisma.plataformaLeadInteracao.update({ where: { id: previousReply.id }, data: { conteudo: reply, metadados: metadata } });
       }
       const sent = await sendCommercialWhatsappText(zapi, input.telefone, reply);
@@ -209,8 +216,8 @@ export async function processCommercialWhatsappMessage(input: {
     return { handled: true, duplicate: true };
   }
 
-  async function deliver(reply: string, type = "MENSAGEM", decision: CommercialGuardDecision = "APPROVED") {
-    const metadata = { guardrailVersion: COMMERCIAL_GUARDRAIL_VERSION, guardrailDecision: decision };
+  async function deliver(reply: string, type = "MENSAGEM", decision: CommercialGuardDecision = "APPROVED", stage: CommercialGuardStage = "review") {
+    const metadata = { guardrailVersion: COMMERCIAL_GUARDRAIL_VERSION, guardrailDecision: decision, guardrailStage: stage };
     const interaction = await prisma.plataformaLeadInteracao.create({ data: {
       leadId: lead.id, canal: LeadComercialCanal.WHATSAPP, direcao: LeadInteracaoDirecao.SAIDA,
       tipo: type, conteudo: reply, externalMessageId: replyId, metadados: { ...metadata, entregue: false }
@@ -223,7 +230,11 @@ export async function processCommercialWhatsappMessage(input: {
   if (isOptOut(input.mensagem)) {
     await markLeadOptOut(lead.id);
     const reply = "Tudo certo. Não enviaremos novas mensagens. Se quiser voltar, é só chamar este número.";
-    await deliver(reply, "OPT_OUT");
+    await deliver(reply, "OPT_OUT", "APPROVED", "optout");
+    return { handled: true };
+  }
+
+  if (lead.status === LeadComercialStatus.OPT_OUT) {
     return { handled: true };
   }
 
@@ -244,13 +255,16 @@ export async function processCommercialWhatsappMessage(input: {
   let parsed: CommercialAiResult = {};
   let reply = "";
   let decision: CommercialGuardDecision;
+  let stage: CommercialGuardStage = "scope";
   try {
     const context = await guardContext();
     const scope = await checkCommercialScope(context);
     if (scope === "ALLOW") {
+      stage = "generation";
       const content = await callCommercialAi({ ...context, system });
       parsed = parseAiResult(content);
       reply = clean(parsed?.reply, 3500) ?? "";
+      stage = "review";
       decision = reply && await checkCommercialReply({ ...context, reply }) ? "APPROVED" : "HUMAN";
     } else {
       decision = scope;
@@ -258,9 +272,9 @@ export async function processCommercialWhatsappMessage(input: {
   } catch {
     decision = "UNAVAILABLE";
   }
-  await recordGuardDecision(decision);
+  await recordGuardDecision(decision, stage);
   if (decision !== "APPROVED") {
-    await deliver(decision === "REDIRECT" ? COMMERCIAL_REDIRECT : COMMERCIAL_HANDOFF, `GUARDRAIL_${decision}`, decision);
+    await deliver(decision === "REDIRECT" ? COMMERCIAL_REDIRECT : COMMERCIAL_HANDOFF, `GUARDRAIL_${decision}`, decision, stage);
     return { handled: true };
   }
   const proposedStatus = ALLOWED_AI_STATUSES.has(parsed.status as LeadComercialStatus)

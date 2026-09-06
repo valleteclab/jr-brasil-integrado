@@ -207,6 +207,15 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Aplicada a migration `20260527190000_add_fiscal_entry_reversal_status` no PostgreSQL e gerado Prisma Client atualizado.
 - Validacao executada: `npm run lint`, `npx tsc --noEmit`, `npm run build`.
 
+## Atualizacao operacional - 2026-09-06 - guardrails comerciais e opt-out
+
+- Reexecução do teste live `npx tsx scripts/test-commercial-live.ts --allow-paid-ai --limit=60`: 12 cenários, 0 falhas, 30 requests, ~$0.0041, 0 WhatsApp enviados, 0 leads escritos.
+- Ajustes em `commercial-guardrails.ts` e `process-commercial-whatsapp.ts` para saudações comerciais, respostas curtas ("Sim") e rejeição de afirmações de integração sem confirmação.
+- Teste local `test-commercial-delivery.ts` reforçado com variantes de opt-out ("cancelar", "não quero mais mensagens", "remover meu contato", "quero sair", "não me chame mais", "pare de mandar mensagens").
+- Correção em `findOrCreateWhatsappLead` para não reativar leads com status `OPT_OUT` nem zerar `optOutEm` em novas mensagens.
+- `process-commercial-whatsapp.ts` agora ignora mensagens pós-opt-out e não consulta a IA nesses casos.
+- Validação executada: `npx tsx scripts/test-commercial-delivery.ts`, `npx tsx scripts/test-commercial-evolution.ts`, `npx tsc --noEmit`, `npm run lint`, `npm run build`.
+
 ## Atualizacao operacional - 2026-05-27 - ficha de produtos
 
 - Tela de produtos passou a carregar NCM, CEST, CFOP, custos, fornecedor, deposito e parametros de estoque diretamente do PostgreSQL.
