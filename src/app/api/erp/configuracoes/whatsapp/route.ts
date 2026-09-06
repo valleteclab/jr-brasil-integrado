@@ -4,8 +4,9 @@ import { requireModulo, requireAdmin } from "@/lib/auth/session";
 import { authErrorStatus } from "@/lib/auth/http";
 import { prisma } from "@/lib/db/prisma";
 import { saveWhatsappConfig } from "@/lib/whatsapp/whatsapp-service";
+import { evolutionOperacionalDisponivel, instanciaEvolutionValida } from "@/lib/whatsapp/evolution-client";
 
-// Config WhatsApp da empresa (Z-API ou Zernio) — sem expor segredos, só indicadores.
+// Config WhatsApp da empresa (Z-API, XERP WhatsApp/Evolution ou Zernio) — sem expor segredos, só indicadores.
 export async function GET() {
   try {
     await requireModulo("configuracoes");
@@ -14,13 +15,15 @@ export async function GET() {
     return NextResponse.json({
       ativo: cfg?.ativo ?? false,
       provedor: cfg?.provedor ?? "ZAPI",
-      instanceId: cfg?.instanceId ?? "",
+      instanceId: cfg?.provedor === "EVOLUTION" ? "" : (cfg?.instanceId ?? ""),
       temToken: Boolean(cfg?.tokenCripto),
       temClientToken: Boolean(cfg?.clientTokenCripto),
       atenderClientes: cfg?.atenderClientes ?? true,
       zernioAccountId: cfg?.zernioAccountId ?? "",
       zernioTemplateNome: cfg?.zernioTemplateNome ?? "",
-      zernioTemplateIdioma: cfg?.zernioTemplateIdioma ?? "pt_BR"
+      zernioTemplateIdioma: cfg?.zernioTemplateIdioma ?? "pt_BR",
+      evolutionDisponivel: evolutionOperacionalDisponivel(),
+      evolutionProvisionada: cfg?.provedor === "EVOLUTION" && instanciaEvolutionValida(cfg.instanceId)
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro ao carregar config do WhatsApp.";
@@ -45,9 +48,13 @@ export async function POST(request: Request) {
       zernioTemplateNome?: string;
       zernioTemplateIdioma?: string;
     };
+    const provedor = body.provedor === "ZERNIO" ? "ZERNIO" : body.provedor === "EVOLUTION" ? "EVOLUTION" : "ZAPI";
+    if (provedor === "EVOLUTION" && !evolutionOperacionalDisponivel()) {
+      return NextResponse.json({ error: "O XERP WhatsApp não está habilitado neste servidor." }, { status: 400 });
+    }
     await saveWhatsappConfig(scope, {
       ativo: Boolean(body.ativo),
-      provedor: body.provedor === "ZERNIO" ? "ZERNIO" : "ZAPI",
+      provedor,
       instanceId: body.instanceId,
       token: body.token,
       clientToken: body.clientToken,

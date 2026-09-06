@@ -1,0 +1,16 @@
+# Complemento opcional: XERP WhatsApp das EMPRESAS (agente operacional) via Evolution.
+#   docker stack deploy -c deploy/erp-stack.yml -c deploy/commercial-whatsapp-stack.yml \
+#     -c deploy/whatsapp-evolution-stack.yml erp
+# Criar antes o Docker secret com deploy/provision-whatsapp-evolution.py (ver DEPLOY.md).
+# A chave global só cria/apaga instâncias xerp-emp-*; cada instância tem token e webhook próprios.
+version: "3.8"
+services:
+  erp:
+    environment:
+      WHATSAPP_EVOLUTION_URL: "http://crm_evolution:8080"
+      WHATSAPP_EVOLUTION_API_KEY_FILE: "/run/secrets/xerp_evolution_global_key"
+    secrets:
+      - xerp_evolution_global_key
+secrets:
+  xerp_evolution_global_key:
+    external: true

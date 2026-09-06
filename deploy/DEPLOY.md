@@ -166,3 +166,32 @@ não é reprocessado. QR Code expira no painel e pode ser gerado novamente.
 Validação: `npx tsc --noEmit`, `npm run lint`, `npx tsx scripts/test-commercial-evolution.ts`,
 `npx tsx scripts/test-commercial-delivery.ts` e build Docker. Testes simulam o transporte;
 nenhuma mensagem real deve ser enviada sem destinatário e autorização definidos.
+
+## XERP WhatsApp das empresas (agente operacional) com Evolution
+
+Extensão da mesma Evolution para o agente OPERACIONAL das empresas — a alternativa própria à
+Z-API, sem custo de terceiros. Cada empresa ganha uma instância `xerp-emp-<id>` criada pelo ERP
+sob demanda, com token e segredo de webhook exclusivos (criptografados em `ConfiguracaoWhatsapp`,
+provedor `EVOLUTION`). O ERP guarda a chave GLOBAL da Evolution só para criar/apagar instâncias.
+Comercial (`xerp-comercial-v1`) e CRM continuam com suas próprias instâncias e tokens.
+
+1. Na VPS, executar `python3 deploy/provision-whatsapp-evolution.py`: valida a chave global de
+   dentro do container do CRM e cria o Docker secret `xerp_evolution_global_key`. Nada é impresso.
+2. Aplicar `deploy/whatsapp-evolution-stack.yml` junto dos demais no `docker stack deploy`, ou
+   fazer o `docker service update --secret-add/--env-add` que o script imprime (sem redeploy).
+3. Na empresa, em **Configurações → WhatsApp (Agente)**: provedor **XERP WhatsApp** →
+   **Vincular número (gerar QR Code)** → ler com o WhatsApp do número → marcar **Ativar
+   atendimento** e salvar. Telefones autorizados e clientes finais funcionam como na Z-API.
+
+Segurança: a criação de instância exige admin da empresa e valida Origin; GET não inicia
+pareamento. O webhook `/api/webhooks/whatsapp/evolution` só aceita instâncias `xerp-emp-*`,
+resolve a empresa pela instância, exige o segredo dela no header, ignora mensagens próprias,
+grupos, broadcasts e histórico, e reaproveita o mesmo `processWhatsappMessage` da Z-API —
+inclusive a checagem de que a instância pertence à empresa resolvida pelo telefone. Mídia
+(áudio até 60s, foto de cupom) é baixada pela API autenticada, nunca por URL pública.
+
+Isolamento futuro: se for desejável que o ERP não tenha a chave global do CRM, o caminho é subir
+uma Evolution dedicada (`erp_evolution`, com seu Postgres/Redis) e apontar `WHATSAPP_EVOLUTION_URL`
+para ela — nada no código muda.
+
+Validação: `npx tsx scripts/test-whatsapp-evolution.ts` (transporte simulado, sem envios).

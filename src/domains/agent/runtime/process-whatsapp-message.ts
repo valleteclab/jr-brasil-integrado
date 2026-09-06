@@ -23,8 +23,10 @@ import { responseNeedsText } from "./voice-response-policy";
 import { getAiVoice } from "@/domains/ai/openrouter-service";
 import type { KokoroVoiceId } from "@/domains/ai/tts-voices";
 
+/** Áudio recebido: URL temporária (Z-API) OU bytes já baixados pela API autenticada (Evolution). */
 type WhatsappAudioInput = {
-  url: string;
+  url?: string | null;
+  buffer?: Buffer | null;
   mimeType?: string | null;
   seconds?: number | null;
 };
@@ -65,7 +67,7 @@ function enqueueWhatsappVoice(
 }
 
 /**
- * Processa uma mensagem recebida do WhatsApp (Z-API):
+ * Processa uma mensagem recebida do WhatsApp (Z-API ou XERP WhatsApp/Evolution — mesmo fluxo):
  * 1. Resolve a identidade pelo telefone (AgenteTelefone → tenant/empresa/papel/cliente).
  *    Telefone não autorizado: se a empresa atende clientes e o telefone bate com um
  *    ClienteContato.whatsapp, vira papel CLIENTE escopado ao próprio cliente; senão, ignora.
@@ -77,7 +79,7 @@ function enqueueWhatsappVoice(
 export async function processWhatsappMessage(input: WhatsappMessageInput): Promise<void> {
   const telefone = input.telefone.replace(/\D/g, "");
   let texto = input.texto?.trim() ?? "";
-  const inputByVoice = Boolean(input.audio?.url);
+  const inputByVoice = Boolean(input.audio);
   if (!telefone || (!texto && !inputByVoice)) return;
 
   // 1) Identidade autorizada (vendedor/gestor) por telefone — com SELEÇÃO DE EMPRESA quando o
@@ -136,23 +138,36 @@ export async function processWhatsappMessage(input: WhatsappMessageInput): Promi
   // WhatsApp precisa estar ativo na empresa para responder.
   const whats = await getWhatsappRuntime(scope);
   if (!whats?.ativo) return;
-  if (whats.provedor !== "ZAPI" || !input.instanceId || input.instanceId !== whats.instanceId) {
-    console.warn("[whatsapp] mensagem descartada: instância Z-API não corresponde à empresa resolvida.");
+  // A instância que recebeu a mensagem tem que ser a da empresa resolvida pelo telefone
+  // (Z-API: instanceId da Z-API; Evolution: xerp-emp-*). Zernio não recebe pelo webhook do agente.
+  const recebePeloWebhook = whats.provedor === "ZAPI" || whats.provedor === "EVOLUTION";
+  if (!recebePeloWebhook || !input.instanceId || input.instanceId !== whats.instanceId) {
+    console.warn("[whatsapp] mensagem descartada: instância não corresponde à empresa resolvida.");
     return;
   }
 
-  if (input.audio?.url) {
+  if (input.audio) {
     const maxSeconds = Number(process.env.WHISPER_STT_MAX_SECONDS || "60");
     if (input.audio.seconds && Number.isFinite(maxSeconds) && input.audio.seconds > maxSeconds) {
       await sendWhatsappText(whats, telefone, `O áudio pode ter no máximo ${maxSeconds} segundos. Envie uma mensagem mais curta, por favor.`);
       return;
     }
     try {
-      const remote = await downloadRemoteAudio(input.audio.url);
+      let audioBuffer: Buffer;
+      let mimeType = input.audio.mimeType || undefined;
+      if (input.audio.buffer?.length) {
+        audioBuffer = input.audio.buffer;
+      } else if (input.audio.url) {
+        const remote = await downloadRemoteAudio(input.audio.url);
+        audioBuffer = remote.buffer;
+        mimeType = mimeType || remote.mimeType || undefined;
+      } else {
+        throw new Error("áudio indisponível");
+      }
       texto = await transcribeWhisperAudio({
-        audio: remote.buffer,
+        audio: audioBuffer,
         filename: "mensagem-whatsapp.ogg",
-        mimeType: input.audio.mimeType || remote.mimeType
+        mimeType
       });
     } catch (error) {
       console.error("[whatsapp] transcrição falhou:", error instanceof Error ? error.message : error);

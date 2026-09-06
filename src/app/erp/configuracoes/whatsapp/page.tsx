@@ -11,7 +11,7 @@ export default async function WhatsappSettingsPage() {
   return (
     <>
       <PageHeader eyebrow="Configurações" title="WhatsApp (Agente)">
-        <p>Conecte a Z-API e autorize os telefones que operam o agente pelo WhatsApp.</p>
+        <p>Conecte o número da empresa (XERP WhatsApp, Z-API ou Zernio) e autorize os telefones que operam o agente pelo WhatsApp.</p>
       </PageHeader>
       <WhatsappSettings />
     </>

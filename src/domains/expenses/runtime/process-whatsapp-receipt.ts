@@ -25,9 +25,9 @@ function fmtMoeda(v: number): string {
  * AgenteTelefone) registram gasto — clientes finais são ignorados. Lê o cupom por IA, cria o gasto
  * (origem WHATSAPP, status PENDENTE) e responde com um resumo. Nunca lança (webhook responde 200).
  */
-export async function processWhatsappReceipt(input: { telefone: string; imageUrl: string }): Promise<void> {
+export async function processWhatsappReceipt(input: { telefone: string; imageUrl?: string; imagemBase64?: string }): Promise<void> {
   const telefone = input.telefone.replace(/\D/g, "");
-  if (!telefone || !input.imageUrl) return;
+  if (!telefone || (!input.imageUrl && !input.imagemBase64)) return;
 
   // Empresa ATIVA do chat (telefone multi-empresa usa a sessão; sem sessão → pede a seleção).
   const { empresaAtivaSemTexto } = await import("@/domains/agent/runtime/selecao-empresa");
@@ -48,7 +48,8 @@ export async function processWhatsappReceipt(input: { telefone: string; imageUrl
   if (!whats?.ativo) return;
 
   try {
-    const base64 = await baixarImagemBase64(input.imageUrl);
+    // Evolution já entrega os bytes (API autenticada); Z-API manda URL temporária para baixar.
+    const base64 = input.imagemBase64 ?? (input.imageUrl ? await baixarImagemBase64(input.imageUrl) : null);
     if (!base64) {
       await sendWhatsappText(whats, telefone, "Não consegui baixar a imagem do cupom. Pode reenviar?");
       return;

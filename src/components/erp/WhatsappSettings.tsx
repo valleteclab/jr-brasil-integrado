@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 type Cfg = {
   ativo: boolean;
-  provedor: "ZAPI" | "ZERNIO";
+  provedor: "ZAPI" | "ZERNIO" | "EVOLUTION";
   instanceId: string;
   temToken: boolean;
   temClientToken: boolean;
@@ -12,13 +12,27 @@ type Cfg = {
   zernioAccountId: string;
   zernioTemplateNome: string;
   zernioTemplateIdioma: string;
+  evolutionDisponivel: boolean;
+  evolutionProvisionada: boolean;
+};
+type EvoConexao = { status: string; qrCode: string | null };
+const EVO_STATUS: Record<string, string> = {
+  connected: "Conectado ✅",
+  connecting: "Aguardando leitura do QR Code…",
+  disconnected: "Desconectado",
+  nao_provisionado: "Número ainda não vinculado",
+  indisponivel: "Indisponível neste servidor",
+  loading: "Consultando…",
+  unknown: "Não foi possível verificar"
 };
 type ZernioConta = { id: string; platform: string; nome: string };
 type ZernioTemplate = { nome: string; idioma: string; status: string; categoria: string };
 type Telefone = { id: string; telefone: string; nome: string | null; role: "GESTOR" | "VENDEDOR" | "CLIENTE"; ativo: boolean; criadoEm: string };
 
 export function WhatsappSettings() {
-  const [cfg, setCfg] = useState<Cfg>({ ativo: false, provedor: "ZAPI", instanceId: "", temToken: false, temClientToken: false, atenderClientes: true, zernioAccountId: "", zernioTemplateNome: "", zernioTemplateIdioma: "pt_BR" });
+  const [cfg, setCfg] = useState<Cfg>({ ativo: false, provedor: "ZAPI", instanceId: "", temToken: false, temClientToken: false, atenderClientes: true, zernioAccountId: "", zernioTemplateNome: "", zernioTemplateIdioma: "pt_BR", evolutionDisponivel: false, evolutionProvisionada: false });
+  const [evo, setEvo] = useState<EvoConexao>({ status: "loading", qrCode: null });
+  const [evoBusy, setEvoBusy] = useState(false);
   const [token, setToken] = useState("");
   const [clientToken, setClientToken] = useState("");
   const [zernioApiKey, setZernioApiKey] = useState("");
@@ -44,6 +58,37 @@ export function WhatsappSettings() {
     } catch { /* silencioso */ }
   }
   useEffect(() => { void carregar(); }, []);
+
+  // XERP WhatsApp (Evolution): estado da instância da empresa e pareamento por QR Code.
+  const evoAcao = useCallback(async (acao?: "conectar" | "desconectar" | "remover") => {
+    if (acao) { setEvoBusy(true); setError(""); setMsg(""); }
+    try {
+      const res = await fetch("/api/erp/configuracoes/whatsapp/evolution", acao
+        ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ acao }) }
+        : { cache: "no-store" });
+      const data = (await res.json()) as EvoConexao & { error?: string };
+      if (!res.ok) throw new Error(data.error || "Não foi possível consultar a conexão.");
+      // Consulta periódica não apaga o QR em exibição; conectar troca pelo novo, conectado limpa.
+      setEvo((v) => ({ status: data.status, qrCode: acao === "conectar" ? data.qrCode : data.status === "connected" ? null : v.qrCode }));
+      if (acao === "conectar" || acao === "remover") {
+        setCfg((c) => ({ ...c, provedor: "EVOLUTION", evolutionProvisionada: data.status !== "nao_provisionado" }));
+      }
+    } catch (e) {
+      setEvo((v) => ({ ...v, status: v.status === "loading" ? "unknown" : v.status }));
+      setError(e instanceof Error ? e.message : "Não foi possível consultar a conexão.");
+    } finally { if (acao) setEvoBusy(false); }
+  }, []);
+  useEffect(() => { if (cfg.provedor === "EVOLUTION") void evoAcao(); }, [cfg.provedor, evoAcao]);
+  useEffect(() => {
+    if (evo.status !== "connecting") return;
+    const timer = setInterval(() => { void evoAcao(); }, 5000);
+    return () => clearInterval(timer);
+  }, [evo.status, evoAcao]);
+  useEffect(() => {
+    if (!evo.qrCode) return;
+    const timer = setTimeout(() => setEvo((v) => ({ ...v, qrCode: null })), 40_000);
+    return () => clearTimeout(timer);
+  }, [evo.qrCode]);
 
   async function salvar() {
     setBusy(true); setError(""); setMsg("");
@@ -124,13 +169,21 @@ export function WhatsappSettings() {
   return (
     <>
       <div className="erp-card">
-        <div className="erp-card-head"><h3>WhatsApp (Z-API)</h3></div>
+        <div className="erp-card-head"><h3>WhatsApp do agente</h3></div>
         <div className="erp-card-body">
-          <p style={{ fontSize: 12.5, color: "var(--erp-mute)", margin: "0 0 12px" }}>
-            Conecte sua instância Z-API para o agente atender pelo WhatsApp. As credenciais são
-            guardadas criptografadas. Configure na Z-API o webhook <b>&quot;Ao receber&quot;</b> apontando para:
-            <br /><span className="mono" style={{ wordBreak: "break-all" }}>{webhookUrl}</span>
-          </p>
+          {cfg.provedor === "ZAPI" && (
+            <p style={{ fontSize: 12.5, color: "var(--erp-mute)", margin: "0 0 12px" }}>
+              Conecte sua instância Z-API para o agente atender pelo WhatsApp. As credenciais são
+              guardadas criptografadas. Configure na Z-API o webhook <b>&quot;Ao receber&quot;</b> apontando para:
+              <br /><span className="mono" style={{ wordBreak: "break-all" }}>{webhookUrl}</span>
+            </p>
+          )}
+          {cfg.provedor === "EVOLUTION" && (
+            <p style={{ fontSize: 12.5, color: "var(--erp-mute)", margin: "0 0 12px" }}>
+              O número da empresa conecta na nossa própria infraestrutura, sem custo de terceiros: leia o QR Code
+              com o WhatsApp do número que vai atender e pronto — texto, áudio, PDF e foto de cupom, igual ao Telegram.
+            </p>
+          )}
           {error && <div className="alert danger" style={{ marginBottom: 10 }}><span>{error}</span></div>}
           {msg && <div className="alert success" style={{ marginBottom: 10 }}><span>{msg}</span></div>}
           <div className="erp-form">
@@ -143,12 +196,15 @@ export function WhatsappSettings() {
               Atender clientes finais (autoatendimento dos próprios pedidos)
             </label>
             <label>Provedor
-              <select value={cfg.provedor} onChange={(e) => setCfg({ ...cfg, provedor: e.target.value === "ZERNIO" ? "ZERNIO" : "ZAPI" })}>
+              <select value={cfg.provedor} onChange={(e) => setCfg({ ...cfg, provedor: e.target.value === "ZERNIO" ? "ZERNIO" : e.target.value === "EVOLUTION" ? "EVOLUTION" : "ZAPI" })}>
+                <option value="EVOLUTION" disabled={!cfg.evolutionDisponivel}>
+                  XERP WhatsApp (conexão própria, sem custo de terceiros){cfg.evolutionDisponivel ? "" : " — indisponível neste servidor"}
+                </option>
                 <option value="ZAPI">Z-API (não oficial — conexão WhatsApp Web)</option>
                 <option value="ZERNIO">Zernio (API OFICIAL da Meta / WABA)</option>
               </select>
               <small className="field-hint">
-                Zernio usa a API oficial: iniciar conversa exige template aprovado na Meta; PDF só entra na janela de 24h após o cliente responder. O agente de atendimento (webhook) segue na Z-API.
+                XERP WhatsApp e Z-API atendem pelo agente (texto, áudio, documentos e foto de cupom). Zernio usa a API oficial: iniciar conversa exige template aprovado na Meta e o PDF só entra na janela de 24h — serve para envio de documentos, não para o agente.
               </small>
             </label>
             {cfg.provedor === "ZAPI" && (
@@ -209,6 +265,38 @@ export function WhatsappSettings() {
                   <input value={cfg.zernioTemplateIdioma} onChange={(e) => setCfg({ ...cfg, zernioTemplateIdioma: e.target.value })} placeholder="pt_BR" />
                 </label>
               </>
+            )}
+            {cfg.provedor === "EVOLUTION" && (
+              <div style={{ gridColumn: "1 / -1" }}>
+                <p role="status" style={{ margin: "4px 0 8px", fontWeight: 600 }}>Conexão: {EVO_STATUS[evo.status] ?? evo.status}</p>
+                {evo.qrCode && (
+                  <div style={{ marginBottom: 10 }}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={evo.qrCode} alt="QR Code para conectar o WhatsApp da empresa" width={280} height={280} style={{ maxWidth: "100%", height: "auto" }} />
+                    <p style={{ fontSize: 12.5, margin: "6px 0 0" }}>
+                      No WhatsApp do número da empresa: <b>Aparelhos conectados → Conectar um aparelho</b>. O código expira em 40 segundos.
+                    </p>
+                  </div>
+                )}
+                {evo.status === "connecting" && !evo.qrCode && !evoBusy && <p style={{ fontSize: 12.5 }}>Se o QR Code expirou, gere outro.</p>}
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  {evo.status !== "connected" && evo.status !== "indisponivel" && (
+                    <button type="button" className="btn-erp primary sm" disabled={evoBusy || !cfg.evolutionDisponivel} onClick={() => void evoAcao("conectar")}>
+                      {evoBusy ? "Conectando…" : cfg.evolutionProvisionada ? "Gerar QR Code" : "Vincular número (gerar QR Code)"}
+                    </button>
+                  )}
+                  <button type="button" className="btn-erp light sm" disabled={evoBusy} onClick={() => void evoAcao()}>Atualizar conexão</button>
+                  {evo.status === "connected" && (
+                    <button type="button" className="btn-erp ghost sm" disabled={evoBusy} onClick={() => void evoAcao("desconectar")}>Desconectar</button>
+                  )}
+                  {cfg.evolutionProvisionada && (
+                    <button type="button" className="btn-erp danger sm" disabled={evoBusy} onClick={() => { if (window.confirm("Remover o número desta empresa? O WhatsApp será desconectado e o atendimento desativado.")) void evoAcao("remover"); }}>
+                      Remover número
+                    </button>
+                  )}
+                </div>
+                <small className="field-hint">Depois de conectar, marque &quot;Ativar atendimento&quot; e salve. Conexão hospedada por nós (Evolution API, WhatsApp Web).</small>
+              </div>
             )}
           </div>
           <div className="erp-toolbar" style={{ borderBottom: "none", paddingBottom: 0, marginTop: 8 }}>

@@ -100,6 +100,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
+| 2026-09-06 | A gerar | Em andamento | XERP WhatsApp das empresas: provedor `EVOLUTION` no agente operacional (instância `xerp-emp-*` por empresa, QR Code na tela de WhatsApp, webhook próprio autenticado, mesmo fluxo da Z-API com texto/áudio/PDF/cupom). |
 | 2026-09-06 | A gerar | Em andamento | Registro do deploy dos guardrails na VPS nova: imagem `jrb-erp:48b1fa0`, serviço saudável e smoke checks aprovados. |
 | 2026-09-06 | `633716f` | Enviado | Guardrails comerciais de escopo e revisão, fatos de CHAT/SPED, fallback humano e revalidação de respostas pendentes; implantado com imagem `jrb-erp:48b1fa0`. |
 | 2026-09-06 | A gerar | Em andamento | Espera limitada pela preparação do primeiro QR Code na Evolution, identificada no smoke test real. |
@@ -206,6 +207,17 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Listagem de notas de entrada agora exibe acao `Estornar` para notas registradas e mantem exclusao apenas para notas sem movimento de estoque.
 - Aplicada a migration `20260527190000_add_fiscal_entry_reversal_status` no PostgreSQL e gerado Prisma Client atualizado.
 - Validacao executada: `npm run lint`, `npx tsc --noEmit`, `npm run build`.
+
+## Atualizacao operacional - 2026-09-06 - XERP WhatsApp das empresas (Evolution no agente operacional)
+
+- Novo provedor `EVOLUTION` em `ConfiguracaoWhatsapp` (migration `20260906150000_whatsapp_provedor_evolution`): a mesma Evolution do comercial passa a atender o agente OPERACIONAL das empresas, sem depender da Z-API.
+- `src/lib/whatsapp/evolution-client.ts`: provisionamento da instância `xerp-emp-<empresa>` (token e segredo de webhook gerados no servidor, chave global só para criar/apagar), QR Code, estado, logout, envio de texto/áudio/documento e download de mídia pela API autenticada.
+- `whatsapp-service.ts` despacha `EVOLUTION` em texto, áudio e documento; `saveWhatsappConfig` não toca nas credenciais gerenciadas pelo provisionamento; `vincular/desvincularInstanciaEvolution`.
+- Rotas: `GET/POST /api/erp/configuracoes/whatsapp/evolution` (status, conectar, desconectar, remover — admin + Origin) e webhook `POST /api/webhooks/whatsapp/evolution` (instância → empresa, segredo por instância, dedupe, mesmo `processWhatsappMessage`/`processWhatsappReceipt` da Z-API).
+- `process-whatsapp-message` aceita áudio em bytes (além de URL) e valida a instância também para Evolution; `process-whatsapp-receipt` aceita imagem em base64.
+- Tela Configurações → WhatsApp: provedor "XERP WhatsApp" com painel de conexão (QR Code, atualizar, desconectar, remover número).
+- Deploy: `deploy/provision-whatsapp-evolution.py` (secret `xerp_evolution_global_key`) + `deploy/whatsapp-evolution-stack.yml`; sem o secret o provedor fica indisponível e o webhook ignora eventos.
+- Validação: `npx prisma generate`, `npx tsc --noEmit`, `npm run lint`, `npx tsx scripts/test-whatsapp-evolution.ts`, `npx tsx scripts/test-commercial-evolution.ts`.
 
 ## Atualizacao operacional - 2026-09-06 - guardrails comerciais e opt-out
 

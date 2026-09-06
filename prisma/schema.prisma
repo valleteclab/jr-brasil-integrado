@@ -291,6 +291,9 @@ enum ProvedorWhatsapp {
   /// Zernio (camada sobre a API OFICIAL da Meta / WABA): conversa iniciada pela empresa exige
   /// template aprovado; mensagem livre e PDF só na janela de 24h após resposta do cliente.
   ZERNIO
+  /// "XERP WhatsApp": Evolution API hospedada por nós (WhatsApp Web/Baileys), uma instância
+  /// por empresa (xerp-emp-*) com token e segredo de webhook próprios — sem custo de terceiros.
+  EVOLUTION
 }
 
 enum LeadComercialStatus {
