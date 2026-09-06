@@ -74,7 +74,7 @@ export async function POST(request: Request) {
     const imageUrl = body?.image?.imageUrl?.trim() ?? "";
     if (imageUrl) {
       // Foto recebida → trata como cupom (controle de gastos).
-      await processWhatsappReceipt({ telefone, imageUrl });
+      await processWhatsappReceipt({ telefone, imageUrl, instanceId: body.instanceId });
     } else {
       const texto = body?.text?.message?.trim() ?? "";
       const audioUrl = body?.audio?.audioUrl?.trim() ?? "";

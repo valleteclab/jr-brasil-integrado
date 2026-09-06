@@ -60,7 +60,7 @@ export async function POST(request: Request) {
     if (inbound.image) {
       const midia = await baixarMidiaEvolution(whats, inbound.image.key);
       if (midia) {
-        await processWhatsappReceipt({ telefone: inbound.phone, imagemBase64: `data:${midia.mimeType || "image/jpeg"};base64,${midia.buffer.toString("base64")}` });
+        await processWhatsappReceipt({ telefone: inbound.phone, instanceId: inbound.instance, imagemBase64: `data:${midia.mimeType || "image/jpeg"};base64,${midia.buffer.toString("base64")}` });
       }
     } else if (inbound.audio) {
       // Acima do limite não baixa: o agente responde a orientação de duração pelo campo seconds.

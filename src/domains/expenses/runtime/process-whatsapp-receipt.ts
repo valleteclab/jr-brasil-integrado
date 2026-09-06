@@ -25,18 +25,21 @@ function fmtMoeda(v: number): string {
  * AgenteTelefone) registram gasto — clientes finais são ignorados. Lê o cupom por IA, cria o gasto
  * (origem WHATSAPP, status PENDENTE) e responde com um resumo. Nunca lança (webhook responde 200).
  */
-export async function processWhatsappReceipt(input: { telefone: string; imageUrl?: string; imagemBase64?: string }): Promise<void> {
+export async function processWhatsappReceipt(input: { telefone: string; imageUrl?: string; imagemBase64?: string; instanceId?: string | null }): Promise<void> {
   const telefone = input.telefone.replace(/\D/g, "");
   if (!telefone || (!input.imageUrl && !input.imagemBase64)) return;
 
-  // Empresa ATIVA do chat (telefone multi-empresa usa a sessão; sem sessão → pede a seleção).
+  // O número que recebeu a foto identifica a empresa; só sem instância cai na sessão/seletor.
+  const dona = input.instanceId
+    ? await prisma.configuracaoWhatsapp.findFirst({ where: { instanceId: input.instanceId }, select: { tenantId: true, empresaId: true } })
+    : null;
   const { empresaAtivaSemTexto } = await import("@/domains/agent/runtime/selecao-empresa");
-  const resolucao = await empresaAtivaSemTexto({ canal: "WHATSAPP", chave: telefone, telefone });
+  const resolucao = await empresaAtivaSemTexto({ canal: "WHATSAPP", chave: telefone, telefone, empresaId: dona?.empresaId });
   if (resolucao.tipo === "nenhum") return; // só staff autorizado
   if (resolucao.tipo === "responder") {
-    const qualquer = await prisma.agenteTelefone.findFirst({ where: { telefone, ativo: true }, select: { tenantId: true, empresaId: true } });
-    if (qualquer) {
-      const w = await getWhatsappRuntime({ tenantId: qualquer.tenantId, empresaId: qualquer.empresaId });
+    const remetente = dona ?? await prisma.agenteTelefone.findFirst({ where: { telefone, ativo: true }, select: { tenantId: true, empresaId: true } });
+    if (remetente) {
+      const w = await getWhatsappRuntime({ tenantId: remetente.tenantId, empresaId: remetente.empresaId });
       if (w?.ativo) await sendWhatsappText(w, telefone, `Antes de lançar o cupom, escolha a empresa.\n\n${resolucao.mensagem}`);
     }
     return;

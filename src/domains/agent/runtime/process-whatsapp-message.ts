@@ -82,11 +82,17 @@ export async function processWhatsappMessage(input: WhatsappMessageInput): Promi
   const inputByVoice = Boolean(input.audio);
   if (!telefone || (!texto && !inputByVoice)) return;
 
-  // 1) Identidade autorizada (vendedor/gestor) por telefone — com SELEÇÃO DE EMPRESA quando o
-  // telefone opera várias (contador multi-CNPJ): o seletor fixa a empresa ativa da sessão.
+  // O NÚMERO que recebeu a mensagem já identifica a empresa (a instância Z-API/Evolution é de uma
+  // empresa): a resolução fica restrita a ela — sem seletor, mesmo para telefone multi-CNPJ.
+  const dona = input.instanceId
+    ? await prisma.configuracaoWhatsapp.findFirst({ where: { instanceId: input.instanceId }, select: { tenantId: true, empresaId: true } })
+    : null;
+
+  // 1) Identidade autorizada (vendedor/gestor) por telefone — com SELEÇÃO DE EMPRESA só quando o
+  // número não determina a empresa e o telefone opera várias (contador multi-CNPJ).
   const resolucao = inputByVoice
-    ? await empresaAtivaSemTexto({ canal: "WHATSAPP", chave: telefone, telefone })
-    : await resolverEmpresaAtiva({ canal: "WHATSAPP", chave: telefone, telefone, texto });
+    ? await empresaAtivaSemTexto({ canal: "WHATSAPP", chave: telefone, telefone, empresaId: dona?.empresaId })
+    : await resolverEmpresaAtiva({ canal: "WHATSAPP", chave: telefone, telefone, texto, empresaId: dona?.empresaId });
 
   let scope: TenantScope;
   let role: AgentRole;
@@ -95,10 +101,10 @@ export async function processWhatsappMessage(input: WhatsappMessageInput): Promi
   let empresaAtivaNome = "";
 
   if (resolucao.tipo === "responder") {
-    // Seletor/troca de empresa: responde e não processa o texto como pergunta.
-    const vinculoQualquer = await prisma.agenteTelefone.findFirst({ where: { telefone, ativo: true }, select: { tenantId: true, empresaId: true } });
-    if (vinculoQualquer) {
-      const whatsSel = await getWhatsappRuntime({ tenantId: vinculoQualquer.tenantId, empresaId: vinculoQualquer.empresaId });
+    // Seletor/troca de empresa: responde (pelo número que recebeu) e não processa o texto como pergunta.
+    const remetente = dona ?? await prisma.agenteTelefone.findFirst({ where: { telefone, ativo: true }, select: { tenantId: true, empresaId: true } });
+    if (remetente) {
+      const whatsSel = await getWhatsappRuntime({ tenantId: remetente.tenantId, empresaId: remetente.empresaId });
       if (whatsSel?.ativo) await sendWhatsappText(whatsSel, telefone, resolucao.mensagem);
     }
     return;
@@ -111,9 +117,9 @@ export async function processWhatsappMessage(input: WhatsappMessageInput): Promi
     multiEmpresa = resolucao.multi;
     empresaAtivaNome = resolucao.vinculo.empresaNome;
   } else {
-    // 2) Cliente final: localizar por ClienteContato.whatsapp em empresas que atendem clientes.
+    // 2) Cliente final: localizar por ClienteContato.whatsapp — na empresa dona do número, quando conhecida.
     const contato = await prisma.clienteContato.findFirst({
-      where: { whatsapp: { contains: telefone.slice(-8) } },
+      where: { whatsapp: { contains: telefone.slice(-8) }, ...(dona ? { cliente: { empresaId: dona.empresaId } } : {}) },
       select: { clienteId: true, cliente: { select: { tenantId: true, empresaId: true } } }
     });
     if (!contato?.cliente) return; // telefone desconhecido → ignora silenciosamente

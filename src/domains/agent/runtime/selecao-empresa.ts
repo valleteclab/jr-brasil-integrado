@@ -8,6 +8,8 @@ import type { AgentRole } from "../types";
  *    digitado. Cliente A não alcança dados do cliente B.
  *  - Com 1 vínculo, comporta-se como sempre. Com N, o assistente pergunta qual empresa (lista
  *    numerada), fixa em ChatEmpresaAtiva e mostra a empresa ativa; "trocar empresa" alterna.
+ *  - Quando o CANAL já determina a empresa (WhatsApp: o número que recebeu é de uma empresa),
+ *    `empresaId` restringe os vínculos a ela — sem seletor, mesmo para telefone multi-CNPJ.
  */
 
 export type VinculoEmpresa = {
@@ -27,12 +29,12 @@ export type ResolucaoEmpresa =
 const fmtCnpj = (d: string) =>
   d.length === 14 ? `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}` : d;
 
-async function listarVinculos(telefone: string): Promise<VinculoEmpresa[]> {
+async function listarVinculos(telefone: string, empresaId?: string): Promise<VinculoEmpresa[]> {
   // Sufixo de 8 dígitos: Telegram/WhatsApp mandam formatos diferentes do cadastro (+55, DDD, 9).
   const sufixo = telefone.replace(/\D/g, "").slice(-8);
   if (!sufixo) return [];
   const rows = await prisma.agenteTelefone.findMany({
-    where: { ativo: true, telefone: { contains: sufixo } },
+    where: { ativo: true, telefone: { contains: sufixo }, ...(empresaId ? { empresaId } : {}) },
     include: { empresa: { select: { razaoSocial: true, nomeFantasia: true, cnpj: true } } }
   });
   return rows
@@ -59,10 +61,10 @@ function menuEmpresas(vinculos: VinculoEmpresa[]): string {
  *  - responder: envie a mensagem ao usuário e NÃO processe o texto como pergunta;
  *  - nenhum: telefone sem vínculo de equipe (segue o fluxo de cliente final/ignora).
  */
-export async function resolverEmpresaAtiva(params: { canal: string; chave: string; telefone: string; texto: string }): Promise<ResolucaoEmpresa> {
+export async function resolverEmpresaAtiva(params: { canal: string; chave: string; telefone: string; texto: string; empresaId?: string }): Promise<ResolucaoEmpresa> {
   const { canal, chave, telefone } = params;
   const texto = params.texto.trim().toLowerCase();
-  const vinculos = await listarVinculos(telefone);
+  const vinculos = await listarVinculos(telefone, params.empresaId);
   if (!vinculos.length) return { tipo: "nenhum" };
   if (vinculos.length === 1) return { tipo: "ok", vinculo: vinculos[0], multi: false };
 
@@ -117,9 +119,9 @@ export async function resolverEmpresaAtiva(params: { canal: string; chave: strin
 }
 
 /** Empresa ativa para fluxos NÃO-textuais (ex.: foto de cupom): usa a sessão; sem sessão e multi → null. */
-export async function empresaAtivaSemTexto(params: { canal: string; chave: string; telefone: string }): Promise<ResolucaoEmpresa> {
+export async function empresaAtivaSemTexto(params: { canal: string; chave: string; telefone: string; empresaId?: string }): Promise<ResolucaoEmpresa> {
   const { canal, chave, telefone } = params;
-  const vinculos = await listarVinculos(telefone);
+  const vinculos = await listarVinculos(telefone, params.empresaId);
   if (!vinculos.length) return { tipo: "nenhum" };
   if (vinculos.length === 1) return { tipo: "ok", vinculo: vinculos[0], multi: false };
   const sessao = await prisma.chatEmpresaAtiva.findUnique({ where: { canal_chave: { canal, chave } } });
