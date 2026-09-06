@@ -100,7 +100,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
-| 2026-09-06 | A gerar | Em andamento | Guardrails comerciais de escopo e revisão, fatos de CHAT/SPED, fallback humano e revalidação de respostas pendentes, com testes simulados. |
+| 2026-09-06 | `633716f` | Enviado | Guardrails comerciais de escopo e revisão, fatos de CHAT/SPED, fallback humano e revalidação de respostas pendentes, com testes simulados; deploy pendente. |
 | 2026-09-06 | A gerar | Em andamento | Espera limitada pela preparação do primeiro QR Code na Evolution, identificada no smoke test real. |
 | 2026-09-06 | A gerar | Em andamento | Bloqueio de retry comercial antigo após opt-out mais recente, coberto por teste. |
 | 2026-09-06 | A gerar | Em andamento | WhatsApp comercial próprio via Evolution, instância isolada, QR Code no admin, webhook autenticado e recuperação de respostas. |
@@ -833,4 +833,4 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Teste de regressão primeiro falhou ao enviar conteúdo sobre PHP; após a implementação, testes simulados cobrem desvio, instruções adversariais, revisão de SPED, falhas/timeout, JSON inválido, pedido humano, histórico, retry legado e opt-out. Nenhuma IA, banco ou mensagem real usados nos testes.
 - Validação: testes `test-commercial-delivery.ts` e `test-commercial-evolution.ts` aprovados; TypeScript aprovado; lint sem erros, com os dois avisos preexistentes. `npm run build` local aprovado (201 páginas geradas).
 - Sem novas dependências, mudanças de schema ou migrations. Arquivos: `commercial-guardrails.ts`, `process-commercial-whatsapp.ts`, `scripts/test-commercial-delivery.ts`, README e STATUS.
-- Commit/push: A gerar. Deploy NÃO realizado. Após implantação autorizada na `vps-nova` via `deploy/vps.sh`, repetir os testes reais de conversa, áudio curto, SPED e opt-out.
+- Entrega concluída no código: commit `633716f`, enviado para `origin/main`. Deploy NÃO realizado. Após implantação autorizada na `vps-nova` via `deploy/vps.sh`, repetir os testes reais de conversa, áudio curto, SPED e opt-out.
