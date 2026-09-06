@@ -3,6 +3,7 @@ import { getCommercialAgentRuntime } from "@/domains/platform-sales/application/
 import { processCommercialWhatsappMessage } from "@/domains/platform-sales/runtime/process-commercial-whatsapp";
 import { downloadRemoteAudio } from "@/lib/stt/remote-audio";
 import { transcribeWhisperAudio } from "@/lib/stt/whisper-client";
+import { commercialEvolutionEnabled } from "@/lib/whatsapp/commercial-evolution";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 240;
@@ -29,6 +30,7 @@ export async function POST(
   request: Request,
   context: { params: { secret: string } }
 ) {
+  if (commercialEvolutionEnabled()) return NextResponse.json({ received: true });
   let body: ZapiCommercialInbound;
   try {
     body = (await request.json()) as ZapiCommercialInbound;

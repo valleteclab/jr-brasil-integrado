@@ -128,6 +128,10 @@ export async function findOrCreateWhatsappLead(input: {
 }) {
   const telefone = normalizeLeadPhone(input.telefone);
   if (!telefone) throw new Error("Telefone de lead inválido.");
+  if (input.messageId) {
+    const previous = await prisma.plataformaLeadInteracao.findUnique({ where: { canal_externalMessageId: { canal: "WHATSAPP", externalMessageId: input.messageId } }, include: { lead: true } });
+    if (previous) return { lead: previous.lead, duplicate: true };
+  }
   const now = new Date();
   let lead = await prisma.plataformaLead.findFirst({
     where: { telefone },

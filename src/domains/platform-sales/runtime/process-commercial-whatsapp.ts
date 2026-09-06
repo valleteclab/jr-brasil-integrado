@@ -1,11 +1,10 @@
 import { LeadComercialCanal, LeadComercialStatus, LeadInteracaoDirecao } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
-import { sendZapiText } from "@/lib/whatsapp/zapi-client";
+import { sendCommercialWhatsappText } from "./commercial-whatsapp-transport";
 import { getCommercialAgentRuntime } from "../application/commercial-agent-config";
 import {
   findOrCreateWhatsappLead,
-  markLeadOptOut,
-  recordCommercialInteraction
+  markLeadOptOut
 } from "../application/commercial-lead-use-cases";
 
 const OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions";
@@ -136,25 +135,41 @@ export async function processCommercialWhatsappMessage(input: {
     mensagem: input.mensagem,
     messageId: input.messageId
   });
-  if (incoming.duplicate) return { handled: true, duplicate: true };
   const lead = incoming.lead;
+  // Mantém a deduplicação histórica da Z-API; recuperação de entrega é do canal Evolution.
+  if (incoming.duplicate && !input.messageId?.startsWith("evo:")) return { handled: true, duplicate: true };
   const zapi = {
     instanceId: config.whatsappInstanceId,
     token: config.whatsappToken,
     clientToken: config.whatsappClientToken
   };
 
+  const replyId = input.messageId ? `reply:${input.messageId}` : null;
+  const previousReply = replyId ? await prisma.plataformaLeadInteracao.findUnique({ where: { canal_externalMessageId: { canal: "WHATSAPP", externalMessageId: replyId } } }) : null;
+  if (previousReply) {
+    const metadata = previousReply.metadados as { entregue?: boolean } | null;
+    if (!metadata?.entregue) {
+      const sent = await sendCommercialWhatsappText(zapi, input.telefone, previousReply.conteudo);
+      if (!sent.ok) throw new Error("Falha ao entregar a resposta comercial.");
+      await prisma.plataformaLeadInteracao.update({ where: { id: previousReply.id }, data: { metadados: { ...metadata, entregue: true } } });
+    }
+    return { handled: true, duplicate: true };
+  }
+
+  async function deliver(reply: string, type = "MENSAGEM") {
+    const interaction = await prisma.plataformaLeadInteracao.create({ data: {
+      leadId: lead.id, canal: LeadComercialCanal.WHATSAPP, direcao: LeadInteracaoDirecao.SAIDA,
+      tipo: type, conteudo: reply, externalMessageId: replyId, metadados: { entregue: false }
+    } });
+    const sent = await sendCommercialWhatsappText(zapi, input.telefone, reply);
+    if (!sent.ok) throw new Error("Falha ao entregar a resposta comercial.");
+    await prisma.plataformaLeadInteracao.update({ where: { id: interaction.id }, data: { metadados: { entregue: true } } });
+  }
+
   if (isOptOut(input.mensagem)) {
     await markLeadOptOut(lead.id);
     const reply = "Tudo certo. Não enviaremos novas mensagens. Se quiser voltar, é só chamar este número.";
-    await recordCommercialInteraction({
-      leadId: lead.id,
-      channel: LeadComercialCanal.WHATSAPP,
-      direction: LeadInteracaoDirecao.SAIDA,
-      type: "OPT_OUT",
-      content: reply
-    });
-    await sendZapiText(zapi, input.telefone, reply);
+    await deliver(reply, "OPT_OUT");
     return { handled: true };
   }
 
@@ -216,7 +231,7 @@ export async function processCommercialWhatsappMessage(input: {
   const score = Number(parsed.score);
   const qualification = parsed.lead ?? {};
   const volume = Number(qualification.volumeNotasMes);
-  const updated = await prisma.plataformaLead.update({
+  await prisma.plataformaLead.update({
     where: { id: lead.id },
     data: {
       status: lead.status === LeadComercialStatus.ASSINANTE ? lead.status : proposedStatus,
@@ -235,18 +250,6 @@ export async function processCommercialWhatsappMessage(input: {
     }
   });
 
-  await recordCommercialInteraction({
-    leadId: lead.id,
-    channel: LeadComercialCanal.WHATSAPP,
-    direction: LeadInteracaoDirecao.SAIDA,
-    content: reply,
-    metadata: {
-      status: updated.status,
-      score: updated.score,
-      precisaHumano: updated.precisaHumano
-    }
-  });
-  const sent = await sendZapiText(zapi, input.telefone, reply);
-  if (!sent.ok) console.error("[agente-comercial] falha ao responder WhatsApp:", sent.error);
+  await deliver(reply);
   return { handled: true };
 }

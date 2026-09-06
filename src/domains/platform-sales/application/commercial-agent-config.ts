@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { prisma } from "@/lib/db/prisma";
 import { requirePlatformAdmin } from "@/lib/auth/session";
 import { decryptSecret, encryptSecret, secretLastChars } from "@/lib/security/secret-crypto";
+import { commercialEvolutionEnabled, commercialEvolutionConfig, evolutionConnection } from "@/lib/whatsapp/commercial-evolution";
 
 export type CommercialAgentRuntimeConfig = {
   ativo: boolean;
@@ -36,12 +37,13 @@ function decryptOptional(value: string | null): string | null {
 export async function getCommercialAgentRuntime(): Promise<CommercialAgentRuntimeConfig | null> {
   const config = await prisma.plataformaAgenteComercial.findUnique({ where: { id: "default" } });
   if (!config) return null;
+  const evolution = commercialEvolutionEnabled() ? commercialEvolutionConfig() : null;
   return {
     ativo: config.ativo,
     nomeAgente: config.nomeAgente,
     numeroWhatsapp: config.numeroWhatsapp,
-    whatsappInstanceId: config.whatsappInstanceId,
-    whatsappToken: decryptOptional(config.whatsappTokenCripto),
+    whatsappInstanceId: evolution?.instance ?? config.whatsappInstanceId,
+    whatsappToken: evolution?.apiKey ?? decryptOptional(config.whatsappTokenCripto),
     whatsappClientToken: decryptOptional(config.whatsappClientTokenCripto),
     webhookSecret: decryptOptional(config.webhookSecretCripto),
     openrouterApiKey: decryptOptional(config.openrouterApiKeyCripto),
@@ -58,6 +60,7 @@ export async function getCommercialAgentConfigSummary(baseUrl?: string | null) {
   const config = await prisma.plataformaAgenteComercial.findUnique({ where: { id: "default" } });
   const secret = config?.webhookSecretCripto ? decryptSecret(config.webhookSecretCripto) : null;
   return {
+    whatsappProprio: commercialEvolutionEnabled(),
     ativo: config?.ativo ?? false,
     nomeAgente: config?.nomeAgente ?? "Especialista XERP",
     numeroWhatsapp: config?.numeroWhatsapp ?? "",
@@ -93,7 +96,10 @@ export async function saveCommercialAgentConfig(input: Record<string, unknown>) 
   const model = clean(input.modeloIa, 160) ?? "openai/gpt-4o-mini";
   const instanceId = clean(input.whatsappInstanceId, 180);
 
-  if (input.ativo === true && (!instanceId || (!whatsappToken && !existing?.whatsappTokenCripto))) {
+  if (input.ativo === true && commercialEvolutionEnabled()) {
+    if ((await evolutionConnection()).status !== "connected") throw new Error("Conecte o WhatsApp pelo QR Code antes de ativar o agente.");
+  }
+  if (input.ativo === true && !commercialEvolutionEnabled() && (!instanceId || (!whatsappToken && !existing?.whatsappTokenCripto))) {
     throw new Error("Informe a instância e o token do WhatsApp antes de ativar o agente.");
   }
   if (input.ativo === true && !openrouterApiKey && !existing?.openrouterApiKeyCripto) {

@@ -100,6 +100,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
+| 2026-09-06 | A gerar | Em andamento | WhatsApp comercial próprio via Evolution, instância isolada, QR Code no admin, webhook autenticado e recuperação de respostas. |
 | 2026-07-29 | `d69bb30` | Enviado | Quarta versão da landing em `/nota-por-audio-v4` (XERP Vox, "o microfone é o novo teclado"), com orbe interativo de demonstração, identidade midnight/violeta/âmbar e captacao rastreada no CRM. |
 | 2026-07-29 | `c906d8e` | Enviado | Segunda versão comparativa da landing `/nota-por-audio-v2`, reconstruída com narrativa de recuperação de tempo, demonstração por voz, transparência, objeções e SEO estruturado a partir do estudo de conversão. |
 | 2026-07-28 | `8bd0123` | Enviado | Landing page de lancamento `/nota-por-audio`, com narrativa de dores, demonstracao do agente, oferta do plano CHAT e captacao rastreada no CRM. |
@@ -795,3 +796,24 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Validacao local: TypeScript (`tsc --noEmit`) e ESLint aprovados sem avisos; build de producao validado no deploy Docker/Linux da VPS.
 - Build Docker/Linux das 198 paginas aprovado e deploy concluido com a imagem `jrb-erp:latest` (`sha256:191da7caf845`); servico `erp_erp` convergido em `1/1`, sem migrations pendentes.
 - Smoke test: `https://erp.sisgov.app.br/nota-por-audio-v4` respondeu HTTP 200 com hero `O microfone e o novo teclado.`, marca XERP Vox e campanha `nota-por-audio-v4`; `/api/health` e `/audio/voz-assistente.mp3` tambem responderam HTTP 200.
+
+## Atualização operacional - 2026-09-06 - WhatsApp comercial próprio
+
+- Implementada conexão do agente comercial com a Evolution API hospedada na VPS nova,
+  em instância `xerp-comercial-v1`, separada da conexão do CRM. QR Code, consulta de
+  conexão e orientação de pareamento disponíveis no painel administrativo.
+- Token exclusivo e segredo do webhook em Docker secrets; chave mestre do CRM não é
+  transferida ao ERP. Provisionamento verificou autenticação da instância e bloqueio
+  de acesso à outra instância. Nenhuma mensagem real enviada.
+- Webhook exclusivo autentica header, valida instância, ignora grupos/mensagens próprias
+  e aceita texto/áudio com transcrição pelo Whisper. Transporte comercial usa Evolution;
+  WhatsApps operacionais das empresas mantêm seus provedores atuais.
+- Reentregas preservam opt-out, serializam atendimento por contato e reutilizam respostas
+  persistidas após falha de envio. Recuperação depende de reentrega pelo provedor; não há
+  worker de retry independente. Sem garantia de exactly-once em falha após envio externo.
+- Não houve alteração de schema ou migration. README e guia de deploy atualizados.
+- Testes de transporte/parser e deduplicação/recuperação/opt-out aprovados sem banco ou
+  envio reais. TypeScript aprovado; lint tem apenas dois avisos preexistentes.
+- Pendências de ativação: parear o telefone comercial e informar chave OpenRouter no
+  painel (cadastro comercial ainda inexistente na inspeção). Prospecção ativa desativada.
+- Commit/push/deploy: A gerar. Build e validação de produção em andamento.

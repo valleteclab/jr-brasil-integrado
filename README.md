@@ -52,6 +52,16 @@ npm run prisma:generate
 npm run dev
 ```
 
+## WhatsApp comercial próprio
+
+O painel `/admin/agente-comercial` pode conectar um número exclusivo pela Evolution API
+hospedada na VPS. O administrador gera o QR Code, verifica a conexão, configura a IA e
+ativa as respostas aos interessados. A integração é global da plataforma e não acessa
+dados operacionais dos clientes. O transporte dos WhatsApps das empresas permanece independente.
+
+Provisionamento, segredos, implantação e limites: `deploy/DEPLOY.md`, seção
+“WhatsApp comercial com Evolution”. Não é necessário alterar o schema ou executar seed.
+
 ## Próximas etapas técnicas
 
 - Criar migrations do banco.

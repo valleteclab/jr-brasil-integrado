@@ -4,6 +4,8 @@ out
 dist
 build
 .env
+erp.env
+deploy/.env.deploy
 .env*.local
 *.log
 .codex-logs/

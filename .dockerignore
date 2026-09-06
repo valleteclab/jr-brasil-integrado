@@ -10,6 +10,10 @@ docs
 *.md
 .env
 .env.*
+erp.env
+scratchpad
+tmp
+.codex-logs
 !.env.example
 .vscode
 .idea

@@ -125,3 +125,44 @@ docker service logs -f whisper_api
 - O texto transcrito entra no mesmo fluxo seguro do agente; respostas comuns voltam em voz, enquanto dados operacionais também permanecem em texto.
 - No WhatsApp, a URL temporária da mídia precisa ser HTTPS pública, passa por bloqueio de rede privada e o arquivo não é persistido.
 - Para remover somente o STT: `docker stack rm whisper`.
+
+## WhatsApp comercial com Evolution
+
+Entrega de 2026-09-06, exclusiva do comercial da plataforma. A Evolution API 2.3.7 do
+CRM é reaproveitada como serviço; a instância `xerp-comercial-v1`, token e webhook são
+exclusivos do XERP. O CRM continua com sua própria instância. A implementação usa
+Evolution API (https://github.com/evolution-foundation/evolution-api), conexão Baileys
+via WhatsApp Web, não a Cloud API oficial. Atribuição também aparece no painel.
+
+1. Na VPS que hospeda CRM e ERP, executar `python3 deploy/provision-commercial-whatsapp.py`.
+   O script cria apenas a instância dedicada e testa o isolamento de seu token contra
+   outra instância. Não envia mensagens. Em conflito de instância/credencial, aborta.
+2. Os segredos são criados em Docker secrets; o backup local fica em
+   `/root/.config/xerp-commercial-whatsapp/credentials.json`, modo 0600, fora do Git.
+   O ERP recebe somente o token da instância e o segredo do webhook, nunca a chave mestre.
+3. Fazer build normal e implantar combinando `deploy/erp-stack.yml` com
+   `deploy/commercial-whatsapp-stack.yml`. A rede compartilhada deve resolver
+   `crm_evolution:8080`. Em atualização pontual via `docker service update`, preservar
+   todos os campos existentes e acrescentar os dois secrets e variáveis do complemento.
+4. Em `/admin/agente-comercial`, gerar QR Code e parear o telefone comercial. Configurar
+   a chave OpenRouter, condições comerciais e contato humano, salvar e ativar o agente.
+   Ativação exige conexão aberta e chave de IA. Prospecção ativa tem controle separado;
+   não é habilitada pelo provisionamento ou pelo deploy.
+
+Segurança: endpoints de conexão exigem administrador global; POST valida Origin; GET
+não inicia pareamento. Credenciais são somente server-side. O webhook usa segredo em
+header, exige instância dedicada e ignora mensagens próprias, grupos, broadcasts,
+contatos sem número resolvido e eventos que não são mensagens novas. Áudio (até 60s/6MB)
+é buscado pela Evolution autenticada e transcrito pelo Whisper. Respostas são em texto.
+
+As interações persistem entrada, resposta e confirmação de envio. Um advisory lock por
+contato serializa os eventos entre réplicas. Reentregas usam o ID composto do provedor;
+falhas retornam HTTP 503 e, quando reentregues, reutilizam a resposta pendente. Há uma
+janela inevitável de incerteza se o provedor aceitar o envio e a conexão cair antes da
+confirmação local: não se promete exactly-once. Não há fila/worker de reprocessamento
+próprio nesta etapa; a recuperação depende da reentrega do webhook. Histórico já entregue
+não é reprocessado. QR Code expira no painel e pode ser gerado novamente.
+
+Validação: `npx tsc --noEmit`, `npm run lint`, `npx tsx scripts/test-commercial-evolution.ts`,
+`npx tsx scripts/test-commercial-delivery.ts` e build Docker. Testes simulam o transporte;
+nenhuma mensagem real deve ser enviada sem destinatário e autorização definidos.

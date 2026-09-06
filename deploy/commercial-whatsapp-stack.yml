@@ -1,0 +1,19 @@
+# Complemento opcional: docker stack deploy -c deploy/erp-stack.yml -c deploy/commercial-whatsapp-stack.yml erp
+# Criar previamente a instância e os dois Docker secrets conforme DEPLOY.md.
+version: "3.8"
+services:
+  erp:
+    environment:
+      COMMERCIAL_WHATSAPP_PROVIDER: EVOLUTION
+      COMMERCIAL_EVOLUTION_URL: "http://crm_evolution:8080"
+      COMMERCIAL_EVOLUTION_INSTANCE: "xerp-comercial-v1"
+      COMMERCIAL_EVOLUTION_API_KEY_FILE: "/run/secrets/xerp_commercial_evolution_key"
+      COMMERCIAL_EVOLUTION_WEBHOOK_SECRET_FILE: "/run/secrets/xerp_commercial_webhook_secret"
+    secrets:
+      - xerp_commercial_evolution_key
+      - xerp_commercial_webhook_secret
+secrets:
+  xerp_commercial_evolution_key:
+    external: true
+  xerp_commercial_webhook_secret:
+    external: true

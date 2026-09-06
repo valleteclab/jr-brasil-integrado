@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from "react";
 import styles from "./CommercialAgentSettings.module.css";
+import { CommercialWhatsappConnection } from "./CommercialWhatsappConnection";
 
 type Settings = {
+  whatsappProprio: boolean;
   ativo: boolean;
   nomeAgente: string;
   numeroWhatsapp: string;
@@ -21,6 +23,7 @@ type Settings = {
 };
 
 const EMPTY: Settings = {
+  whatsappProprio: false,
   ativo: false,
   nomeAgente: "Especialista XERP",
   numeroWhatsapp: "",
@@ -112,18 +115,18 @@ export function CommercialAgentSettings() {
           <label>Número comercial
             <input inputMode="numeric" placeholder="5577999999999" value={settings.numeroWhatsapp} onChange={(e) => setSettings({ ...settings, numeroWhatsapp: e.target.value.replace(/\D/g, "") })} />
           </label>
-          <label>Instância Z-API
+          {!settings.whatsappProprio && <label>Instância Z-API
             <input value={settings.whatsappInstanceId} onChange={(e) => setSettings({ ...settings, whatsappInstanceId: e.target.value })} />
-          </label>
+          </label>}
           <label>Telefone para atendimento humano
             <input inputMode="numeric" value={settings.telefoneHumano} onChange={(e) => setSettings({ ...settings, telefoneHumano: e.target.value.replace(/\D/g, "") })} />
           </label>
-          <label>Token Z-API {settings.temWhatsappToken && <small>· configurado</small>}
+          {!settings.whatsappProprio && <label>Token Z-API {settings.temWhatsappToken && <small>· configurado</small>}
             <input type="password" value={whatsappToken} onChange={(e) => setWhatsappToken(e.target.value)} placeholder={settings.temWhatsappToken ? "Deixe vazio para manter" : "Informe o token"} />
-          </label>
-          <label>Client-Token Z-API {settings.temWhatsappClientToken && <small>· configurado</small>}
+          </label>}
+          {!settings.whatsappProprio && <label>Client-Token Z-API {settings.temWhatsappClientToken && <small>· configurado</small>}
             <input type="password" value={whatsappClientToken} onChange={(e) => setWhatsappClientToken(e.target.value)} placeholder={settings.temWhatsappClientToken ? "Deixe vazio para manter" : "Opcional"} />
-          </label>
+          </label>}
           <label>Modelo da IA
             <input value={settings.modeloIa} onChange={(e) => setSettings({ ...settings, modeloIa: e.target.value })} />
           </label>
@@ -148,9 +151,9 @@ export function CommercialAgentSettings() {
         </label>
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 14 }}>
-          <button type="button" className="btn-erp light" onClick={() => void save(true)} disabled={saving}>
+          {!settings.whatsappProprio && <button type="button" className="btn-erp light" onClick={() => void save(true)} disabled={saving}>
             Regenerar webhook
-          </button>
+          </button>}
           <button type="button" className="btn-erp primary" onClick={() => void save()} disabled={saving}>
             {saving ? "Salvando…" : "Salvar configuração"}
           </button>
@@ -158,20 +161,21 @@ export function CommercialAgentSettings() {
       </div>
 
       <aside className="erp-card" style={{ padding: 18 }}>
+        {settings.whatsappProprio && <CommercialWhatsappConnection />}
         <h3 style={{ marginTop: 0 }}>Prontidão do canal</h3>
         <ul style={{ paddingLeft: 18, lineHeight: 1.9, fontSize: 13 }}>
           <li>{settings.numeroWhatsapp ? "✓" : "○"} Número comercial separado</li>
-          <li>{settings.whatsappInstanceId && settings.temWhatsappToken ? "✓" : "○"} WhatsApp conectado</li>
+          {!settings.whatsappProprio && <li>{settings.whatsappInstanceId && settings.temWhatsappToken ? "✓" : "○"} Credenciais do WhatsApp configuradas</li>}
           <li>{settings.temOpenrouterKey ? "✓" : "○"} Inteligência configurada</li>
-          <li>{settings.webhookUrl ? "✓" : "○"} Webhook gerado</li>
+          {!settings.whatsappProprio && <li>{settings.webhookUrl ? "✓" : "○"} Webhook gerado</li>}
           <li>{settings.telefoneHumano ? "✓" : "○"} Escalonamento humano</li>
         </ul>
-        <div style={{ marginTop: 16 }}>
+        {!settings.whatsappProprio && <div style={{ marginTop: 16 }}>
           <strong style={{ fontSize: 12 }}>Webhook “Ao receber”</strong>
           <div className="mono" style={{ marginTop: 6, padding: 10, borderRadius: 8, background: "#f8fafc", border: "1px solid var(--erp-line)", wordBreak: "break-all", fontSize: 11 }}>
             {settings.webhookUrl || "Salve a configuração para gerar a URL."}
           </div>
-        </div>
+        </div>}
         <p className="block-muted" style={{ marginTop: 12 }}>
           Este canal cria leads da plataforma. Ele não acessa empresas, notas, produtos ou dados dos clientes do ERP.
         </p>

@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db/prisma";
-import { sendZapiText } from "@/lib/whatsapp/zapi-client";
+import { sendCommercialWhatsappText } from "./commercial-whatsapp-transport";
 import { getCommercialAgentRuntime } from "@/domains/platform-sales/application/commercial-agent-config";
 
 /**
@@ -111,7 +111,7 @@ export async function runProspeccaoAtiva(): Promise<ProspeccaoResultado> {
     const tpl = proximoToque === 1 ? cfg.toque1 : proximoToque === 2 ? cfg.toque2 : cfg.toque3;
     const mensagem = renderTemplate(tpl, lead, agente.nomeAgente);
     try {
-      const sent = await sendZapiText(zapi, lead.telefone as string, mensagem);
+      const sent = await sendCommercialWhatsappText(zapi, lead.telefone as string, mensagem);
       if (!sent.ok) throw new Error(sent.error || "Falha no envio Z-API.");
       await prisma.$transaction([
         prisma.plataformaLeadInteracao.create({
@@ -156,7 +156,7 @@ export async function enviarTesteProspeccao(telefone: string) {
     dorPrincipal:
       "Controle de estoque de peças + nota fiscal na hora (NF-e/NFC-e) + catálogo com aplicações por veículo.\n\nPRESENTE DE ABERTURA: 🎁 Diagnóstico fiscal GRATUITO do seu CNPJ + 1º mês grátis + guia do certificado A1 sem custo."
   }, agente.nomeAgente);
-  const sent = await sendZapiText(
+  const sent = await sendCommercialWhatsappText(
     { instanceId: agente.whatsappInstanceId, token: agente.whatsappToken, clientToken: agente.whatsappClientToken },
     telefone.replace(/\D/g, ""),
     `🧪 [TESTE do SDR]\n\n${mensagem}`
