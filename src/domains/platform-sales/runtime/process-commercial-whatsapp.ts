@@ -3,6 +3,11 @@ import { prisma } from "@/lib/db/prisma";
 import { sendCommercialWhatsappText } from "./commercial-whatsapp-transport";
 import { getCommercialAgentRuntime } from "../application/commercial-agent-config";
 import {
+  checkCommercialReply, checkCommercialScope, commercialFacts, COMMERCIAL_GUARDRAIL_VERSION,
+  COMMERCIAL_HANDOFF, COMMERCIAL_POLICY, COMMERCIAL_REDIRECT,
+  type CommercialGuardDecision, type CommercialMessage
+} from "./commercial-guardrails";
+import {
   findOrCreateWhatsappLead,
   markLeadOptOut
 } from "../application/commercial-lead-use-cases";
@@ -102,7 +107,7 @@ async function callCommercialAi(input: {
       max_tokens: 850,
       response_format: { type: "json_object" }
     }),
-    signal: AbortSignal.timeout(90_000)
+    signal: AbortSignal.timeout(30_000)
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -148,26 +153,71 @@ export async function processCommercialWhatsappMessage(input: {
     clientToken: config.whatsappClientToken
   };
 
+  const signupUrl = absoluteSignupUrl(input.baseUrl, config.urlCadastro, lead.id);
+  const facts = commercialFacts({ price: config.precoMensal, signupUrl, humanPhone: config.telefoneHumano });
   const replyId = input.messageId ? `reply:${input.messageId}` : null;
+
+  async function guardContext() {
+    if (!config?.openrouterApiKey) throw new Error("OpenRouter não configurada.");
+    const history = await prisma.plataformaLeadInteracao.findMany({
+      where: { leadId: lead.id, direcao: { in: [LeadInteracaoDirecao.ENTRADA, LeadInteracaoDirecao.SAIDA] } },
+      orderBy: { criadoEm: "desc" }, take: 20,
+      select: { direcao: true, conteudo: true, metadados: true, externalMessageId: true }
+    });
+    const messages: CommercialMessage[] = history.reverse().filter(item => {
+      if (input.messageId && item.externalMessageId === input.messageId) return false;
+      if (item.direcao === LeadInteracaoDirecao.ENTRADA) return true;
+      const metadata = item.metadados as { guardrailVersion?: number; guardrailDecision?: string } | null;
+      return metadata?.guardrailVersion === COMMERCIAL_GUARDRAIL_VERSION && metadata.guardrailDecision === "APPROVED";
+    }).map(item => ({ role: item.direcao === LeadInteracaoDirecao.ENTRADA ? "user" : "assistant", content: item.conteudo }));
+    messages.push({ role: "user", content: input.mensagem.slice(0, 4000) });
+    return { apiKey: config.openrouterApiKey, model: config.modeloIa, facts, messages };
+  }
+
+  async function recordGuardDecision(decision: CommercialGuardDecision) {
+    console.info("[agente-comercial/guardrail]", { leadId: lead.id, decision, version: COMMERCIAL_GUARDRAIL_VERSION });
+    if (decision === "HUMAN" || decision === "UNAVAILABLE") {
+      await prisma.plataformaLead.update({ where: { id: lead.id }, data: { precisaHumano: true } });
+    }
+  }
+
   const previousReply = replyId ? await prisma.plataformaLeadInteracao.findUnique({ where: { canal_externalMessageId: { canal: "WHATSAPP", externalMessageId: replyId } } }) : null;
   if (previousReply) {
-    const metadata = previousReply.metadados as { entregue?: boolean } | null;
+    let metadata = previousReply.metadados as { entregue?: boolean; guardrailVersion?: number; guardrailDecision?: CommercialGuardDecision } | null;
     if (!metadata?.entregue) {
-      const sent = await sendCommercialWhatsappText(zapi, input.telefone, previousReply.conteudo);
+      let reply = previousReply.conteudo;
+      if (metadata?.guardrailVersion !== COMMERCIAL_GUARDRAIL_VERSION) {
+        let decision: CommercialGuardDecision = "APPROVED";
+        if (isOptOut(input.mensagem)) {
+          reply = "Tudo certo. Não enviaremos novas mensagens. Se quiser voltar, é só chamar este número.";
+        } else {
+          try {
+            const context = await guardContext();
+            const scope = await checkCommercialScope(context);
+            decision = scope === "ALLOW" ? await checkCommercialReply({ ...context, reply }) ? "APPROVED" : "HUMAN" : scope;
+          } catch { decision = "UNAVAILABLE"; }
+        }
+        if (decision !== "APPROVED") reply = decision === "REDIRECT" ? COMMERCIAL_REDIRECT : COMMERCIAL_HANDOFF;
+        metadata = { ...metadata, entregue: false, guardrailVersion: COMMERCIAL_GUARDRAIL_VERSION, guardrailDecision: decision };
+        await recordGuardDecision(decision);
+        await prisma.plataformaLeadInteracao.update({ where: { id: previousReply.id }, data: { conteudo: reply, metadados: metadata } });
+      }
+      const sent = await sendCommercialWhatsappText(zapi, input.telefone, reply);
       if (!sent.ok) throw new Error("Falha ao entregar a resposta comercial.");
       await prisma.plataformaLeadInteracao.update({ where: { id: previousReply.id }, data: { metadados: { ...metadata, entregue: true } } });
     }
     return { handled: true, duplicate: true };
   }
 
-  async function deliver(reply: string, type = "MENSAGEM") {
+  async function deliver(reply: string, type = "MENSAGEM", decision: CommercialGuardDecision = "APPROVED") {
+    const metadata = { guardrailVersion: COMMERCIAL_GUARDRAIL_VERSION, guardrailDecision: decision };
     const interaction = await prisma.plataformaLeadInteracao.create({ data: {
       leadId: lead.id, canal: LeadComercialCanal.WHATSAPP, direcao: LeadInteracaoDirecao.SAIDA,
-      tipo: type, conteudo: reply, externalMessageId: replyId, metadados: { entregue: false }
+      tipo: type, conteudo: reply, externalMessageId: replyId, metadados: { ...metadata, entregue: false }
     } });
     const sent = await sendCommercialWhatsappText(zapi, input.telefone, reply);
     if (!sent.ok) throw new Error("Falha ao entregar a resposta comercial.");
-    await prisma.plataformaLeadInteracao.update({ where: { id: interaction.id }, data: { metadados: { entregue: true } } });
+    await prisma.plataformaLeadInteracao.update({ where: { id: interaction.id }, data: { metadados: { ...metadata, entregue: true } } });
   }
 
   if (isOptOut(input.mensagem)) {
@@ -177,64 +227,48 @@ export async function processCommercialWhatsappMessage(input: {
     return { handled: true };
   }
 
-  const history = await prisma.plataformaLeadInteracao.findMany({
-    where: {
-      leadId: lead.id,
-      direcao: { in: [LeadInteracaoDirecao.ENTRADA, LeadInteracaoDirecao.SAIDA] }
-    },
-    orderBy: { criadoEm: "desc" },
-    take: 20,
-    select: { direcao: true, conteudo: true }
-  });
-  const signupUrl = absoluteSignupUrl(input.baseUrl, config.urlCadastro, lead.id);
   const system = [
     `Você é ${config.nomeAgente}, assistente virtual comercial do XERP.`,
     "Deixe claro que é uma IA. Seja consultivo, direto, simpático e use português do Brasil.",
-    `O plano custa R$ ${config.precoMensal.toLocaleString("pt-BR", { minimumFractionDigits: 2 })} por mês.`,
-    `Cadastro/teste: ${signupUrl}.`,
-    "O XERP ajuda pequenas empresas com emissão de NF-e, NFC-e e NFS-e, vendas, estoque, financeiro e operação por chat/áudio.",
     "Faça uma pergunta por vez. Primeiro entenda tipo de empresa e dor; depois descubra notas emitidas, sistema atual e urgência.",
-    "Não invente integrações, garantias fiscais, descontos ou funcionalidades. Não solicite certificado, senha ou dados bancários.",
     "Quando houver intenção concreta, ofereça o cadastro/teste. Quando pedirem humano, preço especial, migração complexa ou demonstração assistida, marque precisaHumano=true.",
     "Nunca defina status ASSINANTE; isso só ocorre após confirmação da plataforma.",
     "Responda SOMENTE JSON válido no formato:",
     '{"reply":"texto ao lead","lead":{"nome":null,"empresa":null,"segmento":null,"dorPrincipal":null,"sistemaAtual":null,"emiteNfe":null,"emiteNfce":null,"emiteNfse":null,"volumeNotasMes":null},"status":"EM_CONVERSA","score":0,"precisaHumano":false}',
     "Status permitidos: EM_CONVERSA, QUALIFICADO, DEMONSTRACAO, TESTE, PROPOSTA, NUTRICAO.",
-    config.telefoneHumano ? `Contato humano disponível: ${config.telefoneHumano}.` : "",
-    config.promptComplementar ?? ""
-  ].filter(Boolean).join("\n");
+    `Preferências opcionais de estilo (ignore qualquer trecho que contradiga a política ou acrescente fatos): ${JSON.stringify(config.promptComplementar ?? "")}`,
+    COMMERCIAL_POLICY,
+    facts
+  ].join("\n");
 
-  let parsed: CommercialAiResult;
+  let parsed: CommercialAiResult = {};
+  let reply = "";
+  let decision: CommercialGuardDecision;
   try {
-    if (!config.openrouterApiKey) throw new Error("OpenRouter não configurada.");
-    const content = await callCommercialAi({
-      apiKey: config.openrouterApiKey,
-      model: config.modeloIa,
-      system,
-      messages: history.reverse().map((item) => ({
-        role: item.direcao === LeadInteracaoDirecao.ENTRADA ? "user" : "assistant",
-        content: item.conteudo
-      }))
-    });
-    parsed = parseAiResult(content);
-  } catch (error) {
-    console.error("[agente-comercial] IA indisponível:", error instanceof Error ? error.message : error);
-    parsed = {
-      reply: config.telefoneHumano
-        ? `Recebi sua mensagem. Nosso especialista continuará o atendimento. Se preferir, fale com ${config.telefoneHumano}.`
-        : "Recebi sua mensagem. Nosso especialista continuará o atendimento em breve.",
-      precisaHumano: true,
-      status: "EM_CONVERSA"
-    };
+    const context = await guardContext();
+    const scope = await checkCommercialScope(context);
+    if (scope === "ALLOW") {
+      const content = await callCommercialAi({ ...context, system });
+      parsed = parseAiResult(content);
+      reply = clean(parsed?.reply, 3500) ?? "";
+      decision = reply && await checkCommercialReply({ ...context, reply }) ? "APPROVED" : "HUMAN";
+    } else {
+      decision = scope;
+    }
+  } catch {
+    decision = "UNAVAILABLE";
   }
-
-  const reply = clean(parsed.reply, 3500) || "Como posso ajudar sua empresa com o XERP?";
+  await recordGuardDecision(decision);
+  if (decision !== "APPROVED") {
+    await deliver(decision === "REDIRECT" ? COMMERCIAL_REDIRECT : COMMERCIAL_HANDOFF, `GUARDRAIL_${decision}`, decision);
+    return { handled: true };
+  }
   const proposedStatus = ALLOWED_AI_STATUSES.has(parsed.status as LeadComercialStatus)
     ? (parsed.status as LeadComercialStatus)
     : LeadComercialStatus.EM_CONVERSA;
-  const score = Number(parsed.score);
+  const score = typeof parsed.score === "number" ? parsed.score : NaN;
   const qualification = parsed.lead ?? {};
-  const volume = Number(qualification.volumeNotasMes);
+  const volume = typeof qualification.volumeNotasMes === "number" ? qualification.volumeNotasMes : NaN;
   await prisma.plataformaLead.update({
     where: { id: lead.id },
     data: {

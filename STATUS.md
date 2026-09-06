@@ -100,6 +100,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
+| 2026-09-06 | A gerar | Em andamento | Guardrails comerciais de escopo e revisão, fatos de CHAT/SPED, fallback humano e revalidação de respostas pendentes, com testes simulados. |
 | 2026-09-06 | A gerar | Em andamento | Espera limitada pela preparação do primeiro QR Code na Evolution, identificada no smoke test real. |
 | 2026-09-06 | A gerar | Em andamento | Bloqueio de retry comercial antigo após opt-out mais recente, coberto por teste. |
 | 2026-09-06 | A gerar | Em andamento | WhatsApp comercial próprio via Evolution, instância isolada, QR Code no admin, webhook autenticado e recuperação de respostas. |
@@ -819,3 +820,17 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Pendências de ativação: parear o telefone comercial e informar chave OpenRouter no
   painel (cadastro comercial ainda inexistente na inspeção). Prospecção ativa desativada.
 - Commit/push/deploy: A gerar. Build e validação de produção em andamento.
+
+## Atualização operacional - 2026-09-06 - guardrails do agente comercial
+
+- Diagnóstico em produção confirmou respostas fora do escopo comercial e uma negativa incorreta sobre SPED. A inspeção foi somente leitura, sem envio de mensagens nem alterações remotas.
+- Política comercial centralizada e base verificada distinguindo EMISSOR, CHAT, COMPLETO e SPED Fiscal como adicional sujeito à liberação. Presets de módulos vêm de `src/lib/auth/feature-flags.ts`; preços/links/contato humano continuam vindo da configuração comercial. Coberturas, integrações, prazos e condições não confirmadas devem ir ao especialista.
+- Cada resposta livre passa por classificação de escopo, geração e revisão em chamadas separadas. Validação inválida, indisponível ou reprovada não libera a resposta: usa texto fixo e sinaliza `precisaHumano`. Assuntos alheios ou tentativas de alterar o papel recebem redirecionamento ao XERP sem qualificar o lead.
+- Instruções complementares limitadas a preferências de estilo. Respostas antigas ou reprovadas do assistente não entram no histórico enviado à IA. Campos numéricos nulos da qualificação não apagam valores já coletados.
+- Respostas pendentes da Evolution sem a versão atual de guardrail passam por validação antes do retry. Respostas já validadas reutilizam o conteúdo persistido, sem repetir chamadas à IA. Deduplicação histórica da Z-API e comportamento de opt-out/retomada pelo próprio contato permanecem inalterados.
+- Decisão e versão ficam nos metadados da interação e nos logs `[agente-comercial/guardrail]`, sem conteúdo de mensagens ou credenciais nos logs. `SAIR` continua independente da IA.
+- Até três chamadas à IA por resposta livre, com timeouts de 10s/30s/10s; há custo/latência adicionais. São verificações probabilísticas, não garantia absoluta: reteste real com o modelo configurado continua necessário.
+- Teste de regressão primeiro falhou ao enviar conteúdo sobre PHP; após a implementação, testes simulados cobrem desvio, instruções adversariais, revisão de SPED, falhas/timeout, JSON inválido, pedido humano, histórico, retry legado e opt-out. Nenhuma IA, banco ou mensagem real usados nos testes.
+- Validação: testes `test-commercial-delivery.ts` e `test-commercial-evolution.ts` aprovados; TypeScript aprovado; lint sem erros, com os dois avisos preexistentes. `npm run build` local aprovado (201 páginas geradas).
+- Sem novas dependências, mudanças de schema ou migrations. Arquivos: `commercial-guardrails.ts`, `process-commercial-whatsapp.ts`, `scripts/test-commercial-delivery.ts`, README e STATUS.
+- Commit/push: A gerar. Deploy NÃO realizado. Após implantação autorizada na `vps-nova` via `deploy/vps.sh`, repetir os testes reais de conversa, áudio curto, SPED e opt-out.

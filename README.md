@@ -59,6 +59,18 @@ hospedada na VPS. O administrador gera o QR Code, verifica a conexão, configura
 ativa as respostas aos interessados. A integração é global da plataforma e não acessa
 dados operacionais dos clientes. O transporte dos WhatsApps das empresas permanece independente.
 
+O atendimento comercial passa por classificação de escopo, geração e revisão independente
+antes do envio. Perguntas alheias ao XERP são redirecionadas; dúvidas sem informação
+confirmada ou falhas na validação sinalizam atendimento humano, sem enviar a resposta
+livre. A base diferencia CHAT, ERP completo e SPED Fiscal adicional. Instruções
+complementares servem apenas como preferências de estilo, não para ampliar o escopo ou
+inventar condições comerciais. Respostas pendentes anteriores à proteção são revalidadas.
+
+Uma resposta livre pode consumir três chamadas à IA (escopo, geração e revisão), com
+limites de 10s/30s/10s. A classificação e a revisão são probabilísticas: os testes locais
+simulam a IA e não substituem a avaliação real após deploy. Não há garantia absoluta
+contra desvios. Teste seguro: `npx tsx scripts/test-commercial-delivery.ts`.
+
 Provisionamento, segredos, implantação e limites: `deploy/DEPLOY.md`, seção
 “WhatsApp comercial com Evolution”. Não é necessário alterar o schema ou executar seed.
 
