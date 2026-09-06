@@ -47,6 +47,10 @@ async function main() {
   await processCommercialWhatsappMessage({ ...incoming, messageId: "evo:xerp-comercial-test:2" });
   assert.equal(aiCalls, 2, "retry deve reutilizar a resposta salva");
   assert.equal(interactions.at(-1)?.metadados?.entregue, true);
+  failSend = true;
+  const stale = { ...incoming, messageId: "evo:xerp-comercial-test:stale" };
+  await assert.rejects(() => processCommercialWhatsappMessage(stale));
+  failSend = false;
   const optout = { ...incoming, mensagem: "SAIR", messageId: "evo:xerp-comercial-test:3" };
   await processCommercialWhatsappMessage(optout);
   assert.equal(lead.status, "OPT_OUT");
@@ -54,6 +58,8 @@ async function main() {
   await processCommercialWhatsappMessage(optout);
   assert.equal(lead.status, "OPT_OUT", "reentrega de SAIR não pode reativar consentimento");
   assert.equal(sendAttempts, previousAttempts);
+  await processCommercialWhatsappMessage(stale);
+  assert.equal(sendAttempts, previousAttempts, "retry antigo não pode enviar após opt-out mais recente");
   console.log("Entrega comercial: deduplicação, retry de envio, resposta persistida e opt-out verificados com banco/transporte simulados.");
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

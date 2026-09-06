@@ -138,6 +138,10 @@ export async function processCommercialWhatsappMessage(input: {
   const lead = incoming.lead;
   // Mantém a deduplicação histórica da Z-API; recuperação de entrega é do canal Evolution.
   if (incoming.duplicate && !input.messageId?.startsWith("evo:")) return { handled: true, duplicate: true };
+  // Um retry atrasado não pode retomar a conversa após um SAIR mais recente.
+  if (incoming.duplicate && lead.status === LeadComercialStatus.OPT_OUT && !isOptOut(input.mensagem)) {
+    return { handled: true, duplicate: true };
+  }
   const zapi = {
     instanceId: config.whatsappInstanceId,
     token: config.whatsappToken,
