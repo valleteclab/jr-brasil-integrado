@@ -185,6 +185,7 @@ function buildDpsXml(input: EmitInput, ctx: ProviderContext): { xml: string; id:
       ? "" // preenchido abaixo com cTribNacFinal (declarado depois deste ponto)
       : "";
 
+  const tribIssqn = tribIssqnDoDocumento(doc);
   const infDPS =
     `<infDPS Id="${id}">` +
       `<tpAmb>${tpAmb}</tpAmb>` +
@@ -202,7 +203,7 @@ function buildDpsXml(input: EmitInput, ctx: ProviderContext): { xml: string; id:
       `<serv><locPrest><cLocPrestacao>${cLocPrestacao}</cLocPrestacao></locPrest>` +
         `<cServ><cTribNac>${cTribNacFinal}</cTribNac>${cTribMun ? `<cTribMun>${cTribMun}</cTribMun>` : noDf ? `<cTribMun>${cTribNacFinal}</cTribMun>` : ""}<xDescServ>${esc(xDescServ)}</xDescServ>${cNBS.length === 9 ? `<cNBS>${cNBS}</cNBS>` : ""}</cServ>${obra}</serv>` +
       `<valores><vServPrest><vServ>${vServ}</vServ></vServPrest>` +
-        `<trib><tribMun><tribISSQN>${doc.tribIssqnCodigo ?? "1"}</tribISSQN><tpRetISSQN>${issRetido ? "2" : "1"}</tpRetISSQN></tribMun>` +
+        `<trib><tribMun><tribISSQN>${tribIssqn}</tribISSQN>${tribIssqn === "2" ? `<tpImunidade>0</tpImunidade>` : ""}<tpRetISSQN>${issRetido ? "2" : "1"}</tpRetISSQN></tribMun>` +
         tribFed +
         `<totTrib><vTotTrib><vTotTribFed>${vTotFed}</vTotTribFed><vTotTribEst>0.00</vTotTribEst><vTotTribMun>${vISSQN}</vTotTribMun></vTotTrib></totTrib>` +
         `</trib></valores>` +
@@ -265,6 +266,21 @@ function postEventoNfse(baseUrl: string, chave: string, eventoGZipB64: string, c
     req.on("error", reject);
     req.write(payload); req.end();
   });
+}
+
+/**
+ * tribISSQN do DPS (1 tributável · 2 imunidade · 3 exportação · 4 não incidência): código explícito
+ * (clone/bot) ou derivado do taxationType da tela. Sem isso, "Não incidência" escolhida na tela ia
+ * como 1 e a SEFIN rejeitava (E0312) códigos como 99.01.01, que só existem sem incidência.
+ */
+function tribIssqnDoDocumento(doc: { tribIssqnCodigo?: string | null; taxationType?: string | null }): "1" | "2" | "3" | "4" {
+  if (doc.tribIssqnCodigo && /^[1-4]$/.test(doc.tribIssqnCodigo)) return doc.tribIssqnCodigo as "1" | "2" | "3" | "4";
+  switch (doc.taxationType) {
+    case "immune": return "2";
+    case "exportation": return "3";
+    case "nonIncidence": return "4";
+    default: return "1";
+  }
 }
 
 type SefinResp = { statusCode: number; body: string };
