@@ -1517,7 +1517,7 @@ export function ProductCrud({ initialProducts, taxRules, warehouses, categoryOpt
   return (
     <>
       <div className="erp-page-actions product-actions">
-        <button type="button" className="btn-erp ghost sm">Exportar</button>
+        <a className="btn-erp ghost sm" href="/api/erp/produtos/exportar" title="Baixa todos os produtos da empresa em planilha (Excel)">Exportar</a>
         <a className="btn-erp ghost sm" href="/erp/entradas-fiscais/nova">Nova entrada NF-e</a>
         <input
           accept=".xml,text/xml,application/xml"
