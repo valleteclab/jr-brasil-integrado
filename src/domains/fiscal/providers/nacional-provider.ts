@@ -818,3 +818,35 @@ export async function baixarNfseXmlPelaChave(
   if (!data.nfseXmlGZipB64) return null;
   return gunzipSync(Buffer.from(data.nfseXmlGZipB64, "base64")).toString("utf8");
 }
+
+/**
+ * PARÂMETROS MUNICIPAIS na SEFIN (mTLS): convênio do município, alíquota do código de serviço na
+ * competência, histórico, regimes especiais e retenções. Diagnóstico de rejeições como E0312
+ * ("código não administrado pelo município na competência") sem precisar emitir.
+ */
+export async function consultarParametrosMunicipaisNfse(
+  q: { municipio: string; codigo: string; competencia: string },
+  cert: { pfx: Buffer; senha: string },
+  ambiente: AmbienteFiscal
+): Promise<Array<{ consulta: string; path: string; status: number; resposta: unknown }>> {
+  const base = `/parametros_municipais/${q.municipio}`;
+  const consultas: Array<[string, string]> = [
+    ["convenio", `${base}/convenio`],
+    ["aliquota", `${base}/aliquota/${q.codigo}/${q.competencia}`],
+    ["historicoAliquota", `${base}/historicoaliquota/${q.codigo}`],
+    ["regimesEspeciais", `${base}/regimes_especiais/${q.codigo}/${q.competencia}`],
+    ["retencoes", `${base}/retencoes/${q.competencia}`]
+  ];
+  const out: Array<{ consulta: string; path: string; status: number; resposta: unknown }> = [];
+  for (const [consulta, path] of consultas) {
+    try {
+      const res = await getSefin(SEFIN[ambiente], path, cert);
+      let resposta: unknown = res.body.slice(0, 4000);
+      try { resposta = JSON.parse(res.body); } catch { /* corpo não-JSON: devolve o texto */ }
+      out.push({ consulta, path, status: res.statusCode, resposta });
+    } catch (error) {
+      out.push({ consulta, path, status: 0, resposta: error instanceof Error ? error.message : "erro de rede" });
+    }
+  }
+  return out;
+}
