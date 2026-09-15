@@ -326,38 +326,147 @@ export async function registrarRecebimentoPdv(
   return { troco, caixaId: caixa.id };
 }
 
-/** Suprimento (entrada de dinheiro) ou Sangria (retirada). */
+/** Janela em que um lançamento idêntico é tratado como clique duplo. */
+const JANELA_DUPLICADO_MS = 20_000;
+
+/** Esperado em dinheiro na gaveta a partir dos movimentos (estornados não contam). */
+function esperadoDinheiroDe(saldoInicial: number, movimentos: Array<{ tipo: string; formaPagamento: string | null; valor: unknown; estornadoEm: Date | null }>): number {
+  let total = saldoInicial;
+  for (const m of movimentos) {
+    if (m.estornadoEm) continue;
+    const valor = Number(m.valor);
+    if (m.tipo === "VENDA" && m.formaPagamento === FORMA_DINHEIRO) total += valor;
+    else if (m.tipo === "SUPRIMENTO") total += valor;
+    else if (m.tipo === "SANGRIA") total -= Math.abs(valor);
+  }
+  return round2(total);
+}
+
+/**
+ * Suprimento (dinheiro COLOCADO na gaveta) ou Sangria (dinheiro RETIRADO). Não servem para
+ * "acertar" o saldo — a conferência é feita no fechamento. Exige motivo e barra clique duplo.
+ */
 export async function registrarMovimentoCaixa(
   scope: TenantScope,
-  input: { tipo: "SUPRIMENTO" | "SANGRIA"; valor: number; descricao?: string }
+  input: { tipo: "SUPRIMENTO" | "SANGRIA"; valor: number; descricao?: string; usuarioId?: string | null }
 ) {
-  const valor = Number(input.valor) || 0;
+  const valor = round2(Number(input.valor) || 0);
   if (valor <= 0) throw new CaixaError("Informe um valor maior que zero.");
+  const motivo = input.descricao?.trim() ?? "";
+  if (motivo.length < 3) {
+    throw new CaixaError(input.tipo === "SANGRIA"
+      ? "Informe o motivo da sangria (ex.: depósito no banco, pagamento de fornecedor)."
+      : "Informe o motivo do suprimento (ex.: reforço de troco).");
+  }
   const caixa = await getCaixaAbertoOrThrow(scope);
 
-  // Sangria não pode exceder o dinheiro em caixa (deixaria o esperado em dinheiro negativo).
-  // Suprimento (entrada) não tem essa restrição.
-  if (input.tipo === "SANGRIA") {
-    const resumo = await getResumoCaixa(scope, caixa.id);
-    if (round2(valor) > round2(resumo.esperadoDinheiro) + 0.0001) {
-      throw new CaixaError(
-        `Sangria de ${round2(valor).toFixed(2)} excede o dinheiro em caixa (${resumo.esperadoDinheiro.toFixed(2)}).`
-      );
-    }
-  }
+  const mov = await prisma.$transaction(async (tx) => {
+    // Serializa lançamentos do mesmo caixa: dois cliques simultâneos não passam juntos pela checagem.
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`caixa-mov:${caixa.id}`}))`;
+    await assertCaixaAbertoTx(tx, scope, caixa.id);
 
-  return prisma.caixaMovimento.create({
-    data: {
-      ...scopedByTenantCompanyAmbiente(scope),
-      caixaId: caixa.id,
-      tipo: input.tipo,
-      formaPagamento: FORMA_DINHEIRO,
-      // Sangria sai do caixa (negativo); suprimento entra (positivo).
-      valor: input.tipo === "SANGRIA" ? -Math.abs(valor) : Math.abs(valor),
-      descricao: input.descricao?.trim() || (input.tipo === "SANGRIA" ? "Sangria" : "Suprimento")
+    const movimentos = await tx.caixaMovimento.findMany({
+      where: { caixaId: caixa.id },
+      select: { tipo: true, formaPagamento: true, valor: true, estornadoEm: true, criadoEm: true }
+    });
+    const valorAssinado = input.tipo === "SANGRIA" ? -valor : valor;
+    const duplicado = movimentos.some((m) =>
+      m.tipo === input.tipo && !m.estornadoEm && round2(Number(m.valor)) === valorAssinado &&
+      Date.now() - m.criadoEm.getTime() < JANELA_DUPLICADO_MS
+    );
+    if (duplicado) {
+      throw new CaixaError(`Uma ${input.tipo === "SANGRIA" ? "sangria" : "suprimento"} de ${valor.toFixed(2)} acabou de ser lançado. Confira a lista do turno antes de lançar de novo.`);
     }
+
+    // Sangria não pode exceder o dinheiro em caixa (deixaria o esperado em dinheiro negativo).
+    if (input.tipo === "SANGRIA") {
+      const esperado = esperadoDinheiroDe(Number(caixa.saldoInicial), movimentos);
+      if (valor > esperado + 0.0001) {
+        throw new CaixaError(`Sangria de ${valor.toFixed(2)} excede o dinheiro esperado na gaveta (${esperado.toFixed(2)}).`);
+      }
+    }
+
+    const criado = await tx.caixaMovimento.create({
+      data: {
+        ...scopedByTenantCompanyAmbiente(scope),
+        caixaId: caixa.id,
+        tipo: input.tipo,
+        formaPagamento: FORMA_DINHEIRO,
+        valor: valorAssinado,
+        descricao: motivo,
+        usuarioId: input.usuarioId ?? null
+      }
+    });
+    await createAuditLog(tx, {
+      scope, usuarioId: input.usuarioId ?? undefined, entidade: "CaixaMovimento", entidadeId: criado.id,
+      acao: input.tipo, payload: { caixaId: caixa.id, valor, motivo }
+    });
+    return criado;
   });
+  publishRealtime(scope, "caixa");
+  return mov;
 }
+
+/**
+ * Estorna uma sangria/suprimento lançada errado: o registro continua no histórico (com quem e por
+ * quê estornou) e deixa de contar no esperado. Só no turno aberto — turno fechado já foi conferido.
+ */
+export async function estornarMovimentoCaixa(
+  scope: TenantScope,
+  input: { movimentoId: string; motivo: string; usuarioId?: string | null }
+) {
+  const motivo = input.motivo?.trim() ?? "";
+  if (motivo.length < 3) throw new CaixaError("Informe o motivo do estorno (ex.: lançado em duplicidade).");
+  const caixa = await getCaixaAbertoOrThrow(scope);
+
+  const mov = await prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`caixa-mov:${caixa.id}`}))`;
+    await assertCaixaAbertoTx(tx, scope, caixa.id);
+    const alvo = await tx.caixaMovimento.findFirst({
+      where: { id: input.movimentoId, caixaId: caixa.id, ...scopedByTenantCompany(scope) }
+    });
+    if (!alvo) throw new CaixaError("Lançamento não encontrado no caixa aberto.");
+    if (alvo.tipo !== "SUPRIMENTO" && alvo.tipo !== "SANGRIA") {
+      throw new CaixaError("Só sangria e suprimento podem ser estornados aqui. Vendas são desfeitas cancelando a venda.");
+    }
+    if (alvo.estornadoEm) throw new CaixaError("Este lançamento já foi estornado.");
+
+    // Estornar um suprimento tira dinheiro do esperado: não pode deixá-lo negativo.
+    if (alvo.tipo === "SUPRIMENTO") {
+      const movimentos = await tx.caixaMovimento.findMany({
+        where: { caixaId: caixa.id, id: { not: alvo.id } },
+        select: { tipo: true, formaPagamento: true, valor: true, estornadoEm: true }
+      });
+      const esperadoSem = esperadoDinheiroDe(Number(caixa.saldoInicial), movimentos);
+      if (esperadoSem < -0.0001) {
+        throw new CaixaError(`Estornar este suprimento deixaria o dinheiro esperado negativo (${esperadoSem.toFixed(2)}). Estorne antes a sangria correspondente.`);
+      }
+    }
+
+    const atualizado = await tx.caixaMovimento.update({
+      where: { id: alvo.id },
+      data: { estornadoEm: new Date(), estornadoPorUsuarioId: input.usuarioId ?? null, motivoEstorno: motivo }
+    });
+    await createAuditLog(tx, {
+      scope, usuarioId: input.usuarioId ?? undefined, entidade: "CaixaMovimento", entidadeId: alvo.id,
+      acao: "ESTORNAR", payload: { caixaId: caixa.id, tipo: alvo.tipo, valor: Number(alvo.valor), motivo }
+    });
+    return atualizado;
+  });
+  publishRealtime(scope, "caixa");
+  return mov;
+}
+
+/** Sangria/suprimento do turno, na ordem em que foram lançados (inclui estornados, marcados). */
+export type MovimentoManualCaixa = {
+  id: string;
+  tipo: "SUPRIMENTO" | "SANGRIA";
+  valor: number;
+  motivo: string;
+  criadoEm: string;
+  estornado: boolean;
+  motivoEstorno: string | null;
+};
 
 export type ResumoCaixa = {
   id: string;
@@ -371,12 +480,13 @@ export type ResumoCaixa = {
   esperadoDinheiro: number;
   porForma: Array<{ forma: string; valor: number }>;
   qtdVendas: number;
+  movimentosManuais: MovimentoManualCaixa[];
 };
 
 export async function getResumoCaixa(scope: TenantScope, caixaId: string): Promise<ResumoCaixa> {
   const caixa = await prisma.caixa.findFirst({
     where: { id: caixaId, ...scopedByTenantCompany(scope) },
-    include: { movimentos: true }
+    include: { movimentos: { orderBy: { criadoEm: "asc" } } }
   });
   if (!caixa) throw new CaixaError("Caixa não encontrado.");
 
@@ -386,8 +496,21 @@ export async function getResumoCaixa(scope: TenantScope, caixaId: string): Promi
   let totalSangrias = 0;
   let dinheiroVendas = 0;
   const vendasIds = new Set<string>();
+  const movimentosManuais: MovimentoManualCaixa[] = [];
 
   for (const m of caixa.movimentos) {
+    if (m.tipo === "SUPRIMENTO" || m.tipo === "SANGRIA") {
+      movimentosManuais.push({
+        id: m.id,
+        tipo: m.tipo,
+        valor: round2(Math.abs(Number(m.valor))),
+        motivo: m.descricao ?? "",
+        criadoEm: m.criadoEm.toISOString(),
+        estornado: Boolean(m.estornadoEm),
+        motivoEstorno: m.motivoEstorno
+      });
+    }
+    if (m.estornadoEm) continue;
     const valor = Number(m.valor);
     const forma = m.formaPagamento ?? "OUTRO";
     if (m.tipo === "VENDA") {
@@ -413,7 +536,8 @@ export async function getResumoCaixa(scope: TenantScope, caixaId: string): Promi
     totalSangrias: round2(totalSangrias),
     esperadoDinheiro: round2(saldoInicial + dinheiroVendas + totalSuprimentos - totalSangrias),
     porForma: Array.from(porFormaMap.entries()).map(([forma, valor]) => ({ forma, valor: round2(valor) })),
-    qtdVendas: vendasIds.size
+    qtdVendas: vendasIds.size,
+    movimentosManuais
   };
 }
 

@@ -39,6 +39,14 @@ export async function GET(_request: Request, { params }: { params: { id: string 
       ? resumo.porForma.map((f) => linha(`  ${formaLabel(f.forma)}`, brl(f.valor))).join("")
       : `<tr><td colspan="2" class="mut">  (sem recebimentos)</td></tr>`;
 
+    // Sangrias e suprimentos do turno com motivo (estornados aparecem marcados, fora das contas).
+    const hora = (iso: string) => new Date(iso).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+    const manuais = resumo.movimentosManuais.length
+      ? `<hr /><div class="sec">SANGRIAS E SUPRIMENTOS</div><table>${resumo.movimentosManuais
+          .map((m) => `<tr><td>${esc(hora(m.criadoEm))} ${m.tipo === "SANGRIA" ? "Sangria" : "Suprim."}${m.estornado ? " (ESTORNADO)" : ""}<br/><span class="mut">${esc(m.motivo || "sem motivo")}</span></td><td class="v">${m.tipo === "SANGRIA" ? "-" : "+"}${esc(brl(m.valor))}</td></tr>`)
+          .join("")}</table>`
+      : "";
+
     const difClasse = diferenca == null ? "" : diferenca === 0 ? "ok" : "neg";
     const difTexto =
       diferenca == null
@@ -80,9 +88,9 @@ export async function GET(_request: Request, { params }: { params: { id: string 
   <hr />
   <table class="meta">
     ${linha("Operador", caixa.operador)}
-    ${linha("Abertura", caixa.abertoEm.toLocaleString("pt-BR"))}
-    ${linha("Fechamento", fechado && caixa.fechadoEm ? caixa.fechadoEm.toLocaleString("pt-BR") : "— (em aberto)")}
-    ${linha("Impresso em", new Date().toLocaleString("pt-BR"))}
+    ${linha("Abertura", caixa.abertoEm.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }))}
+    ${linha("Fechamento", fechado && caixa.fechadoEm ? caixa.fechadoEm.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "— (em aberto)")}
+    ${linha("Impresso em", new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }))}
   </table>
   <hr />
   <div class="sec">RECEBIMENTOS POR FORMA</div>
@@ -100,6 +108,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
     ${caixa.saldoFinalInformado != null ? linha("Contado na gaveta", brl(caixa.saldoFinalInformado)) : ""}
     ${diferenca != null ? `<tr class="forte"><td>Diferença</td><td class="v ${difClasse}">${esc(difTexto)}</td></tr>` : ""}
   </table>
+  ${manuais}
   ${caixa.observacaoFechamento ? `<hr /><div><b>Obs.:</b> ${esc(caixa.observacaoFechamento)}</div>` : ""}
   <hr />
   <div class="rodape center">Documento gerencial — sem valor fiscal.</div>

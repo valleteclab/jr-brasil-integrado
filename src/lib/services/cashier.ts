@@ -36,7 +36,8 @@ export type ContaRecebedora = { id: string; nome: string; chavePix: string | nul
 export type MaquinaCartaoResumo = { id: string; nome: string; adquirente: string | null };
 
 export type CaixaPageData = {
-  caixa: { id: string; operador: string; abertoEm: string; resumo: ResumoCaixa } | null;
+  /** diasAberto: dias de calendário (fuso de Brasília) desde a abertura — 0 = aberto hoje. */
+  caixa: { id: string; operador: string; abertoEm: string; diasAberto: number; resumo: ResumoCaixa } | null;
   /** Nome do usuário logado — é ele quem abre o caixa (não se digita mais o operador). */
   usuarioNome: string;
   /** Usuário tem o módulo financeiro (pode liberar venda faturada direto na tela). */
@@ -56,6 +57,12 @@ export type CaixaPageData = {
   /** Contas com cobrança de boleto ativa (o operador escolhe a conta/banco na venda em boleto). */
   contasCobranca: Array<{ id: string; nome: string }>;
 };
+
+/** Dias de calendário em Brasília entre a data informada e hoje. */
+function diasDesde(data: Date): number {
+  const dia = (d: Date) => new Date(`${d.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" })}T00:00:00Z`).getTime();
+  return Math.max(0, Math.round((dia(new Date()) - dia(data)) / 86_400_000));
+}
 
 /** Dados da tela de caixa: turno aberto (com resumo) e pré-vendas aguardando pagamento. */
 export async function getCaixaPageData(): Promise<CaixaPageData> {
@@ -148,7 +155,8 @@ export async function getCaixaPageData(): Promise<CaixaPageData> {
       ? {
           id: aberto.id,
           operador: aberto.operador,
-          abertoEm: aberto.abertoEm.toLocaleString("pt-BR"),
+          abertoEm: aberto.abertoEm.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }),
+          diasAberto: diasDesde(aberto.abertoEm),
           resumo: await getResumoCaixa(scope, aberto.id)
         }
       : null,

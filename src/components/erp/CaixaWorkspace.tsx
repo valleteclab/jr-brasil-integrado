@@ -95,6 +95,15 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
   const [analise, setAnalise] = useState<{ decisao: string | null; score: number | null; temRestricao: boolean; limiteRecomendado: number | null; pdf: string | null } | null>(null);
 
   const [saldoInicial, setSaldoInicial] = useState(0);
+  // Painéis de sangria/suprimento, estorno e fechamento (substituem os prompts do navegador).
+  const [movTipo, setMovTipo] = useState<"SUPRIMENTO" | "SANGRIA" | null>(null);
+  const [movValor, setMovValor] = useState("");
+  const [movMotivo, setMovMotivo] = useState("");
+  const [estornoId, setEstornoId] = useState<string | null>(null);
+  const [estornoMotivo, setEstornoMotivo] = useState("");
+  const [fecharAberto, setFecharAberto] = useState(false);
+  const [contado, setContado] = useState("");
+  const [obsFechamento, setObsFechamento] = useState("");
 
   const [sel, setSel] = useState<PreVendaResumo | null>(null);
   const [pagamentos, setPagamentos] = useState<PagamentoLinha[]>([]);
@@ -211,24 +220,48 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
     finally { setBusy(false); }
   }
 
-  async function movimento(tipo: "SUPRIMENTO" | "SANGRIA") {
-    const v = window.prompt(`Valor do ${tipo === "SANGRIA" ? "sangria (retirada)" : "suprimento (entrada)"}:`);
-    if (v === null) return;
-    const valor = Number(v.replace(",", "."));
-    if (!valor || valor <= 0) { setError("Valor inválido."); return; }
+  function abrirMovimento(tipo: "SUPRIMENTO" | "SANGRIA") {
+    setError(""); setInfo("");
+    setMovValor(""); setMovMotivo(""); setMovTipo(tipo);
+  }
+
+  async function registrarMovimento() {
+    if (!movTipo || busy) return;
+    const valor = Number(movValor.replace(",", "."));
+    if (!valor || valor <= 0) { setError("Informe o valor."); return; }
+    if (movMotivo.trim().length < 3) { setError("Informe o motivo."); return; }
     setBusy(true);
-    try { await post("/api/erp/caixa/movimento", { tipo, valor }); setInfo(`${tipo === "SANGRIA" ? "Sangria" : "Suprimento"} registrado.`); router.refresh(); }
-    catch (e) { setError(e instanceof Error ? e.message : "Erro no movimento."); }
+    try {
+      await post("/api/erp/caixa/movimento", { tipo: movTipo, valor, descricao: movMotivo.trim() });
+      setInfo(`${movTipo === "SANGRIA" ? "Sangria" : "Suprimento"} de ${brl(valor)} registrado.`);
+      setMovTipo(null);
+      router.refresh();
+    } catch (e) { setError(e instanceof Error ? e.message : "Erro no movimento."); }
+    finally { setBusy(false); }
+  }
+
+  async function estornarMovimento() {
+    if (!estornoId || busy) return;
+    if (estornoMotivo.trim().length < 3) { setError("Informe o motivo do estorno."); return; }
+    setBusy(true);
+    try {
+      await post(`/api/erp/caixa/movimento/${estornoId}/estornar`, { motivo: estornoMotivo.trim() });
+      setInfo("Lançamento estornado. Ele continua no histórico, mas saiu das contas do caixa.");
+      setEstornoId(null); setEstornoMotivo("");
+      router.refresh();
+    } catch (e) { setError(e instanceof Error ? e.message : "Erro ao estornar."); }
     finally { setBusy(false); }
   }
 
   async function fechar() {
-    const v = window.prompt("Valor contado em dinheiro na gaveta (vazio para pular a conferência):", "");
-    if (v === null) return;
+    if (busy) return;
+    const v = contado.trim();
+    if (v && !(Number(v.replace(",", ".")) >= 0)) { setError("Valor contado inválido."); return; }
     setBusy(true);
     try {
       const caixaId = caixa?.id;
-      const r = await post("/api/erp/caixa/fechar", { saldoFinalInformado: v.trim() ? Number(v.replace(",", ".")) : undefined });
+      const r = await post("/api/erp/caixa/fechar", { saldoFinalInformado: v ? Number(v.replace(",", ".")) : undefined, observacao: obsFechamento.trim() || undefined });
+      setFecharAberto(false); setContado(""); setObsFechamento("");
       const dif = r.diferenca as number | null;
       setInfo(dif == null ? "Caixa fechado." : `Caixa fechado. Diferença: ${brl(dif)} (${dif === 0 ? "conferido" : dif > 0 ? "sobra" : "falta"}).`);
       // Recibo de fechamento (Z) abre para impressão na térmica, como o cupom.
@@ -509,11 +542,18 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
           <p className="erp-page-sub">Aberto em {caixa.abertoEm} · {r.qtdVendas} venda(s)</p>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          <button type="button" className="btn-erp ghost sm" disabled={busy} onClick={() => movimento("SUPRIMENTO")}>Suprimento</button>
-          <button type="button" className="btn-erp ghost sm" disabled={busy} onClick={() => movimento("SANGRIA")}>Sangria</button>
-          <button type="button" className="btn-erp danger sm" disabled={busy} onClick={fechar}>Fechar caixa</button>
+          <button type="button" className="btn-erp ghost sm" disabled={busy} onClick={() => abrirMovimento("SUPRIMENTO")} title="Colocar dinheiro na gaveta">Suprimento</button>
+          <button type="button" className="btn-erp ghost sm" disabled={busy} onClick={() => abrirMovimento("SANGRIA")} title="Retirar dinheiro da gaveta">Sangria</button>
+          <button type="button" className="btn-erp danger sm" disabled={busy} onClick={() => { setError(""); setInfo(""); setFecharAberto(true); }}>Fechar caixa</button>
         </div>
       </div>
+
+      {caixa.diasAberto >= 1 && (
+        <div className="alert warn">
+          <span className="lead">Caixa aberto há {caixa.diasAberto} {caixa.diasAberto === 1 ? "dia" : "dias"}.</span>{" "}
+          Feche o caixa no fim de cada expediente, contando o dinheiro da gaveta. Com o turno aberto por vários dias, a conferência perde o sentido.
+        </div>
+      )}
 
       {error && <div className="alert danger"><span className="lead">Atenção:</span> {error}</div>}
       {info && <div className="alert success"><span>{info}</span></div>}
@@ -610,6 +650,28 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
               )}
             </div>
           </div>
+
+          {r.movimentosManuais.length > 0 && (
+            <div className="erp-card">
+              <div className="erp-card-head"><h3>Sangrias e suprimentos do turno</h3></div>
+              <div className="erp-card-body" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {r.movimentosManuais.map((m) => (
+                  <div key={m.id} style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 6, alignItems: "start", paddingBottom: 8, borderBottom: "1px solid var(--erp-line)", opacity: m.estornado ? 0.6 : 1 }}>
+                    <div style={{ minWidth: 0 }}>
+                      <strong style={{ textDecoration: m.estornado ? "line-through" : "none" }}>
+                        {m.tipo === "SANGRIA" ? "Sangria" : "Suprimento"} {m.tipo === "SANGRIA" ? "−" : "+"}{brl(m.valor)}
+                      </strong>
+                      <span className="sublabel">{new Date(m.criadoEm).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })} · {m.motivo || "sem motivo"}</span>
+                      {m.estornado && <span className="sublabel">Estornado{m.motivoEstorno ? `: ${m.motivoEstorno}` : ""}</span>}
+                    </div>
+                    {!m.estornado && (
+                      <button type="button" className="btn-erp ghost xs" disabled={busy} onClick={() => { setError(""); setInfo(""); setEstornoMotivo(""); setEstornoId(m.id); }}>Estornar</button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {sel && !resultado && (
             <div className="erp-card">
@@ -863,6 +925,99 @@ export function CaixaWorkspace({ data }: { data: CaixaPageData }) {
           )}
         </aside>
       </div>
+
+      {movTipo && (
+        <>
+          <div className="drawer-bd" onClick={() => !busy && setMovTipo(null)} />
+          <aside className="drawer" style={{ width: 460 }}>
+            <header className="drawer-head">
+              <h2>{movTipo === "SANGRIA" ? "Sangria — retirar dinheiro" : "Suprimento — colocar dinheiro"}</h2>
+              <button type="button" className="btn-erp ghost sm" disabled={busy} onClick={() => setMovTipo(null)}>Fechar</button>
+            </header>
+            <div className="drawer-body">
+              <p style={{ fontSize: 13, color: "var(--erp-mute)", marginTop: 0 }}>
+                {movTipo === "SANGRIA"
+                  ? "Use quando tirar dinheiro de verdade da gaveta (depósito no banco, pagamento, cofre)."
+                  : "Use quando colocar dinheiro de verdade na gaveta (ex.: reforço de troco)."}{" "}
+                Não use para acertar o saldo: a conferência é feita no fechamento do caixa.
+              </p>
+              <div className="erp-form" style={{ gridTemplateColumns: "1fr" }}>
+                <label>Valor (R$)
+                  <input autoFocus inputMode="decimal" placeholder="0,00" value={movValor} onChange={(e) => setMovValor(e.target.value)} />
+                </label>
+                <label>Motivo
+                  <input placeholder={movTipo === "SANGRIA" ? "Ex.: depósito no banco" : "Ex.: reforço de troco"} value={movMotivo} onChange={(e) => setMovMotivo(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void registrarMovimento(); }} />
+                </label>
+                {movTipo === "SANGRIA" && <span className="sublabel">Dinheiro esperado na gaveta agora: {brl(r.esperadoDinheiro)}</span>}
+                <button type="button" className="btn-erp primary" disabled={busy} onClick={registrarMovimento}>{busy ? "Registrando…" : `Registrar ${movTipo === "SANGRIA" ? "sangria" : "suprimento"}`}</button>
+              </div>
+            </div>
+          </aside>
+        </>
+      )}
+
+      {estornoId && (
+        <>
+          <div className="drawer-bd" onClick={() => !busy && setEstornoId(null)} />
+          <aside className="drawer" style={{ width: 460 }}>
+            <header className="drawer-head">
+              <h2>Estornar lançamento</h2>
+              <button type="button" className="btn-erp ghost sm" disabled={busy} onClick={() => setEstornoId(null)}>Fechar</button>
+            </header>
+            <div className="drawer-body">
+              {(() => {
+                const m = r.movimentosManuais.find((x) => x.id === estornoId);
+                return m ? (
+                  <p style={{ fontSize: 14, marginTop: 0 }}>
+                    <strong>{m.tipo === "SANGRIA" ? "Sangria" : "Suprimento"} de {brl(m.valor)}</strong> · {m.motivo || "sem motivo"}
+                  </p>
+                ) : null;
+              })()}
+              <p style={{ fontSize: 13, color: "var(--erp-mute)" }}>O lançamento continua no histórico, marcado como estornado, e deixa de contar no dinheiro esperado.</p>
+              <div className="erp-form" style={{ gridTemplateColumns: "1fr" }}>
+                <label>Motivo do estorno
+                  <input autoFocus placeholder="Ex.: lançado em duplicidade" value={estornoMotivo} onChange={(e) => setEstornoMotivo(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void estornarMovimento(); }} />
+                </label>
+                <button type="button" className="btn-erp danger" disabled={busy} onClick={estornarMovimento}>{busy ? "Estornando…" : "Estornar"}</button>
+              </div>
+            </div>
+          </aside>
+        </>
+      )}
+
+      {fecharAberto && (
+        <>
+          <div className="drawer-bd" onClick={() => !busy && setFecharAberto(false)} />
+          <aside className="drawer" style={{ width: 480 }}>
+            <header className="drawer-head">
+              <h2>Fechar caixa</h2>
+              <button type="button" className="btn-erp ghost sm" disabled={busy} onClick={() => setFecharAberto(false)}>Fechar</button>
+            </header>
+            <div className="drawer-body">
+              <div className="atend-total-row"><span>Fundo de troco</span><b>{brl(r.saldoInicial)}</b></div>
+              <div className="atend-total-row"><span>(+) Vendas em dinheiro</span><b>{brl(r.porForma.find((f) => f.forma === "DINHEIRO")?.valor ?? 0)}</b></div>
+              <div className="atend-total-row"><span>(+) Suprimentos</span><b>{brl(r.totalSuprimentos)}</b></div>
+              <div className="atend-total-row"><span>(−) Sangrias</span><b>{brl(r.totalSangrias)}</b></div>
+              <div className="atend-total-row grand"><span>Esperado em dinheiro</span><strong>{brl(r.esperadoDinheiro)}</strong></div>
+              <p style={{ fontSize: 13, color: "var(--erp-mute)" }}>Pix e cartão não entram na gaveta: Pix vai para a conta bancária e cartão vira recebível da maquininha.</p>
+              <div className="erp-form" style={{ gridTemplateColumns: "1fr" }}>
+                <label>Dinheiro contado na gaveta (R$)
+                  <input autoFocus inputMode="decimal" placeholder="Conte notas e moedas" value={contado} onChange={(e) => setContado(e.target.value)} />
+                </label>
+                {contado.trim() && Number(contado.replace(",", ".")) >= 0 && (() => {
+                  const dif = Math.round((Number(contado.replace(",", ".")) - r.esperadoDinheiro) * 100) / 100;
+                  return <span className="sublabel">Diferença: {brl(dif)} {dif === 0 ? "(conferido)" : dif > 0 ? "(sobra)" : "(falta)"}</span>;
+                })()}
+                <label>Observação
+                  <input placeholder="Opcional (ex.: explicação da diferença)" value={obsFechamento} onChange={(e) => setObsFechamento(e.target.value)} />
+                </label>
+                <button type="button" className="btn-erp danger" disabled={busy} onClick={fechar}>{busy ? "Fechando…" : "Fechar caixa e imprimir fechamento"}</button>
+                {!contado.trim() && <span className="sublabel">Sem a contagem, o fechamento sai sem conferência (não mostra sobra ou falta).</span>}
+              </div>
+            </div>
+          </aside>
+        </>
+      )}
 
       {showCliPicker && (
         <>

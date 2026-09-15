@@ -1401,6 +1401,8 @@ function MovimentoModal({ onClose }: { onClose: () => void }) {
   const [ok, setOk] = useState("");
 
   async function registrar() {
+    if (loading) return;
+    if (descricao.trim().length < 3) { setError("Informe o motivo."); return; }
     setLoading(true);
     setError("");
     setOk("");
@@ -1433,7 +1435,8 @@ function MovimentoModal({ onClose }: { onClose: () => void }) {
           <button className={tipo === "SUPRIMENTO" ? "active" : ""} onClick={() => setTipo("SUPRIMENTO")}>Suprimento (entrada)</button>
         </div>
         <label className="pdv-cliente">Valor (R$)<input autoFocus inputMode="decimal" value={valor} onChange={(e) => setValor(e.target.value)} placeholder="0,00" /></label>
-        <label className="pdv-cliente">Descrição<input value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder="Opcional" /></label>
+        <label className="pdv-cliente">Motivo<input value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder={tipo === "SANGRIA" ? "Ex.: depósito no banco" : "Ex.: reforço de troco"} /></label>
+        <p style={{ fontSize: 12, opacity: 0.75, margin: "4px 0 0" }}>Use só quando o dinheiro entrar ou sair de verdade da gaveta. Para conferir o saldo, feche o caixa.</p>
         <div className="pdv-acoes">
           <button className="pdv-limpar" onClick={onClose} disabled={loading}>Fechar</button>
           <button className="pdv-finalizar" onClick={registrar} disabled={loading}>{loading ? "Registrando..." : "Registrar"}</button>

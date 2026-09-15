@@ -3191,6 +3191,12 @@ model CaixaMovimento {
   pedidoVendaId  String?
   pedidoVenda    PedidoVenda?       @relation(fields: [pedidoVendaId], references: [id])
   descricao      String?
+  /// Usuário logado que lançou (sangria/suprimento).
+  usuarioId      String?
+  /// Estorno de sangria/suprimento lançada errado: o registro fica no histórico e sai das contas.
+  estornadoEm           DateTime?
+  estornadoPorUsuarioId String?
+  motivoEstorno         String?
   criadoEm       DateTime           @default(now())
 
   @@index([tenantId, empresaId, caixaId])

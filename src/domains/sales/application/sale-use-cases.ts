@@ -1037,15 +1037,17 @@ export async function cancelSale(scope: TenantScope, id: string) {
     // Estorna os lançamentos da venda no caixa ABERTO: sem isto, o resumo (Vendas / por forma /
     // esperado em dinheiro) continuaria contando uma venda cancelada. Só mexe no turno aberto —
     // turnos já fechados são históricos (já conferidos) e não são alterados.
-    const caixaAberto = await tx.caixa.findFirst({
-      where: { ...scopedByTenantCompany(scope), status: "ABERTO" },
-      select: { id: true }
+    // Filtra pelo caixa DA VENDA (status aberto), não por "um caixa aberto qualquer": a empresa
+    // pode ter um caixa esquecido aberto em outro ambiente, e o findFirst pegava o errado.
+    await tx.caixaMovimento.deleteMany({
+      where: {
+        tenantId: scope.tenantId,
+        empresaId: scope.empresaId,
+        pedidoVendaId: id,
+        tipo: "VENDA",
+        caixa: { status: "ABERTO" }
+      }
     });
-    if (caixaAberto) {
-      await tx.caixaMovimento.deleteMany({
-        where: { caixaId: caixaAberto.id, pedidoVendaId: id, tipo: "VENDA" }
-      });
-    }
 
     // Cancela a comissão do vendedor ainda não paga
     await cancelarComissaoPedido(tx, scope, id);
