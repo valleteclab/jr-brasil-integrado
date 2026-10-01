@@ -8,6 +8,7 @@ import { formatBrl } from "@/lib/formatters/currency";
 import { getSession } from "@/lib/auth/session";
 import { isAdminPerfil } from "@/lib/auth/modules";
 import { ModuloBloqueado } from "@/components/erp/ModuloBloqueado";
+import { AvisoCertificado } from "@/components/erp/AvisoCertificado";
 import { moduloLiberadoNoScope } from "@/lib/auth/tenant-features";
 
 export const dynamic = "force-dynamic";
@@ -34,6 +35,7 @@ export default async function FiscalPage() {
 
   return (
     <>
+      <AvisoCertificado />
       <PageHeader
         eyebrow="Financeiro & Fiscal"
         title="Documentos fiscais"

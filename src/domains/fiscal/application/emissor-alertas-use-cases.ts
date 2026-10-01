@@ -7,7 +7,8 @@ import { apuracaoSimples } from "@/domains/fiscal/simples/apuracao-simples-use-c
  * ALERTAS de retenção do plano EMISSOR (rodado pelo cron): avisa pelo SINO (notificações) quando —
  *  - as notas do mês chegam a 80%/100% do limite do plano;
  *  - o faturamento do MEI chega a 80%/100% do limite anual (R$ 81 mil);
- *  - o certificado A1 está vencendo (≤30 dias) ou vencido;
+ *  - o certificado A1 está vencendo (≤30 dias) ou vencido — este vale para TODOS os planos e para
+ *    CADA empresa ativa do tenant (sem certificado válido ninguém emite, seja Emissor ou Completo);
  *  - o DAS do mês está perto de vencer (dias 13–20).
  * Idempotente: cada alerta deduplica pela existência de notificação do mesmo tipo na janela
  * (mês para limites/DAS; 7 dias para certificado) — o cron pode rodar quantas vezes quiser.
@@ -26,9 +27,30 @@ async function alertar(scope: TenantScope, tipo: string, desde: Date, titulo: st
   return notificar(scope, { setor: "fiscal", tipo, titulo, mensagem, link });
 }
 
+/** Aviso de certificado A1 vencido/vencendo de UMA empresa (vale para qualquer plano). */
+async function alertarCertificado(scope: TenantScope, desde: Date): Promise<number> {
+  const cert = await prisma.certificadoDigital.findUnique({ where: { empresaId: scope.empresaId }, select: { validade: true } });
+  if (!cert?.validade) return 0;
+  const dias = Math.ceil((cert.validade.getTime() - Date.now()) / 86400000);
+  if (dias < 0) {
+    return alertar(scope, "EMISSOR_A1_VENCIDO", desde,
+      "Certificado A1 VENCIDO",
+      "Seu certificado digital venceu — sem ele não é possível emitir notas. Renove com sua certificadora e envie o novo .pfx.",
+      "/erp/configuracoes/fiscal");
+  }
+  if (dias <= 30) {
+    return alertar(scope, "EMISSOR_A1_30D", desde,
+      `Certificado A1 vence em ${dias} dia(s)`,
+      "Renove com antecedência para não parar de emitir. Depois é só enviar o novo .pfx nas configurações.",
+      "/erp/configuracoes/fiscal");
+  }
+  return 0;
+}
+
 export async function rodarAlertasEmissor(): Promise<{ tenants: number; notificacoes: number }> {
+  // Todos os tenants ativos: o aviso de certificado não depende do plano.
   const tenants = await prisma.tenant.findMany({
-    where: { plano: { in: ["EMISSOR", "CHAT"] }, ativo: true },
+    where: { ativo: true },
     select: { id: true, plano: true }
   });
   const planosCfg = await prisma.plataformaPlano.findMany();
@@ -39,13 +61,26 @@ export async function rodarAlertasEmissor(): Promise<{ tenants: number; notifica
   let notificacoes = 0;
 
   for (const t of tenants) {
-    const empresa = await prisma.empresa.findFirst({
+    const empresas = await prisma.empresa.findMany({
       where: { tenantId: t.id, status: "ATIVA" },
       orderBy: { matriz: "desc" },
       select: { id: true }
     });
-    if (!empresa) continue;
+    if (!empresas.length) continue;
+    const empresa = empresas[0];
     const scope: TenantScope = { tenantId: t.id, empresaId: empresa.id };
+
+    // Certificado A1 de CADA empresa ativa (independe do plano) — 1 aviso por semana.
+    for (const emp of empresas) {
+      try {
+        notificacoes += await alertarCertificado({ tenantId: t.id, empresaId: emp.id }, seteDiasAtras);
+      } catch (e) {
+        console.error("[emissor-alertas/cert] empresa", emp.id, e instanceof Error ? e.message : e);
+      }
+    }
+
+    // Os demais alertas são de retenção dos planos enxutos (Emissor/Chat).
+    if (t.plano !== "EMISSOR" && t.plano !== "CHAT") continue;
 
     try {
       // 1) Limite de notas do plano (80% / 100%) — limite do PLANO do tenant.
@@ -85,24 +120,7 @@ export async function rodarAlertasEmissor(): Promise<{ tenants: number; notifica
         }
       } catch { /* empresa fora do Simples/sem anexo → sem alerta MEI */ }
 
-      // 3) Certificado A1 (vencendo/vencido) — 1 aviso por semana.
-      const cert = await prisma.certificadoDigital.findUnique({ where: { empresaId: empresa.id }, select: { validade: true } });
-      if (cert?.validade) {
-        const dias = Math.ceil((cert.validade.getTime() - Date.now()) / 86400000);
-        if (dias < 0) {
-          notificacoes += await alertar(scope, "EMISSOR_A1_VENCIDO", seteDiasAtras,
-            "Certificado A1 VENCIDO",
-            "Seu certificado digital venceu — sem ele não é possível emitir notas. Renove com sua certificadora e envie o novo .pfx.",
-            "/erp/configuracoes/fiscal");
-        } else if (dias <= 30) {
-          notificacoes += await alertar(scope, "EMISSOR_A1_30D", seteDiasAtras,
-            `Certificado A1 vence em ${dias} dia(s)`,
-            "Renove com antecedência para não parar de emitir. Depois é só enviar o novo .pfx nas configurações.",
-            "/erp/configuracoes/fiscal");
-        }
-      }
-
-      // 4) Lembrete do DAS (vence dia 20) — aviso único entre os dias 13 e 20.
+      // 3) Lembrete do DAS (vence dia 20) — aviso único entre os dias 13 e 20.
       const dia = agora.getDate();
       if (dia >= 13 && dia <= 20) {
         const mesLabel = agora.toLocaleDateString("pt-BR", { month: "long" });

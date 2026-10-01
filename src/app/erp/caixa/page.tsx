@@ -1,4 +1,5 @@
 import { CaixaWorkspace } from "@/components/erp/CaixaWorkspace";
+import { AvisoCertificado } from "@/components/erp/AvisoCertificado";
 import { getCaixaPageData, type CaixaPageData } from "@/lib/services/cashier";
 
 export const dynamic = "force-dynamic";
@@ -21,5 +22,10 @@ export default async function CaixaPage() {
     );
   }
 
-  return <CaixaWorkspace data={data} />;
+  return (
+    <>
+      <AvisoCertificado />
+      <CaixaWorkspace data={data} />
+    </>
+  );
 }
