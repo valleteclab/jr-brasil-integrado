@@ -7,6 +7,7 @@
  * Uso: npx tsx scripts/test-dps-ibscbs.ts
  */
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import { buildDpsXml } from "../src/domains/fiscal/providers/nacional-provider";
 import type { EmitInput, ProviderContext } from "../src/domains/fiscal/providers/types";
 
@@ -40,7 +41,7 @@ assert.ok(!desligada.includes("<IBSCBS>"), "chave desligada nao pode enviar o gr
 // 2) Ligada: grupo presente, na posicao do Anexo VI (depois de </valores>), leiaute 1.01.
 const ligada = buildDpsXml(input({ cClassTribServico: "000001" }), ctx(true)).xml;
 assert.ok(ligada.includes('versao="1.01"'), "com o grupo, o DPS passa a ser 1.01");
-assert.ok(ligada.includes("<IBSCBS><valores><trib><CST>000</CST><cClassTrib>000001</cClassTrib></trib></valores></IBSCBS>"), "grupo IBSCBS mal formado");
+assert.ok(ligada.includes("<IBSCBS><finNFSe>0</finNFSe><cIndOp>100501</cIndOp><indDest>0</indDest><valores><trib><gIBSCBS><CST>000</CST><cClassTrib>000001</cClassTrib></gIBSCBS></trib></valores></IBSCBS>"), "grupo IBSCBS fora do XSD vigente");
 assert.ok(ligada.includes("</valores><IBSCBS>"), "IBSCBS deve vir logo apos o grupo valores");
 assert.ok(ligada.endsWith("</infDPS></DPS>"), "IBSCBS deve ficar dentro do infDPS");
 
@@ -48,12 +49,23 @@ assert.ok(ligada.endsWith("</infDPS></DPS>"), "IBSCBS deve ficar dentro do infDP
 const semClass = buildDpsXml(input(), ctx(true)).xml;
 assert.ok(semClass.includes('versao="1.00"') && !semClass.includes("<IBSCBS>"), "sem cClassTrib nao envia o grupo");
 
-// 4) CST informado no item prevalece sobre o padrao 000.
+// 4) Sem cIndOp conhecido para o item, nao envia o grupo (nao inventa classificacao).
+const semIndOp = buildDpsXml(input({ cClassTribServico: "000001", itemListaServico: "99.99.99" }), ctx(true)).xml;
+assert.ok(semIndOp.includes('versao="1.00"') && !semIndOp.includes("<IBSCBS>"), "sem cIndOp nao envia o grupo");
+
+// 5) CST informado no item prevalece sobre o padrao 000.
 const cstProprio = buildDpsXml(input({ cClassTribServico: "000001", cstIbsCbsServico: "200" }), ctx(true)).xml;
 assert.ok(cstProprio.includes("<CST>200</CST>"), "CST do item deve prevalecer");
 
-// 5) O resto do XML e byte-a-byte igual com e sem o grupo (nenhum efeito colateral).
-const semGrupo = ligada.replace("<IBSCBS><valores><trib><CST>000</CST><cClassTrib>000001</cClassTrib></trib></valores></IBSCBS>", "").replace('versao="1.01"', 'versao="1.00"');
+// 6) O resto do XML e byte-a-byte igual com e sem o grupo (nenhum efeito colateral).
+const semGrupo = ligada.replace(/<IBSCBS>.*<\/IBSCBS>/, "").replace('versao="1.01"', 'versao="1.00"');
 assert.equal(semGrupo.replace(/<dhEmi>[^<]*<\/dhEmi>/, ""), desligada.replace(/<dhEmi>[^<]*<\/dhEmi>/, ""), "o grupo nao pode alterar mais nada do DPS");
 
 console.log("DPS IBS/CBS: chave desligada preserva o XML atual; ligada monta o grupo da NT 009. OK");
+
+// Opcional: OUT=<pasta> salva os XMLs para validacao contra o XSD oficial (DPS_v1.01.xsd).
+if (process.env.OUT) {
+  fs.writeFileSync(`${process.env.OUT}/dps-sem-grupo.xml`, desligada, "utf8");
+  fs.writeFileSync(`${process.env.OUT}/dps-com-grupo.xml`, ligada, "utf8");
+  console.log("XMLs salvos em", process.env.OUT);
+}

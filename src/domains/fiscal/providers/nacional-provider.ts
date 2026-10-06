@@ -13,6 +13,7 @@ import { pfxToPem, pfxTlsOptions } from "./pfx-utils";
 import { SignedXml } from "xml-crypto";
 import type { AmbienteFiscal, ProvedorFiscal } from "@prisma/client";
 import { cTribNacFromCodigo, exigeGrupoObra } from "@/domains/fiscal/codigo-tributacao-nacional";
+import { indOpDoCodigoTribNac } from "@/domains/fiscal/indop-data";
 import { buildDanfse, consultaPublicaNfseUrl } from "./nacional/danfse";
 import type {
   CancelInput, CancelResult, CorrectionInput, CorrectionResult,
@@ -277,19 +278,25 @@ function postEventoNfse(baseUrl: string, chave: string, eventoGZipB64: string, c
 const CST_IBSCBS_PADRAO = "000";
 
 /**
- * Grupo IBSCBS do DPS (NT 009 SE/CGNFS-e, Anexo VI v1.04.01) — entra DEPOIS de `<valores>`:
- *   IBSCBS/valores/trib/{CST, cClassTrib}   ← únicos obrigatórios do grupo
- * Nós informamos só a CLASSIFICAÇÃO: as alíquotas e os valores de IBS/CBS são calculados pela
- * Calculadora do Sistema Nacional e voltam no XML da NFS-e (infNFSe/IBSCBS), não no DPS.
- * Só é montado quando a empresa liga a chave (ctx.ibsCbsNfse) E há cClassTrib (6 dígitos) —
- * sem isso o DPS sai exatamente como antes, no leiaute 1.00.
+ * Grupo IBSCBS do DPS (Reforma na NFS-e) — entra DEPOIS de `<valores>`, dentro do infDPS.
+ * Estrutura conforme o XSD OFICIAL VIGENTE (pacote NFSe-ESQUEMAS_XSD-v1.01-20260209, tipo
+ * TCRTCInfoIBSCBS), que é o que a SEFIN valida hoje:
+ *   finNFSe (0=regular) · cIndOp (6 díg., Anexo VII/VIII) · indDest (0=o tomador é o destinatário)
+ *   valores/trib/gIBSCBS/{CST, cClassTrib}
+ * Nós informamos só a CLASSIFICAÇÃO: alíquotas e valores de IBS/CBS são calculados pela Calculadora
+ * do Sistema Nacional e voltam em infNFSe/IBSCBS — não vão no envio.
+ * Só é montado com a chave da empresa ligada (ctx.ibsCbsNfse) E com cClassTrib + cIndOp conhecidos;
+ * faltando qualquer um, o DPS sai exatamente como antes (leiaute 1.00), sem adivinhação.
  */
 function grupoIbsCbsDps(item: NormalizedFiscalDocument["itens"][number] | undefined, ctx: ProviderContext): string {
   if (!ctx.ibsCbsNfse) return "";
   const cClassTrib = onlyDigits(item?.cClassTribServico ?? "");
   if (cClassTrib.length !== 6) return "";
+  const cIndOp = onlyDigits(item?.cIndOpServico ?? "") || indOpDoCodigoTribNac(cTribNacFromCodigo(item?.itemListaServico)) || "";
+  if (cIndOp.length !== 6) return "";
   const cst = pad(onlyDigits(item?.cstIbsCbsServico ?? "") || CST_IBSCBS_PADRAO, 3);
-  return `<IBSCBS><valores><trib><CST>${cst}</CST><cClassTrib>${cClassTrib}</cClassTrib></trib></valores></IBSCBS>`;
+  return `<IBSCBS><finNFSe>0</finNFSe><cIndOp>${cIndOp}</cIndOp><indDest>0</indDest>` +
+    `<valores><trib><gIBSCBS><CST>${cst}</CST><cClassTrib>${cClassTrib}</cClassTrib></gIBSCBS></trib></valores></IBSCBS>`;
 }
 
 /**

@@ -79,6 +79,8 @@ export type NormalizedFiscalItem = {
   cClassTribServico?: string | null;
   /** NFS-e/Reforma: CST do IBS/CBS (3 dígitos). Ausente = "000" (tributação integral). */
   cstIbsCbsServico?: string | null;
+  /** NFS-e/Reforma: cIndOp (6 dígitos). Ausente = sugerido pelo item do LC 116 (Anexo VIII). */
+  cIndOpServico?: string | null;
   /** NFS-e: alíquota de ISS informada (%) que sobrepõe a regra tributária, quando definida. */
   aliquotaIssInformada?: number | null;
   /** NFS-e: base de cálculo do ISS informada (após deduções), quando diferente do valor do serviço. */
