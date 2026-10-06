@@ -712,6 +712,15 @@ export class NacionalFiscalProvider implements FiscalProvider {
     const cert = { pfx: ctx.certificado.pfx, senha: ctx.certificado.senha };
 
     if (kind === "pdf") {
+      // 0) Nota COM IBS/CBS (Reforma Tributária): o DANFSE do ADN está em desativação e não
+      // imprime os campos novos — servimos o NOSSO DANFSE, que mostra o grupo calculado pela
+      // SEFIN. Notas sem o grupo seguem no PDF oficial do ADN, como antes.
+      if (ctx.ibsCbsNfse) {
+        const xmlRtc = await this.fetchNfseXml(chave, cert, ctx.ambiente);
+        if (xmlRtc && /<(?:\w+:)?cLocalidadeIncid>/.test(xmlRtc)) {
+          return { ok: true, ...buildDanfse(xmlRtc, { logoDataUrl: ctx.logoDataUrl }) };
+        }
+      }
       // 1) DANFSE PDF oficial do ADN. O gateway do ADN às vezes responde 502/503/504 transitório
       // (e notas recém-emitidas levam alguns minutos para o DANFSE propagar) — tenta 3x antes do
       // fallback. Erro não-transitório (ex.: 404) vai direto pro fallback.

@@ -129,7 +129,55 @@ export type DanfseData = {
   };
   xInfComp: string;
   chaveSubst: string;
+  /**
+   * Grupo IBS/CBS da Reforma Tributária, como a SEFIN devolve CALCULADO no infNFSe
+   * (TCRTCIBSCBS). `null` quando a nota não tem o grupo (leiaute 1.00).
+   */
+  ibsCbs: {
+    cLocalidadeIncid: string; xLocalidadeIncid: string; pRedutor: string; vBC: string;
+    pIBSUF: string; pAliqEfetUF: string; vIBSUF: string;
+    pIBSMun: string; pAliqEfetMun: string; vIBSMun: string;
+    pCBS: string; pAliqEfetCBS: string; vCBS: string;
+    vIBSTot: string; vTotNF: string;
+    cst: string; cClassTrib: string; cIndOp: string;
+  } | null;
 };
+
+/**
+ * Grupo IBS/CBS calculado pela SEFIN (fica no infNFSe, antes do DPS). Distinguimos do grupo
+ * ENVIADO no DPS (que só leva CST/cClassTrib/cIndOp) pela presença de `cLocalidadeIncid`.
+ */
+function parseIbsCbs(preDps: string, dps: string): DanfseData["ibsCbs"] {
+  const g = pickBlock(preDps, "IBSCBS");
+  if (!g || !pick(g, "cLocalidadeIncid")) return null;
+  const valores = pickBlock(g, "valores");
+  const uf = pickBlock(valores, "uf");
+  const mun = pickBlock(valores, "mun");
+  const fed = pickBlock(valores, "fed");
+  const tot = pickBlock(g, "totCIBS");
+  const gIBS = pickBlock(tot, "gIBS");
+  const dpsClass = pickBlock(pickBlock(dps, "IBSCBS"), "gIBSCBS");
+  return {
+    cLocalidadeIncid: pick(g, "cLocalidadeIncid"),
+    xLocalidadeIncid: pick(g, "xLocalidadeIncid"),
+    pRedutor: pick(g, "pRedutor"),
+    vBC: pick(valores, "vBC"),
+    pIBSUF: pick(uf, "pIBSUF"),
+    pAliqEfetUF: pick(uf, "pAliqEfetUF"),
+    vIBSUF: pick(pickBlock(gIBS, "gIBSUFTot"), "vIBSUF"),
+    pIBSMun: pick(mun, "pIBSMun"),
+    pAliqEfetMun: pick(mun, "pAliqEfetMun"),
+    vIBSMun: pick(pickBlock(gIBS, "gIBSMunTot"), "vIBSMun"),
+    pCBS: pick(fed, "pCBS"),
+    pAliqEfetCBS: pick(fed, "pAliqEfetCBS"),
+    vCBS: pick(pickBlock(tot, "gCBS"), "vCBS"),
+    vIBSTot: pick(gIBS, "vIBSTot"),
+    vTotNF: pick(tot, "vTotNF"),
+    cst: pick(dpsClass, "CST"),
+    cClassTrib: pick(dpsClass, "cClassTrib"),
+    cIndOp: pick(pickBlock(dps, "IBSCBS"), "cIndOp"),
+  };
+}
 
 /** Parser do XML `<NFSe>` (infNFSe consolidado + DPS) → campos do DANFSE. */
 export function parseNfse(nfseXml: string): DanfseData {
@@ -234,6 +282,7 @@ export function parseNfse(nfseXml: string): DanfseData {
     },
     xInfComp: pick(dps, "xInfComp"),
     chaveSubst: pick(pickBlock(dps, "subst"), "chSubstda"),
+    ibsCbs: parseIbsCbs(preDps, dps),
   };
 }
 
@@ -327,6 +376,37 @@ function renderHtml(d: DanfseData, opts?: DanfseOptions): string {
     d.xInfComp,
   ].filter(Boolean).join(" | ");
   const logoEmit = opts?.logoDataUrl ? `<img class="logo-emit" src="${escHtml(opts.logoDataUrl)}" alt=""/>` : "";
+  // IBS/CBS (Reforma Tributária): só sai quando a SEFIN devolveu o grupo calculado na nota.
+  const rtc = d.ibsCbs;
+  const pct = (v: string) => (monBr(v, true) ? `${monBr(v, true)}%` : "");
+  const secIbsCbs = !rtc
+    ? ""
+    : `
+  <div class="sec">IBS / CBS — REFORMA TRIBUTÁRIA</div>
+  <div class="row">
+    ${cel("Localidade de Incidência", [rtc.cLocalidadeIncid, rtc.xLocalidadeIncid].filter(Boolean).join(" - "), 2)}
+    ${cel("Classificação Tributária (cClassTrib)", rtc.cClassTrib)}
+    ${cel("CST", rtc.cst)}
+    ${cel("Cód. Indicador da Operação", rtc.cIndOp)}
+  </div>
+  <div class="row">
+    ${cel("Base de Cálculo IBS/CBS (R$)", monBr(rtc.vBC, true), 1.2, "b")}
+    ${cel("Redutor", pct(rtc.pRedutor))}
+    ${cel("Alíq. IBS Estadual", pct(rtc.pAliqEfetUF || rtc.pIBSUF))}
+    ${cel("IBS Estadual (R$)", monBr(rtc.vIBSUF, true))}
+    ${cel("Alíq. IBS Municipal", pct(rtc.pAliqEfetMun || rtc.pIBSMun))}
+    ${cel("IBS Municipal (R$)", monBr(rtc.vIBSMun, true))}
+    ${cel("Alíq. CBS", pct(rtc.pAliqEfetCBS || rtc.pCBS))}
+    ${cel("CBS (R$)", monBr(rtc.vCBS, true))}
+  </div>
+  <div class="row">
+    ${cel("Total IBS (R$)", monBr(rtc.vIBSTot, true), 1, "b")}
+    ${cel("Total CBS (R$)", monBr(rtc.vCBS, true), 1, "b")}
+    ${cel("Total IBS + CBS (R$)", monBr(soma(rtc.vIBSTot, rtc.vCBS), true), 1, "b")}
+    ${cel("Valor Total da NFS-e (R$)", monBr(rtc.vTotNF, true), 1.2, "b")}
+    ${cel("", "Valores de IBS/CBS apurados pelo Sistema Nacional da NFS-e (EC 132/2023).", 3)}
+  </div>
+`;
 
   return `<!DOCTYPE html>
 <html lang="pt-BR">
@@ -495,6 +575,7 @@ function renderHtml(d: DanfseData, opts?: DanfseOptions): string {
     ${cel("Total Tributação Federal (R$)", monBr(totFederal), 1, "b")}
   </div>
 
+  ${secIbsCbs}
   <div class="sec">VALOR TOTAL DA NFS-e</div>
   <div class="row">
     ${cel("Valor do Serviço (R$)", monBr(v.vServ, true), 1, "b")}
