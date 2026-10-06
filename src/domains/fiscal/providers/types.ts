@@ -48,6 +48,8 @@ export type ProviderContext = {
   emissionMode?: string | null;
   /** NFS-e: override do ambiente do município — true=nacional, false=padrão, null/undefined=auto. */
   nfseAmbienteNacional?: boolean | null;
+  /** NFS-e/Reforma (NT 009): enviar o grupo IBSCBS no DPS (leiaute 1.01). Desligado = DPS 1.00 atual. */
+  ibsCbsNfse?: boolean | null;
   /**
    * Certificado digital A1 da empresa (.pfx já descriptografado, em memória) + senha. Necessário
    * para os provedores diretos: NACIONAL (assinar o DPS + mTLS na SEFIN) e SEFAZ (assinar a NF-e +

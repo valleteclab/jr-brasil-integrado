@@ -2669,6 +2669,9 @@ model ConfiguracaoFiscal {
   nfseDistNsu                  String?
   nfseDistSyncEm               DateTime?
   nfseAmbienteNacional         Boolean?
+  /// Reforma Tributária na NFS-e (NT 009 CGNFS-e): envia o grupo IBSCBS no DPS (vira leiaute 1.01).
+  /// Nasce DESLIGADA — liga empresa por empresa depois de validar; desligar volta ao leiaute 1.00.
+  ibsCbsNfseAtivo              Boolean          @default(false)
   ativo                        Boolean          @default(false)
   testadoEm                    DateTime?
   ultimoErro                   String?

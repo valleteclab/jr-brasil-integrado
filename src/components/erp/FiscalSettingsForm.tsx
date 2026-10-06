@@ -233,6 +233,7 @@ export function FiscalSettingsForm({
           codigoNbsPadrao: config.codigoNbsPadrao,
           spedyModoEmissao: config.spedyModoEmissao,
           nfseAmbienteNacional: config.nfseAmbienteNacional,
+          ibsCbsNfseAtivo: config.ibsCbsNfseAtivo,
           nfsePortalUsuario: config.nfsePortalUsuario,
           nfsePortalSenha: nfsePortalSenha || null,
           certificadoInfo: config.certificadoInfo,
@@ -525,6 +526,21 @@ export function FiscalSettingsForm({
               <option value="nacional">Ambiente Nacional — alíquota definida pelo sistema (não informar)</option>
               <option value="padrao">Padrão do município — informar alíquota</option>
             </select>
+          </label>
+          <label className="check-row" style={{ gridColumn: "1 / -1" }}>
+            <input
+              type="checkbox"
+              checked={Boolean(config.ibsCbsNfseAtivo)}
+              onChange={(e) => update("ibsCbsNfseAtivo", e.target.checked)}
+            />
+            <span>
+              Enviar IBS/CBS na NFS-e (Reforma Tributária — NT 009)
+              <small className="field-hint">
+                Liga o grupo IBS/CBS no XML (leiaute 1.01), com a classificação tributária do serviço.
+                Desligado, a nota sai no leiaute atual. Obrigatório desde 01/10/2026 para Lucro Real e
+                Presumido; até 31/12/2026 a falta não impede a emissão.
+              </small>
+            </span>
           </label>
           <label>
             Usuário do portal municipal de NFS-e

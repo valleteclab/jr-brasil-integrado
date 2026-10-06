@@ -100,6 +100,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
+| 2026-10-06 | A gerar | Em andamento | Reforma na NFS-e (NT 009 CGNFS-e): grupo IBSCBS no DPS atrás de chave por empresa (nasce desligada), leiaute 1.01 só quando o grupo vai, reemissão automática sem o grupo se a SEFIN rejeitar, e teste de regressão garantindo XML idêntico com a chave desligada. |
 | 2026-09-06 | A gerar | Em andamento | XERP WhatsApp das empresas: provedor `EVOLUTION` no agente operacional (instância `xerp-emp-*` por empresa, QR Code na tela de WhatsApp, webhook próprio autenticado, mesmo fluxo da Z-API com texto/áudio/PDF/cupom). |
 | 2026-09-06 | A gerar | Em andamento | Registro do deploy dos guardrails na VPS nova: imagem `jrb-erp:48b1fa0`, serviço saudável e smoke checks aprovados. |
 | 2026-09-06 | `633716f` | Enviado | Guardrails comerciais de escopo e revisão, fatos de CHAT/SPED, fallback humano e revalidação de respostas pendentes; implantado com imagem `jrb-erp:48b1fa0`. |
@@ -207,6 +208,16 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Listagem de notas de entrada agora exibe acao `Estornar` para notas registradas e mantem exclusao apenas para notas sem movimento de estoque.
 - Aplicada a migration `20260527190000_add_fiscal_entry_reversal_status` no PostgreSQL e gerado Prisma Client atualizado.
 - Validacao executada: `npm run lint`, `npx tsc --noEmit`, `npm run build`.
+
+## Atualizacao operacional - 2026-10-06 - Reforma Tributaria na NFS-e (NT 009)
+
+- **Contexto**: o monitor de /admin/reforma capturou a NT 009 v1.01 (01/10/2026) e os anexos VI v1.04.01 / VII v1.03.00. Pelo Ato Conjunto RFB/CGIBS no 4/2026, informar IBS/CBS na NFS-e e obrigatorio desde **01/10/2026** (Lucro Real/Presumido - Grupo 1), 01/12/2026 (Grupo 2) e 01/01/2027 (Simples). Ate **31/12/2026 a ausencia nao rejeita** a nota.
+- **Situacao anterior**: a tela ja coletava cClassTrib e o motor calculava IBS/CBS para o espelho, mas **nada ia no XML** - o DPS saia no leiaute 1.00 (confirmado na NFS-e 320 da Porto Brasil, emitida 02/10/2026).
+- **Leiaute** (Anexo VI, aba "LEIAUTE DPS_NFS-e - RT"): no DPS o grupo e `infDPS/IBSCBS`, logo **apos `<valores>`**; obrigatorios dentro dele apenas `valores/trib/CST` e `valores/trib/cClassTrib`. Aliquotas e valores de IBS/CBS sao calculados pela Calculadora do Sistema Nacional e voltam em `infNFSe/IBSCBS` - nao vao no envio.
+- **Implementado**: `ConfiguracaoFiscal.ibsCbsNfseAtivo` (default **false**, migration aditiva `20261006120000_nfse_ibscbs_flag`); `ProviderContext.ibsCbsNfse`; `grupoIbsCbsDps()` no `nacional-provider` (so monta com a chave ligada E cClassTrib de 6 digitos; versao do DPS vira 1.01 apenas nesse caso); CST do item (`cstIbsCbsServico`, default "000"); checkbox na tela de configuracao fiscal; **fallback**: se a SEFIN rejeitar com o grupo, reemite uma vez sem ele e devolve o motivo no campo `motivo` da nota.
+- **Teste**: `npx tsx scripts/test-dps-ibscbs.ts` (sem rede) - chave desligada mantem o XML atual byte-a-byte, ligada monta o grupo na posicao do Anexo VI, sem cClassTrib nao inventa classificacao.
+- **Plano de ativacao**: ligar primeiro na VALLETECLAB (empresa do dono) e emitir nota real; so depois Porto Brasil e demais. Desligar a chave volta ao leiaute 1.00 sem deploy.
+- Validacao executada: `npx prisma generate`, `npx tsc --noEmit`, `npm run lint`, `npx tsx scripts/test-dps-ibscbs.ts`.
 
 ## Atualizacao operacional - 2026-09-06 - XERP WhatsApp das empresas (Evolution no agente operacional)
 

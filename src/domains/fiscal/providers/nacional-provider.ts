@@ -18,6 +18,7 @@ import type {
   CancelInput, CancelResult, CorrectionInput, CorrectionResult,
   EmitInput, EmitResult, FiscalProvider, ProviderContext, TestConnectionResult
 } from "./types";
+import type { NormalizedFiscalDocument } from "@/domains/fiscal/types";
 import { normalizeDocumento } from "@/lib/fiscal/documento";
 import { normalizeDfeKey } from "./sefaz/chave";
 import { CENTI_MUNICIPIOS, buildCentiGerarXml, signCentiXml, buildCentiCancelarXml, signCentiCancelamento, centiApiCall, parseCentiRetorno } from "./centi/rps-builder";
@@ -186,6 +187,9 @@ function buildDpsXml(input: EmitInput, ctx: ProviderContext): { xml: string; id:
       : "";
 
   const tribIssqn = tribIssqnDoDocumento(doc);
+  // Reforma (NT 009): com o grupo informado o leiaute passa a ser 1.01; sem ele, segue 1.00.
+  const ibsCbs = grupoIbsCbsDps(servItem, ctx);
+  const versaoDps = ibsCbs ? "1.01" : "1.00";
   const infDPS =
     `<infDPS Id="${id}">` +
       `<tpAmb>${tpAmb}</tpAmb>` +
@@ -207,8 +211,9 @@ function buildDpsXml(input: EmitInput, ctx: ProviderContext): { xml: string; id:
         tribFed +
         `<totTrib><vTotTrib><vTotTribFed>${vTotFed}</vTotTribFed><vTotTribEst>0.00</vTotTribEst><vTotTribMun>${vISSQN}</vTotTribMun></vTotTrib></totTrib>` +
         `</trib></valores>` +
+      ibsCbs +
     `</infDPS>`;
-  return { xml: `<DPS xmlns="http://www.sped.fazenda.gov.br/nfse" versao="1.00">${infDPS}</DPS>`, id };
+  return { xml: `<DPS xmlns="http://www.sped.fazenda.gov.br/nfse" versao="${versaoDps}">${infDPS}</DPS>`, id };
 }
 
 
@@ -266,6 +271,25 @@ function postEventoNfse(baseUrl: string, chave: string, eventoGZipB64: string, c
     req.on("error", reject);
     req.write(payload); req.end();
   });
+}
+
+/** CST padrão do IBS/CBS: 000 = tributação integral (mesmo default já usado na NF-e). */
+const CST_IBSCBS_PADRAO = "000";
+
+/**
+ * Grupo IBSCBS do DPS (NT 009 SE/CGNFS-e, Anexo VI v1.04.01) — entra DEPOIS de `<valores>`:
+ *   IBSCBS/valores/trib/{CST, cClassTrib}   ← únicos obrigatórios do grupo
+ * Nós informamos só a CLASSIFICAÇÃO: as alíquotas e os valores de IBS/CBS são calculados pela
+ * Calculadora do Sistema Nacional e voltam no XML da NFS-e (infNFSe/IBSCBS), não no DPS.
+ * Só é montado quando a empresa liga a chave (ctx.ibsCbsNfse) E há cClassTrib (6 dígitos) —
+ * sem isso o DPS sai exatamente como antes, no leiaute 1.00.
+ */
+function grupoIbsCbsDps(item: NormalizedFiscalDocument["itens"][number] | undefined, ctx: ProviderContext): string {
+  if (!ctx.ibsCbsNfse) return "";
+  const cClassTrib = onlyDigits(item?.cClassTribServico ?? "");
+  if (cClassTrib.length !== 6) return "";
+  const cst = pad(onlyDigits(item?.cstIbsCbsServico ?? "") || CST_IBSCBS_PADRAO, 3);
+  return `<IBSCBS><valores><trib><CST>${cst}</CST><cClassTrib>${cClassTrib}</cClassTrib></trib></valores></IBSCBS>`;
 }
 
 /**
@@ -590,6 +614,8 @@ export class NacionalFiscalProvider implements FiscalProvider {
     const { xml } = buildDpsXml(emitInput, ctx);
     const { privateKeyPem, certPem } = pfxToPem(ctx.certificado.pfx, ctx.certificado.senha);
     const signed = signDps(xml, privateKeyPem, certPem);
+    // Reforma ligada: guarda como reemitir sem o grupo IBSCBS se a SEFIN rejeitar por causa dele.
+    const comIbsCbs = ctx.ibsCbsNfse ? xml.includes("<IBSCBS>") : false;
 
     // Brasília: o DF não usa a SEFIN — mesmo DPS assinado, transporte SOAP do ISSnet.
     if (String(input.emitter.codigoMunicipioIbge ?? "") === ISSNET_DF_MUN) {
@@ -612,6 +638,28 @@ export class NacionalFiscalProvider implements FiscalProvider {
     }
     const motivo = (data.erros ?? []).map((x) => `${x.Codigo ?? ""} ${x.Descricao ?? ""}${x.Complemento ? ` (${x.Complemento})` : ""}`.trim()).join("; ")
       || `Falha na SEFIN (HTTP ${res.statusCode}).`;
+
+    // REDE DE PROTEÇÃO (até 31/12/2026 a ausência de IBS/CBS não é motivo de rejeição): se a nota
+    // foi rejeitada com o grupo novo, reemite UMA vez sem ele para o cliente não ficar parado.
+    // O motivo original é devolvido no aviso, para corrigirmos o leiaute depois.
+    if (comIbsCbs) {
+      console.warn("[nfse/ibscbs] rejeitada com o grupo IBSCBS, reemitindo sem o grupo:", motivo.slice(0, 300));
+      const semGrupo = buildDpsXml(emitInput, { ...ctx, ibsCbsNfse: false });
+      const signedSem = signDps(semGrupo.xml, privateKeyPem, certPem);
+      const resSem = await postSefinNfse(SEFIN[ctx.ambiente], gzipSync(Buffer.from(signedSem, "utf8")).toString("base64"), ctx.certificado);
+      let dataSem: { chaveAcesso?: string; nfseXmlGZipB64?: string; erros?: Array<{ Codigo?: string; Descricao?: string; Complemento?: string }> } = {};
+      try { dataSem = JSON.parse(resSem.body); } catch { /* corpo não-JSON */ }
+      if (resSem.statusCode >= 200 && resSem.statusCode < 300) {
+        const parsedSem = parseNfseRetorno(dataSem.nfseXmlGZipB64);
+        const chaveSem = dataSem.chaveAcesso || parsedSem.chave;
+        return {
+          status: "AUTORIZADA", chaveAcesso: chaveSem, providerRef: chaveSem, xml: dataSem.nfseXmlGZipB64,
+          ...(parsedSem.nNFSe ? { numeroNfse: parsedSem.nNFSe } : {}),
+          ...(numero !== input.numero ? { numero: String(numero) } : {}),
+          motivo: `Emitida SEM o grupo IBS/CBS — a SEFIN rejeitou o grupo: ${motivo.slice(0, 200)}`
+        } as unknown as EmitResult;
+      }
+    }
     return { status: res.statusCode === 422 || res.statusCode === 400 ? "REJEITADA" : "ERRO", motivo };
   }
 
