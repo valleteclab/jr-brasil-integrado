@@ -1083,13 +1083,16 @@ export async function processarDistribuicaoEmpresa(
       resumo: true,
       chaveAcesso: { not: null },
       AND: [
-        // Pendente de ciencia = nunca manifestada OU manifestacao que a SEFAZ NAO aceitou. Sem o
-        // reenvio, uma rejeicao deixava a nota presa para sempre (o XML completo so e liberado
-        // depois da ciencia aceita).
-        { OR: [{ manifestacaoEvento: null }, { manifestacaoStatus: { in: ["REJEITADO", "ERRO", "rejeitado"] } }] },
-        // Duplicidade (573) significa que a ciencia JA esta registrada: reenviar so geraria
-        // consumo indevido na SEFAZ.
-        { NOT: { manifestacaoMotivo: { contains: "573" } } },
+        {
+          OR: [
+            // Nunca manifestada.
+            { manifestacaoEvento: null },
+            // Rejeitada ANTES de gravarmos o motivo: vale UMA tentativa, que ja registra o
+            // cStat/xMotivo. Com o motivo conhecido o reenvio e so no botao da tela (acao do
+            // usuario) — reenviar de hora em hora daria consumo indevido na SEFAZ.
+            { manifestacaoStatus: { in: ["REJEITADO", "ERRO", "rejeitado"] }, manifestacaoMotivo: null }
+          ]
+        },
         { OR: [{ dataEmissao: { gte: desde } }, { dataEmissao: null }] }
       ]
     },
