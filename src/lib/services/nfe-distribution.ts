@@ -91,6 +91,8 @@ export type NfeDistributionSummary = {
   statusLabel: string;
   statusTone: "success" | "warn" | "danger" | "mute";
   manifestacaoStatus: string | null;
+  /** Retorno da SEFAZ no evento ("573 Rejeicao: Duplicidade de evento"). */
+  manifestacaoMotivo: string | null;
   resumo: boolean | null;
   entradaFiscalId: string | null;
   ultimoErro: string | null;
@@ -99,6 +101,21 @@ export type NfeDistributionSummary = {
 };
 
 class NfeDistributionError extends Error {}
+
+/** Duplicidade de evento (cStat 573): a ciencia JA esta registrada na SEFAZ — nao e erro. */
+function manifestacaoDuplicada(motivo: string | null | undefined) {
+  return /573/.test(motivo ?? "");
+}
+
+/**
+ * A ciencia desta nota ja foi ACEITA pela SEFAZ? Sem isso (rejeicao real) o XML completo nunca e
+ * liberado, e insistir no mesmo registro so repete a rejeicao — por isso o reenvio e permitido.
+ */
+function cienciaAceita(doc: { manifestacaoEvento: string | null; manifestacaoStatus: string | null; manifestacaoMotivo: string | null }) {
+  if (!doc.manifestacaoEvento) return false;
+  if ((doc.manifestacaoStatus ?? "").toUpperCase() === "AUTORIZADO") return true;
+  return manifestacaoDuplicada(doc.manifestacaoMotivo);
+}
 
 function onlyDigits(value: string | null | undefined) {
   return (value ?? "").replace(/\D/g, "");
@@ -124,15 +141,29 @@ function accessKeySeries(chave?: string | null) {
   return key.length >= 25 ? key.slice(22, 25).replace(/^0+/, "") || key.slice(22, 25) : "";
 }
 
-function statusLabel(status: string, entradaFiscalId: string | null, manifestacaoStatus: string | null) {
+function statusLabel(
+  status: string,
+  entradaFiscalId: string | null,
+  manifestacaoStatus: string | null,
+  manifestacaoMotivo?: string | null
+) {
   if (entradaFiscalId) return "Importada para conferência";
+  const rejeitada =
+    ["REJEITADO", "ERRO"].includes((manifestacaoStatus ?? "").toUpperCase()) && !manifestacaoDuplicada(manifestacaoMotivo);
+  if (rejeitada) return "Ciência rejeitada pela SEFAZ";
   if (status === "ERRO") return "Erro";
   if (manifestacaoStatus) return "Ciência enviada";
   return "Recebida";
 }
 
-function statusTone(status: string, entradaFiscalId: string | null): NfeDistributionSummary["statusTone"] {
+function statusTone(
+  status: string,
+  entradaFiscalId: string | null,
+  manifestacaoStatus?: string | null,
+  manifestacaoMotivo?: string | null
+): NfeDistributionSummary["statusTone"] {
   if (entradaFiscalId) return "success";
+  if (["REJEITADO", "ERRO"].includes((manifestacaoStatus ?? "").toUpperCase()) && !manifestacaoDuplicada(manifestacaoMotivo)) return "danger";
   if (status === "ERRO") return "danger";
   if (status === "IMPORTANDO") return "warn";
   return "mute";
@@ -603,11 +634,12 @@ export async function listNfeDistributionDocuments(scope: TenantScope): Promise<
     status: doc.status,
     statusLabel: doc.chaveAcesso && canceladas.has(doc.chaveAcesso) && !doc.entradaFiscalId
       ? "Cancelada pelo emitente"
-      : statusLabel(doc.status, doc.entradaFiscalId, doc.manifestacaoStatus),
+      : statusLabel(doc.status, doc.entradaFiscalId, doc.manifestacaoStatus, doc.manifestacaoMotivo),
     statusTone: doc.chaveAcesso && canceladas.has(doc.chaveAcesso) && !doc.entradaFiscalId
       ? "danger"
-      : statusTone(doc.status, doc.entradaFiscalId),
+      : statusTone(doc.status, doc.entradaFiscalId, doc.manifestacaoStatus, doc.manifestacaoMotivo),
     manifestacaoStatus: doc.manifestacaoStatus,
+    manifestacaoMotivo: doc.manifestacaoMotivo,
     resumo: doc.resumo,
     entradaFiscalId: doc.entradaFiscalId,
     ultimoErro: doc.ultimoErro,
@@ -906,7 +938,7 @@ async function importDistributedNfeSefaz(
     if (!xml) {
       // A ciência pode já ter sido enviada pelo cron ou por uma tentativa anterior. Repetir gera
       // rejeição por duplicidade (cStat 573). Só manifesta quando ainda não há ciência registrada.
-      if (!doc.manifestacaoEvento) {
+      if (!cienciaAceita(doc)) {
         const pem = pfxToPem(cert.pfx, cert.senha);
         const result = await enviarManifestacao({
           ambiente: AMBIENTE_DISTRIBUICAO, // manifestação de nota REAL vai para produção
@@ -923,6 +955,7 @@ async function importDistributedNfeSefaz(
           data: {
             manifestacaoId: result.protocolo ?? null,
             manifestacaoStatus: result.status,
+            manifestacaoMotivo: result.motivo ?? null,
             manifestacaoEvento: "210210",
             manifestadoEm: new Date()
           }
@@ -933,7 +966,7 @@ async function importDistributedNfeSefaz(
         }
         // 573 = evento já registrado (ciência duplicada) — não é problema: a nota está manifestada e o
         // XML virá pelo sync. Outras rejeições são erro real → mostra o motivo (cStat) ao usuário.
-        if (result.status === "REJEITADO" && result.cStat !== "573") {
+        if (result.status === "REJEITADO" && !manifestacaoDuplicada(result.motivo) && result.cStat !== "573") {
           throw new NfeDistributionError(`A SEFAZ rejeitou a Ciência da Operação (${result.cStat ?? "?"}): ${result.motivo || "motivo não informado"}.`);
         }
       }
@@ -1047,11 +1080,18 @@ export async function processarDistribuicaoEmpresa(
     where: {
       tenantId: scope.tenantId,
       empresaId: scope.empresaId,
-      status: "LISTADO",
       resumo: true,
-      manifestacaoEvento: null,
       chaveAcesso: { not: null },
-      OR: [{ dataEmissao: { gte: desde } }, { dataEmissao: null }]
+      AND: [
+        // Pendente de ciencia = nunca manifestada OU manifestacao que a SEFAZ NAO aceitou. Sem o
+        // reenvio, uma rejeicao deixava a nota presa para sempre (o XML completo so e liberado
+        // depois da ciencia aceita).
+        { OR: [{ manifestacaoEvento: null }, { manifestacaoStatus: { in: ["REJEITADO", "ERRO", "rejeitado"] } }] },
+        // Duplicidade (573) significa que a ciencia JA esta registrada: reenviar so geraria
+        // consumo indevido na SEFAZ.
+        { NOT: { manifestacaoMotivo: { contains: "573" } } },
+        { OR: [{ dataEmissao: { gte: desde } }, { dataEmissao: null }] }
+      ]
     },
     orderBy: { dataEmissao: "desc" },
     take: maxCiencia
@@ -1064,11 +1104,19 @@ export async function processarDistribuicaoEmpresa(
       const chave = normalizeDfeKey(doc.chaveAcesso as string);
       try {
         const man = await enviarManifestacao({ ambiente: AMBIENTE_DISTRIBUICAO, cnpj, chNFe: chave, tipoEvento: "210210", cert, pem });
+        // O MOTIVO precisa ser gravado: sem ele uma rejeicao real (que impede a liberacao do XML
+        // completo) fica indistinguivel de uma ciencia aceita, e o usuario nao sabe o que resolver.
         await prisma.distribuicaoNfeDocumento.update({
           where: { id: doc.id },
-          data: { manifestacaoEvento: "210210", manifestacaoStatus: man.status, manifestadoEm: new Date() }
+          data: {
+            manifestacaoEvento: "210210",
+            manifestacaoStatus: man.status,
+            manifestacaoMotivo: man.motivo ?? null,
+            manifestacaoId: man.protocolo ?? null,
+            manifestadoEm: new Date()
+          }
         }).catch(() => undefined);
-        ciencias++;
+        if (man.status === "AUTORIZADO" || manifestacaoDuplicada(man.motivo)) ciencias++;
       } catch {
         // segue para a proxima nota
       }

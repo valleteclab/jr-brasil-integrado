@@ -687,6 +687,11 @@ export function FiscalEntriesList({ entries, receivedDocuments, ultimaSync, nfse
                   <td>
                     <StatusBadge tone={doc.statusTone}>{doc.statusLabel}</StatusBadge>
                     {doc.resumo && <small className="block-muted">Resumo da NF-e</small>}
+                    {/* Retorno da SEFAZ no evento: quando a ciência é rejeitada, é ele que diz o
+                        que resolver (a nota fica sem o XML completo até a ciência ser aceita). */}
+                    {doc.manifestacaoMotivo && doc.manifestacaoStatus !== "AUTORIZADO" && (
+                      <small className="block-muted">SEFAZ: {doc.manifestacaoMotivo}</small>
+                    )}
                     {doc.ultimoErro && <small className="block-muted">{doc.ultimoErro}</small>}
                   </td>
                   <td className="num">{new Intl.NumberFormat("pt-BR", { currency: "BRL", style: "currency" }).format(doc.valor)}</td>

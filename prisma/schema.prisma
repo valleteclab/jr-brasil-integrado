@@ -1972,6 +1972,9 @@ model DistribuicaoNfeDocumento {
   manifestacaoId     String?
   manifestacaoStatus String?
   manifestacaoEvento String?
+  /// Retorno da SEFAZ no evento ("cStat xMotivo"). Sem isso uma ciencia rejeitada fica
+  /// indistinguivel de uma aceita — foi o que travou a entrada de NF-e na Sucatao Vereda.
+  manifestacaoMotivo String?
   manifestadoEm      DateTime?
   entradaFiscalId    String?
   entradaFiscal      EntradaFiscal? @relation(fields: [entradaFiscalId], references: [id])
