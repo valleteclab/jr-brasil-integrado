@@ -699,8 +699,22 @@ export function FiscalEntriesList({ entries, receivedDocuments, ultimaSync, nfse
                     {doc.entradaFiscalId ? (
                       <Button href={`/erp/entradas-fiscais/nova?id=${doc.entradaFiscalId}`} variant="light">Abrir entrada</Button>
                     ) : (
-                      <Button type="button" variant="light" disabled={importingId === doc.id} onClick={() => importReceived(doc)}>
-                        {importingId === doc.id ? "Importando..." : "Dar ciência e importar XML"}
+                      <Button
+                        type="button"
+                        variant="light"
+                        disabled={importingId === doc.id}
+                        onClick={() => importReceived(doc)}
+                        title={
+                          doc.precisaConfirmacao
+                            ? "A Ciência da Operação só vale 10 dias após a autorização da NF-e. Para esta nota será registrada a Confirmação da Operação (210200), que vale 180 dias e também libera o XML completo."
+                            : undefined
+                        }
+                      >
+                        {importingId === doc.id
+                          ? "Importando..."
+                          : doc.precisaConfirmacao
+                            ? "Confirmar operação e importar XML"
+                            : "Dar ciência e importar XML"}
                       </Button>
                     )}
                     {doc.canDownloadPdf && (

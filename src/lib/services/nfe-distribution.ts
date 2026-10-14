@@ -10,7 +10,7 @@ import {
   type DistDoc,
   type DistResult
 } from "@/domains/fiscal/providers/sefaz/distribuicao";
-import { enviarManifestacao } from "@/domains/fiscal/providers/sefaz/eventos";
+import { enviarManifestacao, type ManifestacaoTipo } from "@/domains/fiscal/providers/sefaz/eventos";
 import { cUFFromUF } from "@/domains/fiscal/providers/sefaz/endpoints";
 import { pfxToPem } from "@/domains/fiscal/providers/sefaz/sign";
 import { gerarDanfePdf } from "@/domains/fiscal/providers/sefaz/danfe-pdf";
@@ -93,6 +93,8 @@ export type NfeDistributionSummary = {
   manifestacaoStatus: string | null;
   /** Retorno da SEFAZ no evento ("573 Rejeicao: Duplicidade de evento"). */
   manifestacaoMotivo: string | null;
+  /** Ciencia fora do prazo (596): a importacao registra a Confirmacao da Operacao (210200). */
+  precisaConfirmacao: boolean;
   resumo: boolean | null;
   entradaFiscalId: string | null;
   ultimoErro: string | null;
@@ -104,7 +106,30 @@ class NfeDistributionError extends Error {}
 
 /** Duplicidade de evento (cStat 573): a ciencia JA esta registrada na SEFAZ — nao e erro. */
 function manifestacaoDuplicada(motivo: string | null | undefined) {
-  return /573/.test(motivo ?? "");
+  return /\b573\b/.test(motivo ?? "");
+}
+
+/**
+ * Rejeicao 596 - "Evento apresentado apos o prazo permitido". A Ciencia da Operacao (210210) vale
+ * 10 dias contados da autorizacao da NF-e; passado o prazo ela nunca mais e aceita. A Confirmacao
+ * da Operacao (210200) segue valendo (180 dias) e tambem libera o XML completo - por isso e a
+ * saida para a nota que o destinatario de fato recebeu e vai dar entrada.
+ */
+function prazoDeCienciaVencido(motivo: string | null | undefined) {
+  return /\b596\b/.test(motivo ?? "") || /prazo permitido/i.test(motivo ?? "");
+}
+
+/** A nota precisa da Confirmacao da Operacao porque a ciencia nao e mais possivel? */
+export function precisaConfirmacaoOperacao(doc: {
+  manifestacaoEvento: string | null;
+  manifestacaoStatus: string | null;
+  manifestacaoMotivo: string | null;
+}) {
+  return (
+    doc.manifestacaoEvento === "210210" &&
+    (doc.manifestacaoStatus ?? "").toUpperCase() !== "AUTORIZADO" &&
+    prazoDeCienciaVencido(doc.manifestacaoMotivo)
+  );
 }
 
 /**
@@ -640,6 +665,7 @@ export async function listNfeDistributionDocuments(scope: TenantScope): Promise<
       : statusTone(doc.status, doc.entradaFiscalId, doc.manifestacaoStatus, doc.manifestacaoMotivo),
     manifestacaoStatus: doc.manifestacaoStatus,
     manifestacaoMotivo: doc.manifestacaoMotivo,
+    precisaConfirmacao: precisaConfirmacaoOperacao(doc),
     resumo: doc.resumo,
     entradaFiscalId: doc.entradaFiscalId,
     ultimoErro: doc.ultimoErro,
@@ -933,6 +959,7 @@ async function importDistributedNfeSefaz(
     const payloadXml = typeof payload?.xml === "string" ? payload.xml : "";
     let xml = payloadXml.includes("<NFe") || payloadXml.includes("<nfeProc") ? payloadXml : "";
     let manifestacao: { status: string; protocolo?: string; motivo?: string; cStat?: string } | null = null;
+    let manifestacaoTipo: ManifestacaoTipo = "210210";
 
     // 2) Só resumo: dá Ciência (210210) — se ainda não foi dada — e baixa o procNFe completo.
     if (!xml) {
@@ -940,15 +967,35 @@ async function importDistributedNfeSefaz(
       // rejeição por duplicidade (cStat 573). Só manifesta quando ainda não há ciência registrada.
       if (!cienciaAceita(doc)) {
         const pem = pfxToPem(cert.pfx, cert.senha);
-        const result = await enviarManifestacao({
-          ambiente: AMBIENTE_DISTRIBUICAO, // manifestação de nota REAL vai para produção
+        // Nota cuja ciencia ja foi recusada por prazo (596): nao insiste - vai direto para a
+        // Confirmacao da Operacao, o evento que a SEFAZ ainda aceita.
+        let tipo: ManifestacaoTipo = precisaConfirmacaoOperacao(doc) ? "210200" : "210210";
+        let result = await enviarManifestacao({
+          ambiente: AMBIENTE_DISTRIBUICAO, // manifestacao de nota REAL vai para producao
           cnpj,
           chNFe: chave,
-          tipoEvento: "210210",
+          tipoEvento: tipo,
           cert,
           pem
         });
+
+        // Ciencia fora do prazo de 10 dias (596): o destinatario recebeu a mercadoria e esta dando
+        // entrada, entao o evento correto passa a ser a Confirmacao da Operacao (210200).
+        if (tipo === "210210" && result.status === "REJEITADO" && prazoDeCienciaVencido(result.motivo)) {
+          await prisma.distribuicaoNfeDocumento.update({
+            where: { id: doc.id },
+            data: {
+              manifestacaoEvento: "210210",
+              manifestacaoStatus: result.status,
+              manifestacaoMotivo: result.motivo ?? null,
+              manifestadoEm: new Date()
+            }
+          }).catch(() => undefined);
+          tipo = "210200";
+          result = await enviarManifestacao({ ambiente: AMBIENTE_DISTRIBUICAO, cnpj, chNFe: chave, tipoEvento: tipo, cert, pem });
+        }
         manifestacao = result;
+        manifestacaoTipo = tipo;
 
         await prisma.distribuicaoNfeDocumento.update({
           where: { id: doc.id },
@@ -956,18 +1003,19 @@ async function importDistributedNfeSefaz(
             manifestacaoId: result.protocolo ?? null,
             manifestacaoStatus: result.status,
             manifestacaoMotivo: result.motivo ?? null,
-            manifestacaoEvento: "210210",
+            manifestacaoEvento: tipo,
             manifestadoEm: new Date()
           }
         });
 
+        const nomeEvento = tipo === "210200" ? "Confirmacao da Operacao" : "Ciencia da Operacao";
         if (result.status === "ERRO") {
-          throw new NfeDistributionError(result.motivo || "Falha ao enviar a ciência (210210) à SEFAZ.");
+          throw new NfeDistributionError(result.motivo || `Falha ao enviar a ${nomeEvento} (${tipo}) a SEFAZ.`);
         }
-        // 573 = evento já registrado (ciência duplicada) — não é problema: a nota está manifestada e o
-        // XML virá pelo sync. Outras rejeições são erro real → mostra o motivo (cStat) ao usuário.
+        // 573 = evento ja registrado (manifestacao duplicada) - a nota esta manifestada e o XML
+        // vira pelo sync. Outras rejeicoes sao erro real -> mostra o motivo (cStat) ao usuario.
         if (result.status === "REJEITADO" && !manifestacaoDuplicada(result.motivo) && result.cStat !== "573") {
-          throw new NfeDistributionError(`A SEFAZ rejeitou a Ciência da Operação (${result.cStat ?? "?"}): ${result.motivo || "motivo não informado"}.`);
+          throw new NfeDistributionError(`A SEFAZ rejeitou a ${nomeEvento} (${result.cStat ?? "?"}): ${result.motivo || "motivo nao informado"}.`);
         }
       }
 
@@ -1011,7 +1059,7 @@ async function importDistributedNfeSefaz(
         ...(manifestacao
           ? {
               manifestacaoStatus: manifestacao.status,
-              manifestacaoEvento: "210210"
+              manifestacaoEvento: manifestacaoTipo
             }
           : {}),
         ultimoErro: null
