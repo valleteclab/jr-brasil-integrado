@@ -96,10 +96,20 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 | Integrações contábeis/transportadoras | Pendente | Futuro. |
 | Performance, cache e busca avançada | Pendente | Futuro. |
 
+## Atualizacao operacional - 2026-10-14 - Manifestacao do destinatario (entrada de NF-e)
+
+- **Sintoma (Sucatao Vereda)**: NF-e de entrada da CIA INDUSTRIAL H. CARLOS SCHNEIDER (chave 4226 0984 7099 5500 1265 5500 1002 3150 2214 0873 9695) nao podia ser importada - "Ciencia enviada a SEFAZ... tente importar novamente em instantes" para sempre.
+- **Causa**: a **Ciencia da Operacao (210210) vale 10 dias** contados da autorizacao da NF-e. A nota e de setembro/2026 e a empresa ficou sem certificado A1 valido nesse intervalo (renovado em 05/10/2026), entao a SEFAZ respondeu **596 - Evento apresentado apos o prazo permitido**. Sem manifestacao aceita o Ambiente Nacional **nunca libera o XML completo (procNFe)**, e a entrada fica impossivel.
+- **Agravante**: o cron gravava so `manifestacaoStatus` e **descartava cStat/xMotivo**; a tela mostrava "Ciencia enviada" mesmo em rejeicao, e `importDistributedNfeSefaz` pulava a manifestacao sempre que `manifestacaoEvento` estava preenchido - a nota ficava presa sem ninguem saber o motivo.
+- **Correcao**: `DistribuicaoNfeDocumento.manifestacaoMotivo` (migration aditiva `20261014090000_distribuicao_manifestacao_motivo`); motivo gravado no cron e na importacao; reenvio permitido quando a manifestacao nao foi aceita (573 = duplicidade conta como aceita e nunca e reenviada); **escalonamento para Confirmacao da Operacao (210200)** quando a ciencia e recusada por prazo (180 dias, tambem libera o procNFe); rotulo "Ciencia rejeitada pela SEFAZ" + linha "SEFAZ: <motivo>" na tela; botao vira "Confirmar operacao e importar XML" nessas notas.
+- **Limite do automatico**: o cron retenta apenas rejeicoes **sem motivo gravado** (uma tentativa, para descobrir o cStat). Conhecido o motivo, o reenvio e so por acao do usuario - reenviar de hora em hora daria consumo indevido (656) na SEFAZ.
+- **Pendente**: as rejeicoes antigas (1078 na Porto Brasil, 17 na Vereda, 356 na Valleteclab) estao sem motivo; o cron vai preenchendo ~25 por empresa por ciclo. Revisar depois quantas sao 596 (prazo) e quantas 573 (duplicidade).
+
 ## Histórico de commits/pushes
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
+| 2026-10-14 | `ebda762` | Enviado | NF-e de entrada presa na Sucatao Vereda: a ciencia (210210) tinha sido rejeitada com "596 - Evento apresentado apos o prazo permitido [10 dias]" e o motivo era descartado, entao a tela dizia "Ciencia enviada" e o botao nunca reenviava o evento. Agora o retorno da SEFAZ e gravado (`manifestacaoMotivo`), a ciencia rejeitada pode ser reenviada e, quando o prazo venceu, a importacao registra a Confirmacao da Operacao (210200) - 180 dias, tambem libera o procNFe. |
 | 2026-10-06 | `a59cc12` | Enviado | IBS/CBS impresso no DANFSE: parser do grupo calculado pela SEFIN em `infNFSe/IBSCBS` e nova secao "IBS / CBS - REFORMA TRIBUTARIA" na representacao grafica; com a chave ligada e o grupo na nota, o PDF passa a ser o nosso DANFSE (o do ADN, em desativacao, nao imprime os campos novos). Chave ativada na VALLETECLAB e na PORTO BRASIL (Lucro Real, Grupo 1). |
 | 2026-10-06 | A gerar | Em andamento | Reforma na NFS-e (NT 009 CGNFS-e): grupo IBSCBS no DPS atrás de chave por empresa (nasce desligada), leiaute 1.01 só quando o grupo vai, reemissão automática sem o grupo se a SEFIN rejeitar, e teste de regressão garantindo XML idêntico com a chave desligada. |
 | 2026-09-06 | A gerar | Em andamento | XERP WhatsApp das empresas: provedor `EVOLUTION` no agente operacional (instância `xerp-emp-*` por empresa, QR Code na tela de WhatsApp, webhook próprio autenticado, mesmo fluxo da Z-API com texto/áudio/PDF/cupom). |
