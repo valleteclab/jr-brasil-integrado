@@ -105,10 +105,18 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - **Limite do automatico**: o cron retenta apenas rejeicoes **sem motivo gravado** (uma tentativa, para descobrir o cStat). Conhecido o motivo, o reenvio e so por acao do usuario - reenviar de hora em hora daria consumo indevido (656) na SEFAZ.
 - **Pendente**: as rejeicoes antigas (1078 na Porto Brasil, 17 na Vereda, 356 na Valleteclab) estao sem motivo; o cron vai preenchendo ~25 por empresa por ciclo. Revisar depois quantas sao 596 (prazo) e quantas 573 (duplicidade).
 
+## Atualizacao operacional - 2026-10-26 - CST do IBS/CBS derivado do cClassTrib (E0959)
+
+- **Sintoma**: NFS-e 99 e 100 da Valleteclab (4a medicao de contrato de obra, item LC 116 07.02.02) rejeitadas com **"E0959 cClassTrib nao pertence ao grupo CST indicado"**.
+- **Causa**: na tabela oficial de Classificacao Tributaria do IBS/CBS cada `cClassTrib` (6 digitos) pertence a UM CST, e o CST sao os **3 primeiros digitos** do codigo (000001 -> CST 000, 200046 -> CST 200, 400001 -> CST 400). O DPS mandava `CST` fixo em **000** (`CST_IBSCBS_PADRAO`), enquanto a correlacao do Anexo VIII sugere **200046** ("Operacoes com bens imoveis") para os itens 07.xx. So a tributacao integral casava com o default; qualquer servico de classificacao diferente era rejeitado.
+- **Correcao**: `cstDoClassTrib` / `cstIbsCbsCoerente` em `src/domains/fiscal/nbs.ts` - o cClassTrib define o CST, um CST informado em desacordo e corrigido e so vale quando nao existe cClassTrib. Aplicado no DPS da NFS-e (`grupoIbsCbsDps`) e no grupo IBSCBS da NF-e 55 (`ibsCbsItemXml`), que tinha o mesmo default.
+- **Teste**: `npx tsx scripts/test-dps-ibscbs.ts` cobre o caso real (07.02 -> CST 200 + cClassTrib 200046 + cIndOp 020201) e mantem a tributacao integral em CST 000/000001. XSD aceita qualquer CST de 3 digitos (`TSRTCCodSitTrib`).
+
 ## Histórico de commits/pushes
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
+| 2026-10-26 | `6e73b54` | Enviado | E0959 na NFS-e da Valleteclab (notas 99 e 100, obra item 07.02.02): o CST do IBS/CBS ia fixo em 000 e o cClassTrib sugerido era 200046, do CST 200. O CST passa a ser derivado do proprio cClassTrib (3 primeiros digitos), na NFS-e e na NF-e 55. |
 | 2026-10-14 | `ebda762` | Enviado | NF-e de entrada presa na Sucatao Vereda: a ciencia (210210) tinha sido rejeitada com "596 - Evento apresentado apos o prazo permitido [10 dias]" e o motivo era descartado, entao a tela dizia "Ciencia enviada" e o botao nunca reenviava o evento. Agora o retorno da SEFAZ e gravado (`manifestacaoMotivo`), a ciencia rejeitada pode ser reenviada e, quando o prazo venceu, a importacao registra a Confirmacao da Operacao (210200) - 180 dias, tambem libera o procNFe. |
 | 2026-10-06 | `a59cc12` | Enviado | IBS/CBS impresso no DANFSE: parser do grupo calculado pela SEFIN em `infNFSe/IBSCBS` e nova secao "IBS / CBS - REFORMA TRIBUTARIA" na representacao grafica; com a chave ligada e o grupo na nota, o PDF passa a ser o nosso DANFSE (o do ADN, em desativacao, nao imprime os campos novos). Chave ativada na VALLETECLAB e na PORTO BRASIL (Lucro Real, Grupo 1). |
 | 2026-10-06 | A gerar | Em andamento | Reforma na NFS-e (NT 009 CGNFS-e): grupo IBSCBS no DPS atrás de chave por empresa (nasce desligada), leiaute 1.01 só quando o grupo vai, reemissão automática sem o grupo se a SEFIN rejeitar, e teste de regressão garantindo XML idêntico com a chave desligada. |
