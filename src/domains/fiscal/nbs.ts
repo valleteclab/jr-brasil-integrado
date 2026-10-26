@@ -73,3 +73,26 @@ export function sugerirPorLc116(lc116?: string | null): Lc116Sugestao | null {
     localIncidencia: corr.localIncidencia
   };
 }
+
+/**
+ * CST do IBS/CBS a partir do cClassTrib. Na tabela oficial de Classificacao Tributaria cada
+ * cClassTrib (6 digitos) pertence a UM CST, e o CST sao os 3 primeiros digitos do codigo:
+ * 000001 -> CST 000 (tributacao integral), 200046 -> CST 200 (reducao de aliquota), 400001 -> 400.
+ * Mandar o par errado faz a SEFIN/SEFAZ rejeitar com "E0959 cClassTrib nao pertence ao grupo CST
+ * indicado" (ocorreu na NFS-e 99/100 da Valleteclab: item 07.02 -> cClassTrib 200046 com CST 000).
+ */
+export function cstDoClassTrib(cClassTrib: string | null | undefined): string | null {
+  const d = (cClassTrib ?? "").replace(/\D/g, "");
+  return d.length === 6 ? d.slice(0, 3) : null;
+}
+
+/**
+ * CST coerente para o par (CST informado, cClassTrib): o cClassTrib manda, porque e ele que
+ * define o grupo. Um CST informado so prevalece quando nao ha cClassTrib de onde derivar.
+ */
+export function cstIbsCbsCoerente(cstInformado: string | null | undefined, cClassTrib: string | null | undefined): string {
+  const derivado = cstDoClassTrib(cClassTrib);
+  if (derivado) return derivado;
+  const informado = (cstInformado ?? "").replace(/\D/g, "");
+  return informado ? informado.padStart(3, "0").slice(-3) : "000";
+}

@@ -14,6 +14,7 @@ import { SignedXml } from "xml-crypto";
 import type { AmbienteFiscal, ProvedorFiscal } from "@prisma/client";
 import { cTribNacFromCodigo, exigeGrupoObra } from "@/domains/fiscal/codigo-tributacao-nacional";
 import { indOpDoCodigoTribNac } from "@/domains/fiscal/indop-data";
+import { cstIbsCbsCoerente } from "@/domains/fiscal/nbs";
 import { buildDanfse, consultaPublicaNfseUrl } from "./nacional/danfse";
 import type {
   CancelInput, CancelResult, CorrectionInput, CorrectionResult,
@@ -274,8 +275,6 @@ function postEventoNfse(baseUrl: string, chave: string, eventoGZipB64: string, c
   });
 }
 
-/** CST padrão do IBS/CBS: 000 = tributação integral (mesmo default já usado na NF-e). */
-const CST_IBSCBS_PADRAO = "000";
 
 /**
  * Grupo IBSCBS do DPS (Reforma na NFS-e) — entra DEPOIS de `<valores>`, dentro do infDPS.
@@ -294,7 +293,9 @@ function grupoIbsCbsDps(item: NormalizedFiscalDocument["itens"][number] | undefi
   if (cClassTrib.length !== 6) return "";
   const cIndOp = onlyDigits(item?.cIndOpServico ?? "") || indOpDoCodigoTribNac(cTribNacFromCodigo(item?.itemListaServico)) || "";
   if (cIndOp.length !== 6) return "";
-  const cst = pad(onlyDigits(item?.cstIbsCbsServico ?? "") || CST_IBSCBS_PADRAO, 3);
+  // O CST tem de ser o do grupo do cClassTrib (os 3 primeiros dígitos do código). Um CST fixo em
+  // "000" rejeitava todo serviço de classificação diferente — E0959 na NFS-e 99/100 da Valleteclab.
+  const cst = cstIbsCbsCoerente(item?.cstIbsCbsServico, cClassTrib);
   return `<IBSCBS><finNFSe>0</finNFSe><cIndOp>${cIndOp}</cIndOp><indDest>0</indDest>` +
     `<valores><trib><gIBSCBS><CST>${cst}</CST><cClassTrib>${cClassTrib}</cClassTrib></gIBSCBS></trib></valores></IBSCBS>`;
 }

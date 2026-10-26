@@ -53,9 +53,20 @@ assert.ok(semClass.includes('versao="1.00"') && !semClass.includes("<IBSCBS>"), 
 const semIndOp = buildDpsXml(input({ cClassTribServico: "000001", itemListaServico: "99.99.99" }), ctx(true)).xml;
 assert.ok(semIndOp.includes('versao="1.00"') && !semIndOp.includes("<IBSCBS>"), "sem cIndOp nao envia o grupo");
 
-// 5) CST informado no item prevalece sobre o padrao 000.
-const cstProprio = buildDpsXml(input({ cClassTribServico: "000001", cstIbsCbsServico: "200" }), ctx(true)).xml;
-assert.ok(cstProprio.includes("<CST>200</CST>"), "CST do item deve prevalecer");
+// 5) O CST sai do grupo do cClassTrib (3 primeiros digitos). Era aqui o "E0959 cClassTrib nao
+// pertence ao grupo CST indicado": item 07.02 (obra) usa cClassTrib 200046, do CST 200, e o CST
+// ia fixo em 000 — a SEFIN rejeitou as NFS-e 99 e 100 da Valleteclab.
+const obra = buildDpsXml(input({ cClassTribServico: "200046", itemListaServico: "07.02.02" }), ctx(true)).xml;
+assert.ok(obra.includes("<CST>200</CST><cClassTrib>200046</cClassTrib>"), "CST deve vir do grupo do cClassTrib");
+assert.ok(obra.includes("<cIndOp>020201</cIndOp>"), "cIndOp do item 07.02 (Anexo VIII)");
+
+// 5b) CST informado em desacordo com o cClassTrib NAO prevalece: quem define o grupo e o cClassTrib.
+const cstTorto = buildDpsXml(input({ cClassTribServico: "200046", itemListaServico: "07.02.02", cstIbsCbsServico: "000" }), ctx(true)).xml;
+assert.ok(cstTorto.includes("<CST>200</CST>"), "o cClassTrib corrige um CST inconsistente");
+
+// 5c) Classificacao do CST 000 continua saindo com CST 000.
+const integral = buildDpsXml(input({ cClassTribServico: "000001" }), ctx(true)).xml;
+assert.ok(integral.includes("<CST>000</CST><cClassTrib>000001</cClassTrib>"), "tributacao integral");
 
 // 6) O resto do XML e byte-a-byte igual com e sem o grupo (nenhum efeito colateral).
 const semGrupo = ligada.replace(/<IBSCBS>.*<\/IBSCBS>/, "").replace('versao="1.01"', 'versao="1.00"');

@@ -16,6 +16,7 @@ import { aammFromDhEmi, deterministicCNF, montarChave } from "./chave";
 import { cUFFromUF } from "./endpoints";
 import { normalizeDocumento } from "@/lib/fiscal/documento";
 import { normalizeDfeKey } from "./chave";
+import { cstIbsCbsCoerente } from "@/domains/fiscal/nbs";
 
 const onlyDigits = (s: string | number | null | undefined) => String(s ?? "").replace(/\D/g, "");
 
@@ -269,8 +270,10 @@ function ibsCbsItemXml(taxes: ItemTaxResult | undefined) {
   const vIBS = round2(vIBSUF + vIBSMun);
   const pCBS = taxes?.aliquotaCbs ?? 0;
   const vCBS = round2(taxes?.valorCbs ?? 0);
-  const cst = (taxes?.cstIbsCbs ?? "000").padStart(3, "0");
   const cClassTrib = (taxes?.cClassTrib ?? "000001").padStart(6, "0");
+  // O CST pertence ao grupo do cClassTrib (3 primeiros dígitos): par inconsistente = rejeição
+  // "cClassTrib não pertence ao grupo CST indicado".
+  const cst = cstIbsCbsCoerente(taxes?.cstIbsCbs, cClassTrib);
   const xml =
     `<IBSCBS>` +
     `<CST>${cst}</CST><cClassTrib>${cClassTrib}</cClassTrib>` +
