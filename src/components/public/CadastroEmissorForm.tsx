@@ -32,13 +32,19 @@ type LookupDados = {
   };
 };
 
+/**
+ * Máscara de CNPJ (00.000.000/0000-00) montada a partir dos dígitos, posição por posição.
+ * A versão anterior encadeava regexes sobre o texto já formatado e os separadores entravam
+ * no lugar errado durante a digitação ("15.1-30/.181000148").
+ */
 const formatCnpj = (v: string) => {
   const d = normalizeDocumento(v).slice(0, 14);
-  return d
-    .replace(/^(.{2})(.)/, "$1.$2")
-    .replace(/^(.{2})\.(.{3})(.)/, "$1.$2.$3")
-    .replace(/\.(.{3})(.)/, ".$1/$2")
-    .replace(/(.{4})(.)/, "$1-$2");
+  let saida = d.slice(0, 2);
+  if (d.length > 2) saida += `.${d.slice(2, 5)}`;
+  if (d.length > 5) saida += `.${d.slice(5, 8)}`;
+  if (d.length > 8) saida += `/${d.slice(8, 12)}`;
+  if (d.length > 12) saida += `-${d.slice(12, 14)}`;
+  return saida;
 };
 
 const campo = { display: "flex", flexDirection: "column" as const, gap: 4, fontSize: 13, marginBottom: 10 };
