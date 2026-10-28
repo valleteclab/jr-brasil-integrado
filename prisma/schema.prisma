@@ -500,6 +500,7 @@ model Empresa {
   margemPadraoPrazoPct      Decimal?                   @db.Decimal(8, 4)
   criadoEm                  DateTime                   @default(now())
   atualizadoEm              DateTime                   @updatedAt
+  obrasContratos            ObraContrato[]
 
   @@unique([tenantId, cnpj])
   @@index([tenantId])
@@ -654,6 +655,41 @@ model UsoIaMensal {
   @@unique([tenantId, competencia])
 }
 
+/// Modalidade da contratação de obra — define a presunção do lucro presumido (IN RFB 1.700/2017,
+/// art. 33, § 1º, II e IV, "d"): TOTAL = empreiteiro fornece todos os materiais indispensáveis,
+/// incorporados à obra (IRPJ 8% / CSLL 12%); PARCIAL e ADMINISTRACAO = 32% nos dois.
+enum ModalidadeEmpreitada {
+  TOTAL
+  PARCIAL
+  ADMINISTRACAO
+}
+
+/// Contrato de obra de construção civil. Existe para que a modalidade da empreitada seja DADO
+/// (com contrato, contratante e observações), e não uma suposição na hora da apuração: é ela que
+/// decide se a receita da medição entra a 8% ou a 32%.
+model ObraContrato {
+  id           String               @id @default(cuid())
+  tenantId     String
+  empresaId    String
+  empresa      Empresa              @relation(fields: [empresaId], references: [id])
+  /// Número/identificação do contrato (ex.: "006/2026").
+  numero       String
+  descricao    String?
+  contratante  String?
+  /// CNPJ/CPF do contratante (só dígitos).
+  documento    String?
+  modalidade   ModalidadeEmpreitada @default(TOTAL)
+  /// Anotações que sustentam a modalidade (planilha contratual, escopo, fornecimento de material).
+  observacoes  String?              @db.Text
+  ativo        Boolean              @default(true)
+  notas        NotaFiscal[]
+  criadoEm     DateTime             @default(now())
+  atualizadoEm DateTime             @updatedAt
+
+  @@unique([tenantId, empresaId, numero])
+  @@index([tenantId, empresaId, ativo])
+}
+
 /// Configuração única (global) da plataforma. Hoje guarda qual provedor de emissão está ativo.
 model PlataformaConfiguracao {
   id                   String   @id @default("default")
@@ -695,53 +731,53 @@ model PlataformaAgenteComercial {
 /// deploy/prospeccao-ingest.sh). Alimenta o importador de leads do admin.
 /// Config do SDR outbound (prospecção ativa via WhatsApp da plataforma). Singleton id="default".
 model PlataformaProspeccaoConfig {
-  id              String   @id @default("default")
-  ativo           Boolean  @default(false)
-  limiteDia       Int      @default(30)
-  porExecucao     Int      @default(2)
-  horaInicio      Int      @default(9)
-  horaFim         Int      @default(18)
-  somenteDiasUteis Boolean @default(true)
-  maxToques       Int      @default(3)
-  diasEntreToques Int      @default(2)
-  toque1          String   @db.Text
-  toque2          String   @db.Text
-  toque3          String   @db.Text
-  atualizadoEm    DateTime @updatedAt
+  id               String   @id @default("default")
+  ativo            Boolean  @default(false)
+  limiteDia        Int      @default(30)
+  porExecucao      Int      @default(2)
+  horaInicio       Int      @default(9)
+  horaFim          Int      @default(18)
+  somenteDiasUteis Boolean  @default(true)
+  maxToques        Int      @default(3)
+  diasEntreToques  Int      @default(2)
+  toque1           String   @db.Text
+  toque2           String   @db.Text
+  toque3           String   @db.Text
+  atualizadoEm     DateTime @updatedAt
 }
 
 /// MDF-e (modelo 58) — manifesto de transporte de carga própria. Ciclo: AUTORIZADO → ENCERRADO.
 model Manifesto {
-  id                   String         @id @default(cuid())
-  tenantId             String
-  empresaId            String
-  empresa              Empresa        @relation(fields: [empresaId], references: [id])
-  ambiente             AmbienteFiscal @default(HOMOLOGACAO)
-  serie                Int            @default(1)
-  numero               Int
-  chave                String?        @unique
-  status               String         @default("PENDENTE")
-  protocolo            String?
-  motivo               String?        @db.Text
-  xml                  String?        @db.Text
-  ufInicio             String
-  ufFim                String
-  municipioCarregaNome String
-  municipioCarregaIbge String
+  id                    String         @id @default(cuid())
+  tenantId              String
+  empresaId             String
+  empresa               Empresa        @relation(fields: [empresaId], references: [id])
+  ambiente              AmbienteFiscal @default(HOMOLOGACAO)
+  serie                 Int            @default(1)
+  numero                Int
+  chave                 String?        @unique
+  status                String         @default("PENDENTE")
+  protocolo             String?
+  motivo                String?        @db.Text
+  xml                   String?        @db.Text
+  ufInicio              String
+  ufFim                 String
+  municipioCarregaNome  String
+  municipioCarregaIbge  String
   municipioDescargaNome String
   municipioDescargaIbge String
-  veiculoPlaca         String
-  veiculoTara          Int
-  tipoRodado           String         @default("06")
-  tipoCarroceria       String         @default("02")
-  condutorNome         String
-  condutorCpf          String
-  chavesNfe            Json
-  valorCarga           Decimal        @default(0) @db.Decimal(14, 2)
-  pesoBrutoKg          Decimal        @default(0) @db.Decimal(14, 4)
-  encerradoEm          DateTime?
-  criadoEm             DateTime       @default(now())
-  atualizadoEm         DateTime       @updatedAt
+  veiculoPlaca          String
+  veiculoTara           Int
+  tipoRodado            String         @default("06")
+  tipoCarroceria        String         @default("02")
+  condutorNome          String
+  condutorCpf           String
+  chavesNfe             Json
+  valorCarga            Decimal        @default(0) @db.Decimal(14, 2)
+  pesoBrutoKg           Decimal        @default(0) @db.Decimal(14, 4)
+  encerradoEm           DateTime?
+  criadoEm              DateTime       @default(now())
+  atualizadoEm          DateTime       @updatedAt
 
   @@index([tenantId, empresaId, criadoEm])
 }
@@ -2469,6 +2505,10 @@ model NotaFiscal {
   ordemServico              OrdemServico?      @relation(fields: [ordemServicoId], references: [id])
   notaOrigem                NotaFiscal?        @relation("NotaDevolucao", fields: [notaOrigemId], references: [id])
   devolucoes                NotaFiscal[]       @relation("NotaDevolucao")
+  /// Contrato de obra a que esta nota (medição) se refere. É ele que define a modalidade da
+  /// empreitada e, com isso, o percentual de presunção do lucro presumido (8% x 32%).
+  obraContratoId            String?
+  obraContrato              ObraContrato?      @relation(fields: [obraContratoId], references: [id])
   // NFS-e: nota que ESTA substitui (a antiga). A antiga vira status SUBSTITUIDA.
   notaSubstituida           NotaFiscal?        @relation("NotaSubstituicao", fields: [notaSubstituidaId], references: [id])
   substitutas               NotaFiscal[]       @relation("NotaSubstituicao")
@@ -2668,6 +2708,9 @@ model ConfiguracaoFiscal {
   // Quando true, o próximo ciclo do cron re-baixa o histórico do NSU 0 (re-sync) e zera o flag. Corrige
   // resumos antigos sem data de emissão (ex.: vindos do ACBr). Auto-retry enquanto houver throttling.
   distribuicaoReprocessar      Boolean?
+  /// Lucro presumido/real: receita reconhecida pelo REGIME DE CAIXA (recebimento) em vez de
+  /// competência (emissão). IN RFB 1.700/2017, arts. 223 e 224.
+  regimeReceitaCaixa           Boolean?         @default(false)
   // Distribuição de NFS-e (ADN): último NSU já sincronizado + quando.
   nfseDistNsu                  String?
   nfseDistSyncEm               DateTime?
@@ -3184,26 +3227,26 @@ model Caixa {
 }
 
 model CaixaMovimento {
-  id             String             @id @default(cuid())
-  tenantId       String
-  empresaId      String
+  id                    String             @id @default(cuid())
+  tenantId              String
+  empresaId             String
   // Ambiente fiscal vigente quando o movimento de caixa foi lançado.
-  ambiente       AmbienteFiscal     @default(HOMOLOGACAO)
-  caixaId        String
-  caixa          Caixa              @relation(fields: [caixaId], references: [id])
-  tipo           TipoCaixaMovimento
-  formaPagamento String?
-  valor          Decimal            @db.Decimal(14, 2)
-  pedidoVendaId  String?
-  pedidoVenda    PedidoVenda?       @relation(fields: [pedidoVendaId], references: [id])
-  descricao      String?
+  ambiente              AmbienteFiscal     @default(HOMOLOGACAO)
+  caixaId               String
+  caixa                 Caixa              @relation(fields: [caixaId], references: [id])
+  tipo                  TipoCaixaMovimento
+  formaPagamento        String?
+  valor                 Decimal            @db.Decimal(14, 2)
+  pedidoVendaId         String?
+  pedidoVenda           PedidoVenda?       @relation(fields: [pedidoVendaId], references: [id])
+  descricao             String?
   /// Usuário logado que lançou (sangria/suprimento).
-  usuarioId      String?
+  usuarioId             String?
   /// Estorno de sangria/suprimento lançada errado: o registro fica no histórico e sai das contas.
   estornadoEm           DateTime?
   estornadoPorUsuarioId String?
   motivoEstorno         String?
-  criadoEm       DateTime           @default(now())
+  criadoEm              DateTime           @default(now())
 
   @@index([tenantId, empresaId, caixaId])
 }

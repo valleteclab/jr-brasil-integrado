@@ -112,10 +112,25 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - **Correcao**: `cstDoClassTrib` / `cstIbsCbsCoerente` em `src/domains/fiscal/nbs.ts` - o cClassTrib define o CST, um CST informado em desacordo e corrigido e so vale quando nao existe cClassTrib. Aplicado no DPS da NFS-e (`grupoIbsCbsDps`) e no grupo IBSCBS da NF-e 55 (`ibsCbsItemXml`), que tinha o mesmo default.
 - **Teste**: `npx tsx scripts/test-dps-ibscbs.ts` cobre o caso real (07.02 -> CST 200 + cClassTrib 200046 + cIndOp 020201) e mantem a tributacao integral em CST 000/000001. XSD aceita qualquer CST de 3 digitos (`TSRTCCodSitTrib`).
 
+## Atualizacao operacional - 2026-10-28 - Apuracao do Lucro Presumido/Real
+
+- **Origem**: revisao da apuracao real do 3o trimestre/2026 da VALLETECLAB, em que a obra do contrato 006/2026 (empreitada total) fora apurada com material a 8% e servico a 32%, gerando **R$ 25.148,68 de IRPJ+CSLL a maior**. O sistema nao tinha apuracao de Lucro Presumido - a conta era feita fora.
+- **Regra central**: na empreitada TOTAL o percentual e unico e incide sobre a receita bruta da obra (IRPJ 8% / CSLL 12%) - nao se fraciona a nota entre material e mao de obra. Base: Lei 9.249/95 arts. 15 e 20; IN RFB 1.700/17 art. 33 § 1º II e IV "d"; ADN Cosit 6/97; SC Cosit 65/2022 e 138/2023; CARF, Acordao 9101-002.542 (CSRF 1a Turma, 07/02/2017). A separacao de material existe para o ISS (LC 116/03 art. 7º § 2º I) e para a aliquota do IRRF (IN RFB 1.234/12), nao para a presuncao.
+- **Modelo de dados** (migration aditiva `20261028120000_lucro_presumido_obras`): `ObraContrato` (numero, contratante, `ModalidadeEmpreitada` TOTAL/PARCIAL/ADMINISTRACAO, observacoes), `NotaFiscal.obraContratoId` e `ConfiguracaoFiscal.regimeReceitaCaixa`.
+- **Dominio** `src/domains/fiscal/presumido/`: `tabelas-presuncao.ts` (percentuais de lei, aliquotas, adicional de 10% por mes do periodo, vencimento no ultimo dia util), `classificacao-receita.ts` (LC 116 + modalidade do contrato; obra sem contrato NAO vira 8% - classifica como servico e avisa) e `apuracao-presumido-use-cases.ts`.
+- **Regime de caixa**: receita vem do `ContaReceber` baixado no trimestre e ligado a nota (IN RFB 1.700/17 art. 223), com retencao proporcional no recebimento parcial; recebimento sem nota vinculada fica de fora e gera aviso.
+- **Conferencia automatica**: cruza a aliquota efetiva de IRRF da nota com a esperada pela IN RFB 1.234/12 (1,2% obra/material x 4,8% servico em geral) e avisa quando divergem - foi esse sinal que revelou o erro real.
+- **Telas/APIs**: `/erp/fiscal/presumido` (+ item no menu Financeiro & Fiscal) e `/api/erp/fiscal/presumido/{apuracao,obras,vinculo,config}`. A tela permite vincular a nota ao contrato na propria linha e trocar competencia/caixa.
+- **Lucro Real**: os mesmos percentuais servem a estimativa mensal por receita bruta (Lei 9.430/96 art. 2º); a tela avisa que o ajuste anual depende do resultado contabil/LALUR - fora do escopo.
+- **Limites declarados na tela**: estimativa gerencial (o oficial e a ECF/DCTF) e receitas fora de nota (financeiras, aluguel, ganho de capital) nao entram.
+- **Teste**: `npx tsx scripts/test-apuracao-presumido.ts` - sem rede/banco, reproduz o 3T2026 real (receita R$ 827.850,39, base IRPJ R$ 109.225,28, IRPJ R$ 4.939,78, CSLL R$ 12.165,58) e cobre obra sem contrato, empreitada parcial e divergencia de retencao.
+- **Pendente**: PIS/COFINS cumulativo mensal, fechamento do trimestre com trava, export XLSX da apuracao e lancamento de "outras receitas".
+
 ## Histórico de commits/pushes
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
+| 2026-10-28 | A gerar | Em andamento | Modulo de apuracao do Lucro Presumido/Real (/erp/fiscal/presumido): receita classificada nota a nota com percentual de presuncao e base legal, contratos de obra definindo a modalidade da empreitada (8% x 32%), regime de caixa pelo contas a receber e conferencia da classificacao contra a retencao do tomador. |
 | 2026-10-26 | `6e73b54` | Enviado | E0959 na NFS-e da Valleteclab (notas 99 e 100, obra item 07.02.02): o CST do IBS/CBS ia fixo em 000 e o cClassTrib sugerido era 200046, do CST 200. O CST passa a ser derivado do proprio cClassTrib (3 primeiros digitos), na NFS-e e na NF-e 55. |
 | 2026-10-14 | `ebda762` | Enviado | NF-e de entrada presa na Sucatao Vereda: a ciencia (210210) tinha sido rejeitada com "596 - Evento apresentado apos o prazo permitido [10 dias]" e o motivo era descartado, entao a tela dizia "Ciencia enviada" e o botao nunca reenviava o evento. Agora o retorno da SEFAZ e gravado (`manifestacaoMotivo`), a ciencia rejeitada pode ser reenviada e, quando o prazo venceu, a importacao registra a Confirmacao da Operacao (210200) - 180 dias, tambem libera o procNFe. |
 | 2026-10-06 | `a59cc12` | Enviado | IBS/CBS impresso no DANFSE: parser do grupo calculado pela SEFIN em `infNFSe/IBSCBS` e nova secao "IBS / CBS - REFORMA TRIBUTARIA" na representacao grafica; com a chave ligada e o grupo na nota, o PDF passa a ser o nosso DANFSE (o do ADN, em desativacao, nao imprime os campos novos). Chave ativada na VALLETECLAB e na PORTO BRASIL (Lucro Real, Grupo 1). |
