@@ -40,6 +40,8 @@ export function PresumidoWorkspace({ inicial, obrasIniciais, anoInicial, trimest
   const [novaObra, setNovaObra] = useState({ numero: "", contratante: "", modalidade: "TOTAL" as ObraResumo["modalidade"], observacoes: "" });
   const [mostrarObras, setMostrarObras] = useState(false);
   const [aba, setAba] = useState<"IRPJ" | "PIS">("IRPJ");
+  const [novaReceita, setNovaReceita] = useState({ competencia: "", tipo: "FINANCEIRA", descricao: "", valor: "" });
+  const [mostrarReceitas, setMostrarReceitas] = useState(false);
   const [mes, setMes] = useState(mesInicial);
   const [pis, setPis] = useState<ApuracaoPisCofins | null>(null);
 
@@ -155,6 +157,68 @@ export function PresumidoWorkspace({ inicial, obrasIniciais, anoInicial, trimest
     }
   }
 
+  async function fechar(tipo: "IRPJ_CSLL" | "PIS_COFINS", periodo: number, reabrir = false) {
+    if (reabrir && !window.confirm("Reabrir apaga o fechamento e volta a recalcular o período. O valor fechado fica registrado na auditoria. Confirma?")) return;
+    setBusy(true);
+    setErro("");
+    setOk("");
+    try {
+      const r = await fetch("/api/erp/fiscal/presumido/fechamento", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tipo, ano, periodo, reabrir })
+      });
+      const json = (await r.json()) as { error?: string };
+      if (!r.ok) throw new Error(json.error || "Falha ao fechar o período.");
+      setOk(reabrir ? "Período reaberto." : "Período fechado: o valor apurado ficou guardado para conferência.");
+      if (tipo === "PIS_COFINS") await carregarPis();
+      else await carregar();
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Falha ao fechar o período.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function salvarReceita() {
+    setBusy(true);
+    setErro("");
+    setOk("");
+    try {
+      const r = await fetch("/api/erp/fiscal/presumido/outras-receitas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...novaReceita, valor: Number(String(novaReceita.valor).replace(",", ".")) })
+      });
+      const json = (await r.json()) as { error?: string };
+      if (!r.ok) throw new Error(json.error || "Falha ao salvar a receita.");
+      setNovaReceita({ competencia: "", tipo: "FINANCEIRA", descricao: "", valor: "" });
+      setOk("Receita lançada.");
+      await carregar();
+      if (pis) await carregarPis();
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Falha ao salvar a receita.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function excluirReceita(id: string) {
+    setBusy(true);
+    setErro("");
+    try {
+      const r = await fetch(`/api/erp/fiscal/presumido/outras-receitas?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+      const json = (await r.json()) as { error?: string };
+      if (!r.ok) throw new Error(json.error || "Falha ao excluir.");
+      await carregar();
+      if (pis) await carregarPis();
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Falha ao excluir.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const t = dados?.totais;
 
   return (
@@ -185,6 +249,7 @@ export function PresumidoWorkspace({ inicial, obrasIniciais, anoInicial, trimest
           busy={busy}
           erro={erro}
           onPeriodo={(a, m) => { setAno(a); setMes(m); void carregarPis(a, m); }}
+          onFechar={(periodo, reabrir) => fechar("PIS_COFINS", periodo, reabrir)}
         />
       ) : (
       <>
@@ -213,7 +278,21 @@ export function PresumidoWorkspace({ inicial, obrasIniciais, anoInicial, trimest
         <button type="button" className="btn-erp ghost sm" onClick={() => setMostrarObras((v) => !v)}>
           🏗 Contratos de obra ({obras.length})
         </button>
-        <button type="button" className="btn-erp ghost sm" onClick={() => window.print()}>🖨 Imprimir p/ contador</button>
+        <a className="btn-erp ghost sm" href={`/api/erp/fiscal/presumido/exportar?tipo=IRPJ_CSLL&ano=${ano}&periodo=${trimestre}`}>
+          ⤓ Exportar p/ contador
+        </a>
+        <button type="button" className="btn-erp ghost sm" onClick={() => setMostrarReceitas((v) => !v)}>
+          ＄ Outras receitas{dados?.outrasReceitas.length ? ` (${dados.outrasReceitas.length})` : ""}
+        </button>
+        {dados?.fechamento ? (
+          <button type="button" className="btn-erp ghost sm" disabled={busy} onClick={() => void fechar("IRPJ_CSLL", trimestre, true)}>
+            🔓 Reabrir período
+          </button>
+        ) : (
+          <button type="button" className="btn-erp sm" disabled={busy} onClick={() => void fechar("IRPJ_CSLL", trimestre)}>
+            🔒 Fechar período
+          </button>
+        )}
       </div>
 
       {erro && <div className="alert danger"><span className="lead">Erro:</span><span>{erro}</span></div>}
@@ -277,8 +356,75 @@ export function PresumidoWorkspace({ inicial, obrasIniciais, anoInicial, trimest
         </div>
       )}
 
+      {mostrarReceitas && (
+        <div className="erp-card" style={{ marginBottom: 16 }}>
+          <div className="erp-card-head"><h3>Receitas fora de nota fiscal</h3></div>
+          <div style={{ padding: "0 16px 12px" }}>
+            <p className="field-hint" style={{ marginTop: 0 }}>
+              Rendimento de aplicação, aluguel e ganho de capital entram na base do IRPJ/CSLL <strong>integralmente, sem
+              presunção</strong> (Lei 9.430/96, art. 25 II e art. 29 II). No PIS/COFINS, receita financeira só é tributada no
+              regime não cumulativo, a 0,65% e 4% (Decreto 8.426/2015).
+            </p>
+            <div className="erp-form">
+              <label>
+                <span>Competência</span>
+                <input type="date" value={novaReceita.competencia} onChange={(e) => setNovaReceita({ ...novaReceita, competencia: e.target.value })} />
+              </label>
+              <label>
+                <span>Tipo</span>
+                <select value={novaReceita.tipo} onChange={(e) => setNovaReceita({ ...novaReceita, tipo: e.target.value })}>
+                  <option value="FINANCEIRA">Rendimento financeiro</option>
+                  <option value="ALUGUEL">Aluguel</option>
+                  <option value="GANHO_CAPITAL">Ganho de capital</option>
+                  <option value="OUTRA">Outra</option>
+                </select>
+              </label>
+              <label>
+                <span>Descrição</span>
+                <input value={novaReceita.descricao} onChange={(e) => setNovaReceita({ ...novaReceita, descricao: e.target.value })} placeholder="Rendimento do CDB em setembro" />
+              </label>
+              <label>
+                <span>Valor</span>
+                <input inputMode="decimal" value={novaReceita.valor} onChange={(e) => setNovaReceita({ ...novaReceita, valor: e.target.value })} placeholder="0,00" />
+              </label>
+              <div className="full">
+                <button type="button" className="btn-erp primary sm" disabled={busy} onClick={() => void salvarReceita()}>Lançar receita</button>
+              </div>
+            </div>
+
+            {dados && dados.outrasReceitas.length > 0 && (
+              <table className="erp-table" style={{ marginTop: 12 }}>
+                <thead><tr><th>Descrição</th><th>Tipo</th><th>Competência</th><th className="num">Valor</th><th /></tr></thead>
+                <tbody>
+                  {dados.outrasReceitas.map((r) => (
+                    <tr key={r.id}>
+                      <td>{r.descricao}</td>
+                      <td>{r.tipo.replace("_", " ").toLowerCase()}</td>
+                      <td>{dia(r.competencia)}</td>
+                      <td className="num">{brl(r.valor)}</td>
+                      <td><button type="button" className="btn-erp ghost sm" disabled={busy} onClick={() => void excluirReceita(r.id)}>Excluir</button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      )}
+
       {dados && t && (
         <>
+          {dados.fechamento && (
+            <div className={`alert ${dados.fechamento.divergencia !== 0 ? "danger" : "success"}`} style={{ marginBottom: 8 }}>
+              <span className="lead">{dados.fechamento.divergencia !== 0 ? "⚠" : "🔒"}</span>
+              <span>
+                Período fechado em {dia(dados.fechamento.fechadoEm)} com total de <strong>{brl(dados.fechamento.totalRecolher)}</strong>.
+                {dados.fechamento.divergencia !== 0
+                  ? ` A base mudou depois do fechamento: o recálculo dá ${brl(t.totalRecolher)} (diferença de ${brl(dados.fechamento.divergencia)}). Avalie retificar ou complementar.`
+                  : " O recálculo continua batendo com o que foi fechado."}
+              </span>
+            </div>
+          )}
           {dados.avisos.map((a, i) => (
             <div key={i} className="alert warn" style={{ marginBottom: 8 }}><span className="lead">⚠</span><span>{a}</span></div>
           ))}
@@ -397,7 +543,8 @@ function PisCofinsPainel({
   anoInicial,
   busy,
   erro,
-  onPeriodo
+  onPeriodo,
+  onFechar
 }: {
   dados: ApuracaoPisCofins | null;
   ano: number;
@@ -406,6 +553,7 @@ function PisCofinsPainel({
   busy: boolean;
   erro: string;
   onPeriodo: (ano: number, mes: number) => void;
+  onFechar: (periodo: number, reabrir?: boolean) => Promise<void>;
 }) {
   const t = dados?.totais;
   const MESES = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"];
@@ -422,13 +570,31 @@ function PisCofinsPainel({
           {busy ? "Apurando..." : "Atualizar"}
         </button>
         <div className="grow" />
-        <button type="button" className="btn-erp ghost sm" onClick={() => window.print()}>🖨 Imprimir p/ contador</button>
+        <a className="btn-erp ghost sm" href={`/api/erp/fiscal/presumido/exportar?tipo=PIS_COFINS&ano=${ano}&periodo=${mes}`}>
+          ⤓ Exportar p/ contador
+        </a>
+        {dados?.fechamento ? (
+          <button type="button" className="btn-erp ghost sm" disabled={busy} onClick={() => void onFechar(mes, true)}>🔓 Reabrir mês</button>
+        ) : (
+          <button type="button" className="btn-erp sm" disabled={busy} onClick={() => void onFechar(mes)}>🔒 Fechar mês</button>
+        )}
       </div>
 
       {erro && <div className="alert danger"><span className="lead">Erro:</span><span>{erro}</span></div>}
 
       {dados && t && (
         <>
+          {dados.fechamento && (
+            <div className={`alert ${dados.fechamento.divergencia !== 0 ? "danger" : "success"}`} style={{ marginBottom: 8 }}>
+              <span className="lead">{dados.fechamento.divergencia !== 0 ? "⚠" : "🔒"}</span>
+              <span>
+                Mês fechado em {dia(dados.fechamento.fechadoEm)} com total de <strong>{brl(dados.fechamento.totalRecolher)}</strong>.
+                {dados.fechamento.divergencia !== 0
+                  ? ` O recálculo agora dá ${brl(t.totalRecolher)} (diferença de ${brl(dados.fechamento.divergencia)}).`
+                  : " O recálculo continua batendo."}
+              </span>
+            </div>
+          )}
           {dados.avisos.map((a, i) => (
             <div key={i} className="alert warn" style={{ marginBottom: 8 }}><span className="lead">⚠</span><span>{a}</span></div>
           ))}
@@ -458,6 +624,18 @@ function PisCofinsPainel({
               </thead>
               <tbody>
                 <tr><td>Débito sobre a base</td><td className="num">{brl(t.pisDebito)}</td><td className="num">{brl(t.cofinsDebito)}</td></tr>
+                {dados.receitaFinanceira && (
+                  <tr>
+                    <td>Receita financeira {brl(dados.receitaFinanceira.valor)} · 0,65% e 4% <small className="block-muted">Decreto 8.426/2015</small></td>
+                    <td className="num">{brl(dados.receitaFinanceira.pis)}</td>
+                    <td className="num">{brl(dados.receitaFinanceira.cofins)}</td>
+                  </tr>
+                )}
+                {dados.icmsExcluido > 0 && (
+                  <tr>
+                    <td colSpan={3}><small className="block-muted">ICMS destacado excluído da base: {brl(dados.icmsExcluido)} (STF, RE 574.706)</small></td>
+                  </tr>
+                )}
                 {dados.regimeApuracao === "NAO_CUMULATIVO" && (
                   <tr><td>(–) Créditos das entradas</td><td className="num">{brl(t.pisCredito)}</td><td className="num">{brl(t.cofinsCredito)}</td></tr>
                 )}

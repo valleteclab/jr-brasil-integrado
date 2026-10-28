@@ -501,6 +501,8 @@ model Empresa {
   criadoEm                  DateTime                   @default(now())
   atualizadoEm              DateTime                   @updatedAt
   obrasContratos            ObraContrato[]
+  outrasReceitas            OutraReceita[]
+  apuracoesFechadas         ApuracaoFiscalFechada[]
 
   @@unique([tenantId, cnpj])
   @@index([tenantId])
@@ -653,6 +655,66 @@ model UsoIaMensal {
   atualizadoEm DateTime @updatedAt
 
   @@unique([tenantId, competencia])
+}
+
+/// Natureza da receita que não passa por nota fiscal. Cada uma tem tratamento próprio:
+/// FINANCEIRA entra integralmente na base do IRPJ/CSLL (Lei 9.430/96, art. 25 II e art. 29 II) e,
+/// no PIS/COFINS, só é tributada no regime NÃO CUMULATIVO, a 0,65% e 4% (Decreto 8.426/2015).
+enum TipoOutraReceita {
+  FINANCEIRA
+  ALUGUEL
+  GANHO_CAPITAL
+  OUTRA
+}
+
+/// Receita que o sistema não vê pelas notas (rendimento de aplicação, aluguel, ganho de capital).
+/// Sem ela a base do lucro presumido nasce incompleta — e o erro é por omissão, o mais difícil de
+/// perceber numa conferência.
+model OutraReceita {
+  id           String           @id @default(cuid())
+  tenantId     String
+  empresaId    String
+  empresa      Empresa          @relation(fields: [empresaId], references: [id])
+  /// Data de competência/recebimento da receita.
+  competencia  DateTime
+  tipo         TipoOutraReceita @default(OUTRA)
+  descricao    String
+  valor        Decimal          @db.Decimal(14, 2)
+  observacao   String?          @db.Text
+  criadoEm     DateTime         @default(now())
+  atualizadoEm DateTime         @updatedAt
+
+  @@index([tenantId, empresaId, competencia])
+}
+
+/// Apuração que já foi fechada (e normalmente recolhida). Guarda o SNAPSHOT do que foi apurado:
+/// se a base mudar depois — nota emitida fora de ordem, recebimento lançado com atraso — a tela
+/// mostra a divergência em vez de reescrever silenciosamente o número que gerou o DARF.
+enum TipoApuracaoFiscal {
+  IRPJ_CSLL
+  PIS_COFINS
+}
+
+model ApuracaoFiscalFechada {
+  id            String             @id @default(cuid())
+  tenantId      String
+  empresaId     String
+  empresa       Empresa            @relation(fields: [empresaId], references: [id])
+  tipo          TipoApuracaoFiscal
+  ano           Int
+  /// Trimestre (1–4) no IRPJ/CSLL; mês (1–12) no PIS/COFINS.
+  periodo       Int
+  /// Cópia integral da apuração no momento do fechamento.
+  snapshot      Json
+  totalRecolher Decimal            @db.Decimal(14, 2)
+  observacao    String?            @db.Text
+  fechadoEm     DateTime           @default(now())
+  fechadoPor    String?
+  criadoEm      DateTime           @default(now())
+  atualizadoEm  DateTime           @updatedAt
+
+  @@unique([tenantId, empresaId, tipo, ano, periodo])
+  @@index([tenantId, empresaId, tipo])
 }
 
 /// Modalidade da contratação de obra — define a presunção do lucro presumido (IN RFB 1.700/2017,
@@ -2711,6 +2773,9 @@ model ConfiguracaoFiscal {
   /// Lucro presumido/real: receita reconhecida pelo REGIME DE CAIXA (recebimento) em vez de
   /// competência (emissão). IN RFB 1.700/2017, arts. 223 e 224.
   regimeReceitaCaixa           Boolean?         @default(false)
+  /// Exclui o ICMS destacado da base do PIS/COFINS (STF, RE 574.706, Tema 69). Nasce DESLIGADA:
+  /// é decisão da contabilidade, que responde pela adesão à tese e pela forma de apuração.
+  excluirIcmsBasePisCofins     Boolean?         @default(false)
   // Distribuição de NFS-e (ADN): último NSU já sincronizado + quando.
   nfseDistNsu                  String?
   nfseDistSyncEm               DateTime?

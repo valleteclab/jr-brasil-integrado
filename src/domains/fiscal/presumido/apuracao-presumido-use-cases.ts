@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import { scopedByTenantCompany, scopedByTenantCompanyAmbiente } from "@/lib/auth/dev-session";
 import { classificarReceita, receitaDaNota, type ClassificacaoReceita } from "./classificacao-receita";
+import { buscarFechamento, listarOutrasReceitas, type FechamentoResumo, type OutraReceitaResumo } from "./fechamento-use-cases";
 import {
   CSLL_ALIQUOTA,
   DARF,
@@ -101,6 +102,10 @@ export type ApuracaoPresumido = {
     limiteAdicional: number;
   };
   darf: { irpj: string; csll: string };
+  /** Receitas fora de nota lançadas no trimestre (entram integralmente na base). */
+  outrasReceitas: OutraReceitaResumo[];
+  /** Preenchido quando o período já foi fechado — com a divergência, se a base mudou depois. */
+  fechamento: FechamentoResumo | null;
   avisos: string[];
 };
 
@@ -314,6 +319,25 @@ export async function apuracaoPresumido(
     atual.notas += 1;
     porTipo.set(linha.tipo, atual);
   }
+  // Receitas fora de nota (rendimento de aplicação, aluguel, ganho de capital): entram
+  // INTEGRALMENTE na base, sem presunção (Lei 9.430/96, art. 25 II e art. 29 II).
+  const outrasReceitas = await listarOutrasReceitas(scope, { inicio, fim });
+  const totalOutras = round2(outrasReceitas.reduce((acc, r) => acc + r.valor, 0));
+  if (totalOutras > 0) {
+    const p = PRESUNCOES.OUTRAS_RECEITAS;
+    porTipo.set("OUTRAS_RECEITAS", {
+      tipo: "OUTRAS_RECEITAS",
+      rotulo: p.rotulo,
+      baseLegal: p.base,
+      receita: totalOutras,
+      presuncaoIrpj: p.irpj,
+      presuncaoCsll: p.csll,
+      baseIrpj: totalOutras,
+      baseCsll: totalOutras,
+      notas: outrasReceitas.length
+    });
+  }
+
   const grupos = [...porTipo.values()].sort((a, b) => b.receita - a.receita);
 
   const receita = round2(linhas.reduce((s, l) => s + l.valor, 0));
@@ -329,6 +353,7 @@ export async function apuracaoPresumido(
   const irpjRecolher = round2(irpjBruto - irrfRetido);
   const csllDevida = round2(baseCsll * CSLL_ALIQUOTA);
   const csllRecolher = round2(csllDevida - csllRetida);
+  const totalRecolher = round2(Math.max(irpjRecolher, 0) + Math.max(csllRecolher, 0));
 
   // Avisos gerais do período.
   const comAviso = linhas.filter((l) => l.avisos.length > 0).length;
@@ -338,9 +363,11 @@ export async function apuracaoPresumido(
   if (irpjRecolher < 0) {
     avisos.push("O IRRF retido supera o IRPJ devido no trimestre: o saldo negativo não é 'a pagar' — é crédito a compensar nos períodos seguintes.");
   }
-  avisos.push(
-    "Receitas fora de nota fiscal (rendimento de aplicação financeira, aluguel, ganho de capital) entram na base e NÃO estão aqui — informe-as à contabilidade."
-  );
+  if (totalOutras === 0) {
+    avisos.push(
+      "Nenhuma receita fora de nota lançada no trimestre. Rendimento de aplicação financeira, aluguel e ganho de capital entram na base — lance em 'Outras receitas' se houver."
+    );
+  }
   if (empresa.regimeTributario === "LUCRO_REAL") {
     avisos.push(
       "Empresa no LUCRO REAL: estes percentuais valem para a ESTIMATIVA MENSAL por receita bruta (Lei 9.430/96, art. 2º). O ajuste anual depende do resultado contábil e do LALUR."
@@ -372,10 +399,12 @@ export async function apuracaoPresumido(
       csllDevida,
       csllRetida,
       csllRecolher,
-      totalRecolher: round2(Math.max(irpjRecolher, 0) + Math.max(csllRecolher, 0)),
+      totalRecolher,
       limiteAdicional
     },
     darf: { irpj: DARF.irpjPresumido, csll: DARF.csllPresumido },
+    outrasReceitas,
+    fechamento: await buscarFechamento(scope, "IRPJ_CSLL", ano, trimestre, totalRecolher),
     avisos
   };
 }

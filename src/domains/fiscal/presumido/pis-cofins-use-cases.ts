@@ -3,6 +3,7 @@ import type { TenantScope } from "@/lib/auth/dev-session";
 import { scopedByTenantCompany, scopedByTenantCompanyAmbiente } from "@/lib/auth/dev-session";
 import { grupoMonofasicoDoNcm } from "@/domains/fiscal/simples/monofasico-ncm";
 import { PresumidoError } from "./apuracao-presumido-use-cases";
+import { buscarFechamento, listarOutrasReceitas, type FechamentoResumo, type OutraReceitaResumo } from "./fechamento-use-cases";
 
 /**
  * APURAÇÃO MENSAL DO PIS/COFINS.
@@ -76,6 +77,11 @@ export type ApuracaoPisCofins = {
     totalRecolher: number;
   };
   linhas: LinhaPisCofins[];
+  outrasReceitas: OutraReceitaResumo[];
+  /** Receita financeira tributada à parte no não cumulativo (0,65% e 4%). */
+  receitaFinanceira: { valor: number; pis: number; cofins: number } | null;
+  icmsExcluido: number;
+  fechamento: FechamentoResumo | null;
   avisos: string[];
 };
 
@@ -90,6 +96,7 @@ const SELECT_NOTA = {
   valorProdutos: true,
   valorPisRetido: true,
   valorCofinsRetido: true,
+  valorIcms: true,
   itens: {
     select: {
       valorTotal: true,
@@ -113,6 +120,7 @@ type NotaPis = {
   valorProdutos: unknown;
   valorPisRetido: unknown;
   valorCofinsRetido: unknown;
+  valorIcms: unknown;
   itens: Array<{
     valorTotal: unknown;
     desconto: unknown;
@@ -180,9 +188,10 @@ export async function apuracaoPisCofins(
 
   const config = await prisma.configuracaoFiscal.findUnique({
     where: { empresaId: scope.empresaId },
-    select: { regimeReceitaCaixa: true }
+    select: { regimeReceitaCaixa: true, excluirIcmsBasePisCofins: true }
   });
   const regimeReceita = config?.regimeReceitaCaixa ? "CAIXA" : "COMPETENCIA";
+  const excluirIcms = Boolean(config?.excluirIcmsBasePisCofins);
   const regimeApuracao = empresa.regimeTributario === "LUCRO_REAL" ? "NAO_CUMULATIVO" : "CUMULATIVO";
   const aliquotas = ALIQUOTAS[regimeApuracao];
 
@@ -194,6 +203,7 @@ export async function apuracaoPisCofins(
   let exclusoes = 0;
   let pisRetido = 0;
   let cofinsRetido = 0;
+  let icmsExcluido = 0;
 
   const registrar = (nota: NotaPis, proporcao: number, data: Date) => {
     const { tributavel, excluida, motivo } = separarReceita(nota);
@@ -204,6 +214,7 @@ export async function apuracaoPisCofins(
     exclusoes = round2(exclusoes + fora);
     pisRetido = round2(pisRetido + Number(nota.valorPisRetido ?? 0) * proporcao);
     cofinsRetido = round2(cofinsRetido + Number(nota.valorCofinsRetido ?? 0) * proporcao);
+    if (excluirIcms) icmsExcluido = round2(icmsExcluido + Number(nota.valorIcms ?? 0) * proporcao);
     linhas.push({
       notaId: nota.id,
       modelo: nota.modelo,
@@ -251,7 +262,16 @@ export async function apuracaoPisCofins(
     for (const nota of notas) registrar(nota, 1, nota.emitidaEm ?? nota.criadoEm);
   }
 
-  const baseCalculo = round2(receitaBruta - exclusoes);
+  // Outras receitas: no CUMULATIVO a base é a receita bruta da atividade, então receita
+  // financeira fica de fora (Lei 9.718/98, art. 3º; STF, RE 585.235). No NÃO CUMULATIVO a
+  // financeira é tributada a 0,65% e 4% (Decreto 8.426/2015), à parte da alíquota geral.
+  const outrasReceitas = await listarOutrasReceitas(scope, { inicio, fim });
+  const financeiras = round2(outrasReceitas.filter((r) => r.tipo === "FINANCEIRA").reduce((a, r) => a + r.valor, 0));
+  const outrasNaBase = round2(
+    outrasReceitas.filter((r) => r.tipo !== "FINANCEIRA" && r.tipo !== "GANHO_CAPITAL").reduce((a, r) => a + r.valor, 0)
+  );
+
+  const baseCalculo = round2(receitaBruta + outrasNaBase - exclusoes - icmsExcluido);
   const pisDebito = round2(baseCalculo * aliquotas.pis);
   const cofinsDebito = round2(baseCalculo * aliquotas.cofins);
 
@@ -286,8 +306,25 @@ export async function apuracaoPisCofins(
     );
   }
 
-  const pisRecolher = round2(pisDebito - pisCredito - pisRetido);
-  const cofinsRecolher = round2(cofinsDebito - cofinsCredito - cofinsRetido);
+  const receitaFinanceira =
+    regimeApuracao === "NAO_CUMULATIVO" && financeiras > 0
+      ? { valor: financeiras, pis: round2(financeiras * 0.0065), cofins: round2(financeiras * 0.04) }
+      : null;
+  if (regimeApuracao === "CUMULATIVO" && financeiras > 0) {
+    avisos.push(
+      `${financeiras.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} de receita financeira NÃO entrou na base: ` +
+        "no regime cumulativo o PIS/COFINS incide sobre a receita bruta da atividade (Lei 9.718/98, art. 3º; STF, RE 585.235)."
+    );
+  }
+  if (icmsExcluido > 0) {
+    avisos.push(
+      `ICMS destacado excluído da base: ${icmsExcluido.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} ` +
+        "(STF, RE 574.706, Tema 69). A opção está ligada na configuração fiscal da empresa."
+    );
+  }
+
+  const pisRecolher = round2(pisDebito + (receitaFinanceira?.pis ?? 0) - pisCredito - pisRetido);
+  const cofinsRecolher = round2(cofinsDebito + (receitaFinanceira?.cofins ?? 0) - cofinsCredito - cofinsRetido);
 
   if (exclusoes > 0) {
     avisos.push(
@@ -295,10 +332,14 @@ export async function apuracaoPisCofins(
         "(monofásico, alíquota zero, ST, isenção ou suspensão). Confira se a EFD-Contribuições está aproveitando a mesma segregação."
     );
   }
+  const totalRecolher = round2(Math.max(pisRecolher, 0) + Math.max(cofinsRecolher, 0));
+
   if (pisRecolher < 0 || cofinsRecolher < 0) {
     avisos.push("Saldo negativo em PIS e/ou COFINS: é crédito a aproveitar no mês seguinte, não valor a pagar.");
   }
-  avisos.push("Receitas fora de nota fiscal (financeiras, aluguel) e exclusões como ICMS na base precisam ser conferidas pela contabilidade.");
+  if (!excluirIcms) {
+    avisos.push("ICMS compondo a base: a exclusão do ICMS (STF, RE 574.706) é opcional e fica desligada até a contabilidade confirmar a adesão à tese.");
+  }
 
   return {
     empresa: { razaoSocial: empresa.razaoSocial, regime: empresa.regimeTributario },
@@ -324,9 +365,13 @@ export async function apuracaoPisCofins(
       cofinsRetido,
       pisRecolher,
       cofinsRecolher,
-      totalRecolher: round2(Math.max(pisRecolher, 0) + Math.max(cofinsRecolher, 0))
+      totalRecolher
     },
     linhas,
+    outrasReceitas,
+    receitaFinanceira,
+    icmsExcluido,
+    fechamento: await buscarFechamento(scope, "PIS_COFINS", ano, mes, totalRecolher),
     avisos
   };
 }

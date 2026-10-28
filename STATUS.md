@@ -112,6 +112,14 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - **Correcao**: `cstDoClassTrib` / `cstIbsCbsCoerente` em `src/domains/fiscal/nbs.ts` - o cClassTrib define o CST, um CST informado em desacordo e corrigido e so vale quando nao existe cClassTrib. Aplicado no DPS da NFS-e (`grupoIbsCbsDps`) e no grupo IBSCBS da NF-e 55 (`ibsCbsItemXml`), que tinha o mesmo default.
 - **Teste**: `npx tsx scripts/test-dps-ibscbs.ts` cobre o caso real (07.02 -> CST 200 + cClassTrib 200046 + cIndOp 020201) e mantem a tributacao integral em CST 000/000001. XSD aceita qualquer CST de 3 digitos (`TSRTCCodSitTrib`).
 
+## Atualizacao operacional - 2026-10-28 - Fechamento, outras receitas e export da apuracao
+
+- **Fechamento com trava** (`ApuracaoFiscalFechada`, migration `20261028190000_apuracao_fechamento_outras_receitas`): fechar guarda o SNAPSHOT da apuracao e o total recolhido. Se a base mudar depois (nota lancada com atraso, recebimento conciliado fora de ordem), a tela mostra a DIVERGENCIA entre o fechado e o recalculado em vez de reescrever o numero que gerou o DARF. Reabrir exige confirmacao e registra o snapshot na auditoria. O snapshot e recalculado no SERVIDOR - nunca vem do cliente.
+- **Outras receitas** (`OutraReceita`): rendimento financeiro, aluguel, ganho de capital e outras. No IRPJ/CSLL entram INTEGRALMENTE na base, sem presuncao (Lei 9.430/96, art. 25 II e art. 29 II). No PIS/COFINS cumulativo a receita financeira NAO entra (Lei 9.718/98 art. 3º; STF, RE 585.235) e o sistema avisa; no nao cumulativo ela e tributada a parte, a 0,65% e 4% (Decreto 8.426/2015).
+- **ICMS fora da base do PIS/COFINS** (`ConfiguracaoFiscal.excluirIcmsBasePisCofins`): opcao por empresa, NASCE DESLIGADA - a adesao a tese do RE 574.706 (Tema 69) e decisao da contabilidade. Ligada, subtrai o ICMS destacado (proporcional no regime de caixa) e registra o valor excluido na memoria de calculo.
+- **Export para o contador**: `/api/erp/fiscal/presumido/exportar?tipo=IRPJ_CSLL|PIS_COFINS&ano=&periodo=` em CSV para Excel pt-BR (UTF-8 com BOM, separador ;, mesma convencao dos outros exports - nenhuma dependencia nova). Traz memoria de calculo, notas com classificacao/motivo/avisos, outras receitas e os avisos do periodo.
+- **APIs**: `/api/erp/fiscal/presumido/{fechamento,outras-receitas,exportar}`. Tela com botoes de fechar/reabrir, exportar e o painel de outras receitas nas duas abas.
+
 ## Atualizacao operacional - 2026-10-28 - PIS/COFINS mensal
 
 - **Regimes**: CUMULATIVO para o lucro presumido (PIS 0,65% e COFINS 3%, sem credito - Lei 9.718/98 arts. 2º e 8º) e NAO CUMULATIVO para o lucro real (1,65% e 7,6% - Leis 10.637/02 e 10.833/03), escolhido pelo `regimeTributario` da empresa.
@@ -142,6 +150,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
+| 2026-10-28 | A gerar | Em andamento | Pendentes do modulo Lucro Presumido/Real: fechamento do periodo com snapshot e alerta de divergencia, lancamento de outras receitas (financeira/aluguel/ganho de capital) com tratamento proprio em cada tributo, export CSV da apuracao para o contador e opcao de excluir o ICMS da base do PIS/COFINS (RE 574.706, desligada por padrao). |
 | 2026-10-28 | A gerar | Em andamento | PIS/COFINS mensal no modulo do Lucro Presumido/Real: cumulativo (0,65% e 3%) e nao cumulativo (1,65% e 7,6%) com credito das entradas, exclusao de monofasico/aliquota zero/ST da base, retencoes deduzidas e aba propria na tela. |
 | 2026-10-28 | A gerar | Em andamento | Modulo de apuracao do Lucro Presumido/Real (/erp/fiscal/presumido): receita classificada nota a nota com percentual de presuncao e base legal, contratos de obra definindo a modalidade da empreitada (8% x 32%), regime de caixa pelo contas a receber e conferencia da classificacao contra a retencao do tomador. |
 | 2026-10-26 | `6e73b54` | Enviado | E0959 na NFS-e da Valleteclab (notas 99 e 100, obra item 07.02.02): o CST do IBS/CBS ia fixo em 000 e o cClassTrib sugerido era 200046, do CST 200. O CST passa a ser derivado do proprio cClassTrib (3 primeiros digitos), na NFS-e e na NF-e 55. |
