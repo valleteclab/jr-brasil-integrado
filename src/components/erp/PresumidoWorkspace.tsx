@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { ApuracaoPresumido } from "@/domains/fiscal/presumido/apuracao-presumido-use-cases";
 import type { ObraResumo } from "@/domains/fiscal/presumido/obras-use-cases";
+import type { ApuracaoPisCofins } from "@/domains/fiscal/presumido/pis-cofins-use-cases";
 
 /**
  * Apuração do IRPJ/CSLL do Lucro Presumido (e estimativa do Lucro Real): receita classificada nota
@@ -15,6 +16,7 @@ type Props = {
   obrasIniciais: ObraResumo[];
   anoInicial: number;
   trimestreInicial: number;
+  mesInicial: number;
 };
 
 const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -27,7 +29,7 @@ const MODALIDADES: Array<{ valor: ObraResumo["modalidade"]; rotulo: string }> = 
   { valor: "ADMINISTRACAO", rotulo: "Administração — 32%" }
 ];
 
-export function PresumidoWorkspace({ inicial, obrasIniciais, anoInicial, trimestreInicial }: Props) {
+export function PresumidoWorkspace({ inicial, obrasIniciais, anoInicial, trimestreInicial, mesInicial }: Props) {
   const [ano, setAno] = useState(anoInicial);
   const [trimestre, setTrimestre] = useState(trimestreInicial);
   const [dados, setDados] = useState<ApuracaoPresumido | null>(inicial);
@@ -37,6 +39,9 @@ export function PresumidoWorkspace({ inicial, obrasIniciais, anoInicial, trimest
   const [ok, setOk] = useState("");
   const [novaObra, setNovaObra] = useState({ numero: "", contratante: "", modalidade: "TOTAL" as ObraResumo["modalidade"], observacoes: "" });
   const [mostrarObras, setMostrarObras] = useState(false);
+  const [aba, setAba] = useState<"IRPJ" | "PIS">("IRPJ");
+  const [mes, setMes] = useState(mesInicial);
+  const [pis, setPis] = useState<ApuracaoPisCofins | null>(null);
 
   const carregar = useCallback(
     async (a = ano, t = trimestre) => {
@@ -55,6 +60,29 @@ export function PresumidoWorkspace({ inicial, obrasIniciais, anoInicial, trimest
     },
     [ano, trimestre]
   );
+
+  const carregarPis = useCallback(
+    async (a = ano, m = mes) => {
+      setBusy(true);
+      setErro("");
+      try {
+        const r = await fetch(`/api/erp/fiscal/presumido/pis-cofins?ano=${a}&mes=${m}`);
+        const json = (await r.json()) as ApuracaoPisCofins & { error?: string };
+        if (!r.ok) throw new Error(json.error || "Falha na apuração do PIS/COFINS.");
+        setPis(json);
+      } catch (e) {
+        setErro(e instanceof Error ? e.message : "Falha na apuração do PIS/COFINS.");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [ano, mes]
+  );
+
+  useEffect(() => {
+    if (aba === "PIS" && !pis) void carregarPis();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aba]);
 
   useEffect(() => {
     if (!inicial) void carregar();
@@ -131,6 +159,35 @@ export function PresumidoWorkspace({ inicial, obrasIniciais, anoInicial, trimest
 
   return (
     <div>
+      <div className="erp-tabs" style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+        <button
+          type="button"
+          className={`btn-erp sm ${aba === "IRPJ" ? "primary" : "ghost"}`}
+          onClick={() => setAba("IRPJ")}
+        >
+          IRPJ / CSLL · trimestral
+        </button>
+        <button
+          type="button"
+          className={`btn-erp sm ${aba === "PIS" ? "primary" : "ghost"}`}
+          onClick={() => setAba("PIS")}
+        >
+          PIS / COFINS · mensal
+        </button>
+      </div>
+
+      {aba === "PIS" ? (
+        <PisCofinsPainel
+          dados={pis}
+          ano={ano}
+          mes={mes}
+          anoInicial={anoInicial}
+          busy={busy}
+          erro={erro}
+          onPeriodo={(a, m) => { setAno(a); setMes(m); void carregarPis(a, m); }}
+        />
+      ) : (
+      <>
       <div className="erp-toolbar" style={{ gap: 8, flexWrap: "wrap" }}>
         <select value={trimestre} onChange={(e) => { const v = Number(e.target.value); setTrimestre(v); void carregar(ano, v); }}>
           {[1, 2, 3, 4].map((n) => <option key={n} value={n}>{n}º trimestre</option>)}
@@ -319,6 +376,114 @@ export function PresumidoWorkspace({ inicial, obrasIniciais, anoInicial, trimest
                         {obras.map((o) => <option key={o.id} value={o.id}>{o.numero} ({o.modalidade === "TOTAL" ? "total" : o.modalidade === "PARCIAL" ? "parcial" : "administração"})</option>)}
                       </select>
                     </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+      </>
+      )}
+    </div>
+  );
+}
+
+/** Apuração mensal de PIS/COFINS — cumulativo no presumido, não cumulativo no real. */
+function PisCofinsPainel({
+  dados,
+  ano,
+  mes,
+  anoInicial,
+  busy,
+  erro,
+  onPeriodo
+}: {
+  dados: ApuracaoPisCofins | null;
+  ano: number;
+  mes: number;
+  anoInicial: number;
+  busy: boolean;
+  erro: string;
+  onPeriodo: (ano: number, mes: number) => void;
+}) {
+  const t = dados?.totais;
+  const MESES = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"];
+  return (
+    <div>
+      <div className="erp-toolbar" style={{ gap: 8, flexWrap: "wrap" }}>
+        <select value={mes} disabled={busy} onChange={(e) => onPeriodo(ano, Number(e.target.value))}>
+          {MESES.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+        </select>
+        <select value={ano} disabled={busy} onChange={(e) => onPeriodo(Number(e.target.value), mes)}>
+          {[anoInicial + 1, anoInicial, anoInicial - 1, anoInicial - 2].map((a) => <option key={a} value={a}>{a}</option>)}
+        </select>
+        <button type="button" className="btn-erp primary sm" disabled={busy} onClick={() => onPeriodo(ano, mes)}>
+          {busy ? "Apurando..." : "Atualizar"}
+        </button>
+        <div className="grow" />
+        <button type="button" className="btn-erp ghost sm" onClick={() => window.print()}>🖨 Imprimir p/ contador</button>
+      </div>
+
+      {erro && <div className="alert danger"><span className="lead">Erro:</span><span>{erro}</span></div>}
+
+      {dados && t && (
+        <>
+          {dados.avisos.map((a, i) => (
+            <div key={i} className="alert warn" style={{ marginBottom: 8 }}><span className="lead">⚠</span><span>{a}</span></div>
+          ))}
+
+          <div className="erp-card" style={{ marginBottom: 16 }}>
+            <div className="erp-card-head">
+              <h3>{dados.periodo.rotulo} · {dados.aliquotas.rotulo}</h3>
+              <span className="field-hint">
+                {dados.regimeReceita === "CAIXA" ? "Regime de caixa" : "Regime de competência"} · vencimento {dia(dados.periodo.vencimento)} · {dados.aliquotas.base}
+              </span>
+            </div>
+            <div className="kpi-row">
+              <div className="kpi"><span className="kpi-label">Receita bruta</span><strong>{brl(t.receitaBruta)}</strong></div>
+              <div className="kpi"><span className="kpi-label">Exclusões da base</span><strong>{brl(t.exclusoes)}</strong></div>
+              <div className="kpi"><span className="kpi-label">Base de cálculo</span><strong>{brl(t.baseCalculo)}</strong></div>
+              <div className="kpi"><span className="kpi-label">PIS a recolher · DARF {dados.darf.pis}</span><strong>{brl(Math.max(t.pisRecolher, 0))}</strong></div>
+              <div className="kpi"><span className="kpi-label">COFINS a recolher · DARF {dados.darf.cofins}</span><strong>{brl(Math.max(t.cofinsRecolher, 0))}</strong></div>
+              <div className="kpi"><span className="kpi-label">Total do mês</span><strong style={{ color: "#0b6b36" }}>{brl(t.totalRecolher)}</strong></div>
+            </div>
+          </div>
+
+          <div className="erp-card" style={{ marginBottom: 16 }}>
+            <div className="erp-card-head"><h3>Memória de cálculo</h3></div>
+            <table className="erp-table">
+              <thead>
+                <tr><th>Item</th><th className="num">PIS ({pct(dados.aliquotas.pis)})</th><th className="num">COFINS ({pct(dados.aliquotas.cofins)})</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>Débito sobre a base</td><td className="num">{brl(t.pisDebito)}</td><td className="num">{brl(t.cofinsDebito)}</td></tr>
+                {dados.regimeApuracao === "NAO_CUMULATIVO" && (
+                  <tr><td>(–) Créditos das entradas</td><td className="num">{brl(t.pisCredito)}</td><td className="num">{brl(t.cofinsCredito)}</td></tr>
+                )}
+                <tr><td>(–) Retido na fonte</td><td className="num">{brl(t.pisRetido)}</td><td className="num">{brl(t.cofinsRetido)}</td></tr>
+              </tbody>
+              <tfoot>
+                <tr><th>A recolher</th><th className="num">{brl(t.pisRecolher)}</th><th className="num">{brl(t.cofinsRecolher)}</th></tr>
+              </tfoot>
+            </table>
+          </div>
+
+          <div className="erp-card">
+            <div className="erp-card-head"><h3>Notas do mês ({dados.linhas.length})</h3></div>
+            <table className="erp-table">
+              <thead>
+                <tr><th>Nota</th><th>Data</th><th>Destinatário</th><th className="num">Na base</th><th className="num">Excluído</th><th>Motivo da exclusão</th></tr>
+              </thead>
+              <tbody>
+                {dados.linhas.map((l, i) => (
+                  <tr key={`${l.notaId}-${i}`}>
+                    <td><strong>{l.modelo} {l.numero}</strong></td>
+                    <td>{dia(l.data)}</td>
+                    <td>{l.descricao || "-"}</td>
+                    <td className="num">{brl(l.receita)}</td>
+                    <td className="num">{l.excluida > 0 ? brl(l.excluida) : "-"}</td>
+                    <td><small className="block-muted">{l.motivoExclusao ?? "-"}</small></td>
                   </tr>
                 ))}
               </tbody>

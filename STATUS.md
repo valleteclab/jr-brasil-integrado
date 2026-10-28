@@ -112,6 +112,18 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - **Correcao**: `cstDoClassTrib` / `cstIbsCbsCoerente` em `src/domains/fiscal/nbs.ts` - o cClassTrib define o CST, um CST informado em desacordo e corrigido e so vale quando nao existe cClassTrib. Aplicado no DPS da NFS-e (`grupoIbsCbsDps`) e no grupo IBSCBS da NF-e 55 (`ibsCbsItemXml`), que tinha o mesmo default.
 - **Teste**: `npx tsx scripts/test-dps-ibscbs.ts` cobre o caso real (07.02 -> CST 200 + cClassTrib 200046 + cIndOp 020201) e mantem a tributacao integral em CST 000/000001. XSD aceita qualquer CST de 3 digitos (`TSRTCCodSitTrib`).
 
+## Atualizacao operacional - 2026-10-28 - PIS/COFINS mensal
+
+- **Regimes**: CUMULATIVO para o lucro presumido (PIS 0,65% e COFINS 3%, sem credito - Lei 9.718/98 arts. 2º e 8º) e NAO CUMULATIVO para o lucro real (1,65% e 7,6% - Leis 10.637/02 e 10.833/03), escolhido pelo `regimeTributario` da empresa.
+- **Exclusoes da base** (o mesmo "plus" da segregacao do Simples): revenda de produto MONOFASICO (flag do cadastro fiscal ou NCM na tabela das Leis 10.147/00 e 10.485/02) e itens com CST de saida 04/05/06/07/08/09 (aliquota zero, ST, isencao, sem incidencia, suspensao). Cada nota mostra quanto saiu da base e por que.
+- **Creditos** (so no nao cumulativo): somados dos impostos marcados como RECUPERAVEIS nas entradas fiscais do mes (`EntradaFiscalItemImposto.recuperavel`), com aviso de que energia, alugueis, fretes e depreciacao ficam por conta da contabilidade.
+- **Retencoes** `valorPisRetido`/`valorCofinsRetido` deduzem o devido; saldo negativo e tratado como credito do mes seguinte, nao como valor a pagar.
+- **Regime de caixa** tambem no PIS/COFINS (MP 2.158-35/2001, art. 20), proporcional ao recebido, reaproveitando o vinculo titulo-nota.
+- **Vencimento**: dia 25 do mes seguinte, antecipando para o dia util anterior (Lei 11.933/2009). DARFs 8109/2172 (cumulativo) e 6912/5856 (nao cumulativo).
+- **Tela**: `/erp/fiscal/presumido` ganhou abas - "IRPJ/CSLL - trimestral" e "PIS/COFINS - mensal", cada uma com seu seletor de periodo e memoria de calculo. API: `/api/erp/fiscal/presumido/pis-cofins`.
+- **Teste**: `npx tsx scripts/test-pis-cofins.ts` - aliquotas, DARFs, vencimento antecipado (25/10/2026 cai no domingo -> 23/10) e exclusoes da base, mais o mes de setembro/2026 real da VALLETECLAB (base R$ 308.160,28, PIS R$ 2.003,04, COFINS R$ 9.244,81).
+- **Pendente**: exclusao do ICMS da base (tese do STF ja pacificada) ainda nao automatizada; receitas financeiras do nao cumulativo (0,65%/4%) e fechamento mensal com trava.
+
 ## Atualizacao operacional - 2026-10-28 - Apuracao do Lucro Presumido/Real
 
 - **Origem**: revisao da apuracao real do 3o trimestre/2026 da VALLETECLAB, em que a obra do contrato 006/2026 (empreitada total) fora apurada com material a 8% e servico a 32%, gerando **R$ 25.148,68 de IRPJ+CSLL a maior**. O sistema nao tinha apuracao de Lucro Presumido - a conta era feita fora.
@@ -130,6 +142,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
+| 2026-10-28 | A gerar | Em andamento | PIS/COFINS mensal no modulo do Lucro Presumido/Real: cumulativo (0,65% e 3%) e nao cumulativo (1,65% e 7,6%) com credito das entradas, exclusao de monofasico/aliquota zero/ST da base, retencoes deduzidas e aba propria na tela. |
 | 2026-10-28 | A gerar | Em andamento | Modulo de apuracao do Lucro Presumido/Real (/erp/fiscal/presumido): receita classificada nota a nota com percentual de presuncao e base legal, contratos de obra definindo a modalidade da empreitada (8% x 32%), regime de caixa pelo contas a receber e conferencia da classificacao contra a retencao do tomador. |
 | 2026-10-26 | `6e73b54` | Enviado | E0959 na NFS-e da Valleteclab (notas 99 e 100, obra item 07.02.02): o CST do IBS/CBS ia fixo em 000 e o cClassTrib sugerido era 200046, do CST 200. O CST passa a ser derivado do proprio cClassTrib (3 primeiros digitos), na NFS-e e na NF-e 55. |
 | 2026-10-14 | `ebda762` | Enviado | NF-e de entrada presa na Sucatao Vereda: a ciencia (210210) tinha sido rejeitada com "596 - Evento apresentado apos o prazo permitido [10 dias]" e o motivo era descartado, entao a tela dizia "Ciencia enviada" e o botao nunca reenviava o evento. Agora o retorno da SEFAZ e gravado (`manifestacaoMotivo`), a ciencia rejeitada pode ser reenviada e, quando o prazo venceu, a importacao registra a Confirmacao da Operacao (210200) - 180 dias, tambem libera o procNFe. |

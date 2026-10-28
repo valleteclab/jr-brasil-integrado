@@ -54,7 +54,7 @@ export default async function PresumidoPage() {
           Presumido e do Lucro Real. Para Simples/MEI use o <a href="/erp/fiscal/simples">painel do Simples</a>.
         </div>
       ) : (
-        <PresumidoWorkspace inicial={inicial} obrasIniciais={obras} anoInicial={ano} trimestreInicial={trimestre} />
+        <PresumidoWorkspace inicial={inicial} obrasIniciais={obras} anoInicial={ano} trimestreInicial={trimestre} mesInicial={hoje.getMonth() + 1} />
       )}
     </>
   );
