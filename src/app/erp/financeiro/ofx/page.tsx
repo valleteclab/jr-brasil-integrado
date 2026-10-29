@@ -13,11 +13,34 @@ export default async function ExtratoOfxPage() {
   if (!(await moduloLiberadoNoScope("financeiroHabilitado"))) return <ModuloBloqueado titulo="Financeiro indisponível" />;
 
   const scope = await getDevelopmentTenantScope();
-  const contas = await prisma.contaBancaria.findMany({
-    where: { tenantId: scope.tenantId, empresaId: scope.empresaId, ativo: true },
-    select: { id: true, nome: true, tipo: true },
-    orderBy: { nome: "asc" }
-  });
+  const [contas, fornecedores, clientes, classificacoes] = await Promise.all([
+    prisma.contaBancaria.findMany({
+      where: { tenantId: scope.tenantId, empresaId: scope.empresaId, ativo: true },
+      select: { id: true, nome: true, tipo: true },
+      orderBy: { nome: "asc" }
+    }),
+    prisma.fornecedor.findMany({
+      where: { tenantId: scope.tenantId, empresaId: scope.empresaId, ativo: true },
+      select: { id: true, razaoSocial: true, nomeFantasia: true },
+      orderBy: { razaoSocial: "asc" },
+      take: 500
+    }),
+    prisma.cliente.findMany({
+      where: { tenantId: scope.tenantId, empresaId: scope.empresaId, status: "ATIVO" },
+      select: { id: true, razaoSocial: true, nomeFantasia: true },
+      orderBy: { razaoSocial: "asc" },
+      take: 500
+    }),
+    prisma.classificacaoFinanceira
+      .findMany({
+        where: { tenantId: scope.tenantId, empresaId: scope.empresaId, ativo: true },
+        select: { id: true, nome: true, tipo: true },
+        orderBy: { nome: "asc" }
+      })
+      .catch(() => [])
+  ]);
+
+  const nome = (p: { razaoSocial: string; nomeFantasia: string | null }) => p.nomeFantasia || p.razaoSocial;
 
   return (
     <>
@@ -39,7 +62,12 @@ export default async function ExtratoOfxPage() {
           <a href="/erp/configuracoes/contas-financeiras">Contas financeiras</a>.
         </div>
       ) : (
-        <ExtratoOfxWorkspace contas={contas} />
+        <ExtratoOfxWorkspace
+          contas={contas}
+          fornecedores={fornecedores.map((f) => ({ id: f.id, nome: nome(f) }))}
+          clientes={clientes.map((c) => ({ id: c.id, nome: nome(c) }))}
+          classificacoes={classificacoes}
+        />
       )}
     </>
   );

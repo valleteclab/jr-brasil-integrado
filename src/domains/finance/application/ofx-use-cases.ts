@@ -3,7 +3,15 @@ import type { TenantScope } from "@/lib/auth/dev-session";
 import { scopedByTenantCompany } from "@/lib/auth/dev-session";
 import { createAuditLog } from "@/lib/audit/audit-service";
 import { parseOfx, OfxParseError } from "@/lib/ofx/parse-ofx";
-import { FinanceValidationError, settlePayable, settleReceivable } from "./finance-use-cases";
+import {
+  FinanceValidationError,
+  createPayable,
+  createReceivable,
+  estornarBaixaPayable,
+  estornarBaixaReceivable,
+  settlePayable,
+  settleReceivable
+} from "./finance-use-cases";
 
 /**
  * EXTRATO POR ARQUIVO OFX — importação e conciliação.
@@ -337,6 +345,68 @@ export async function conciliarLote(
   return { conciliadas, falhas };
 }
 
+/**
+ * Cria o lançamento A PARTIR da linha do extrato e já vincula — é o caminho para o que o banco
+ * mostra e o sistema não tem (tarifa, pagamento avulso, recebimento sem título). A conta nasce
+ * com a data e o valor do banco e sai quitada na mesma operação; o tipo vem do sinal do valor.
+ */
+export async function criarLancamentoDaLinha(
+  scope: TenantScope,
+  input: { linhaId: string; descricao?: string; fornecedorId?: string | null; clienteId?: string | null; classificacaoId?: string | null },
+  usuarioId?: string
+) {
+  const linha = await prisma.extratoOfxLinha.findFirst({ where: { id: input.linhaId, ...scopedByTenantCompany(scope) } });
+  if (!linha) throw new FinanceValidationError("Linha do extrato não encontrada.");
+  if (linha.status !== "PENDENTE") throw new FinanceValidationError("Esta linha já foi resolvida.");
+
+  const valor = round2(Math.abs(Number(linha.valor)));
+  const descricao = (input.descricao?.trim() || linha.descricao).slice(0, 200);
+  const ehSaida = Number(linha.valor) < 0;
+
+  if (!ehSaida && !input.clienteId) {
+    throw new FinanceValidationError("Para um crédito, informe o cliente do recebimento.");
+  }
+
+  const titulo = ehSaida
+    ? await createPayable(scope, {
+        descricao,
+        fornecedorId: input.fornecedorId ?? undefined,
+        valor,
+        vencimento: linha.data,
+        numeroDocumento: linha.documento ?? undefined,
+        observacoes: `Criado pelo extrato importado (OFX) em ${new Date().toLocaleDateString("pt-BR")}.`,
+        classificacaoId: input.classificacaoId ?? undefined
+      })
+    : await createReceivable(scope, {
+        descricao,
+        clienteId: input.clienteId as string,
+        valor,
+        vencimento: linha.data,
+        numeroDocumento: linha.documento ?? undefined,
+        observacoes: `Criado pelo extrato importado (OFX) em ${new Date().toLocaleDateString("pt-BR")}.`,
+        classificacaoId: input.classificacaoId ?? undefined
+      });
+
+  await conciliarLinha(
+    scope,
+    ehSaida ? { linhaId: linha.id, contaPagarId: titulo.id } : { linhaId: linha.id, contaReceberId: titulo.id },
+    usuarioId
+  );
+
+  await prisma.$transaction(async (tx) =>
+    createAuditLog(tx, {
+      scope,
+      usuarioId,
+      entidade: "ExtratoOfxLinha",
+      entidadeId: linha.id,
+      acao: "EXTRATO_OFX_LANCAMENTO_CRIADO",
+      payload: { tipo: ehSaida ? "PAGAR" : "RECEBER", tituloId: titulo.id, valor, descricao }
+    })
+  );
+
+  return { tituloId: titulo.id, tipo: ehSaida ? "PAGAR" : "RECEBER", valor, descricao };
+}
+
 /** Marca a linha como ignorada (transferência própria, estorno, aplicação) com o motivo. */
 export async function ignorarLinha(scope: TenantScope, linhaId: string, motivo: string, usuarioId?: string) {
   const linha = await prisma.extratoOfxLinha.findFirst({ where: { id: linhaId, ...scopedByTenantCompany(scope) } });
@@ -353,10 +423,27 @@ export async function ignorarLinha(scope: TenantScope, linhaId: string, motivo: 
   return atualizada;
 }
 
-/** Volta a linha para PENDENTE (não estorna a baixa — isso é feito no título, com trilha própria). */
+/**
+ * DESFAZ a conciliação: estorna a baixa que ela criou e devolve a linha para PENDENTE. Antes isto
+ * só limpava o vínculo e deixava o título quitado — o usuário "desfazia" e o dinheiro continuava
+ * baixado, sem caminho de volta na tela.
+ */
 export async function reabrirLinha(scope: TenantScope, linhaId: string, usuarioId?: string) {
   const linha = await prisma.extratoOfxLinha.findFirst({ where: { id: linhaId, ...scopedByTenantCompany(scope) } });
   if (!linha) throw new FinanceValidationError("Linha do extrato não encontrada.");
+
+  // Estorna a baixa do título vinculado. Se o usuário já tiver estornado na tela de contas, a
+  // função avisa que não há baixa — e aí seguimos só liberando a linha.
+  if (linha.status === "CONCILIADA") {
+    try {
+      if (linha.contaPagarId) await estornarBaixaPayable(scope, linha.contaPagarId);
+      else if (linha.contaReceberId) await estornarBaixaReceivable(scope, linha.contaReceberId);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "";
+      if (!/não há baixa/i.test(msg)) throw e;
+    }
+  }
+
   const atualizada = await prisma.extratoOfxLinha.update({
     where: { id: linha.id },
     data: { status: "PENDENTE", contaPagarId: null, contaReceberId: null, motivoIgnorada: null, conciliadoEm: null, conciliadoPor: null }
@@ -368,7 +455,7 @@ export async function reabrirLinha(scope: TenantScope, linhaId: string, usuarioI
       entidade: "ExtratoOfxLinha",
       entidadeId: linha.id,
       acao: "EXTRATO_OFX_REABERTO",
-      payload: { statusAnterior: linha.status, contaPagarId: linha.contaPagarId, contaReceberId: linha.contaReceberId }
+      payload: { statusAnterior: linha.status, contaPagarId: linha.contaPagarId, contaReceberId: linha.contaReceberId, baixaEstornada: linha.status === "CONCILIADA" }
     })
   );
   return atualizada;

@@ -12,6 +12,8 @@ import type { ImportacaoResumo, LinhaExtratoPendente, ResumoImportacao } from "@
  */
 
 type ContaOption = { id: string; nome: string; tipo: string };
+type ParteOption = { id: string; nome: string };
+type ClassificacaoOption = { id: string; nome: string; tipo: string };
 
 type Resumo = {
   pendentes: number;
@@ -32,12 +34,25 @@ type Resumo = {
 const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const dia = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString("pt-BR") : "—");
 
-export function ExtratoOfxWorkspace({ contas }: { contas: ContaOption[] }) {
+export function ExtratoOfxWorkspace({
+  contas,
+  fornecedores = [],
+  clientes = [],
+  classificacoes = []
+}: {
+  contas: ContaOption[];
+  fornecedores?: ParteOption[];
+  clientes?: ParteOption[];
+  classificacoes?: ClassificacaoOption[];
+}) {
   const [contaId, setContaId] = useState(contas[0]?.id ?? "");
   const [linhas, setLinhas] = useState<LinhaExtratoPendente[]>([]);
   const [resumo, setResumo] = useState<Resumo | null>(null);
   const [escolhas, setEscolhas] = useState<Record<string, string>>({});
-  const [verTodas, setVerTodas] = useState(false);
+  // Mostra também as resolvidas por padrão: foi o que faltou — depois de vincular, a linha sumia
+  // da lista e o usuário ficava sem o caminho de volta.
+  const [verTodas, setVerTodas] = useState(true);
+  const [criando, setCriando] = useState<LinhaExtratoPendente | null>(null);
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState("");
   const [ok, setOk] = useState("");
@@ -185,6 +200,8 @@ export function ExtratoOfxWorkspace({ contas }: { contas: ContaOption[] }) {
   }
 
   async function reabrir(linhaId: string) {
+    const linha = linhas.find((l) => l.id === linhaId);
+    if (linha?.status === "CONCILIADA" && !window.confirm("Desfazer este vínculo? A baixa do título será estornada e a linha volta para pendente.")) return;
     setBusy(true);
     setErro("");
     try {
@@ -195,7 +212,7 @@ export function ExtratoOfxWorkspace({ contas }: { contas: ContaOption[] }) {
       });
       const json = (await r.json()) as { error?: string };
       if (!r.ok) throw new Error(json.error || "Falha ao reabrir.");
-      setOk("Linha voltou para pendente. Se havia baixa no título, estorne-a na tela de contas.");
+      setOk("Desfeito: a baixa foi estornada e a linha voltou para pendente.");
       await carregar();
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Falha ao reabrir.");
@@ -325,6 +342,21 @@ export function ExtratoOfxWorkspace({ contas }: { contas: ContaOption[] }) {
         </div>
       )}
 
+      {criando && (
+        <CriarLancamentoForm
+          linha={criando}
+          fornecedores={fornecedores}
+          clientes={clientes}
+          classificacoes={classificacoes}
+          onClose={() => setCriando(null)}
+          onSuccess={async (msg) => {
+            setCriando(null);
+            setOk(msg);
+            await carregar();
+          }}
+        />
+      )}
+
       <div className="erp-card">
         <div className="erp-card-head"><h3>Lançamentos do banco ({linhas.length})</h3></div>
         <table className="erp-table">
@@ -351,7 +383,7 @@ export function ExtratoOfxWorkspace({ contas }: { contas: ContaOption[] }) {
                   {l.status !== "PENDENTE" ? (
                     <small className="block-muted">—</small>
                   ) : l.sugestoes.length === 0 ? (
-                    <small className="block-muted">Sem título com o mesmo valor por aqui — vincule manualmente na tela de contas ou ignore.</small>
+                    <small className="block-muted">Nada com o mesmo valor no sistema — use &quot;Criar lançamento&quot; para lançar e vincular de uma vez.</small>
                   ) : (
                     <select
                       value={escolhas[l.id] ?? ""}
@@ -370,16 +402,27 @@ export function ExtratoOfxWorkspace({ contas }: { contas: ContaOption[] }) {
                 <td className="actions">
                   {l.status === "PENDENTE" ? (
                     <>
-                      <button type="button" className="btn-erp primary sm" disabled={busy || !escolhas[l.id]} onClick={() => void conciliar(l.id)}>
-                        Vincular
+                      {l.sugestoes.length > 0 && (
+                        <button type="button" className="btn-erp primary sm" disabled={busy || !escolhas[l.id]} onClick={() => void conciliar(l.id)}>
+                          Vincular
+                        </button>
+                      )}
+                      <button type="button" className="btn-erp sm" disabled={busy} onClick={() => setCriando(l)}>
+                        Criar lançamento
                       </button>
                       <button type="button" className="btn-erp ghost sm" disabled={busy} onClick={() => void ignorar(l.id)}>
                         Ignorar
                       </button>
                     </>
                   ) : (
-                    <button type="button" className="btn-erp ghost sm" disabled={busy} onClick={() => void reabrir(l.id)}>
-                      Reabrir
+                    <button
+                      type="button"
+                      className="btn-erp ghost sm"
+                      disabled={busy}
+                      title={l.status === "CONCILIADA" ? "Estorna a baixa e devolve a linha para pendente" : "Volta a linha para pendente"}
+                      onClick={() => void reabrir(l.id)}
+                    >
+                      ↩ Desfazer
                     </button>
                   )}
                 </td>
@@ -400,5 +443,110 @@ export function ExtratoOfxWorkspace({ contas }: { contas: ContaOption[] }) {
         </table>
       </div>
     </div>
+  );
+}
+
+/* ── Criar o lançamento a partir da linha do extrato ───────────────────────────────────────
+   Para o que o banco mostra e o sistema não tem: tarifa, pagamento avulso, recebimento sem
+   título. Nasce com a data e o valor do banco e já sai quitado e vinculado à linha. */
+function CriarLancamentoForm({
+  linha,
+  fornecedores,
+  clientes,
+  classificacoes,
+  onClose,
+  onSuccess
+}: {
+  linha: LinhaExtratoPendente;
+  fornecedores: ParteOption[];
+  clientes: ParteOption[];
+  classificacoes: ClassificacaoOption[];
+  onClose: () => void;
+  onSuccess: (mensagem: string) => void | Promise<void>;
+}) {
+  const ehSaida = linha.valor < 0;
+  const [descricao, setDescricao] = useState(linha.descricao);
+  const [parteId, setParteId] = useState("");
+  const [classificacaoId, setClassificacaoId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [erro, setErro] = useState("");
+
+  const opcoesClassificacao = classificacoes.filter((c) => (ehSaida ? c.tipo === "DESPESA" : c.tipo === "RECEITA"));
+
+  async function salvar() {
+    if (!ehSaida && !parteId) {
+      setErro("Para um crédito, escolha o cliente do recebimento.");
+      return;
+    }
+    setBusy(true);
+    setErro("");
+    try {
+      const r = await fetch("/api/erp/financeiro/ofx/criar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          linhaId: linha.id,
+          descricao,
+          ...(ehSaida ? { fornecedorId: parteId || null } : { clienteId: parteId }),
+          classificacaoId: classificacaoId || null
+        })
+      });
+      const json = (await r.json()) as { error?: string };
+      if (!r.ok) throw new Error(json.error || "Falha ao criar o lançamento.");
+      await onSuccess(`Lançamento criado e vinculado: ${descricao}.`);
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Falha ao criar o lançamento.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <div className="drawer-bd" onClick={onClose} />
+      <aside className="drawer">
+        <header className="drawer-head">
+          <h2>{ehSaida ? "Nova despesa pelo extrato" : "Novo recebimento pelo extrato"}</h2>
+          <button type="button" className="btn-erp ghost xs" onClick={onClose}>Fechar</button>
+        </header>
+        <div className="drawer-body">
+          <div style={{ padding: "12px 20px", background: "var(--erp-bg)", borderBottom: "1px solid var(--erp-line)", fontSize: 12, color: "var(--erp-slate)" }}>
+            {dia(linha.data)} · <strong>{brl(linha.valor)}</strong> · {linha.descricao}
+          </div>
+          {erro && <div className="alert danger" style={{ margin: "12px 20px 0" }}><span className="lead">Erro:</span><span>{erro}</span></div>}
+          <div className="erp-form">
+            <label className="full">
+              <span>Descrição</span>
+              <input value={descricao} onChange={(e) => setDescricao(e.target.value)} />
+            </label>
+            <label className="full">
+              <span>{ehSaida ? "Fornecedor (opcional)" : "Cliente"}</span>
+              <select value={parteId} onChange={(e) => setParteId(e.target.value)}>
+                <option value="">{ehSaida ? "Sem fornecedor" : "Selecione o cliente"}</option>
+                {(ehSaida ? fornecedores : clientes).map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}
+              </select>
+            </label>
+            {opcoesClassificacao.length > 0 && (
+              <label className="full">
+                <span>Classificação (opcional)</span>
+                <select value={classificacaoId} onChange={(e) => setClassificacaoId(e.target.value)}>
+                  <option value="">Sem classificação</option>
+                  {opcoesClassificacao.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
+                </select>
+              </label>
+            )}
+            <small className="field-hint full">
+              O lançamento entra com a data e o valor do banco e já sai quitado nesta conta. Se errar, use &quot;Desfazer&quot; na linha.
+            </small>
+          </div>
+          <footer className="drawer-foot">
+            <button type="button" className="btn-erp ghost sm" onClick={onClose} disabled={busy}>Cancelar</button>
+            <button type="button" className="btn-erp primary sm" onClick={() => void salvar()} disabled={busy}>
+              {busy ? "Criando…" : "Criar e vincular"}
+            </button>
+          </footer>
+        </div>
+      </aside>
+    </>
   );
 }

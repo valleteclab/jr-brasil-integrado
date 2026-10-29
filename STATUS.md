@@ -155,6 +155,14 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - **Tela**: selecao por linha (so contas em aberto) + "selecionar todas da pagina", barra com total selecionado, drawer de baixa em lote com resultado detalhado e drawer de editar/parcelar.
 - **Saldo inicial em moeda**: cadastro de conta financeira passou a usar o `MoneyInput` do design system (digitacao estilo banco, centavos da direita para a esquerda, prefixo R$), com parser pt-BR no envio.
 
+## Atualizacao operacional - 2026-10-29 - OFX: desfazer de verdade e criar lancamento pela linha
+
+- **Desfazer**: `reabrirLinha` agora ESTORNA a baixa criada pela conciliacao antes de devolver a linha para PENDENTE. Antes so limpava o vinculo e deixava o titulo quitado - o usuario "desfazia" e o dinheiro continuava baixado, sem caminho de volta na tela.
+- **A linha resolvida nao some mais**: a lista passou a mostrar tambem as conciliadas/ignoradas por padrao, com o botao "↩ Desfazer" na propria linha (com confirmacao explicando que a baixa sera estornada).
+- **Criar lancamento pela linha** (`criarLancamentoDaLinha` + `/api/erp/financeiro/ofx/criar`): para o que o banco mostra e o sistema nao tem (tarifa, pagamento avulso, recebimento sem titulo). Cria a conta a pagar/receber com a DATA e o VALOR do banco, ja quitada na conta da importacao e vinculada a linha; o tipo vem do sinal do valor. Debito aceita fornecedor opcional; credito exige cliente. Classificacao financeira opcional, filtrada por DESPESA/RECEITA.
+- **Excluir importacao** (caso real: extrato do Itau importado no cartao Nubank, 76 linhas): remove o arquivo e suas linhas enquanto nenhuma virou baixa; com linha conciliada, recusa e diz quantas reabrir. Lista "Arquivos importados" na tela com periodo, quantidade e situacao.
+- **Aviso de conta trocada nos dois sentidos**, citando banco e conta que vieram no arquivo e apontando o caminho ("use Excluir importacao e importe na conta certa").
+
 ## Atualizacao operacional - 2026-10-29 - Extrato por arquivo OFX
 
 - **Por que**: a conciliacao bancaria existente so funciona com a API do Sicoob. Itau, Caixa e cartao de credito ficavam sem extrato - e e onde a VALLETECLAB esta.
