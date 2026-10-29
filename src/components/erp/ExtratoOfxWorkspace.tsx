@@ -53,6 +53,11 @@ export function ExtratoOfxWorkspace({
   // da lista e o usuário ficava sem o caminho de volta.
   const [verTodas, setVerTodas] = useState(true);
   const [criando, setCriando] = useState<LinhaExtratoPendente | null>(null);
+  // Fornecedores/clientes/classificações ficam no estado da TELA: cadastrados dentro do painel de
+  // uma linha, precisam aparecer na linha seguinte sem recarregar a página.
+  const [listaFornecedores, setListaFornecedores] = useState<ParteOption[]>(fornecedores);
+  const [listaClientes, setListaClientes] = useState<ParteOption[]>(clientes);
+  const [listaClassificacoes, setListaClassificacoes] = useState<ClassificacaoOption[]>(classificacoes);
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState("");
   const [ok, setOk] = useState("");
@@ -345,9 +350,13 @@ export function ExtratoOfxWorkspace({
       {criando && (
         <CriarLancamentoForm
           linha={criando}
-          fornecedores={fornecedores}
-          clientes={clientes}
-          classificacoes={classificacoes}
+          fornecedores={listaFornecedores}
+          clientes={listaClientes}
+          classificacoes={listaClassificacoes}
+          onParteCriada={(parte, ehFornecedor) =>
+            (ehFornecedor ? setListaFornecedores : setListaClientes)((prev) => [parte, ...prev])
+          }
+          onClasseCriada={(classe) => setListaClassificacoes((prev) => [classe, ...prev])}
           onClose={() => setCriando(null)}
           onSuccess={async (msg) => {
             setCriando(null);
@@ -454,6 +463,8 @@ function CriarLancamentoForm({
   fornecedores,
   clientes,
   classificacoes,
+  onParteCriada,
+  onClasseCriada,
   onClose,
   onSuccess
 }: {
@@ -461,6 +472,8 @@ function CriarLancamentoForm({
   fornecedores: ParteOption[];
   clientes: ParteOption[];
   classificacoes: ClassificacaoOption[];
+  onParteCriada: (parte: ParteOption, ehFornecedor: boolean) => void;
+  onClasseCriada: (classe: ClassificacaoOption) => void;
   onClose: () => void;
   onSuccess: (mensagem: string) => void | Promise<void>;
 }) {
@@ -478,10 +491,9 @@ function CriarLancamentoForm({
   const [novaClasse, setNovaClasse] = useState(false);
   const [classeNome, setClasseNome] = useState("");
   const [classeGrupo, setClasseGrupo] = useState("");
-  const [listaPartes, setListaPartes] = useState(ehSaida ? fornecedores : clientes);
-  const [listaClasses, setListaClasses] = useState(classificacoes);
 
-  const opcoesClassificacao = listaClasses.filter((c) => (ehSaida ? c.tipo === "DESPESA" : c.tipo === "RECEITA"));
+  const listaPartes = ehSaida ? fornecedores : clientes;
+  const opcoesClassificacao = classificacoes.filter((c) => (ehSaida ? c.tipo === "DESPESA" : c.tipo === "RECEITA"));
   // Grupos que já existem no plano de classificação (do mesmo tipo): evita criar "Despesas",
   // "despesa" e "DESPESAS" como três blocos diferentes no fechamento mensal.
   const gruposExistentes = [...new Set(opcoesClassificacao.map((c) => c.grupo).filter((g): g is string => Boolean(g)))].sort();
@@ -502,7 +514,7 @@ function CriarLancamentoForm({
     const json = (await r.json()) as { id?: string; cliente?: { id: string }; error?: string };
     const id = json.id ?? json.cliente?.id;
     if (!r.ok || !id) throw new Error(json.error || "Falha ao cadastrar.");
-    setListaPartes((prev) => [{ id, nome }, ...prev]);
+    onParteCriada({ id, nome }, ehSaida);
     return id;
   }
 
@@ -519,7 +531,7 @@ function CriarLancamentoForm({
     const json = (await r.json()) as { id?: string; classificacao?: { id: string }; error?: string };
     const id = json.id ?? json.classificacao?.id;
     if (!r.ok || !id) throw new Error(json.error || "Falha ao criar a classificação.");
-    setListaClasses((prev) => [{ id, nome, tipo: ehSaida ? "DESPESA" : "RECEITA", grupo }, ...prev]);
+    onClasseCriada({ id, nome, tipo: ehSaida ? "DESPESA" : "RECEITA", grupo });
     return id;
   }
 
