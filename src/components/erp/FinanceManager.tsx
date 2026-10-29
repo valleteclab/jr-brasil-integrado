@@ -524,6 +524,10 @@ function NewAccountForm({ tipo, formasPagamento, clientes, classificacoes, onSuc
 export function FinanceManager({ initialPayables, initialReceivables, bankAccounts, formasPagamento = [], clientes = [], maquinas = [], classificacoes = [], contasCobranca = [], isAdmin = false }: Props) {
   const router = useRouter();
   const [aba, setAba] = useState<Aba>("pagar");
+  /** Seleção para baixa em lote (fechamento do mês): só contas a pagar em aberto. */
+  const [selecionados, setSelecionados] = useState<string[]>([]);
+  const [loteAberto, setLoteAberto] = useState(false);
+  const [editando, setEditando] = useState<PayableSummary | null>(null);
   const [payables, setPayables] = useState(initialPayables);
   const [receivables, setReceivables] = useState(initialReceivables);
   const [query, setQuery] = useState("");
@@ -958,11 +962,55 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
         </div>
       )}
 
+      {aba === "pagar" && selecionados.length > 0 && (
+        <div
+          className="erp-toolbar"
+          style={{ gap: 10, flexWrap: "wrap", background: "#eef6ff", border: "1px solid var(--erp-line)", borderBottom: 0 }}
+        >
+          <strong>{selecionados.length} conta(s) selecionada(s)</strong>
+          <span>
+            Saldo:{" "}
+            <strong>
+              {fmtBrl(
+                payables.filter((r) => selecionados.includes(r.id)).reduce((acc, r) => acc + r.saldoNumber, 0)
+              )}
+            </strong>
+          </span>
+          <div className="grow" />
+          <button type="button" className="btn-erp primary sm" onClick={() => setLoteAberto(true)}>
+            Baixar selecionadas
+          </button>
+          <button type="button" className="btn-erp ghost sm" onClick={() => setSelecionados([])}>
+            Limpar seleção
+          </button>
+        </div>
+      )}
+
       {/* Tabela */}
       <div className="erp-table-wrap" style={{ borderRadius: "0 0 8px 8px", borderTop: 0 }}>
         <table className="erp-table">
           <thead>
             <tr>
+              {aba === "pagar" && (
+                <th style={{ width: 34 }}>
+                  <input
+                    type="checkbox"
+                    title="Selecionar todas as contas em aberto desta página"
+                    checked={
+                      paged.itensPagina.length > 0 &&
+                      paged.itensPagina.every((r) => !r.canSettle || selecionados.includes(r.id))
+                    }
+                    onChange={(e) => {
+                      const daPagina = paged.itensPagina.filter((r) => r.canSettle).map((r) => r.id);
+                      setSelecionados((prev) =>
+                        e.target.checked
+                          ? [...new Set([...prev, ...daPagina])]
+                          : prev.filter((id) => !daPagina.includes(id))
+                      );
+                    }}
+                  />
+                </th>
+              )}
               <th>Descrição</th>
               <th>{aba === "pagar" ? "Fornecedor" : "Cliente"}</th>
               <th>Nº Documento</th>
@@ -978,6 +1026,19 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
           <tbody>
             {paged.itensPagina.map((r) => (
               <tr key={r.id}>
+                {aba === "pagar" && (
+                  <td>
+                    {r.canSettle && (
+                      <input
+                        type="checkbox"
+                        checked={selecionados.includes(r.id)}
+                        onChange={(e) =>
+                          setSelecionados((prev) => (e.target.checked ? [...prev, r.id] : prev.filter((id) => id !== r.id)))
+                        }
+                      />
+                    )}
+                  </td>
+                )}
                 <td>
                   <strong>{r.descricao}</strong>
                   {(() => {
@@ -1126,6 +1187,16 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
                   {aba === "receber" && (r as ReceivableSummary).pixStatus === "DEVOLVIDA" && (
                     <span className="status-badge mute" style={{ fontSize: 11 }}>Pix devolvido</span>
                   )}
+                  {aba === "pagar" && r.canSettle && (
+                    <button
+                      type="button"
+                      className="btn-erp ghost sm"
+                      title="Corrigir vencimento, valor, forma de pagamento — ou dividir em parcelas"
+                      onClick={() => setEditando(r as PayableSummary)}
+                    >
+                      Editar
+                    </button>
+                  )}
                   {isAdmin && aba === "pagar" && (r as PayableSummary).canDelete && (
                     <button
                       type="button"
@@ -1228,6 +1299,35 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
         />
       )}
 
+      {/* Baixa em lote — fechamento do mês em uma operação */}
+      {loteAberto && (
+        <BaixaLoteForm
+          contas={payables.filter((r) => selecionados.includes(r.id))}
+          bankAccounts={bankAccounts}
+          formasPagamento={formasPagamento}
+          onClose={() => setLoteAberto(false)}
+          onSuccess={() => {
+            setLoteAberto(false);
+            setSelecionados([]);
+            router.refresh();
+          }}
+        />
+      )}
+
+      {/* Editar / parcelar conta a pagar em aberto */}
+      {editando && (
+        <EditarPayableForm
+          conta={editando}
+          bankAccounts={bankAccounts}
+          formasPagamento={formasPagamento}
+          onClose={() => setEditando(null)}
+          onSuccess={() => {
+            setEditando(null);
+            router.refresh();
+          }}
+        />
+      )}
+
       {/* Modal nova conta */}
       {showNewForm && (
         <NewAccountForm
@@ -1288,6 +1388,249 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
           </div>
         </div>
       )}
+    </>
+  );
+}
+
+/* ── Baixa em lote ─────────────────────────────────────────────────────────────────────────
+   Fecha várias contas na mesma conta financeira e data. Cada conta é baixada pelo caminho
+   normal, então saldo, movimento e auditoria saem iguais aos da baixa manual. */
+function BaixaLoteForm({
+  contas,
+  bankAccounts,
+  formasPagamento,
+  onClose,
+  onSuccess
+}: {
+  contas: PayableSummary[];
+  bankAccounts: BankAccountSummary[];
+  formasPagamento?: FormaPagamentoOption[];
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const hoje = new Date().toISOString().slice(0, 10);
+  const [contaBancariaId, setContaBancariaId] = useState(bankAccounts[0]?.id ?? "");
+  const [dataPagamento, setDataPagamento] = useState(hoje);
+  const [formaPagamento, setFormaPagamento] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [erro, setErro] = useState("");
+  const [resultado, setResultado] = useState<{ baixadas: number; valorTotal: number; falhas: Array<{ descricao: string; erro: string }> } | null>(null);
+
+  const total = contas.reduce((acc, c) => acc + c.saldoNumber, 0);
+
+  async function confirmar() {
+    if (!contaBancariaId) {
+      setErro("Selecione a conta financeira que pagou.");
+      return;
+    }
+    setBusy(true);
+    setErro("");
+    try {
+      const r = await fetch("/api/erp/financeiro/contas-pagar/baixar-lote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contaPagarIds: contas.map((c) => c.id),
+          contaBancariaId,
+          dataPagamento,
+          formaPagamento: formaPagamento || null
+        })
+      });
+      const json = (await r.json()) as { baixadas?: number; valorTotal?: number; falhas?: Array<{ descricao: string; erro: string }>; error?: string };
+      if (!r.ok) throw new Error(json.error || "Falha na baixa em lote.");
+      setResultado({ baixadas: json.baixadas ?? 0, valorTotal: json.valorTotal ?? 0, falhas: json.falhas ?? [] });
+      if (!json.falhas?.length) onSuccess();
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Falha na baixa em lote.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <div className="drawer-bd" onClick={onClose} />
+      <aside className="drawer">
+        <header className="drawer-head">
+          <h2>Baixar {contas.length} conta(s)</h2>
+          <button type="button" className="btn-erp ghost xs" onClick={onClose}>Fechar</button>
+        </header>
+        <div className="drawer-body">
+        <div style={{ padding: "12px 20px", background: "var(--erp-bg)", borderBottom: "1px solid var(--erp-line)", fontSize: 12, color: "var(--erp-slate)" }}>
+          Total a baixar: <strong>{fmtBrl(total)}</strong>
+        </div>
+
+        {resultado ? (
+          <div>
+            <div className="alert success"><span className="lead">OK:</span><span>{resultado.baixadas} conta(s) baixada(s), {fmtBrl(resultado.valorTotal)}.</span></div>
+            {resultado.falhas.length > 0 && (
+              <div className="alert danger" style={{ marginTop: 8 }}>
+                <span className="lead">{resultado.falhas.length} não baixaram:</span>
+                <span>{resultado.falhas.map((f) => `${f.descricao || "conta"}: ${f.erro}`).join(" | ")}</span>
+              </div>
+            )}
+            <div style={{ padding: 16 }}>
+              <button type="button" className="btn-erp primary sm" onClick={onSuccess}>Fechar</button>
+            </div>
+          </div>
+        ) : (
+          <>
+            {erro && <div className="alert danger"><span className="lead">Erro:</span><span>{erro}</span></div>}
+            <div className="erp-form">
+              <label className="full">
+                <span>Conta financeira (de onde saiu o dinheiro)</span>
+                <select value={contaBancariaId} onChange={(e) => setContaBancariaId(e.target.value)}>
+                  <option value="">Selecione</option>
+                  {bankAccounts.map((b) => <option key={b.id} value={b.id}>{b.nome}</option>)}
+                </select>
+              </label>
+              <label>
+                <span>Data do pagamento</span>
+                <input type="date" value={dataPagamento} onChange={(e) => setDataPagamento(e.target.value)} />
+              </label>
+              <label>
+                <span>Forma (opcional)</span>
+                <select value={formaPagamento} onChange={(e) => setFormaPagamento(e.target.value)}>
+                  <option value="">Manter a de cada conta</option>
+                  {(formasPagamento ?? []).map((f) => <option key={f.id} value={f.nome}>{f.nome}</option>)}
+                </select>
+              </label>
+            </div>
+            <footer className="drawer-foot">
+              <button type="button" className="btn-erp ghost sm" onClick={onClose} disabled={busy}>Cancelar</button>
+              <button type="button" className="btn-erp primary sm" onClick={() => void confirmar()} disabled={busy}>
+                {busy ? "Baixando…" : `Baixar ${fmtBrl(total)}`}
+              </button>
+            </footer>
+          </>
+        )}
+        </div>
+      </aside>
+    </>
+  );
+}
+
+/* ── Editar / parcelar conta a pagar ───────────────────────────────────────────────────────
+   Nota de entrada sem duplicata no XML entra com vencimento do dia e forma "Informar": é aqui
+   que isso se corrige, sem apagar a conta e sem perder o vínculo com a entrada fiscal. */
+function EditarPayableForm({
+  conta,
+  bankAccounts,
+  formasPagamento,
+  onClose,
+  onSuccess
+}: {
+  conta: PayableSummary;
+  bankAccounts: BankAccountSummary[];
+  formasPagamento?: FormaPagamentoOption[];
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const [vencimento, setVencimento] = useState(conta.vencimentoRaw?.slice(0, 10) ?? "");
+  const [valor, setValor] = useState(String(conta.saldoNumber).replace(".", ","));
+  const [formaPagamento, setFormaPagamento] = useState(conta.formaPagamento === "—" ? "" : conta.formaPagamento);
+  const [contaBancariaId, setContaBancariaId] = useState("");
+  const [parcelas, setParcelas] = useState(1);
+  const [intervaloDias, setIntervaloDias] = useState(30);
+  const [busy, setBusy] = useState(false);
+  const [erro, setErro] = useState("");
+
+  async function salvar() {
+    setBusy(true);
+    setErro("");
+    try {
+      const resp = await fetch(`/api/erp/financeiro/contas-pagar/${conta.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          vencimento: vencimento || undefined,
+          valor: Number(String(valor).replace(/\./g, "").replace(",", ".")) || undefined,
+          formaPagamento: formaPagamento || null,
+          ...(contaBancariaId ? { contaBancariaId } : {})
+        })
+      });
+      const json = (await resp.json()) as { error?: string };
+      if (!resp.ok) throw new Error(json.error || "Falha ao salvar.");
+
+      if (parcelas > 1) {
+        const rp = await fetch(`/api/erp/financeiro/contas-pagar/${conta.id}/parcelar`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ parcelas, primeiroVencimento: vencimento || undefined, intervaloDias })
+        });
+        const jp = (await rp.json()) as { error?: string };
+        if (!rp.ok) throw new Error(jp.error || "Falha ao parcelar.");
+      }
+      onSuccess();
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Falha ao salvar.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <div className="drawer-bd" onClick={onClose} />
+      <aside className="drawer">
+        <header className="drawer-head">
+          <h2>Editar conta a pagar</h2>
+          <button type="button" className="btn-erp ghost xs" onClick={onClose}>Fechar</button>
+        </header>
+        <div className="drawer-body">
+        <div style={{ padding: "12px 20px", background: "var(--erp-bg)", borderBottom: "1px solid var(--erp-line)", fontSize: 12, color: "var(--erp-slate)" }}>
+          {conta.descricao} · {conta.parte}
+        </div>
+        {erro && <div className="alert danger"><span className="lead">Erro:</span><span>{erro}</span></div>}
+        <div className="erp-form">
+          <label>
+            <span>Vencimento</span>
+            <input type="date" value={vencimento} onChange={(e) => setVencimento(e.target.value)} />
+          </label>
+          <label>
+            <span>Valor</span>
+            <input inputMode="decimal" value={valor} onChange={(e) => setValor(e.target.value)} />
+          </label>
+          <label>
+            <span>Forma de pagamento</span>
+            <select value={formaPagamento} onChange={(e) => setFormaPagamento(e.target.value)}>
+              <option value="">Não informada</option>
+              {(formasPagamento ?? []).map((f) => <option key={f.id} value={f.nome}>{f.nome}</option>)}
+            </select>
+          </label>
+          <label>
+            <span>Conta financeira prevista</span>
+            <select value={contaBancariaId} onChange={(e) => setContaBancariaId(e.target.value)}>
+              <option value="">Manter</option>
+              {bankAccounts.map((b) => <option key={b.id} value={b.id}>{b.nome}</option>)}
+            </select>
+          </label>
+          <label>
+            <span>Dividir em parcelas</span>
+            <select value={parcelas} onChange={(e) => setParcelas(Number(e.target.value))}>
+              {Array.from({ length: 12 }, (_, i) => i + 1).map((n) => (
+                <option key={n} value={n}>{n === 1 ? "Não parcelar" : `${n}x`}</option>
+              ))}
+            </select>
+          </label>
+          {parcelas > 1 && (
+            <label>
+              <span>Intervalo entre parcelas (dias)</span>
+              <input inputMode="numeric" value={intervaloDias} onChange={(e) => setIntervaloDias(Number(e.target.value) || 30)} />
+            </label>
+          )}
+          <small className="field-hint full">
+            O valor informado é o total da conta; parcelando, ele é dividido e a 1ª parcela mantém o vínculo com a entrada fiscal.
+          </small>
+        </div>
+        <footer className="drawer-foot">
+          <button type="button" className="btn-erp ghost sm" onClick={onClose} disabled={busy}>Cancelar</button>
+          <button type="button" className="btn-erp primary sm" onClick={() => void salvar()} disabled={busy}>
+            {busy ? "Salvando…" : "Salvar"}
+          </button>
+        </footer>
+        </div>
+      </aside>
     </>
   );
 }

@@ -146,10 +146,20 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - **Teste**: `npx tsx scripts/test-apuracao-presumido.ts` - sem rede/banco, reproduz o 3T2026 real (receita R$ 827.850,39, base IRPJ R$ 109.225,28, IRPJ R$ 4.939,78, CSLL R$ 12.165,58) e cobre obra sem contrato, empreitada parcial e divergencia de retencao.
 - **Pendente**: PIS/COFINS cumulativo mensal, fechamento do trimestre com trava, export XLSX da apuracao e lancamento de "outras receitas".
 
+## Atualizacao operacional - 2026-10-29 - Correcao e baixa em lote de contas a pagar
+
+- **Problema real (VALLETECLAB)**: 85 entradas processadas geraram 86 contas a pagar (R$ 46.011,32), todas em ABERTO com forma "Informar" e vencimento na data do lancamento - o XML nao traz duplicata e as parcelas nao foram informadas no wizard. Com fechamento mensal, havia nota de junho ainda em aberto. O sistema so permitia EXCLUIR a conta (o que apaga o vinculo com a entrada fiscal) e baixar uma a uma.
+- **Editar** (`PATCH /api/erp/financeiro/contas-pagar/[id]`): vencimento, valor, forma, conta financeira, documento, fornecedor, classificacao e observacoes. So em conta ABERTA e sem baixa parcial; tudo auditado (`CONTA_PAGAR_EDITADA`, com antes/depois).
+- **Parcelar** (`POST .../[id]/parcelar`): quebra em 2 a 60 parcelas; a conta original vira a 1a (preserva vinculo com a entrada fiscal e classificacao) e as demais nascem com a mesma origem/documento. Divisao igual com o resto em centavos na 1a parcela; aceita valores manuais desde que fechem com o total.
+- **Baixa em lote** (`POST .../baixar-lote`): fecha o mes inteiro numa operacao, com conta financeira e data unicas. Cada conta passa pelo `settlePayable` normal - saldo, movimento financeiro e auditoria identicos a baixa manual. Falha em uma nao derruba as outras: volta na lista de falhas com o motivo. Limite de 300 por chamada.
+- **Tela**: selecao por linha (so contas em aberto) + "selecionar todas da pagina", barra com total selecionado, drawer de baixa em lote com resultado detalhado e drawer de editar/parcelar.
+- **Saldo inicial em moeda**: cadastro de conta financeira passou a usar o `MoneyInput` do design system (digitacao estilo banco, centavos da direita para a esquerda, prefixo R$), com parser pt-BR no envio.
+
 ## Histórico de commits/pushes
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
+| 2026-10-29 | A gerar | Em andamento | Financeiro: editar/parcelar conta a pagar em aberto (corrige a parcela unica que a entrada sem duplicata gera), baixa em LOTE para o fechamento mensal e saldo inicial da conta financeira com mascara de moeda. |
 | 2026-10-28 | A gerar | Em andamento | Pendentes do modulo Lucro Presumido/Real: fechamento do periodo com snapshot e alerta de divergencia, lancamento de outras receitas (financeira/aluguel/ganho de capital) com tratamento proprio em cada tributo, export CSV da apuracao para o contador e opcao de excluir o ICMS da base do PIS/COFINS (RE 574.706, desligada por padrao). |
 | 2026-10-28 | A gerar | Em andamento | PIS/COFINS mensal no modulo do Lucro Presumido/Real: cumulativo (0,65% e 3%) e nao cumulativo (1,65% e 7,6%) com credito das entradas, exclusao de monofasico/aliquota zero/ST da base, retencoes deduzidas e aba propria na tela. |
 | 2026-10-28 | A gerar | Em andamento | Modulo de apuracao do Lucro Presumido/Real (/erp/fiscal/presumido): receita classificada nota a nota com percentual de presuncao e base legal, contratos de obra definindo a modalidade da empreitada (8% x 32%), regime de caixa pelo contas a receber e conferencia da classificacao contra a retencao do tomador. |

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Button } from "@/components/shared/Button";
 import { StatusBadge } from "@/components/shared/StatusBadge";
+import { MoneyInput, formatMoneyBR } from "@/components/shared/NumericInputs";
 
 type Conta = { id: string; nome: string; tipo: string; banco: string; agencia: string; conta: string; chavePix: string; tipoChavePix: string; saldoInicial: number; ativo: boolean };
 
@@ -23,7 +24,7 @@ const TIPOS_CHAVE_PIX = [
 
 const TIPO_LABEL: Record<string, string> = Object.fromEntries(TIPOS.map((t) => [t.value, t.label]));
 
-const VAZIO = { nome: "", tipo: "CAIXA", banco: "", agencia: "", conta: "", chavePix: "", tipoChavePix: "", saldoInicial: "0" };
+const VAZIO = { nome: "", tipo: "CAIXA", banco: "", agencia: "", conta: "", chavePix: "", tipoChavePix: "", saldoInicial: "" };
 
 export function ContasFinanceirasManager({ initial }: { initial: Conta[] }) {
   const [contas, setContas] = useState(initial);
@@ -50,7 +51,7 @@ export function ContasFinanceirasManager({ initial }: { initial: Conta[] }) {
       conta: conta.conta,
       chavePix: conta.chavePix,
       tipoChavePix: conta.tipoChavePix,
-      saldoInicial: String(conta.saldoInicial)
+      saldoInicial: conta.saldoInicial ? formatMoneyBR(Math.round(Number(conta.saldoInicial) * 100)) : ""
     });
     setMessage("");
     setError("");
@@ -66,7 +67,8 @@ export function ContasFinanceirasManager({ initial }: { initial: Conta[] }) {
     setError("");
     setMessage("");
     try {
-      const payload = { ...form, saldoInicial: Number(form.saldoInicial.replace(",", ".")) || 0 };
+      // Campo em pt-BR ("1.234,56") -> numero.
+      const payload = { ...form, saldoInicial: Number(form.saldoInicial.replace(/\./g, "").replace(",", ".")) || 0 };
       const url = editingId ? `/api/erp/configuracoes/contas-financeiras/${editingId}` : "/api/erp/configuracoes/contas-financeiras";
       const response = await fetch(url, { method: editingId ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       const data = await response.json() as { error?: string };
@@ -139,7 +141,7 @@ export function ContasFinanceirasManager({ initial }: { initial: Conta[] }) {
         )}
         <label>
           Saldo inicial
-          <input value={form.saldoInicial} onChange={(e) => setForm({ ...form, saldoInicial: e.target.value })} placeholder="0,00" />
+          <MoneyInput value={form.saldoInicial} onChange={(v) => setForm({ ...form, saldoInicial: v })} />
         </label>
         {editingId && (
           <p className="field-hint full" style={{ color: "var(--erp-slate)", margin: "-4px 0 0" }}>
