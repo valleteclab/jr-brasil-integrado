@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { LinhaExtratoPendente, ResumoImportacao } from "@/domains/finance/application/ofx-use-cases";
+import type { ImportacaoResumo, LinhaExtratoPendente, ResumoImportacao } from "@/domains/finance/application/ofx-use-cases";
 
 /**
  * Importação do extrato/fatura em OFX e conciliação com os títulos do ERP.
@@ -42,6 +42,7 @@ export function ExtratoOfxWorkspace({ contas }: { contas: ContaOption[] }) {
   const [erro, setErro] = useState("");
   const [ok, setOk] = useState("");
   const [importacao, setImportacao] = useState<ResumoImportacao | null>(null);
+  const [importacoes, setImportacoes] = useState<ImportacaoResumo[]>([]);
   const inputArquivo = useRef<HTMLInputElement>(null);
 
   const carregar = useCallback(
@@ -50,10 +51,11 @@ export function ExtratoOfxWorkspace({ contas }: { contas: ContaOption[] }) {
       setErro("");
       try {
         const r = await fetch(`/api/erp/financeiro/ofx/linhas?conta=${encodeURIComponent(conta)}${todas ? "&todas=1" : ""}`);
-        const json = (await r.json()) as { linhas?: LinhaExtratoPendente[]; resumo?: Resumo; error?: string };
+        const json = (await r.json()) as { linhas?: LinhaExtratoPendente[]; resumo?: Resumo; importacoes?: ImportacaoResumo[]; error?: string };
         if (!r.ok) throw new Error(json.error || "Falha ao carregar o extrato.");
         setLinhas(json.linhas ?? []);
         setResumo(json.resumo ?? null);
+        setImportacoes(json.importacoes ?? []);
         // Pré-seleciona a melhor sugestão (menor diferença de dias) — o usuário confirma.
         const pre: Record<string, string> = {};
         for (const l of json.linhas ?? []) {
@@ -202,6 +204,24 @@ export function ExtratoOfxWorkspace({ contas }: { contas: ContaOption[] }) {
     }
   }
 
+  async function excluirImportacao(imp: ImportacaoResumo) {
+    if (!window.confirm(`Excluir a importação de "${imp.arquivo}" na conta ${imp.conta.nome}? Os ${imp.pendentes + imp.ignoradas} lançamento(s) importados saem do sistema — nenhuma baixa é desfeita, porque nenhum deles foi vinculado.`)) return;
+    setBusy(true);
+    setErro("");
+    setOk("");
+    try {
+      const r = await fetch(`/api/erp/financeiro/ofx/importar?id=${encodeURIComponent(imp.id)}`, { method: "DELETE" });
+      const json = (await r.json()) as { removidas?: number; error?: string };
+      if (!r.ok) throw new Error(json.error || "Falha ao excluir a importação.");
+      setOk(`Importação desfeita: ${json.removidas ?? 0} lançamento(s) removido(s). Pode importar de novo na conta certa.`);
+      await carregar();
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Falha ao excluir a importação.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const comSugestao = linhas.filter((l) => l.status === "PENDENTE" && escolhas[l.id]).length;
 
   return (
@@ -267,6 +287,41 @@ export function ExtratoOfxWorkspace({ contas }: { contas: ContaOption[] }) {
               <div className="kpi"><span className="kpi-label">Saldo no banco</span><strong>{brl(resumo.ultimaImportacao.saldoBanco)}</strong></div>
             )}
           </div>
+        </div>
+      )}
+
+      {importacoes.length > 0 && (
+        <div className="erp-card" style={{ marginBottom: 16 }}>
+          <div className="erp-card-head"><h3>Arquivos importados</h3></div>
+          <table className="erp-table">
+            <thead>
+              <tr><th>Arquivo</th><th>Conta</th><th>Período</th><th className="num">Lançamentos</th><th>Situação</th><th className="actions">Ações</th></tr>
+            </thead>
+            <tbody>
+              {importacoes.map((i) => (
+                <tr key={i.id}>
+                  <td><strong>{i.arquivo}</strong><small className="block-muted">importado em {dia(i.importadoEm)}</small></td>
+                  <td>{i.conta.nome}<small className="block-muted">{i.conta.tipo.toLowerCase()}</small></td>
+                  <td>{dia(i.periodo.inicio)} a {dia(i.periodo.fim)}</td>
+                  <td className="num">{i.novas}{i.duplicadas > 0 && <small className="block-muted">{i.duplicadas} já existiam</small>}</td>
+                  <td>
+                    {i.pendentes} pendente(s)
+                    {i.conciliadas > 0 && <small className="block-muted">{i.conciliadas} conciliada(s)</small>}
+                    {i.ignoradas > 0 && <small className="block-muted">{i.ignoradas} ignorada(s)</small>}
+                  </td>
+                  <td className="actions">
+                    {i.podeExcluir ? (
+                      <button type="button" className="btn-erp ghost sm" disabled={busy} onClick={() => void excluirImportacao(i)}>
+                        Excluir importação
+                      </button>
+                    ) : (
+                      <small className="block-muted">Tem linha conciliada: reabra antes de excluir.</small>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 

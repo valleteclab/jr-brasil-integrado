@@ -3,7 +3,7 @@ import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
 import { getSession, requireModulo } from "@/lib/auth/session";
 import { authErrorStatus } from "@/lib/auth/http";
 import { FinanceValidationError } from "@/domains/finance/application/finance-use-cases";
-import { OfxParseError, importarOfx } from "@/domains/finance/application/ofx-use-cases";
+import { OfxParseError, excluirImportacao, importarOfx } from "@/domains/finance/application/ofx-use-cases";
 
 export const dynamic = "force-dynamic";
 
@@ -32,5 +32,21 @@ export async function POST(request: Request) {
     const message = error instanceof Error ? error.message : "Erro ao importar o OFX.";
     const validacao = error instanceof OfxParseError || error instanceof FinanceValidationError;
     return NextResponse.json({ error: message }, { status: authErrorStatus(error, validacao ? 400 : 500) });
+  }
+}
+
+/** Desfaz uma importação inteira (arquivo na conta errada). Query: ?id=<importacaoId> */
+export async function DELETE(request: Request) {
+  try {
+    await requireModulo("financeiro");
+    const scope = await getDevelopmentTenantScope();
+    const session = await getSession();
+    const id = new URL(request.url).searchParams.get("id");
+    if (!id) return NextResponse.json({ error: "Informe a importação a excluir." }, { status: 400 });
+    const r = await excluirImportacao(scope, id, session?.usuarioId);
+    return NextResponse.json(r);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Erro ao excluir a importação.";
+    return NextResponse.json({ error: message }, { status: authErrorStatus(error, error instanceof FinanceValidationError ? 400 : 500) });
   }
 }

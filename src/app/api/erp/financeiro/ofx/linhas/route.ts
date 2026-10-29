@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
 import { requireModulo } from "@/lib/auth/session";
 import { authErrorStatus } from "@/lib/auth/http";
-import { linhasPendentes, resumoExtratoOfx } from "@/domains/finance/application/ofx-use-cases";
+import { linhasPendentes, listarImportacoes, resumoExtratoOfx } from "@/domains/finance/application/ofx-use-cases";
 
 export const dynamic = "force-dynamic";
 
@@ -15,11 +15,12 @@ export async function GET(request: Request) {
     const contaBancariaId = q.get("conta") || undefined;
     const de = q.get("de") ? new Date(q.get("de") as string) : undefined;
     const ate = q.get("ate") ? new Date(q.get("ate") as string) : undefined;
-    const [linhas, resumo] = await Promise.all([
+    const [linhas, resumo, importacoes] = await Promise.all([
       linhasPendentes(scope, { contaBancariaId, de, ate, incluirResolvidas: q.get("todas") === "1" }),
-      resumoExtratoOfx(scope, contaBancariaId)
+      resumoExtratoOfx(scope, contaBancariaId),
+      listarImportacoes(scope, contaBancariaId)
     ]);
-    return NextResponse.json({ linhas, resumo });
+    return NextResponse.json({ linhas, resumo, importacoes });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro ao listar o extrato.";
     return NextResponse.json({ error: message }, { status: authErrorStatus(error, 500) });

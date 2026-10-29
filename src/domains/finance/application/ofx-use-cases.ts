@@ -61,7 +61,13 @@ export async function importarOfx(
     );
   }
   if (extrato.tipoConta === "CARTAO" && conta.tipo !== "CARTAO") {
-    avisos.push(`O arquivo é de FATURA DE CARTÃO e a conta "${conta.nome}" está cadastrada como ${conta.tipo.toLowerCase()}.`);
+    avisos.push(`O arquivo é de FATURA DE CARTÃO e a conta "${conta.nome}" está cadastrada como ${conta.tipo.toLowerCase()}. Confira antes de conciliar.`);
+  }
+  if (extrato.tipoConta !== "CARTAO" && conta.tipo === "CARTAO") {
+    avisos.push(
+      `O arquivo é EXTRATO DE CONTA${extrato.banco ? ` do banco ${extrato.banco}` : ""}${extrato.conta ? ` (conta ${extrato.conta})` : ""} ` +
+        `e você importou no cartão "${conta.nome}". Se errou a conta, use "Excluir importação" e importe de novo na conta certa.`
+    );
   }
 
   const importacao = await prisma.extratoOfxImportacao.create({
@@ -366,6 +372,86 @@ export async function reabrirLinha(scope: TenantScope, linhaId: string, usuarioI
     })
   );
   return atualizada;
+}
+
+export type ImportacaoResumo = {
+  id: string;
+  arquivo: string;
+  conta: { id: string; nome: string; tipo: string };
+  periodo: { inicio: string | null; fim: string | null };
+  importadoEm: string;
+  novas: number;
+  duplicadas: number;
+  pendentes: number;
+  conciliadas: number;
+  ignoradas: number;
+  /** Só pode excluir enquanto nenhuma linha virou baixa. */
+  podeExcluir: boolean;
+};
+
+/** Importações recentes da empresa — é por aqui que se desfaz um arquivo importado na conta errada. */
+export async function listarImportacoes(scope: TenantScope, contaBancariaId?: string): Promise<ImportacaoResumo[]> {
+  const importacoes = await prisma.extratoOfxImportacao.findMany({
+    where: { ...scopedByTenantCompany(scope), ...(contaBancariaId ? { contaBancariaId } : {}) },
+    orderBy: { criadoEm: "desc" },
+    take: 20,
+    include: {
+      contaBancaria: { select: { id: true, nome: true, tipo: true } },
+      linhas: { select: { status: true } }
+    }
+  });
+  return importacoes.map((i) => {
+    const conciliadas = i.linhas.filter((l) => l.status === "CONCILIADA").length;
+    return {
+      id: i.id,
+      arquivo: i.arquivoNome,
+      conta: i.contaBancaria,
+      periodo: { inicio: i.dataInicial?.toISOString() ?? null, fim: i.dataFinal?.toISOString() ?? null },
+      importadoEm: i.criadoEm.toISOString(),
+      novas: i.linhasNovas,
+      duplicadas: i.linhasDuplicadas,
+      pendentes: i.linhas.filter((l) => l.status === "PENDENTE").length,
+      conciliadas,
+      ignoradas: i.linhas.filter((l) => l.status === "IGNORADA").length,
+      podeExcluir: conciliadas === 0
+    };
+  });
+}
+
+/**
+ * Desfaz uma importação inteira — o caso real é arquivo importado na conta errada. Só remove
+ * enquanto NENHUMA linha virou baixa: linha conciliada já mexeu no saldo de um título, e desfazer
+ * isso por aqui esconderia o estorno. Nesse caso a mensagem diz quantas reabrir primeiro.
+ */
+export async function excluirImportacao(scope: TenantScope, importacaoId: string, usuarioId?: string) {
+  const importacao = await prisma.extratoOfxImportacao.findFirst({
+    where: { id: importacaoId, ...scopedByTenantCompany(scope) },
+    include: { linhas: { select: { id: true, status: true } }, contaBancaria: { select: { nome: true } } }
+  });
+  if (!importacao) throw new FinanceValidationError("Importação não encontrada nesta empresa.");
+
+  const conciliadas = importacao.linhas.filter((l) => l.status === "CONCILIADA").length;
+  if (conciliadas > 0) {
+    throw new FinanceValidationError(
+      `${conciliadas} lançamento(s) desta importação já foram vinculados a títulos. Reabra essas linhas (e estorne as baixas, se for o caso) antes de excluir a importação.`
+    );
+  }
+
+  const removidas = importacao.linhas.length;
+  // As linhas saem junto pelo onDelete: Cascade do relacionamento.
+  await prisma.extratoOfxImportacao.delete({ where: { id: importacao.id } });
+
+  await prisma.$transaction(async (tx) =>
+    createAuditLog(tx, {
+      scope,
+      usuarioId,
+      entidade: "ExtratoOfxImportacao",
+      entidadeId: importacao.id,
+      acao: "EXTRATO_OFX_IMPORTACAO_EXCLUIDA",
+      payload: { arquivo: importacao.arquivoNome, conta: importacao.contaBancaria.nome, linhasRemovidas: removidas }
+    })
+  );
+  return { removidas, arquivo: importacao.arquivoNome };
 }
 
 /** Resumo por conta: quanto ainda está pendente e qual o saldo declarado na última importação. */
