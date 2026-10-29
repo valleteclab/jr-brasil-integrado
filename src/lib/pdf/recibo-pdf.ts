@@ -54,39 +54,50 @@ function logoBuffer(dataUrl?: string | null): Buffer | undefined {
   }
 }
 
-/** Desenha uma via do recibo a partir de `topo`; devolve a altura usada. */
+/**
+ * Desenha uma via do recibo a partir de `topo` e devolve a altura usada.
+ *
+ * O layout FLUI: cada bloco começa onde o anterior terminou (`doc.y`), e a moldura só é traçada
+ * no fim, com a altura real. Com posição fixa, um "referente a" mais longo passava por cima da
+ * linha de assinatura.
+ */
 function via(doc: PDFKit.PDFDocument, input: ReciboPdfInput, topo: number, rotulo: string): number {
   const logo = logoBuffer(input.empresa.logoDataUrl);
-  let y = topo;
+  const padding = 12;
+  const xConteudo = M + padding;
+  const larguraConteudo = UTIL - padding * 2;
 
-  doc.save().rect(M, y, UTIL, 150).strokeColor(LINHA).lineWidth(1).stroke().restore();
-
-  // Cabeçalho: logo + emitente (quem paga) + número do recibo.
+  // ── Cabeçalho: emitente (quem paga) à esquerda, número e valor à direita ──
+  let y = topo + padding;
   if (logo) {
     try {
-      doc.image(logo, M + 10, y + 10, { fit: [70, 34] });
+      doc.image(logo, xConteudo, y, { fit: [70, 32] });
     } catch {
       /* imagem inválida não derruba o recibo */
     }
   }
-  const xTexto = logo ? M + 90 : M + 12;
-  doc.fillColor(INK).font("Helvetica-Bold").fontSize(11).text(input.empresa.razaoSocial, xTexto, y + 12, { width: UTIL - 180 });
-  doc.font("Helvetica").fontSize(8.5).fillColor(MUTED);
+  const xTexto = logo ? xConteudo + 80 : xConteudo;
+  const larguraEmitente = larguraConteudo - (logo ? 80 : 0) - 160;
+
+  doc.fillColor(INK).font("Helvetica-Bold").fontSize(11).text(input.empresa.razaoSocial, xTexto, y, { width: larguraEmitente });
   const linhaEmpresa = [input.empresa.cnpj ? `CNPJ ${formatDocumento(input.empresa.cnpj)}` : "", input.empresa.endereco ?? ""]
     .filter(Boolean)
     .join(" · ");
-  if (linhaEmpresa) doc.text(linhaEmpresa, xTexto, y + 27, { width: UTIL - 180 });
+  if (linhaEmpresa) {
+    doc.font("Helvetica").fontSize(8).fillColor(MUTED).text(linhaEmpresa, xTexto, doc.y + 1, { width: larguraEmitente });
+  }
+  const fimEmitente = doc.y;
 
-  doc.font("Helvetica-Bold").fontSize(13).fillColor(INK).text("RECIBO", M + UTIL - 150, y + 12, { width: 140, align: "right" });
-  doc.font("Helvetica").fontSize(9).fillColor(MUTED).text(`Nº ${String(input.numero).padStart(5, "0")}`, M + UTIL - 150, y + 29, { width: 140, align: "right" });
-  doc.font("Helvetica-Bold").fontSize(14).fillColor(INK).text(brl(input.valor), M + UTIL - 150, y + 44, { width: 140, align: "right" });
+  const xDireita = M + UTIL - padding - 150;
+  doc.font("Helvetica-Bold").fontSize(13).fillColor(INK).text("RECIBO", xDireita, y, { width: 150, align: "right" });
+  doc.font("Helvetica").fontSize(9).fillColor(MUTED).text(`Nº ${String(input.numero).padStart(5, "0")}`, xDireita, doc.y + 1, { width: 150, align: "right" });
+  doc.font("Helvetica-Bold").fontSize(15).fillColor(INK).text(brl(input.valor), xDireita, doc.y + 3, { width: 150, align: "right" });
 
-  // Corpo: a declaração de recebimento.
-  y += 70;
-  doc.moveTo(M + 10, y).lineTo(M + UTIL - 10, y).strokeColor(LINHA).stroke();
+  y = Math.max(fimEmitente, doc.y, topo + 44) + 10;
+  doc.moveTo(xConteudo, y).lineTo(M + UTIL - padding, y).strokeColor(LINHA).lineWidth(1).stroke();
   y += 10;
 
-  const doc_fav = input.favorecido.documento ? `, inscrito(a) no CPF/CNPJ sob o nº ${formatDocumento(input.favorecido.documento)}` : "";
+  // ── Declaração de recebimento ──
   const texto =
     `Recebi de ${input.empresa.razaoSocial}${input.empresa.cnpj ? ` (CNPJ ${formatDocumento(input.empresa.cnpj)})` : ""} ` +
     `a importância de ${brl(input.valor)} (${valorPorExtenso(input.valor)}), ` +
@@ -94,29 +105,35 @@ function via(doc: PDFKit.PDFDocument, input: ReciboPdfInput, topo: number, rotul
     `${input.formaPagamento ? `, pago(a) via ${input.formaPagamento}` : ""}, ` +
     `dando plena e geral quitação pelo valor recebido.`;
 
-  doc.font("Helvetica").fontSize(10).fillColor(INK).text(texto, M + 12, y, { width: UTIL - 24, align: "justify", lineGap: 2 });
-  y = doc.y + 8;
+  doc.font("Helvetica").fontSize(10).fillColor(INK).text(texto, xConteudo, y, { width: larguraConteudo, align: "justify", lineGap: 2 });
+  y = doc.y + 6;
 
   if (input.observacao) {
-    doc.font("Helvetica-Oblique").fontSize(8.5).fillColor(MUTED).text(input.observacao, M + 12, y, { width: UTIL - 24 });
+    doc.font("Helvetica-Oblique").fontSize(8.5).fillColor(MUTED).text(input.observacao, xConteudo, y, { width: larguraConteudo });
     y = doc.y + 6;
   }
 
-  // Local, data e assinatura.
+  // ── Local e data ──
   const local = input.cidade ? `${input.cidade}, ` : "";
-  doc.font("Helvetica").fontSize(9.5).fillColor(INK).text(`${local}${dataPorExtenso(input.dataPagamento)}.`, M + 12, y, { width: UTIL - 24 });
+  doc.font("Helvetica").fontSize(9.5).fillColor(INK).text(`${local}${dataPorExtenso(input.dataPagamento)}.`, xConteudo, y, { width: larguraConteudo });
+  y = doc.y + 30; // respiro antes da assinatura
 
-  const yAssinatura = topo + 118;
-  doc.moveTo(M + 90, yAssinatura).lineTo(M + UTIL - 90, yAssinatura).strokeColor("#6b7280").stroke();
-  doc.font("Helvetica-Bold").fontSize(9.5).fillColor(INK).text(input.favorecido.nome, M + 90, yAssinatura + 5, { width: UTIL - 180, align: "center" });
+  // ── Assinatura ──
+  const larguraAssinatura = Math.min(300, larguraConteudo);
+  const xAssinatura = M + (UTIL - larguraAssinatura) / 2;
+  doc.moveTo(xAssinatura, y).lineTo(xAssinatura + larguraAssinatura, y).strokeColor("#6b7280").stroke();
+  doc.font("Helvetica-Bold").fontSize(9.5).fillColor(INK).text(input.favorecido.nome, xAssinatura, y + 4, { width: larguraAssinatura, align: "center" });
   if (input.favorecido.documento) {
     doc.font("Helvetica").fontSize(8.5).fillColor(MUTED)
-      .text(`CPF/CNPJ ${formatDocumento(input.favorecido.documento)}${doc_fav ? "" : ""}`, M + 90, yAssinatura + 18, { width: UTIL - 180, align: "center" });
+      .text(`CPF/CNPJ ${formatDocumento(input.favorecido.documento)}`, xAssinatura, doc.y + 1, { width: larguraAssinatura, align: "center" });
   }
+  y = doc.y + 6;
 
-  doc.font("Helvetica").fontSize(7.5).fillColor(MUTED).text(rotulo, M + 10, topo + 138, { width: UTIL - 20, align: "right" });
-
-  return 150;
+  // ── Rodapé da via e moldura com a altura real ──
+  doc.font("Helvetica").fontSize(7.5).fillColor(MUTED).text(rotulo, xConteudo, y, { width: larguraConteudo, align: "right" });
+  const altura = doc.y + padding - topo;
+  doc.save().rect(M, topo, UTIL, altura).strokeColor(LINHA).lineWidth(1).stroke().restore();
+  return altura;
 }
 
 export async function gerarReciboPdf(input: ReciboPdfInput): Promise<Buffer> {
@@ -127,10 +144,10 @@ export async function gerarReciboPdf(input: ReciboPdfInput): Promise<Buffer> {
 
   const altura = via(doc, input, M, "1ª via — de quem recebeu");
 
-  // Linha de corte entre as vias.
-  const yCorte = M + altura + 26;
+  // Linha de corte entre as vias, abaixo da altura REAL da primeira.
+  const yCorte = M + altura + 24;
   doc.save().dash(3, { space: 3 }).moveTo(M, yCorte).lineTo(M + UTIL, yCorte).strokeColor("#9aa1ab").stroke().undash().restore();
-  doc.font("Helvetica").fontSize(7).fillColor(MUTED).text("✂ corte aqui", M, yCorte + 3, { width: UTIL, align: "center" });
+  doc.font("Helvetica").fontSize(7).fillColor(MUTED).text("corte aqui", M, yCorte + 3, { width: UTIL, align: "center" });
 
   via(doc, input, yCorte + 18, "2ª via — de quem pagou");
 

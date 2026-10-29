@@ -13,7 +13,7 @@ import type { ImportacaoResumo, LinhaExtratoPendente, ResumoImportacao } from "@
 
 type ContaOption = { id: string; nome: string; tipo: string };
 type ParteOption = { id: string; nome: string };
-type ClassificacaoOption = { id: string; nome: string; tipo: string };
+type ClassificacaoOption = { id: string; nome: string; tipo: string; grupo?: string | null };
 
 type Resumo = {
   pendentes: number;
@@ -471,6 +471,7 @@ function CriarLancamentoForm({
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState("");
   // Cadastro na hora: o extrato quase sempre traz quem recebeu/pagou antes de existir cadastro.
+  const [grupoNovo, setGrupoNovo] = useState(false);
   const [novaParte, setNovaParte] = useState(false);
   const [parteNome, setParteNome] = useState(linha.descricao.slice(0, 60));
   const [parteDocumento, setParteDocumento] = useState("");
@@ -481,6 +482,9 @@ function CriarLancamentoForm({
   const [listaClasses, setListaClasses] = useState(classificacoes);
 
   const opcoesClassificacao = listaClasses.filter((c) => (ehSaida ? c.tipo === "DESPESA" : c.tipo === "RECEITA"));
+  // Grupos que já existem no plano de classificação (do mesmo tipo): evita criar "Despesas",
+  // "despesa" e "DESPESAS" como três blocos diferentes no fechamento mensal.
+  const gruposExistentes = [...new Set(opcoesClassificacao.map((c) => c.grupo).filter((g): g is string => Boolean(g)))].sort();
 
   /** Cadastra o fornecedor/cliente informado e devolve o id — usado antes de criar o lançamento. */
   async function cadastrarParte(): Promise<string> {
@@ -506,15 +510,16 @@ function CriarLancamentoForm({
   async function cadastrarClasse(): Promise<string> {
     const nome = classeNome.trim();
     if (!nome) throw new Error("Informe o nome da classificação.");
+    const grupo = classeGrupo.trim() || gruposExistentes[0] || (ehSaida ? "Despesas" : "Receitas");
     const r = await fetch("/api/erp/financeiro/classificacoes", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ nome, grupo: classeGrupo.trim() || (ehSaida ? "Despesas" : "Receitas"), tipo: ehSaida ? "DESPESA" : "RECEITA" })
+      body: JSON.stringify({ nome, grupo, tipo: ehSaida ? "DESPESA" : "RECEITA" })
     });
     const json = (await r.json()) as { id?: string; classificacao?: { id: string }; error?: string };
     const id = json.id ?? json.classificacao?.id;
     if (!r.ok || !id) throw new Error(json.error || "Falha ao criar a classificação.");
-    setListaClasses((prev) => [{ id, nome, tipo: ehSaida ? "DESPESA" : "RECEITA" }, ...prev]);
+    setListaClasses((prev) => [{ id, nome, tipo: ehSaida ? "DESPESA" : "RECEITA", grupo }, ...prev]);
     return id;
   }
 
@@ -617,7 +622,30 @@ function CriarLancamentoForm({
                 </label>
                 <label>
                   <span>Grupo</span>
-                  <input value={classeGrupo} onChange={(e) => setClasseGrupo(e.target.value)} placeholder={ehSaida ? "Despesas" : "Receitas"} />
+                  {gruposExistentes.length > 0 && !grupoNovo ? (
+                    <select
+                      value={classeGrupo}
+                      onChange={(e) => {
+                        if (e.target.value === "__novo__") {
+                          setGrupoNovo(true);
+                          setClasseGrupo("");
+                        } else {
+                          setClasseGrupo(e.target.value);
+                        }
+                      }}
+                    >
+                      <option value="">Selecione o grupo</option>
+                      {gruposExistentes.map((g) => <option key={g} value={g}>{g}</option>)}
+                      <option value="__novo__">+ criar um grupo novo…</option>
+                    </select>
+                  ) : (
+                    <input
+                      value={classeGrupo}
+                      onChange={(e) => setClasseGrupo(e.target.value)}
+                      placeholder={ehSaida ? "Ex.: Custos operacionais" : "Ex.: Receitas de serviços"}
+                      autoFocus={grupoNovo}
+                    />
+                  )}
                 </label>
               </>
             )}

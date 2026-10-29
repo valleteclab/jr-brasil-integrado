@@ -34,8 +34,8 @@ export default async function ExtratoOfxPage() {
     prisma.classificacaoFinanceira
       .findMany({
         where: { tenantId: scope.tenantId, empresaId: scope.empresaId, ativo: true },
-        select: { id: true, nome: true, tipo: true },
-        orderBy: { nome: "asc" }
+        select: { id: true, nome: true, tipo: true, grupo: true },
+        orderBy: [{ grupo: "asc" }, { nome: "asc" }]
       })
       .catch(() => [])
   ]);
