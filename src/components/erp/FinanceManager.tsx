@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { PayableSummary, ReceivableSummary, BankAccountSummary, ClienteOption, MaquinaCartaoOption } from "@/lib/services/finance";
 import { EnviarDocumentoModal } from "./EnviarDocumentoModal";
@@ -528,6 +528,7 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
   const [selecionados, setSelecionados] = useState<string[]>([]);
   const [loteAberto, setLoteAberto] = useState(false);
   const [editando, setEditando] = useState<PayableSummary | null>(null);
+  const [recibo, setRecibo] = useState<PayableSummary | null>(null);
   const [payables, setPayables] = useState(initialPayables);
   const [receivables, setReceivables] = useState(initialReceivables);
   const [query, setQuery] = useState("");
@@ -1197,6 +1198,16 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
                       Editar
                     </button>
                   )}
+                  {aba === "pagar" && (
+                    <button
+                      type="button"
+                      className="btn-erp ghost sm"
+                      title="Gerar recibo de pagamento (despesa sem nota fiscal)"
+                      onClick={() => setRecibo(r as PayableSummary)}
+                    >
+                      Recibo
+                    </button>
+                  )}
                   {isAdmin && aba === "pagar" && (r as PayableSummary).canDelete && (
                     <button
                       type="button"
@@ -1325,6 +1336,15 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
             setEditando(null);
             router.refresh();
           }}
+        />
+      )}
+
+      {/* Recibo de pagamento (despesa sem nota fiscal) */}
+      {recibo && (
+        <ReciboForm
+          conta={recibo}
+          formasPagamento={formasPagamento}
+          onClose={() => setRecibo(null)}
         />
       )}
 
@@ -1629,6 +1649,138 @@ function EditarPayableForm({
             {busy ? "Salvando…" : "Salvar"}
           </button>
         </footer>
+        </div>
+      </aside>
+    </>
+  );
+}
+
+/* ── Recibo de pagamento ───────────────────────────────────────────────────────────────────
+   Para a despesa que não tem nota fiscal (autônomo, aluguel, acordo). Emite uma vez por conta,
+   com número sequencial da empresa, e reimprime sempre igual — por isso os dados do favorecido
+   ficam congelados na emissão. */
+function ReciboForm({
+  conta,
+  formasPagamento,
+  onClose
+}: {
+  conta: PayableSummary;
+  formasPagamento?: FormaPagamentoOption[];
+  onClose: () => void;
+}) {
+  const hoje = new Date().toISOString().slice(0, 10);
+  const [favorecidoNome, setFavorecidoNome] = useState(conta.parte !== "—" ? conta.parte : "");
+  const [favorecidoDocumento, setFavorecidoDocumento] = useState("");
+  const [referente, setReferente] = useState(conta.descricao);
+  const [dataPagamento, setDataPagamento] = useState(hoje);
+  const [formaPagamento, setFormaPagamento] = useState(conta.formaPagamento === "—" ? "" : conta.formaPagamento);
+  const [observacao, setObservacao] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [erro, setErro] = useState("");
+  const [emitido, setEmitido] = useState<{ id: string; numero: number } | null>(null);
+
+  useEffect(() => {
+    // Conta que já tem recibo reabre o mesmo documento, em vez de emitir outro número.
+    void (async () => {
+      try {
+        const r = await fetch(`/api/erp/financeiro/contas-pagar/${conta.id}/recibo`);
+        const json = (await r.json()) as { recibo?: { id: string; numero: number } | null };
+        if (json.recibo) setEmitido({ id: json.recibo.id, numero: json.recibo.numero });
+      } catch {
+        /* sem recibo ainda */
+      }
+    })();
+  }, [conta.id]);
+
+  async function emitir() {
+    if (!favorecidoNome.trim()) {
+      setErro("Informe quem recebeu o pagamento.");
+      return;
+    }
+    setBusy(true);
+    setErro("");
+    try {
+      const r = await fetch(`/api/erp/financeiro/contas-pagar/${conta.id}/recibo`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ favorecidoNome, favorecidoDocumento, referente, dataPagamento, formaPagamento, observacao })
+      });
+      const json = (await r.json()) as { recibo?: { id: string; numero: number }; error?: string };
+      if (!r.ok || !json.recibo) throw new Error(json.error || "Falha ao emitir o recibo.");
+      setEmitido(json.recibo);
+      window.open(`/api/erp/financeiro/recibos/${json.recibo.id}/pdf`, "_blank", "noopener");
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Falha ao emitir o recibo.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <div className="drawer-bd" onClick={onClose} />
+      <aside className="drawer">
+        <header className="drawer-head">
+          <h2>Recibo de pagamento</h2>
+          <button type="button" className="btn-erp ghost xs" onClick={onClose}>Fechar</button>
+        </header>
+        <div className="drawer-body">
+          <div style={{ padding: "12px 20px", background: "var(--erp-bg)", borderBottom: "1px solid var(--erp-line)", fontSize: 12, color: "var(--erp-slate)" }}>
+            {conta.descricao} · <strong>{conta.valor}</strong>
+          </div>
+          {erro && <div className="alert danger" style={{ margin: "12px 20px 0" }}><span className="lead">Erro:</span><span>{erro}</span></div>}
+          {emitido && (
+            <div className="alert success" style={{ margin: "12px 20px 0" }}>
+              <span className="lead">Recibo nº {String(emitido.numero).padStart(5, "0")}:</span>
+              <span>
+                já emitido para esta conta.{" "}
+                <a href={`/api/erp/financeiro/recibos/${emitido.id}/pdf`} target="_blank" rel="noopener noreferrer">Abrir PDF</a>
+              </span>
+            </div>
+          )}
+          {!emitido && (
+            <div className="erp-form">
+              <label className="full">
+                <span>Quem recebeu <span className="required">*</span></span>
+                <input value={favorecidoNome} onChange={(e) => setFavorecidoNome(e.target.value)} placeholder="Nome de quem recebeu" />
+              </label>
+              <label>
+                <span>CPF/CNPJ de quem recebeu</span>
+                <input value={favorecidoDocumento} onChange={(e) => setFavorecidoDocumento(e.target.value)} placeholder="Opcional, mas recomendado" />
+              </label>
+              <label>
+                <span>Data do pagamento</span>
+                <input type="date" value={dataPagamento} onChange={(e) => setDataPagamento(e.target.value)} />
+              </label>
+              <label className="full">
+                <span>Referente a</span>
+                <input value={referente} onChange={(e) => setReferente(e.target.value)} placeholder="Serviço prestado, aluguel de..." />
+              </label>
+              <label>
+                <span>Forma de pagamento</span>
+                <select value={formaPagamento} onChange={(e) => setFormaPagamento(e.target.value)}>
+                  <option value="">Não informar</option>
+                  {(formasPagamento ?? []).map((f) => <option key={f.id} value={f.nome}>{f.nome}</option>)}
+                </select>
+              </label>
+              <label className="full">
+                <span>Observação (opcional)</span>
+                <input value={observacao} onChange={(e) => setObservacao(e.target.value)} />
+              </label>
+              <small className="field-hint full">
+                O PDF sai com duas vias na mesma folha (uma para quem recebeu assinar e outra para o seu arquivo),
+                com o valor por extenso e a quitação.
+              </small>
+            </div>
+          )}
+          <footer className="drawer-foot">
+            <button type="button" className="btn-erp ghost sm" onClick={onClose} disabled={busy}>Fechar</button>
+            {!emitido && (
+              <button type="button" className="btn-erp primary sm" onClick={() => void emitir()} disabled={busy}>
+                {busy ? "Emitindo…" : "Emitir e abrir PDF"}
+              </button>
+            )}
+          </footer>
         </div>
       </aside>
     </>

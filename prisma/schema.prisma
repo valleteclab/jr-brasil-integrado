@@ -505,6 +505,7 @@ model Empresa {
   apuracoesFechadas         ApuracaoFiscalFechada[]
   extratosOfx               ExtratoOfxImportacao[]
   linhasExtratoOfx          ExtratoOfxLinha[]
+  recibosPagamento          ReciboPagamento[]
 
   @@unique([tenantId, cnpj])
   @@index([tenantId])
@@ -657,6 +658,36 @@ model UsoIaMensal {
   atualizadoEm DateTime @updatedAt
 
   @@unique([tenantId, competencia])
+}
+
+/// Recibo de pagamento emitido pela empresa para quem recebeu — serve para a despesa que não
+/// tem nota fiscal (autônomo, aluguel, acordo). O número é sequencial POR EMPRESA e o recibo
+/// guarda os dados do momento da emissão, para reimprimir sempre igual.
+model ReciboPagamento {
+  id                  String      @id @default(cuid())
+  tenantId            String
+  empresaId           String
+  empresa             Empresa     @relation(fields: [empresaId], references: [id])
+  numero              Int
+  contaPagarId        String?
+  contaPagar          ContaPagar? @relation(fields: [contaPagarId], references: [id])
+  gastoId             String?
+  /// Quem recebeu (nome e CPF/CNPJ), congelados na emissão.
+  favorecidoNome      String
+  favorecidoDocumento String?
+  valor               Decimal     @db.Decimal(14, 2)
+  /// "Referente a" — o que está sendo pago.
+  referente           String      @db.Text
+  dataPagamento       DateTime
+  formaPagamento      String?
+  cidade              String?
+  observacao          String?     @db.Text
+  usuarioId           String?
+  criadoEm            DateTime    @default(now())
+  atualizadoEm        DateTime    @updatedAt
+
+  @@unique([tenantId, empresaId, numero])
+  @@index([tenantId, empresaId, criadoEm])
 }
 
 /// Situação de uma linha do extrato importado por OFX.
@@ -2466,6 +2497,7 @@ model ContaPagar {
   criadoEm               DateTime                 @default(now())
   atualizadoEm           DateTime                 @updatedAt
   linhasExtratoOfx       ExtratoOfxLinha[]
+  recibos                ReciboPagamento[]
 
   // Idempotência da geração automática: uma ocorrência por recorrência+competência.
   @@unique([recorrenciaId, recorrenciaCompetencia])

@@ -470,25 +470,74 @@ function CriarLancamentoForm({
   const [classificacaoId, setClassificacaoId] = useState("");
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState("");
+  // Cadastro na hora: o extrato quase sempre traz quem recebeu/pagou antes de existir cadastro.
+  const [novaParte, setNovaParte] = useState(false);
+  const [parteNome, setParteNome] = useState(linha.descricao.slice(0, 60));
+  const [parteDocumento, setParteDocumento] = useState("");
+  const [novaClasse, setNovaClasse] = useState(false);
+  const [classeNome, setClasseNome] = useState("");
+  const [classeGrupo, setClasseGrupo] = useState("");
+  const [listaPartes, setListaPartes] = useState(ehSaida ? fornecedores : clientes);
+  const [listaClasses, setListaClasses] = useState(classificacoes);
 
-  const opcoesClassificacao = classificacoes.filter((c) => (ehSaida ? c.tipo === "DESPESA" : c.tipo === "RECEITA"));
+  const opcoesClassificacao = listaClasses.filter((c) => (ehSaida ? c.tipo === "DESPESA" : c.tipo === "RECEITA"));
+
+  /** Cadastra o fornecedor/cliente informado e devolve o id — usado antes de criar o lançamento. */
+  async function cadastrarParte(): Promise<string> {
+    const nome = parteNome.trim();
+    if (!nome) throw new Error("Informe o nome de quem está recebendo.");
+    const documento = parteDocumento.replace(/\D/g, "");
+    if (!documento) throw new Error("Informe o CPF/CNPJ para cadastrar — é obrigatório no cadastro.");
+
+    const url = ehSaida ? "/api/erp/fornecedores" : "/api/erp/clientes";
+    const r = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ razaoSocial: nome, nomeFantasia: nome, documento })
+    });
+    const json = (await r.json()) as { id?: string; cliente?: { id: string }; error?: string };
+    const id = json.id ?? json.cliente?.id;
+    if (!r.ok || !id) throw new Error(json.error || "Falha ao cadastrar.");
+    setListaPartes((prev) => [{ id, nome }, ...prev]);
+    return id;
+  }
+
+  /** Cria a classificação financeira e devolve o id. */
+  async function cadastrarClasse(): Promise<string> {
+    const nome = classeNome.trim();
+    if (!nome) throw new Error("Informe o nome da classificação.");
+    const r = await fetch("/api/erp/financeiro/classificacoes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ nome, grupo: classeGrupo.trim() || (ehSaida ? "Despesas" : "Receitas"), tipo: ehSaida ? "DESPESA" : "RECEITA" })
+    });
+    const json = (await r.json()) as { id?: string; classificacao?: { id: string }; error?: string };
+    const id = json.id ?? json.classificacao?.id;
+    if (!r.ok || !id) throw new Error(json.error || "Falha ao criar a classificação.");
+    setListaClasses((prev) => [{ id, nome, tipo: ehSaida ? "DESPESA" : "RECEITA" }, ...prev]);
+    return id;
+  }
 
   async function salvar() {
-    if (!ehSaida && !parteId) {
-      setErro("Para um crédito, escolha o cliente do recebimento.");
+    if (!ehSaida && !parteId && !novaParte) {
+      setErro("Para um crédito, escolha o cliente do recebimento ou cadastre um.");
       return;
     }
     setBusy(true);
     setErro("");
     try {
+      // Cadastros pedidos na hora entram primeiro; o lançamento já nasce vinculado a eles.
+      const parteFinal = novaParte ? await cadastrarParte() : parteId;
+      const classeFinal = novaClasse ? await cadastrarClasse() : classificacaoId;
+
       const r = await fetch("/api/erp/financeiro/ofx/criar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           linhaId: linha.id,
           descricao,
-          ...(ehSaida ? { fornecedorId: parteId || null } : { clienteId: parteId }),
-          classificacaoId: classificacaoId || null
+          ...(ehSaida ? { fornecedorId: parteFinal || null } : { clienteId: parteFinal }),
+          classificacaoId: classeFinal || null
         })
       });
       const json = (await r.json()) as { error?: string };
@@ -519,21 +568,58 @@ function CriarLancamentoForm({
               <span>Descrição</span>
               <input value={descricao} onChange={(e) => setDescricao(e.target.value)} />
             </label>
-            <label className="full">
-              <span>{ehSaida ? "Fornecedor (opcional)" : "Cliente"}</span>
-              <select value={parteId} onChange={(e) => setParteId(e.target.value)}>
-                <option value="">{ehSaida ? "Sem fornecedor" : "Selecione o cliente"}</option>
-                {(ehSaida ? fornecedores : clientes).map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}
-              </select>
-            </label>
-            {opcoesClassificacao.length > 0 && (
+            {!novaParte ? (
               <label className="full">
-                <span>Classificação (opcional)</span>
+                <span>
+                  {ehSaida ? "Quem recebeu (fornecedor)" : "Quem pagou (cliente)"}{" "}
+                  <button type="button" className="btn-erp ghost xs" onClick={() => setNovaParte(true)}>+ cadastrar novo</button>
+                </span>
+                <select value={parteId} onChange={(e) => setParteId(e.target.value)}>
+                  <option value="">{ehSaida ? "Sem fornecedor" : "Selecione o cliente"}</option>
+                  {listaPartes.map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}
+                </select>
+              </label>
+            ) : (
+              <>
+                <label className="full">
+                  <span>
+                    Cadastrar {ehSaida ? "fornecedor" : "cliente"}{" "}
+                    <button type="button" className="btn-erp ghost xs" onClick={() => setNovaParte(false)}>escolher da lista</button>
+                  </span>
+                  <input value={parteNome} onChange={(e) => setParteNome(e.target.value)} placeholder="Nome de quem está recebendo" />
+                </label>
+                <label className="full">
+                  <span>CPF/CNPJ</span>
+                  <input value={parteDocumento} onChange={(e) => setParteDocumento(e.target.value)} placeholder="Obrigatório no cadastro" />
+                </label>
+              </>
+            )}
+
+            {!novaClasse ? (
+              <label className="full">
+                <span>
+                  Classificação{" "}
+                  <button type="button" className="btn-erp ghost xs" onClick={() => setNovaClasse(true)}>+ nova classificação</button>
+                </span>
                 <select value={classificacaoId} onChange={(e) => setClassificacaoId(e.target.value)}>
                   <option value="">Sem classificação</option>
                   {opcoesClassificacao.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
                 </select>
               </label>
+            ) : (
+              <>
+                <label>
+                  <span>
+                    Nova classificação{" "}
+                    <button type="button" className="btn-erp ghost xs" onClick={() => setNovaClasse(false)}>escolher da lista</button>
+                  </span>
+                  <input value={classeNome} onChange={(e) => setClasseNome(e.target.value)} placeholder="Ex.: Manutenção predial" />
+                </label>
+                <label>
+                  <span>Grupo</span>
+                  <input value={classeGrupo} onChange={(e) => setClasseGrupo(e.target.value)} placeholder={ehSaida ? "Despesas" : "Receitas"} />
+                </label>
+              </>
             )}
             <small className="field-hint full">
               O lançamento entra com a data e o valor do banco e já sai quitado nesta conta. Se errar, use &quot;Desfazer&quot; na linha.

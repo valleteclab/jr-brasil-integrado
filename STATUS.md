@@ -176,10 +176,19 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - **Teste**: `npx tsx scripts/test-ofx.ts` - OFX 1.x com 3 lancamentos, 2.x de cartao com entidade HTML, acentuacao 1252, arquivo invalido/sem movimento e estabilidade da chave sem FITID.
 - **Pendente**: casar pelo numero do documento alem do valor, transferencia entre contas proprias (hoje vira "ignorar") e fatura de cartao como conta a pagar no vencimento.
 
+## Atualizacao operacional - 2026-10-30 - Recibo de pagamento e cadastro no lancamento
+
+- **Recibo de pagamento** (`ReciboPagamento`, migration `20261030090000_recibo_pagamento`): comprovante da despesa SEM nota fiscal (autonomo, aluguel, acordo). Numero **sequencial por empresa**, dados do favorecido **congelados na emissao** (mudar o cadastro depois nao pode reescrever comprovante entregue) e reimpressao sempre identica - a mesma conta reabre o mesmo numero em vez de emitir outro.
+- **PDF** (`src/lib/pdf/recibo-pdf.ts`, PDFKit): A4 com **duas vias na mesma folha** (1a de quem recebeu, 2a de quem pagou, com linha de corte), cabecalho com logo/CNPJ da empresa, valor em numero e **por extenso**, "referente a", forma de pagamento, local e data por extenso e linha de assinatura com nome/CPF.
+- **Valor por extenso** (`src/lib/texto/valor-extenso.ts` + `scripts/test-valor-extenso.ts`, 21 casos): cobre "cem" x "cento e", "mil" sem "um", virgula x "e" entre grupos (1.015 = "mil e quinze"; 1.250 = "mil, duzentos e cinquenta"; 2.500.000 = "dois milhoes e quinhentos mil") e singular/plural de real/centavo.
+- **Onde fica**: botao "Recibo" em cada conta a pagar (`/erp/financeiro`), com drawer para ajustar quem recebeu, CPF/CNPJ, "referente a", data, forma e observacao. APIs: `POST/GET /api/erp/financeiro/contas-pagar/[id]/recibo` e `GET /api/erp/financeiro/recibos/[id]/pdf`.
+- **Lancamento pelo extrato (OFX)**: o formulario de "Criar lancamento" ganhou **cadastro na hora** - "+ cadastrar novo" cria o fornecedor/cliente (nome + CPF/CNPJ, validado pelo cadastro existente) e "+ nova classificacao" cria a classificacao financeira (nome + grupo, tipo pelo sinal do valor). Os cadastros sao criados ANTES e o lancamento ja nasce vinculado a eles.
+
 ## Histórico de commits/pushes
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
+| 2026-10-30 | A gerar | Em andamento | Recibo de pagamento em PDF (duas vias, valor por extenso, numerado por empresa) na conta a pagar; e no lancamento pelo extrato passa a dar para cadastrar o favorecido e criar classificacao na hora. |
 | 2026-10-29 | A gerar | Em andamento | Importacao de extrato/fatura em OFX com conciliacao manual: leitor OFX 1.x (SGML) e 2.x (XML), dedupe por FITID, sugestao de titulo por valor e data, vinculo em lote e linha pendente quando nao casa (nada e lancado sozinho). |
 | 2026-10-29 | A gerar | Em andamento | Financeiro: editar/parcelar conta a pagar em aberto (corrige a parcela unica que a entrada sem duplicata gera), baixa em LOTE para o fechamento mensal e saldo inicial da conta financeira com mascara de moeda. |
 | 2026-10-28 | A gerar | Em andamento | Pendentes do modulo Lucro Presumido/Real: fechamento do periodo com snapshot e alerta de divergencia, lancamento de outras receitas (financeira/aluguel/ganho de capital) com tratamento proprio em cada tributo, export CSV da apuracao para o contador e opcao de excluir o ICMS da base do PIS/COFINS (RE 574.706, desligada por padrao). |
