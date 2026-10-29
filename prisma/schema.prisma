@@ -503,6 +503,8 @@ model Empresa {
   obrasContratos            ObraContrato[]
   outrasReceitas            OutraReceita[]
   apuracoesFechadas         ApuracaoFiscalFechada[]
+  extratosOfx               ExtratoOfxImportacao[]
+  linhasExtratoOfx          ExtratoOfxLinha[]
 
   @@unique([tenantId, cnpj])
   @@index([tenantId])
@@ -655,6 +657,79 @@ model UsoIaMensal {
   atualizadoEm DateTime @updatedAt
 
   @@unique([tenantId, competencia])
+}
+
+/// Situação de uma linha do extrato importado por OFX.
+/// PENDENTE = ainda não vinculada (o sistema NUNCA cria lançamento sozinho);
+/// CONCILIADA = casada com um título/movimento do ERP; IGNORADA = linha que não vira lançamento
+/// (transferência entre contas próprias, estorno, aplicação), com o motivo registrado.
+enum StatusLinhaExtrato {
+  PENDENTE
+  CONCILIADA
+  IGNORADA
+}
+
+/// Cada arquivo OFX importado — guarda período, saldo declarado pelo banco e quem importou.
+model ExtratoOfxImportacao {
+  id               String            @id @default(cuid())
+  tenantId         String
+  empresaId        String
+  empresa          Empresa           @relation(fields: [empresaId], references: [id])
+  contaBancariaId  String
+  contaBancaria    ContaBancaria     @relation(fields: [contaBancariaId], references: [id])
+  arquivoNome      String
+  banco            String?
+  contaDeclarada   String?
+  tipoConta        String?
+  dataInicial      DateTime?
+  dataFinal        DateTime?
+  /// Saldo informado pelo banco no fim do período (LEDGERBAL) — fecha a conciliação.
+  saldoFinal       Decimal?          @db.Decimal(14, 2)
+  saldoData        DateTime?
+  totalLinhas      Int               @default(0)
+  linhasNovas      Int               @default(0)
+  linhasDuplicadas Int               @default(0)
+  usuarioId        String?
+  linhas           ExtratoOfxLinha[]
+  criadoEm         DateTime          @default(now())
+
+  @@index([tenantId, empresaId, contaBancariaId])
+}
+
+/// Lançamento do extrato do banco. O par (conta, FITID) é único: reimportar o mesmo arquivo —
+/// ou períodos que se sobrepõem — não duplica nada.
+model ExtratoOfxLinha {
+  id              String               @id @default(cuid())
+  tenantId        String
+  empresaId       String
+  empresa         Empresa              @relation(fields: [empresaId], references: [id])
+  contaBancariaId String
+  contaBancaria   ContaBancaria        @relation(fields: [contaBancariaId], references: [id])
+  importacaoId    String
+  importacao      ExtratoOfxImportacao @relation(fields: [importacaoId], references: [id], onDelete: Cascade)
+  /// Identificador da transação no banco (FITID).
+  fitid           String
+  data            DateTime
+  /// Positivo = entrada na conta; negativo = saída.
+  valor           Decimal              @db.Decimal(14, 2)
+  tipo            String?
+  descricao       String
+  documento       String?
+  status          StatusLinhaExtrato   @default(PENDENTE)
+  /// Vínculo criado na conciliação.
+  contaPagarId    String?
+  contaPagar      ContaPagar?          @relation(fields: [contaPagarId], references: [id])
+  contaReceberId  String?
+  contaReceber    ContaReceber?        @relation(fields: [contaReceberId], references: [id])
+  gastoId         String?
+  motivoIgnorada  String?
+  conciliadoEm    DateTime?
+  conciliadoPor   String?
+  criadoEm        DateTime             @default(now())
+  atualizadoEm    DateTime             @updatedAt
+
+  @@unique([tenantId, empresaId, contaBancariaId, fitid])
+  @@index([tenantId, empresaId, status, data])
 }
 
 /// Natureza da receita que não passa por nota fiscal. Cada uma tem tratamento próprio:
@@ -2390,6 +2465,7 @@ model ContaPagar {
   pagoEm                 DateTime?
   criadoEm               DateTime                 @default(now())
   atualizadoEm           DateTime                 @updatedAt
+  linhasExtratoOfx       ExtratoOfxLinha[]
 
   // Idempotência da geração automática: uma ocorrência por recorrência+competência.
   @@unique([recorrenciaId, recorrenciaCompetencia])
@@ -2490,45 +2566,46 @@ model Emprestimo {
 }
 
 model ContaReceber {
-  id              String                   @id @default(cuid())
-  tenantId        String
-  empresaId       String
-  empresa         Empresa                  @relation(fields: [empresaId], references: [id])
+  id               String                   @id @default(cuid())
+  tenantId         String
+  empresaId        String
+  empresa          Empresa                  @relation(fields: [empresaId], references: [id])
   // Ambiente fiscal vigente quando a conta foi criada.
-  ambiente        AmbienteFiscal           @default(HOMOLOGACAO)
-  clienteId       String
-  pedidoVendaId   String?
-  ordemServicoId  String?
-  notaFiscalId    String?
-  cliente         Cliente                  @relation(fields: [clienteId], references: [id])
-  pedidoVenda     PedidoVenda?             @relation(fields: [pedidoVendaId], references: [id])
-  ordemServico    OrdemServico?            @relation(fields: [ordemServicoId], references: [id])
-  notaFiscal      NotaFiscal?              @relation(fields: [notaFiscalId], references: [id])
-  descricao       String
-  numeroDocumento String?
-  origem          String?
-  formaPagamento  String?
-  vencimento      DateTime
-  valor           Decimal                  @db.Decimal(14, 2)
-  valorPago       Decimal                  @default(0) @db.Decimal(14, 2)
-  juros           Decimal                  @default(0) @db.Decimal(14, 2)
-  multa           Decimal                  @default(0) @db.Decimal(14, 2)
-  descontoBaixa   Decimal                  @default(0) @db.Decimal(14, 2)
-  observacoes     String?
-  contaBancariaId String?
-  contaBancaria   ContaBancaria?           @relation(fields: [contaBancariaId], references: [id])
-  classificacaoId String?
-  classificacao   ClassificacaoFinanceira? @relation(fields: [classificacaoId], references: [id])
-  movimentos      MovimentoFinanceiro[]
+  ambiente         AmbienteFiscal           @default(HOMOLOGACAO)
+  clienteId        String
+  pedidoVendaId    String?
+  ordemServicoId   String?
+  notaFiscalId     String?
+  cliente          Cliente                  @relation(fields: [clienteId], references: [id])
+  pedidoVenda      PedidoVenda?             @relation(fields: [pedidoVendaId], references: [id])
+  ordemServico     OrdemServico?            @relation(fields: [ordemServicoId], references: [id])
+  notaFiscal       NotaFiscal?              @relation(fields: [notaFiscalId], references: [id])
+  descricao        String
+  numeroDocumento  String?
+  origem           String?
+  formaPagamento   String?
+  vencimento       DateTime
+  valor            Decimal                  @db.Decimal(14, 2)
+  valorPago        Decimal                  @default(0) @db.Decimal(14, 2)
+  juros            Decimal                  @default(0) @db.Decimal(14, 2)
+  multa            Decimal                  @default(0) @db.Decimal(14, 2)
+  descontoBaixa    Decimal                  @default(0) @db.Decimal(14, 2)
+  observacoes      String?
+  contaBancariaId  String?
+  contaBancaria    ContaBancaria?           @relation(fields: [contaBancariaId], references: [id])
+  classificacaoId  String?
+  classificacao    ClassificacaoFinanceira? @relation(fields: [classificacaoId], references: [id])
+  movimentos       MovimentoFinanceiro[]
   /// Operação de antecipação que baixou este título (null = baixa normal/aberto).
-  antecipacaoId   String?
-  antecipacao     AntecipacaoRecebivel?    @relation(fields: [antecipacaoId], references: [id])
-  boleto          BoletoCobranca?
-  pixCobranca     PixCobranca?
-  status          StatusFinanceiro         @default(ABERTO)
-  pagoEm          DateTime?
-  criadoEm        DateTime                 @default(now())
-  atualizadoEm    DateTime                 @updatedAt
+  antecipacaoId    String?
+  antecipacao      AntecipacaoRecebivel?    @relation(fields: [antecipacaoId], references: [id])
+  boleto           BoletoCobranca?
+  pixCobranca      PixCobranca?
+  status           StatusFinanceiro         @default(ABERTO)
+  pagoEm           DateTime?
+  criadoEm         DateTime                 @default(now())
+  atualizadoEm     DateTime                 @updatedAt
+  linhasExtratoOfx ExtratoOfxLinha[]
 
   @@index([tenantId, empresaId, status])
   @@index([tenantId, empresaId, clienteId, vencimento])
@@ -3059,6 +3136,8 @@ model ContaBancaria {
   despesasRecorrentes  DespesaRecorrente[]
   criadoEm             DateTime               @default(now())
   atualizadoEm         DateTime               @updatedAt
+  extratosOfx          ExtratoOfxImportacao[]
+  linhasExtratoOfx     ExtratoOfxLinha[]
 
   @@unique([tenantId, empresaId, nome])
   @@index([tenantId, empresaId])

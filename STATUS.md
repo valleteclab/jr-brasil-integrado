@@ -155,10 +155,24 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - **Tela**: selecao por linha (so contas em aberto) + "selecionar todas da pagina", barra com total selecionado, drawer de baixa em lote com resultado detalhado e drawer de editar/parcelar.
 - **Saldo inicial em moeda**: cadastro de conta financeira passou a usar o `MoneyInput` do design system (digitacao estilo banco, centavos da direita para a esquerda, prefixo R$), com parser pt-BR no envio.
 
+## Atualizacao operacional - 2026-10-29 - Extrato por arquivo OFX
+
+- **Por que**: a conciliacao bancaria existente so funciona com a API do Sicoob. Itau, Caixa e cartao de credito ficavam sem extrato - e e onde a VALLETECLAB esta.
+- **Leitor** `src/lib/ofx/parse-ofx.ts`: OFX **1.x (SGML, tags sem fechamento)** e **2.x (XML)**, extrato bancario e **fatura de cartao** (CCSTMTRS). Decodifica Windows-1252/ISO-8859-1 quando o cabecalho declara (senao os acentos quebram), le DTPOSTED/TRNAMT/FITID/NAME/MEMO/CHECKNUM, periodo (DTSTART/DTEND) e saldo declarado (LEDGERBAL).
+- **Dedupe por FITID**: `@@unique([tenantId, empresaId, contaBancariaId, fitid])`. Reimportar o mesmo arquivo ou periodos sobrepostos nao duplica - o resumo diz quantas ja existiam. Sem FITID, a chave e derivada de data+valor+descricao (estavel entre leituras).
+- **Conciliacao MANUAL por decisao de produto**: linha que nao casa fica PENDENTE. O sistema sugere titulos (valor exato, vencimento a +/- 5 dias, titulo em aberto; debito -> conta a pagar, credito -> conta a receber) e quem confirma e a pessoa - lancar sozinho duplicaria despesa que ja entrou por entrada fiscal ou gasto por cupom.
+- **Baixa com a data e o valor do BANCO**: conciliar chama o `settlePayable`/`settleReceivable` normal, entao saldo, movimento financeiro e auditoria saem iguais aos da baixa manual.
+- **Ignorar** com motivo (transferencia propria, estorno, aplicacao) e **reabrir** (volta a PENDENTE; o estorno da baixa continua sendo feito no titulo, com trilha propria).
+- **Modelos** (migration aditiva `20261029180000_extrato_ofx`): `ExtratoOfxImportacao` (arquivo, periodo, saldo do banco, novas/duplicadas) e `ExtratoOfxLinha` (status PENDENTE/CONCILIADA/IGNORADA + vinculo com o titulo).
+- **Telas/APIs**: `/erp/financeiro/ofx` (item "Importar extrato (OFX)" no menu) e `/api/erp/financeiro/ofx/{importar,linhas,conciliar,ignorar}`.
+- **Teste**: `npx tsx scripts/test-ofx.ts` - OFX 1.x com 3 lancamentos, 2.x de cartao com entidade HTML, acentuacao 1252, arquivo invalido/sem movimento e estabilidade da chave sem FITID.
+- **Pendente**: casar pelo numero do documento alem do valor, transferencia entre contas proprias (hoje vira "ignorar") e fatura de cartao como conta a pagar no vencimento.
+
 ## Histórico de commits/pushes
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
+| 2026-10-29 | A gerar | Em andamento | Importacao de extrato/fatura em OFX com conciliacao manual: leitor OFX 1.x (SGML) e 2.x (XML), dedupe por FITID, sugestao de titulo por valor e data, vinculo em lote e linha pendente quando nao casa (nada e lancado sozinho). |
 | 2026-10-29 | A gerar | Em andamento | Financeiro: editar/parcelar conta a pagar em aberto (corrige a parcela unica que a entrada sem duplicata gera), baixa em LOTE para o fechamento mensal e saldo inicial da conta financeira com mascara de moeda. |
 | 2026-10-28 | A gerar | Em andamento | Pendentes do modulo Lucro Presumido/Real: fechamento do periodo com snapshot e alerta de divergencia, lancamento de outras receitas (financeira/aluguel/ganho de capital) com tratamento proprio em cada tributo, export CSV da apuracao para o contador e opcao de excluir o ICMS da base do PIS/COFINS (RE 574.706, desligada por padrao). |
 | 2026-10-28 | A gerar | Em andamento | PIS/COFINS mensal no modulo do Lucro Presumido/Real: cumulativo (0,65% e 3%) e nao cumulativo (1,65% e 7,6%) com credito das entradas, exclusao de monofasico/aliquota zero/ST da base, retencoes deduzidas e aba propria na tela. |

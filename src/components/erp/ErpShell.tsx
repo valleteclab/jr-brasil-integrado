@@ -84,6 +84,7 @@ const groups: ErpNavGroup[] = [
       { label: "Contas a pagar/receber", href: "/erp/financeiro", icon: "＄", badgeKey: "financeiro", danger: true },
       { label: "Gastos (cupom)", href: "/erp/gastos", icon: "💸" },
       { label: "Fluxo de caixa", href: "/erp/fluxo-caixa", icon: "📈" },
+      { label: "Importar extrato (OFX)", href: "/erp/financeiro/ofx", icon: "⤒" },
       { label: "NF-e emitidas", href: "/erp/fiscal", icon: "🧾" },
       { label: "NFS-e (Nacional)", href: "/erp/nfse-recebidas", icon: "📑" },
       { label: "Lucro Presumido / Real", href: "/erp/fiscal/presumido", icon: "📐" },
