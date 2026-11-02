@@ -51,6 +51,11 @@ export type ProviderContext = {
   /** NFS-e/Reforma (NT 009): enviar o grupo IBSCBS no DPS (leiaute 1.01). Desligado = DPS 1.00 atual. */
   ibsCbsNfse?: boolean | null;
   /**
+   * NFS-e: NÃO enviar a inscrição municipal do prestador no DPS. Municípios sem informações
+   * complementares no CNC rejeitam a nota com IM (E0120).
+   */
+  nfseOmitirIm?: boolean | null;
+  /**
    * Certificado digital A1 da empresa (.pfx já descriptografado, em memória) + senha. Necessário
    * para os provedores diretos: NACIONAL (assinar o DPS + mTLS na SEFIN) e SEFAZ (assinar a NF-e +
    * TLS-mútuo nos web services). Nunca logar/persistir em claro.
@@ -95,6 +100,11 @@ export type EmitResult = {
   xmlUrl?: string;
   danfeUrl?: string;
   motivo?: string;
+  /**
+   * Ajuste de configuração que a emissão descobriu sozinha (ex.: o município rejeita a IM do
+   * prestador). O caso de uso persiste para as próximas notas já saírem certas.
+   */
+  ajusteConfiguracao?: { nfseOmitirIm?: boolean };
 };
 
 export type CancelInput = {

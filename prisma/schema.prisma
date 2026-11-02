@@ -2882,6 +2882,10 @@ model ConfiguracaoFiscal {
   /// Lucro presumido/real: receita reconhecida pelo REGIME DE CAIXA (recebimento) em vez de
   /// competência (emissão). IN RFB 1.700/2017, arts. 223 e 224.
   regimeReceitaCaixa           Boolean?         @default(false)
+  /// NFS-e nacional: o município do emitente NÃO tem informações complementares no CNC, então a
+  /// inscrição municipal não pode ir no DPS (rejeição E0120). Ligada automaticamente na primeira
+  /// rejeição, para as próximas notas já saírem certas.
+  nfseOmitirImPrestador        Boolean?         @default(false)
   /// Exclui o ICMS destacado da base do PIS/COFINS (STF, RE 574.706, Tema 69). Nasce DESLIGADA:
   /// é decisão da contabilidade, que responde pela adesão à tese e pela forma de apuração.
   excluirIcmsBasePisCofins     Boolean?         @default(false)

@@ -789,6 +789,7 @@ export async function emitFiscalDocument(
     emissionMode: config.emissionMode,
     nfseAmbienteNacional: config.nfseAmbienteNacional,
     ibsCbsNfse: config.ibsCbsNfseAtivo,
+    nfseOmitirIm: config.nfseOmitirImPrestador,
     token: config.token,
     cscId: config.cscId,
     cscToken: config.cscToken,
@@ -846,6 +847,14 @@ export async function emitFiscalDocument(
       await createAuditLog(tx, { scope, entidade: "NotaFiscal", entidadeId: created.id, acao: "EMIT_ERROR", payload: { motivo } });
     });
     throw new Error(motivo);
+  }
+
+  // Ajuste que a emissão descobriu (município sem CNC rejeita a IM): guarda na configuração para
+  // a próxima nota já sair certa, sem repetir a rejeição.
+  if (emitResult.ajusteConfiguracao?.nfseOmitirIm) {
+    await prisma.configuracaoFiscal
+      .update({ where: { empresaId: scope.empresaId }, data: { nfseOmitirImPrestador: true } })
+      .catch(() => undefined);
   }
 
   // 3) Atualiza com o resultado do provedor.

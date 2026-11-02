@@ -203,7 +203,7 @@ function buildDpsXml(input: EmitInput, ctx: ProviderContext): { xml: string; id:
       `<tpEmit>1</tpEmit>` +
       `<cLocEmi>${cMun}</cLocEmi>` +
       subst +
-      `<prest><CNPJ>${cnpjEmit}</CNPJ>${e.inscricaoMunicipal ? `<IM>${onlyDigits(e.inscricaoMunicipal)}</IM>` : ""}` +
+      `<prest><CNPJ>${cnpjEmit}</CNPJ>${e.inscricaoMunicipal && !ctx.nfseOmitirIm ? `<IM>${onlyDigits(e.inscricaoMunicipal)}</IM>` : ""}` +
         `<regTrib><opSimpNac>${opSimpNac}</opSimpNac><regEspTrib>0</regEspTrib></regTrib></prest>` +
       toma +
       `<serv><locPrest><cLocPrestacao>${cLocPrestacao}</cLocPrestacao></locPrest>` +
@@ -624,6 +624,7 @@ export class NacionalFiscalProvider implements FiscalProvider {
     const signed = signDps(xml, privateKeyPem, certPem);
     // Reforma ligada: guarda como reemitir sem o grupo IBSCBS se a SEFIN rejeitar por causa dele.
     const comIbsCbs = ctx.ibsCbsNfse ? xml.includes("<IBSCBS>") : false;
+    const comIm = xml.includes("<IM>");
 
     // Brasília: o DF não usa a SEFIN — mesmo DPS assinado, transporte SOAP do ISSnet.
     if (String(input.emitter.codigoMunicipioIbge ?? "") === ISSNET_DF_MUN) {
@@ -646,6 +647,32 @@ export class NacionalFiscalProvider implements FiscalProvider {
     }
     const motivo = (data.erros ?? []).map((x) => `${x.Codigo ?? ""} ${x.Descricao ?? ""}${x.Complemento ? ` (${x.Complemento})` : ""}`.trim()).join("; ")
       || `Falha na SEFIN (HTTP ${res.statusCode}).`;
+
+    // MUNICÍPIO SEM CNC (E0120): a inscrição municipal do prestador não pode ir no DPS quando o
+    // município não tem informações complementares registradas. Reemite UMA vez sem a IM e devolve
+    // o ajuste, para a configuração da empresa guardar e as próximas notas já saírem certas.
+    if (comIm && /\bE0120\b|IM do prestador n[ãa]o deve ser informado/i.test(motivo)) {
+      console.warn("[nfse/im] município sem CNC, reemitindo sem a inscrição municipal:", motivo.slice(0, 200));
+      const semIm = buildDpsXml(emitInput, { ...ctx, nfseOmitirIm: true });
+      const signedSemIm = signDps(semIm.xml, privateKeyPem, certPem);
+      const resSemIm = await postSefinNfse(SEFIN[ctx.ambiente], gzipSync(Buffer.from(signedSemIm, "utf8")).toString("base64"), ctx.certificado);
+      let dataSemIm: { chaveAcesso?: string; nfseXmlGZipB64?: string; erros?: Array<{ Codigo?: string; Descricao?: string; Complemento?: string }> } = {};
+      try { dataSemIm = JSON.parse(resSemIm.body); } catch { /* corpo não-JSON */ }
+      if (resSemIm.statusCode >= 200 && resSemIm.statusCode < 300) {
+        const parsedSemIm = parseNfseRetorno(dataSemIm.nfseXmlGZipB64);
+        const chaveSemIm = dataSemIm.chaveAcesso || parsedSemIm.chave;
+        return {
+          status: "AUTORIZADA", chaveAcesso: chaveSemIm, providerRef: chaveSemIm, xml: dataSemIm.nfseXmlGZipB64,
+          ...(parsedSemIm.nNFSe ? { numeroNfse: parsedSemIm.nNFSe } : {}),
+          ...(numero !== input.numero ? { numero: String(numero) } : {}),
+          ajusteConfiguracao: { nfseOmitirIm: true },
+          motivo:
+            "Emitida SEM a inscrição municipal: o município do emitente não tem informações complementares " +
+            "registradas no CNC da NFS-e nacional (E0120). As próximas notas já saem sem a IM."
+        } as unknown as EmitResult;
+      }
+      return { status: "REJEITADA", motivo };
+    }
 
     // REDE DE PROTEÇÃO (até 31/12/2026 a ausência de IBS/CBS não é motivo de rejeição): se a nota
     // foi rejeitada com o grupo novo, reemite UMA vez sem ele para o cliente não ficar parado.

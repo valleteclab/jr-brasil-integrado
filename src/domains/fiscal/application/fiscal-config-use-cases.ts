@@ -411,6 +411,7 @@ export async function getFiscalRuntimeConfig(scope: TenantScope) {
     emissionMode: config?.spedyModoEmissao ?? "COMPLETO",
     nfseAmbienteNacional: config?.nfseAmbienteNacional ?? null,
     ibsCbsNfseAtivo: config?.ibsCbsNfseAtivo ?? false,
+    nfseOmitirImPrestador: config?.nfseOmitirImPrestador ?? false,
     // Login do portal municipal de NFS-e (CENTI e afins) — senha criptografada no banco.
     nfsePortal: config?.nfsePortalUsuario && config?.nfsePortalSenhaCripto
       ? { usuario: config.nfsePortalUsuario, senha: decryptSecret(config.nfsePortalSenhaCripto) }

@@ -184,10 +184,18 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - **Onde fica**: botao "Recibo" em cada conta a pagar (`/erp/financeiro`), com drawer para ajustar quem recebeu, CPF/CNPJ, "referente a", data, forma e observacao. APIs: `POST/GET /api/erp/financeiro/contas-pagar/[id]/recibo` e `GET /api/erp/financeiro/recibos/[id]/pdf`.
 - **Lancamento pelo extrato (OFX)**: o formulario de "Criar lancamento" ganhou **cadastro na hora** - "+ cadastrar novo" cria o fornecedor/cliente (nome + CPF/CNPJ, validado pelo cadastro existente) e "+ nova classificacao" cria a classificacao financeira (nome + grupo, tipo pelo sinal do valor). Os cadastros sao criados ANTES e o lancamento ja nasce vinculado a eles.
 
+## Atualizacao operacional - 2026-11-02 - NFS-e E0120 (IM do prestador)
+
+- **Sintoma**: ESTAINE EMPREENDIMENTOS (Barreiras/BA, IM 21708) rejeitada com **"E0120 IM do prestador nao deve ser informado, pois nao existem informacoes complementares registradas no CNC NFS-e do municipio emissor informado na DPS"**.
+- **Causa**: o DPS levava `<IM>` sempre que a empresa tinha inscricao municipal cadastrada. Municipio que nao mantem informacoes complementares no CNC da NFS-e nacional rejeita a nota com a IM presente - e isso varia por municipio, nao por empresa.
+- **Correcao**: `ProviderContext.nfseOmitirIm` controla o envio da IM no `buildDpsXml`; na rejeicao E0120 a nota e **reemitida UMA vez sem a IM** (mesma rede de protecao usada no grupo IBS/CBS) e o resultado volta com `ajusteConfiguracao.nfseOmitirIm`, que o caso de uso **persiste em `ConfiguracaoFiscal.nfseOmitirImPrestador`** (migration aditiva `20261102100000_nfse_omitir_im`). As proximas notas da empresa ja saem sem a IM, sem repetir a rejeicao.
+- **Transparencia**: a nota autorizada guarda o motivo explicando que saiu sem a inscricao municipal e por que.
+
 ## Histórico de commits/pushes
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
+| 2026-11-02 | A gerar | Em andamento | NFS-e E0120 (ESTAINE/Barreiras-BA): municipio sem informacoes complementares no CNC nao aceita a IM do prestador no DPS. A nota e reemitida sem a IM e a empresa passa a emitir assim nas proximas. |
 | 2026-10-30 | A gerar | Em andamento | Recibo de pagamento em PDF (duas vias, valor por extenso, numerado por empresa) na conta a pagar; e no lancamento pelo extrato passa a dar para cadastrar o favorecido e criar classificacao na hora. |
 | 2026-10-29 | A gerar | Em andamento | Importacao de extrato/fatura em OFX com conciliacao manual: leitor OFX 1.x (SGML) e 2.x (XML), dedupe por FITID, sugestao de titulo por valor e data, vinculo em lote e linha pendente quando nao casa (nada e lancado sozinho). |
 | 2026-10-29 | A gerar | Em andamento | Financeiro: editar/parcelar conta a pagar em aberto (corrige a parcela unica que a entrada sem duplicata gera), baixa em LOTE para o fechamento mensal e saldo inicial da conta financeira com mascara de moeda. |
