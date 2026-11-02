@@ -72,7 +72,27 @@ assert.ok(integral.includes("<CST>000</CST><cClassTrib>000001</cClassTrib>"), "t
 const semGrupo = ligada.replace(/<IBSCBS>.*<\/IBSCBS>/, "").replace('versao="1.01"', 'versao="1.00"');
 assert.equal(semGrupo.replace(/<dhEmi>[^<]*<\/dhEmi>/, ""), desligada.replace(/<dhEmi>[^<]*<\/dhEmi>/, ""), "o grupo nao pode alterar mais nada do DPS");
 
+// 7) regTrib do Simples: optante ME/EPP (opSimpNac 3) EXIGE regApTribSN — sem ele a SEFIN
+// rejeita com E0166 (aconteceu com a ESTAINE). MEI e nao optante nao levam o campo.
+const comRegime = (regime: string) => {
+  const base = input({ cClassTribServico: "000001" });
+  return buildDpsXml({ ...base, emitter: { ...base.emitter, regime } } as never, ctx(false)).xml;
+};
+const simples = comRegime("SIMPLES_NACIONAL");
+assert.ok(simples.includes("<opSimpNac>3</opSimpNac><regApTribSN>1</regApTribSN><regEspTrib>0</regEspTrib>"), "optante ME/EPP precisa de regApTribSN=1");
+const excesso = comRegime("SIMPLES_EXCESSO_SUBLIMITE");
+assert.ok(excesso.includes("<regApTribSN>2</regApTribSN>"), "acima do sublimite o ISS fica por fora do SN (regApTribSN=2)");
+const mei = comRegime("MEI");
+assert.ok(mei.includes("<opSimpNac>2</opSimpNac><regEspTrib>0</regEspTrib>"), "MEI nao leva regApTribSN");
+const presumido = comRegime("LUCRO_PRESUMIDO");
+assert.ok(presumido.includes("<opSimpNac>1</opSimpNac><regEspTrib>0</regEspTrib>"), "nao optante nao leva regApTribSN");
+
+if (process.env.OUT) {
+  fs.writeFileSync(`${process.env.OUT}/dps-simples.xml`, simples, "utf8");
+}
+
 console.log("DPS IBS/CBS: chave desligada preserva o XML atual; ligada monta o grupo da NT 009. OK");
+console.log("DPS regTrib: optante ME/EPP com regApTribSN, MEI e nao optante sem o campo. OK");
 
 // Opcional: OUT=<pasta> salva os XMLs para validacao contra o XSD oficial (DPS_v1.01.xsd).
 if (process.env.OUT) {

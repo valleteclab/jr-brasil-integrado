@@ -184,6 +184,12 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - **Onde fica**: botao "Recibo" em cada conta a pagar (`/erp/financeiro`), com drawer para ajustar quem recebeu, CPF/CNPJ, "referente a", data, forma e observacao. APIs: `POST/GET /api/erp/financeiro/contas-pagar/[id]/recibo` e `GET /api/erp/financeiro/recibos/[id]/pdf`.
 - **Lancamento pelo extrato (OFX)**: o formulario de "Criar lancamento" ganhou **cadastro na hora** - "+ cadastrar novo" cria o fornecedor/cliente (nome + CPF/CNPJ, validado pelo cadastro existente) e "+ nova classificacao" cria a classificacao financeira (nome + grupo, tipo pelo sinal do valor). Os cadastros sao criados ANTES e o lancamento ja nasce vinculado a eles.
 
+## Atualizacao operacional - 2026-11-02 - NFS-e E0166 (regime de apuracao do Simples) e erro do fallback
+
+- **E0166** "e obrigatorio o preenchimento do campo de regime de apuracao dos tributos do SN para o optante do Simples Nacional": o DPS mandava `regTrib` so com `opSimpNac` e `regEspTrib`. O XSD (TCRegTrib) tem **`regApTribSN`**, exigido de quem e optante ME/EPP (`opSimpNac = 3`). Agora o campo e montado: **1** (federais e municipal pelo SN) no Simples normal e **2** (ISSQN por fora) quando a empresa esta como SIMPLES_EXCESSO_SUBLIMITE. MEI (opSimpNac 2) e nao optante (1) seguem sem o campo.
+- **O fallback escondia o erro seguinte**: quando a reemissao (sem IM, ou sem o grupo IBS/CBS) falhava por OUTRO motivo, devolviamos o motivo da PRIMEIRA tentativa - o usuario via E0120 enquanto o problema real ja era o E0166. Agora o motivo devolvido e o da segunda tentativa, dizendo o que foi reenviado.
+- **Teste**: `npx tsx scripts/test-dps-ibscbs.ts` cobre os quatro regimes no `regTrib`, e o DPS do Simples foi validado contra o `DPS_v1.01.xsd` oficial.
+
 ## Atualizacao operacional - 2026-11-02 - NFS-e E0120 (IM do prestador)
 
 - **Sintoma**: ESTAINE EMPREENDIMENTOS (Barreiras/BA, IM 21708) rejeitada com **"E0120 IM do prestador nao deve ser informado, pois nao existem informacoes complementares registradas no CNC NFS-e do municipio emissor informado na DPS"**.

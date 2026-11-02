@@ -158,6 +158,17 @@ function buildDpsXml(input: EmitInput, ctx: ProviderContext): { xml: string; id:
       : (e.regime === "SIMPLES_NACIONAL" || e.regime === "SIMPLES_EXCESSO_SUBLIMITE") ? "3"
       : "1";
 
+  /**
+   * regApTribSN — EXIGIDO do optante ME/EPP (opSimpNac = 3): em que regime os tributos federais e
+   * o ISSQN estão apurados (rejeição E0166 quando falta).
+   *   1 = federais e municipal pelo Simples Nacional;
+   *   2 = federais pelo SN e ISSQN por fora (caso de quem ultrapassou o sublimite do ICMS/ISS);
+   *   3 = federais e municipal por fora do SN.
+   * Empresa marcada como SIMPLES_EXCESSO_SUBLIMITE recolhe o ISS por fora — daí o 2.
+   */
+  const regApTribSN =
+    opSimpNac === "3" ? (e.regime === "SIMPLES_EXCESSO_SUBLIMITE" ? "2" : "1") : "";
+
   // SUBSTITUIÇÃO: quando o documento aponta uma NFS-e a substituir, emite-se a nova DPS com o grupo
   // <subst> (chave substituída + motivo). A SEFIN cancela a anterior por substituição e gera a nova.
   const sub = doc.substituicao;
@@ -204,7 +215,7 @@ function buildDpsXml(input: EmitInput, ctx: ProviderContext): { xml: string; id:
       `<cLocEmi>${cMun}</cLocEmi>` +
       subst +
       `<prest><CNPJ>${cnpjEmit}</CNPJ>${e.inscricaoMunicipal && !ctx.nfseOmitirIm ? `<IM>${onlyDigits(e.inscricaoMunicipal)}</IM>` : ""}` +
-        `<regTrib><opSimpNac>${opSimpNac}</opSimpNac><regEspTrib>0</regEspTrib></regTrib></prest>` +
+        `<regTrib><opSimpNac>${opSimpNac}</opSimpNac>${regApTribSN ? `<regApTribSN>${regApTribSN}</regApTribSN>` : ""}<regEspTrib>0</regEspTrib></regTrib></prest>` +
       toma +
       `<serv><locPrest><cLocPrestacao>${cLocPrestacao}</cLocPrestacao></locPrest>` +
         `<cServ><cTribNac>${cTribNacFinal}</cTribNac>${cTribMun ? `<cTribMun>${cTribMun}</cTribMun>` : noDf ? `<cTribMun>${cTribNacFinal}</cTribMun>` : ""}<xDescServ>${esc(xDescServ)}</xDescServ>${cNBS.length === 9 ? `<cNBS>${cNBS}</cNBS>` : ""}</cServ>${obra}</serv>` +
@@ -658,6 +669,9 @@ export class NacionalFiscalProvider implements FiscalProvider {
       const resSemIm = await postSefinNfse(SEFIN[ctx.ambiente], gzipSync(Buffer.from(signedSemIm, "utf8")).toString("base64"), ctx.certificado);
       let dataSemIm: { chaveAcesso?: string; nfseXmlGZipB64?: string; erros?: Array<{ Codigo?: string; Descricao?: string; Complemento?: string }> } = {};
       try { dataSemIm = JSON.parse(resSemIm.body); } catch { /* corpo não-JSON */ }
+      const motivoSemIm = (dataSemIm.erros ?? [])
+        .map((x) => `${x.Codigo ?? ""} ${x.Descricao ?? ""}${x.Complemento ? ` (${x.Complemento})` : ""}`.trim())
+        .join("; ");
       if (resSemIm.statusCode >= 200 && resSemIm.statusCode < 300) {
         const parsedSemIm = parseNfseRetorno(dataSemIm.nfseXmlGZipB64);
         const chaveSemIm = dataSemIm.chaveAcesso || parsedSemIm.chave;
@@ -671,7 +685,14 @@ export class NacionalFiscalProvider implements FiscalProvider {
             "registradas no CNC da NFS-e nacional (E0120). As próximas notas já saem sem a IM."
         } as unknown as EmitResult;
       }
-      return { status: "REJEITADA", motivo };
+      // A segunda tentativa (sem IM) falhou por OUTRO motivo: é ELE que o usuário precisa ver —
+      // devolver o E0120 original esconderia o problema que ficou de fato no caminho.
+      return {
+        status: "REJEITADA",
+        motivo: motivoSemIm
+          ? `${motivoSemIm} (a nota foi reenviada sem a inscrição municipal, porque o município não a aceita)`
+          : motivo
+      };
     }
 
     // REDE DE PROTEÇÃO (até 31/12/2026 a ausência de IBS/CBS não é motivo de rejeição): se a nota
@@ -684,6 +705,9 @@ export class NacionalFiscalProvider implements FiscalProvider {
       const resSem = await postSefinNfse(SEFIN[ctx.ambiente], gzipSync(Buffer.from(signedSem, "utf8")).toString("base64"), ctx.certificado);
       let dataSem: { chaveAcesso?: string; nfseXmlGZipB64?: string; erros?: Array<{ Codigo?: string; Descricao?: string; Complemento?: string }> } = {};
       try { dataSem = JSON.parse(resSem.body); } catch { /* corpo não-JSON */ }
+      const motivoSemGrupo = (dataSem.erros ?? [])
+        .map((x) => `${x.Codigo ?? ""} ${x.Descricao ?? ""}${x.Complemento ? ` (${x.Complemento})` : ""}`.trim())
+        .join("; ");
       if (resSem.statusCode >= 200 && resSem.statusCode < 300) {
         const parsedSem = parseNfseRetorno(dataSem.nfseXmlGZipB64);
         const chaveSem = dataSem.chaveAcesso || parsedSem.chave;
@@ -693,6 +717,12 @@ export class NacionalFiscalProvider implements FiscalProvider {
           ...(numero !== input.numero ? { numero: String(numero) } : {}),
           motivo: `Emitida SEM o grupo IBS/CBS — a SEFIN rejeitou o grupo: ${motivo.slice(0, 200)}`
         } as unknown as EmitResult;
+      }
+      if (motivoSemGrupo) {
+        return {
+          status: "REJEITADA",
+          motivo: `${motivoSemGrupo} (a nota foi reenviada sem o grupo IBS/CBS)`
+        };
       }
     }
     return { status: res.statusCode === 422 || res.statusCode === 400 ? "REJEITADA" : "ERRO", motivo };
