@@ -125,6 +125,18 @@ export async function findOrCreateWhatsappLead(input: {
   telefone: string;
   mensagem: string;
   messageId?: string | null;
+  /**
+   * Atribuição do anúncio Click-to-WhatsApp (Cloud API): vem na PRIMEIRA mensagem do contato e é
+   * o que liga o lead ao criativo. Sem isto, campanha paga vira caixa-preta.
+   */
+  referral?: {
+    ctwaClid?: string | null;
+    sourceId?: string | null;
+    sourceType?: string | null;
+    sourceUrl?: string | null;
+    titulo?: string | null;
+  } | null;
+  nome?: string | null;
 }) {
   const telefone = normalizeLeadPhone(input.telefone);
   if (!telefone) throw new Error("Telefone de lead inválido.");
@@ -137,16 +149,34 @@ export async function findOrCreateWhatsappLead(input: {
     where: { telefone },
     orderBy: { atualizadoEm: "desc" }
   });
+  // Veio de anúncio: a origem passa a ser o criativo, não um genérico "WhatsApp comercial".
+  const atribuicao = input.referral
+    ? {
+        canalOrigem: LeadComercialCanal.WHATSAPP,
+        origem: input.referral.titulo
+          ? `Anúncio: ${input.referral.titulo}`.slice(0, 200)
+          : "Anúncio Click-to-WhatsApp",
+        campanha: input.referral.sourceId ?? undefined,
+        utmSource: "meta",
+        utmMedium: input.referral.sourceType ?? "ctwa",
+        utmCampaign: input.referral.sourceId ?? undefined,
+        utmContent: input.referral.ctwaClid ?? undefined,
+        utmTerm: input.referral.sourceUrl ?? undefined
+      }
+    : null;
+
   if (!lead) {
     lead = await prisma.plataformaLead.create({
       data: {
         telefone,
+        ...(input.nome ? { nome: input.nome.slice(0, 120) } : {}),
         canalOrigem: LeadComercialCanal.WHATSAPP,
         origem: "WhatsApp comercial",
         status: LeadComercialStatus.EM_CONVERSA,
         consentimento: true,
         consentimentoEm: now,
-        ultimoContatoEm: now
+        ultimoContatoEm: now,
+        ...(atribuicao ?? {})
       }
     });
   } else {

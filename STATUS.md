@@ -197,10 +197,20 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - **Correcao**: `ProviderContext.nfseOmitirIm` controla o envio da IM no `buildDpsXml`; na rejeicao E0120 a nota e **reemitida UMA vez sem a IM** (mesma rede de protecao usada no grupo IBS/CBS) e o resultado volta com `ajusteConfiguracao.nfseOmitirIm`, que o caso de uso **persiste em `ConfiguracaoFiscal.nfseOmitirImPrestador`** (migration aditiva `20261102100000_nfse_omitir_im`). As proximas notas da empresa ja saem sem a IM, sem repetir a rejeicao.
 - **Transparencia**: a nota autorizada guarda o motivo explicando que saiu sem a inscricao municipal e por que.
 
+## Atualizacao operacional - 2026-11-02 - WhatsApp Cloud API (canal oficial do comercial)
+
+- **Por que**: a Evolution (WhatsApp Web/Baileys) serve ao uso operacional dos clientes, mas nao aguenta divulgacao nacional - centenas de conversas iniciadas por desconhecidos em chip nao aquecido e o padrao que a Meta bane. E so o canal OFICIAL entrega a atribuicao do anuncio Click-to-WhatsApp.
+- **`src/lib/whatsapp/cloud-api-client.ts`**: envio de texto (janela de 24h) e de TEMPLATE aprovado (fora da janela), marcar como lida, download de midia pela Graph (o audio do lead exige o mesmo token), validacao da assinatura `X-Hub-Signature-256` em tempo constante e parser do webhook.
+- **Atribuicao real**: o bloco `referral` da primeira mensagem (ctwa_clid, source_id, source_type, headline) vira origem e UTMs do lead - `utmSource=meta`, `utmCampaign=<id do anuncio>`, `utmContent=<ctwa_clid>`. Sem isso, campanha paga vira caixa-preta.
+- **Webhook** `/api/webhooks/comercial/cloud`: GET faz o handshake `hub.challenge`; POST confere a assinatura ANTES de processar, transcreve audio no Whisper e cai no mesmo `processCommercialWhatsappMessage` dos outros canais.
+- **Transporte**: ordem Cloud API -> Evolution -> Z-API. Na Cloud API as credenciais vem do ambiente (`COMMERCIAL_WHATSAPP_PROVIDER=CLOUD`, `COMMERCIAL_CLOUD_PHONE_ID`, `COMMERCIAL_CLOUD_TOKEN`, `COMMERCIAL_CLOUD_VERIFY_TOKEN`, `COMMERCIAL_CLOUD_APP_SECRET`), nao do cadastro do agente.
+- **Pendente (depende de decisao/credencial)**: escolher o numero (o 77 3628-0458 esta no Chatwoot), criar os templates de primeiro contato e follow-up, e ligar o agente comercial (`ativo`).
+
 ## Histórico de commits/pushes
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
+| 2026-11-02 | A gerar | Em andamento | Canal oficial da Meta (WhatsApp Cloud API) no agente comercial: envio de texto/template, webhook com assinatura HMAC e captura do referral do Click-to-WhatsApp (ctwa_clid) gravado como origem/UTM do lead. |
 | 2026-11-02 | A gerar | Em andamento | NFS-e E0120 (ESTAINE/Barreiras-BA): municipio sem informacoes complementares no CNC nao aceita a IM do prestador no DPS. A nota e reemitida sem a IM e a empresa passa a emitir assim nas proximas. |
 | 2026-10-30 | A gerar | Em andamento | Recibo de pagamento em PDF (duas vias, valor por extenso, numerado por empresa) na conta a pagar; e no lancamento pelo extrato passa a dar para cadastrar o favorecido e criar classificacao na hora. |
 | 2026-10-29 | A gerar | Em andamento | Importacao de extrato/fatura em OFX com conciliacao manual: leitor OFX 1.x (SGML) e 2.x (XML), dedupe por FITID, sugestao de titulo por valor e data, vinculo em lote e linha pendente quando nao casa (nada e lancado sozinho). |

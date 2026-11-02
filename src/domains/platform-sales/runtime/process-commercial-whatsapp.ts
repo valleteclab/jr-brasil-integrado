@@ -7,6 +7,7 @@ import {
   COMMERCIAL_HANDOFF, COMMERCIAL_POLICY, COMMERCIAL_REDIRECT,
   type CommercialGuardDecision, type CommercialGuardStage
 } from "./commercial-guardrails";
+import { cloudApiEnabled } from "@/lib/whatsapp/cloud-api-client";
 import {
   findOrCreateWhatsappLead,
   markLeadOptOut
@@ -137,16 +138,29 @@ export async function processCommercialWhatsappMessage(input: {
   mensagem: string;
   messageId?: string | null;
   baseUrl?: string | null;
+  /** Atribuição do anúncio (Cloud API) e nome do perfil, quando o canal informa. */
+  referral?: {
+    ctwaClid?: string | null;
+    sourceId?: string | null;
+    sourceType?: string | null;
+    sourceUrl?: string | null;
+    titulo?: string | null;
+  } | null;
+  nome?: string | null;
 }): Promise<{ handled: boolean; duplicate?: boolean }> {
   const config = await getCommercialAgentRuntime();
-  if (!config?.ativo || !config.whatsappInstanceId || !config.whatsappToken) {
+  // Na Cloud API as credenciais são do ambiente (phone number id + token), não do cadastro:
+  // exigir instanceId/token aqui impediria o canal oficial de responder.
+  if (!config?.ativo || (!cloudApiEnabled() && (!config.whatsappInstanceId || !config.whatsappToken))) {
     return { handled: false };
   }
 
   const incoming = await findOrCreateWhatsappLead({
     telefone: input.telefone,
     mensagem: input.mensagem,
-    messageId: input.messageId
+    messageId: input.messageId,
+    referral: input.referral ?? null,
+    nome: input.nome ?? null
   });
   const lead = incoming.lead;
   // Mantém a deduplicação histórica da Z-API; recuperação de entrega é do canal Evolution.
