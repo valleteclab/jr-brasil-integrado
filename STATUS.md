@@ -206,10 +206,21 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - **Transporte**: ordem Cloud API -> Evolution -> Z-API. Na Cloud API as credenciais vem do ambiente (`COMMERCIAL_WHATSAPP_PROVIDER=CLOUD`, `COMMERCIAL_CLOUD_PHONE_ID`, `COMMERCIAL_CLOUD_TOKEN`, `COMMERCIAL_CLOUD_VERIFY_TOKEN`, `COMMERCIAL_CLOUD_APP_SECRET`), nao do cadastro do agente.
 - **Pendente (depende de decisao/credencial)**: escolher o numero (o 77 3628-0458 esta no Chatwoot), criar os templates de primeiro contato e follow-up, e ligar o agente comercial (`ativo`).
 
+## Atualizacao operacional - 2026-11-03 - Agente comercial dentro do Chatwoot
+
+- **Decisao**: o numero oficial (Cloud API) e do projeto SISGOV e ja vive no Chatwoot. Em vez de disputar o webhook do WhatsApp — que e UNICO por conta — o ERP entra como **agent bot** do Chatwoot. Historico num lugar so, atendente assume sem fricção e nao ha risco de bot e humano responderem por canais diferentes.
+- **`src/lib/chatwoot/chatwoot-client.ts`**: envio de mensagem publica, **nota interna**, `toggle_status` para devolver a conversa ao time, parser do evento `message_created` (so `incoming` — mensagem de saida e a nossa, reprocessar criaria eco) e filtro por inbox (`CHATWOOT_INBOX_IDS`).
+- **Webhook** `/api/webhooks/comercial/chatwoot/[secret]`: o Chatwoot nao assina o payload, entao o segredo vai no caminho da URL e e conferido em tempo constante (mesma solucao do webhook da Z-API).
+- **Costura**: `processCommercialWhatsappMessage` passou a aceitar um `responder` injetado — com ele a resposta volta DENTRO da conversa do Chatwoot; sem ele, segue pelo transporte padrao (Cloud API -> Evolution -> Z-API). Com canal injetado nao sao exigidas credenciais de WhatsApp no cadastro do agente.
+- **Handoff**: quando o agente nao assume (desligado, fora de escopo, guardrail), a conversa volta para `open` com uma nota interna dizendo o motivo.
+- **Audio**: por enquanto o agente pede o texto — a midia do Chatwoot exige sessao propria para baixar; o atendente continua ouvindo o audio no inbox.
+- **Config por ambiente**: `CHATWOOT_URL`, `CHATWOOT_ACCOUNT_ID`, `CHATWOOT_BOT_TOKEN`, `CHATWOOT_WEBHOOK_SECRET`, `CHATWOOT_INBOX_IDS` (opcional).
+
 ## Histórico de commits/pushes
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
+| 2026-11-03 | A gerar | Em andamento | Agente comercial integrado ao Chatwoot como agent bot: recebe pelo webhook, responde dentro da conversa e devolve para o time quando sai do escopo. O numero oficial continua sendo do SISGOV no Chatwoot. |
 | 2026-11-02 | A gerar | Em andamento | Canal oficial da Meta (WhatsApp Cloud API) no agente comercial: envio de texto/template, webhook com assinatura HMAC e captura do referral do Click-to-WhatsApp (ctwa_clid) gravado como origem/UTM do lead. |
 | 2026-11-02 | A gerar | Em andamento | NFS-e E0120 (ESTAINE/Barreiras-BA): municipio sem informacoes complementares no CNC nao aceita a IM do prestador no DPS. A nota e reemitida sem a IM e a empresa passa a emitir assim nas proximas. |
 | 2026-10-30 | A gerar | Em andamento | Recibo de pagamento em PDF (duas vias, valor por extenso, numerado por empresa) na conta a pagar; e no lancamento pelo extrato passa a dar para cadastrar o favorecido e criar classificacao na hora. |

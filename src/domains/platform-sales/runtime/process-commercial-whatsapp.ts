@@ -138,6 +138,11 @@ export async function processCommercialWhatsappMessage(input: {
   mensagem: string;
   messageId?: string | null;
   baseUrl?: string | null;
+  /**
+   * Canal de resposta. Sem isto, a resposta sai pelo transporte padrão (Cloud API/Evolution/
+   * Z-API); com o Chatwoot, ela precisa voltar DENTRO da conversa, senão o time perde o fio.
+   */
+  responder?: (texto: string) => Promise<void>;
   /** Atribuição do anúncio (Cloud API) e nome do perfil, quando o canal informa. */
   referral?: {
     ctwaClid?: string | null;
@@ -151,7 +156,9 @@ export async function processCommercialWhatsappMessage(input: {
   const config = await getCommercialAgentRuntime();
   // Na Cloud API as credenciais são do ambiente (phone number id + token), não do cadastro:
   // exigir instanceId/token aqui impediria o canal oficial de responder.
-  if (!config?.ativo || (!cloudApiEnabled() && (!config.whatsappInstanceId || !config.whatsappToken))) {
+  // Com canal de resposta injetado (Chatwoot) as credenciais de WhatsApp não são usadas —
+  // quem fala com o contato é o Chatwoot, dono do número.
+  if (!config?.ativo || (!input.responder && !cloudApiEnabled() && (!config.whatsappInstanceId || !config.whatsappToken))) {
     return { handled: false };
   }
 
@@ -223,11 +230,20 @@ export async function processCommercialWhatsappMessage(input: {
         await recordGuardDecision(decision, stage);
         await prisma.plataformaLeadInteracao.update({ where: { id: previousReply.id }, data: { conteudo: reply, metadados: metadata } });
       }
-      const sent = await sendCommercialWhatsappText(zapi, input.telefone, reply);
-      if (!sent.ok) throw new Error("Falha ao entregar a resposta comercial.");
+      await entregarNoCanal(reply);
       await prisma.plataformaLeadInteracao.update({ where: { id: previousReply.id }, data: { metadados: { ...metadata, entregue: true } } });
     }
     return { handled: true, duplicate: true };
+  }
+
+  /** Entrega pelo canal de quem chamou (Chatwoot) ou pelo transporte padrão. */
+  async function entregarNoCanal(texto: string) {
+    if (input.responder) {
+      await input.responder(texto);
+      return;
+    }
+    const sent = await sendCommercialWhatsappText(zapi, input.telefone, texto);
+    if (!sent.ok) throw new Error("Falha ao entregar a resposta comercial.");
   }
 
   async function deliver(reply: string, type = "MENSAGEM", decision: CommercialGuardDecision = "APPROVED", stage: CommercialGuardStage = "review") {
@@ -236,8 +252,7 @@ export async function processCommercialWhatsappMessage(input: {
       leadId: lead.id, canal: LeadComercialCanal.WHATSAPP, direcao: LeadInteracaoDirecao.SAIDA,
       tipo: type, conteudo: reply, externalMessageId: replyId, metadados: { ...metadata, entregue: false }
     } });
-    const sent = await sendCommercialWhatsappText(zapi, input.telefone, reply);
-    if (!sent.ok) throw new Error("Falha ao entregar a resposta comercial.");
+    await entregarNoCanal(reply);
     await prisma.plataformaLeadInteracao.update({ where: { id: interaction.id }, data: { metadados: { ...metadata, entregue: true } } });
   }
 
