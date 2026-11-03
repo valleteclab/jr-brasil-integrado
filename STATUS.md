@@ -216,10 +216,17 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - **Audio**: por enquanto o agente pede o texto — a midia do Chatwoot exige sessao propria para baixar; o atendente continua ouvindo o audio no inbox.
 - **Config por ambiente**: `CHATWOOT_URL`, `CHATWOOT_ACCOUNT_ID`, `CHATWOOT_BOT_TOKEN`, `CHATWOOT_WEBHOOK_SECRET`, `CHATWOOT_INBOX_IDS` (opcional).
 
+## Atualizacao operacional - 2026-11-03 - Promocao do plano, certificado e fila de leads manual
+
+- **Preco promocional** (`PlataformaPlano.precoPromocional/promocaoRotulo/promocaoAte`, migration `20261103100000_plano_preco_promocional`): quando vigente, e o valor COBRADO; o `precoMensal` vira o "de" riscado. Um helper unico (`src/lib/services/plano-preco.ts`) decide o preco para a landing, o cadastro e a **assinatura do Asaas** - preco divergente entre a pagina e a cobranca e quebra de confianca. Promocao com prazo vencido volta sozinha ao preco cheio. Editavel em /admin/planos (valor, rotulo e data).
+- **Certificado digital**: o A1 e pre-requisito da emissao e boa parte de quem chega pela campanha nao tem. Link do parceiro (`src/lib/parceiros.ts`) na landing /brasil (FAQ e bloco proprio) e no /cadastro, junto do aviso de requisito. Os parametros de clique do anuncio original (gclid/gbraid) foram removidos do link: pertencem a outro clique e sujariam a atribuicao do parceiro.
+- **Fila de leads para atendimento MANUAL** (o agente segue desligado por decisao): botao **Falar no WhatsApp** na lista e no detalhe (abre wa.me com saudacao pronta) e **Registrar contato**, que grava na linha do tempo, move para EM_CONVERSA e conta o toque - sem isso ninguem sabe quem ja foi abordado.
+
 ## Histórico de commits/pushes
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
+| 2026-11-03 | A gerar | Em andamento | Preco promocional por plano (de/por, com rotulo e prazo) valendo na landing, no cadastro E na cobranca; link do certificado digital (parceiro) nas paginas publicas; registro de contato manual e botao de WhatsApp na fila de leads. |
 | 2026-11-03 | A gerar | Em andamento | Agente comercial integrado ao Chatwoot como agent bot: recebe pelo webhook, responde dentro da conversa e devolve para o time quando sai do escopo. O numero oficial continua sendo do SISGOV no Chatwoot. |
 | 2026-11-02 | A gerar | Em andamento | Canal oficial da Meta (WhatsApp Cloud API) no agente comercial: envio de texto/template, webhook com assinatura HMAC e captura do referral do Click-to-WhatsApp (ctwa_clid) gravado como origem/UTM do lead. |
 | 2026-11-02 | A gerar | Em andamento | NFS-e E0120 (ESTAINE/Barreiras-BA): municipio sem informacoes complementares no CNC nao aceita a IM do prestador no DPS. A nota e reemitida sem a IM e a empresa passa a emitir assim nas proximas. |

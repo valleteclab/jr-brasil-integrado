@@ -384,6 +384,57 @@ export async function getCommercialLeadMetrics() {
   };
 }
 
+/**
+ * Registra um contato feito À MÃO (WhatsApp, ligação, visita) na linha do tempo do lead.
+ *
+ * Enquanto o agente não assume o atendimento, é isto que mantém a fila trabalhável: sem o
+ * registro, ninguém sabe quem já foi abordado — e o lead ou leva dois contatos iguais ou nenhum.
+ * Também move o lead para EM_CONVERSA e agenda o próximo toque, quando informado.
+ */
+export async function registrarContatoManual(
+  leadId: string,
+  input: { conteudo: string; canal?: string; proximoFollowupEm?: string | null; status?: string }
+) {
+  const session = await requirePlatformAdmin();
+  const conteudo = text(input.conteudo, 4000);
+  if (!conteudo) throw new Error("Escreva o que foi tratado no contato.");
+
+  const canal = CHANNEL_VALUES.has(input.canal as LeadComercialCanal)
+    ? (input.canal as LeadComercialCanal)
+    : LeadComercialCanal.WHATSAPP;
+  const agora = new Date();
+
+  const interacao = await prisma.plataformaLeadInteracao.create({
+    data: {
+      leadId,
+      canal,
+      direcao: LeadInteracaoDirecao.SAIDA,
+      tipo: "CONTATO_MANUAL",
+      conteudo,
+      usuarioId: session?.usuarioId ?? null,
+      metadados: { registradoPor: session?.usuarioId ?? null, manual: true }
+    }
+  });
+
+  const proximo = text(input.proximoFollowupEm, 40);
+  const status = STATUS_VALUES.has(input.status as LeadComercialStatus)
+    ? (input.status as LeadComercialStatus)
+    : LeadComercialStatus.EM_CONVERSA;
+
+  const lead = await prisma.plataformaLead.update({
+    where: { id: leadId },
+    data: {
+      ultimoContatoEm: agora,
+      toquesProspeccao: { increment: 1 },
+      ultimoToqueEm: agora,
+      status,
+      ...(proximo ? { proximoFollowupEm: new Date(proximo) } : {})
+    }
+  });
+
+  return { interacaoId: interacao.id, status: lead.status, ultimoContatoEm: lead.ultimoContatoEm };
+}
+
 export async function updateCommercialLead(
   id: string,
   input: Record<string, unknown>

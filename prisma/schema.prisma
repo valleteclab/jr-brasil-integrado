@@ -639,6 +639,13 @@ model PlataformaPlano {
   nome           String
   descricao      String?
   precoMensal    Decimal  @default(0) @db.Decimal(10, 2)
+  /// Preço promocional: quando preenchido (e dentro da validade), é o valor COBRADO, e o
+  /// `precoMensal` vira o "de" riscado nas páginas de venda.
+  precoPromocional Decimal? @db.Decimal(10, 2)
+  /// Rótulo da promoção ("Promoção de lançamento"), exibido junto do preço.
+  promocaoRotulo   String?
+  /// Fim da promoção. Vazio = sem prazo; vencida, volta a valer o preço cheio.
+  promocaoAte      DateTime?
   /// Notas fiscais (emissões aceitas na SEFAZ/SEFIN) por mês. null = ilimitado.
   limiteNotasMes Int?
   /// Interações de IA por mês (mensagens processadas pelo agente, incl. foto de cupom).

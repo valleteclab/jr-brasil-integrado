@@ -313,6 +313,10 @@ export type PlanoSaasRow = {
   nome: string;
   descricao: string | null;
   precoMensal: number;
+  /** Promoção: quando preenchida (e vigente), é o valor cobrado; o cheio vira o "de" riscado. */
+  precoPromocional: number | null;
+  promocaoRotulo: string | null;
+  promocaoAte: string | null;
   limiteNotasMes: number | null;
   /** Interações de IA/mês (null = ilimitado; 0 = IA desligada no plano). */
   franquiaIaMes: number | null;
@@ -328,6 +332,9 @@ export async function listPlanosSaas(): Promise<PlanoSaasRow[]> {
     nome: p.nome,
     descricao: p.descricao,
     precoMensal: Number(p.precoMensal),
+    precoPromocional: p.precoPromocional != null ? Number(p.precoPromocional) : null,
+    promocaoRotulo: p.promocaoRotulo,
+    promocaoAte: p.promocaoAte?.toISOString() ?? null,
     limiteNotasMes: p.limiteNotasMes,
     franquiaIaMes: p.franquiaIaMes,
     trialDias: p.trialDias,
@@ -342,7 +349,18 @@ export function precoMensalEfetivo(mensalidadeValor: number | null | undefined, 
 
 export async function salvarPlanoSaas(
   codigo: string,
-  input: { nome?: string; descricao?: string | null; precoMensal?: number; limiteNotasMes?: number | null; franquiaIaMes?: number | null; trialDias?: number; ativo?: boolean },
+  input: {
+    nome?: string;
+    descricao?: string | null;
+    precoMensal?: number;
+    precoPromocional?: number | null;
+    promocaoRotulo?: string | null;
+    promocaoAte?: string | null;
+    limiteNotasMes?: number | null;
+    franquiaIaMes?: number | null;
+    trialDias?: number;
+    ativo?: boolean;
+  },
   opts: { aplicarAssinantes?: boolean } = {}
 ): Promise<PlanoSaasRow & { assinantesAtualizados?: number }> {
   const admin = await requirePlatformAdmin();
@@ -355,6 +373,13 @@ export async function salvarPlanoSaas(
       ...(input.nome !== undefined ? { nome: input.nome } : {}),
       ...(input.descricao !== undefined ? { descricao: input.descricao } : {}),
       ...(input.precoMensal !== undefined ? { precoMensal: input.precoMensal } : {}),
+      ...(input.precoPromocional !== undefined
+        ? { precoPromocional: input.precoPromocional != null && input.precoPromocional > 0 ? input.precoPromocional : null }
+        : {}),
+      ...(input.promocaoRotulo !== undefined ? { promocaoRotulo: input.promocaoRotulo?.trim() || null } : {}),
+      ...(input.promocaoAte !== undefined
+        ? { promocaoAte: input.promocaoAte ? new Date(input.promocaoAte) : null }
+        : {}),
       ...(input.limiteNotasMes !== undefined ? { limiteNotasMes: input.limiteNotasMes } : {}),
       ...(input.franquiaIaMes !== undefined ? { franquiaIaMes: input.franquiaIaMes } : {}),
       ...(input.trialDias !== undefined ? { trialDias: Math.max(0, Math.floor(input.trialDias)) } : {}),
@@ -391,6 +416,9 @@ export async function salvarPlanoSaas(
 
   return {
     codigo: p.codigo, nome: p.nome, descricao: p.descricao, precoMensal: Number(p.precoMensal),
+    precoPromocional: p.precoPromocional != null ? Number(p.precoPromocional) : null,
+    promocaoRotulo: p.promocaoRotulo,
+    promocaoAte: p.promocaoAte?.toISOString() ?? null,
     limiteNotasMes: p.limiteNotasMes, franquiaIaMes: p.franquiaIaMes, trialDias: p.trialDias, ativo: p.ativo, assinantesAtualizados
   };
 }

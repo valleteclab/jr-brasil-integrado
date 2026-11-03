@@ -655,3 +655,44 @@
 .pe a {
   color: #dce6f5;
 }
+
+/* Preço promocional: o "de" riscado fica discreto, o "por" é que tem peso. */
+.precoDe {
+  display: block;
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--textoSuave);
+  text-decoration: line-through;
+  line-height: 1;
+  margin-bottom: 2px;
+}
+
+.seloPromo {
+  display: inline-block;
+  background: var(--verde);
+  color: #fff;
+  font-family: var(--display);
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 3px 9px;
+  border-radius: 999px;
+  margin-top: 4px;
+}
+
+/* Certificado digital: pré-requisito que trava o cadastro de quem ainda não tem. */
+.certificado {
+  margin: 10px 0 0;
+  padding: 12px 14px;
+  border: 1.5px dashed var(--borda);
+  border-radius: var(--raio);
+  background: var(--superficie2);
+  font-size: 14.5px;
+  color: var(--texto);
+}
+.certificado a {
+  color: var(--verde);
+  font-weight: 700;
+}

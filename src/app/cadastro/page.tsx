@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/db/prisma";
 import { CadastroEmissorForm } from "@/components/public/CadastroEmissorForm";
+import { precoDoPlano } from "@/lib/services/plano-preco";
+import { CERTIFICADO_DIGITAL } from "@/lib/parceiros";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +13,7 @@ export default async function CadastroEmissorPage({ searchParams }: { searchPara
   const isChat = (searchParams?.plano ?? "").toUpperCase() === "CHAT";
   const codigo = isChat ? "CHAT" : "EMISSOR";
   const plano = await prisma.plataformaPlano.findUnique({ where: { codigo } }).catch(() => null);
-  const preco = plano ? Number(plano.precoMensal) : null;
+  const { preco, precoDe, rotulo: promocaoRotulo } = precoDoPlano(plano);
   const trialDias = plano?.trialDias ?? 7;
   const limite = plano?.limiteNotasMes ?? null;
 
@@ -28,12 +30,27 @@ export default async function CadastroEmissorPage({ searchParams }: { searchPara
           </p>
           <p style={{ marginTop: 10, fontSize: 14 }}>
             <strong>Teste grátis por {trialDias} dias</strong>
-            {preco != null && preco > 0 && <> · depois {preco.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}/mês</>}
+            {preco > 0 && (
+              <>
+                {" "}· depois{" "}
+                {precoDe != null && (
+                  <span style={{ textDecoration: "line-through", color: "#94a3b8", marginRight: 4 }}>
+                    {precoDe.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                  </span>
+                )}
+                {preco.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}/mês
+                {promocaoRotulo && <span style={{ color: "#0b6b36", fontWeight: 700 }}> · {promocaoRotulo}</span>}
+              </>
+            )}
             {limite != null && <> · até {limite} notas/mês</>}
           </p>
           <p style={{ color: "#64748b", fontSize: 12, marginTop: 6 }}>
             Requisito: certificado digital A1 (.pfx) da sua empresa.
             {isChat && " Dá até para enviá-lo pelo próprio chat."}
+            <br />
+            <a href={CERTIFICADO_DIGITAL.url} target="_blank" rel="noopener noreferrer" style={{ fontWeight: 700 }}>
+              Não tem certificado? Veja a promoção do parceiro {CERTIFICADO_DIGITAL.parceiro} →
+            </a>
           </p>
         </div>
         <CadastroEmissorForm plano={isChat ? "CHAT" : "EMISSOR"} leadId={searchParams?.lead} />

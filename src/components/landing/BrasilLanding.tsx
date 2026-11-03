@@ -3,6 +3,7 @@
 import { FormEvent, useState } from "react";
 import Link from "next/link";
 import s from "./brasil.module.css";
+import { CERTIFICADO_DIGITAL } from "@/lib/parceiros";
 
 /**
  * Landing /brasil — página de captação para divulgação em perfil do Instagram.
@@ -21,6 +22,9 @@ export type BrasilLandingProps = {
     nome: string;
     descricao: string | null;
     precoMensal: number;
+    /** Preço cheio, quando há promoção vigente (sai riscado). */
+    precoDe?: number | null;
+    promocaoRotulo?: string | null;
     limiteNotasMes: number | null;
     trialDias: number;
   } | null;
@@ -59,8 +63,8 @@ const RECURSOS = [
   { ico: s.icoB, emoji: "🔒", titulo: "Seus dados, seus", texto: "Cada empresa isolada, acesso por permissão e trilha de auditoria. Servidor no Brasil." }
 ];
 
-const FAQ = [
-  { q: "Preciso de certificado digital?", a: "Para emitir nota, sim — é exigência da Receita, não nossa. Se você não tem, a gente mostra o caminho mais barato para conseguir o A1." },
+const FAQ: Array<{ q: string; a: string; link?: string; linkTexto?: string }> = [
+  { q: "Preciso de certificado digital?", a: "Para emitir nota, sim — é exigência da Receita, não nossa. Se ainda não tem, dá para resolver hoje pelo nosso parceiro, com desconto.", link: CERTIFICADO_DIGITAL.url, linkTexto: `Ver promoção do certificado (${CERTIFICADO_DIGITAL.parceiro})` },
   { q: "Serve para MEI?", a: "Serve. Tem painel próprio de MEI, com o limite de faturamento acompanhado e alerta antes de estourar." },
   { q: "Meu contador continua trabalhando?", a: "Continua. Todo mês ele recebe o pacote com os XMLs e os relatórios que precisa." },
   { q: "Preciso instalar algo?", a: "Não. Funciona no navegador do computador e do celular, e pelo WhatsApp ou Telegram." }
@@ -291,7 +295,14 @@ export function BrasilLanding({ plano, whatsapp, campanha }: BrasilLandingProps)
             <div className={s.plano}>
               <span className={s.tag}>Oferta desta página</span>
               <span className={s.planoNome}>{plano?.nome ?? "Plano da campanha"}</span>
-              {preco ? <div className={s.preco}>{preco}<small>/mês</small></div> : null}
+              {preco ? (
+                <div className={s.preco}>
+                  {plano?.precoDe ? <span className={s.precoDe}>{brl(plano.precoDe)}</span> : null}
+                  {preco}
+                  <small>/mês</small>
+                </div>
+              ) : null}
+              {plano?.promocaoRotulo ? <span className={s.seloPromo}>{plano.promocaoRotulo}</span> : null}
               {plano?.descricao ? <p className={s.planoDesc}>{plano.descricao}</p> : null}
               <ul>
                 {plano?.limiteNotasMes ? <li>{plano.limiteNotasMes} notas fiscais por mês</li> : null}
@@ -304,6 +315,13 @@ export function BrasilLanding({ plano, whatsapp, campanha }: BrasilLandingProps)
             <div className={s.outros}>
               <h3>Precisa de mais que isso?</h3>
               <p>Tem plano com PDV, estoque e financeiro completo. O especialista te mostra no WhatsApp qual encaixa no seu tamanho.</p>
+              <p className={s.certificado}>
+                <strong>Ainda não tem certificado digital?</strong> Ele é exigência da Receita para emitir nota — não é
+                cobrança nossa.{" "}
+                <a href={CERTIFICADO_DIGITAL.url} target="_blank" rel="noopener noreferrer">
+                  Ver a promoção do {CERTIFICADO_DIGITAL.parceiro} →
+                </a>
+              </p>
               <ul className={s.listaSimples}>
                 <li>Loja com caixa e estoque</li>
                 <li>Boleto e Pix pelo seu banco</li>
@@ -324,7 +342,15 @@ export function BrasilLanding({ plano, whatsapp, campanha }: BrasilLandingProps)
           {FAQ.map((item) => (
             <details className={s.faq} key={item.q}>
               <summary>{item.q}</summary>
-              <p>{item.a}</p>
+              <p>
+                {item.a}
+                {item.link ? (
+                  <>
+                    {" "}
+                    <a href={item.link} target="_blank" rel="noopener noreferrer">{item.linkTexto}</a>
+                  </>
+                ) : null}
+              </p>
             </details>
           ))}
         </div>

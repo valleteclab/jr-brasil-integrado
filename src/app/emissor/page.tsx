@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { prisma } from "@/lib/db/prisma";
 import { EmissorLanding } from "@/components/landing/EmissorLanding";
+import { precoDoPlano } from "@/lib/services/plano-preco";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +16,7 @@ export default async function EmissorLandingPage() {
   const plano = await prisma.plataformaPlano.findUnique({ where: { codigo: "EMISSOR" } }).catch(() => null);
   return (
     <EmissorLanding
-      precoMensal={plano ? Number(plano.precoMensal) : null}
+      precoMensal={plano ? precoDoPlano(plano).preco : null}
       limiteNotasMes={plano?.limiteNotasMes ?? null}
       trialDias={plano?.trialDias ?? 7}
     />

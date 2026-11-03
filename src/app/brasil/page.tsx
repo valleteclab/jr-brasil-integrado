@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { prisma } from "@/lib/db/prisma";
 import { BrasilLanding } from "@/components/landing/BrasilLanding";
+import { precoDoPlano } from "@/lib/services/plano-preco";
 
 export const dynamic = "force-dynamic";
 
@@ -37,7 +38,9 @@ async function planoDaCampanha(codigoPedido?: string) {
         codigo: plano.codigo,
         nome: plano.nome,
         descricao: plano.descricao,
-        precoMensal: Number(plano.precoMensal),
+        precoMensal: precoDoPlano(plano).preco,
+        precoDe: precoDoPlano(plano).precoDe,
+        promocaoRotulo: precoDoPlano(plano).rotulo,
         limiteNotasMes: plano.limiteNotasMes,
         trialDias: plano.trialDias
       };

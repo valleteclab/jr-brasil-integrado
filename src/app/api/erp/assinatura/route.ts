@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db/prisma";
 import { getSession } from "@/lib/auth/session";
 import { asaasCriarAssinatura, asaasAtualizarAssinatura, asaasGarantirCliente, getAsaasRuntime } from "@/lib/asaas/asaas-service";
 import { precoMensalEfetivo } from "@/lib/services/platform-admin";
+import { precoDoPlano } from "@/lib/services/plano-preco";
 
 /**
  * ASSINATURA da mensalidade do plano (Asaas): cria a subscription do tenant logado com o valor
@@ -19,7 +20,8 @@ export async function POST() {
     const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { nome: true, plano: true, assinaturaAsaasId: true, mensalidadeValor: true } });
     if (!tenant) return NextResponse.json({ error: "Cliente não encontrado." }, { status: 404 });
     const plano = await prisma.plataformaPlano.findUnique({ where: { codigo: tenant.plano } });
-    const valor = precoMensalEfetivo(tenant.mensalidadeValor != null ? Number(tenant.mensalidadeValor) : null, Number(plano?.precoMensal ?? 0));
+    // Promoção vigente é o valor COBRADO — a landing e a cobrança não podem divergir.
+    const valor = precoMensalEfetivo(tenant.mensalidadeValor != null ? Number(tenant.mensalidadeValor) : null, precoDoPlano(plano).preco);
     if (valor <= 0) {
       return NextResponse.json({ error: "Plano sem mensalidade configurada — fale com o suporte." }, { status: 400 });
     }

@@ -20,6 +20,9 @@ function PlanoCardEdit({ plano }: { plano: PlanoSaasRow }) {
   const [franquiaIa, setFranquiaIa] = useState<string>(plano.franquiaIaMes == null ? "" : String(plano.franquiaIaMes));
   const [trial, setTrial] = useState(plano.trialDias);
   const [ativo, setAtivo] = useState(plano.ativo);
+  const [promo, setPromo] = useState<string>(plano.precoPromocional == null ? "" : String(plano.precoPromocional));
+  const [promoRotulo, setPromoRotulo] = useState(plano.promocaoRotulo ?? "");
+  const [promoAte, setPromoAte] = useState(plano.promocaoAte ? plano.promocaoAte.slice(0, 10) : "");
   const [aplicarAssinantes, setAplicarAssinantes] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
@@ -37,6 +40,9 @@ function PlanoCardEdit({ plano }: { plano: PlanoSaasRow }) {
           nome,
           descricao: descricao || null,
           precoMensal: Number(preco) || 0,
+          precoPromocional: promo.trim() === "" ? null : Number(promo.replace(",", ".")) || null,
+          promocaoRotulo: promoRotulo.trim() || null,
+          promocaoAte: promoAte ? new Date(`${promoAte}T23:59:59`).toISOString() : null,
           limiteNotasMes: limite.trim() === "" ? null : Math.max(1, Number(limite) || 0),
           franquiaIaMes: franquiaIa.trim() === "" ? null : Math.max(0, Number(franquiaIa) || 0),
           trialDias: Number(trial) || 0,
@@ -78,8 +84,26 @@ function PlanoCardEdit({ plano }: { plano: PlanoSaasRow }) {
         <label style={campo}>Mensalidade (R$)
           <input type="number" min={0} step="0.01" value={preco} onChange={(e) => setPreco(Number(e.target.value) || 0)} style={{ width: 120, height: 34, textAlign: "right" }} />
         </label>
+        <label style={campo}>Promoção (R$)
+          <input
+            type="number"
+            min={0}
+            step="0.01"
+            value={promo}
+            onChange={(e) => setPromo(e.target.value)}
+            placeholder="sem promoção"
+            title="Quando preenchido, é o valor COBRADO; a mensalidade vira o preço riscado nas páginas."
+            style={{ width: 120, height: 34, textAlign: "right" }}
+          />
+        </label>
         <label style={campo}>Notas/mês (vazio = ilimitado)
           <input type="number" min={1} value={limite} onChange={(e) => setLimite(e.target.value)} placeholder="∞" style={{ width: 140, height: 34, textAlign: "right" }} />
+        </label>
+        <label style={campo}>Rótulo da promoção
+          <input value={promoRotulo} onChange={(e) => setPromoRotulo(e.target.value)} placeholder="Promoção de lançamento" style={{ width: 190, height: 34 }} />
+        </label>
+        <label style={campo}>Promoção até
+          <input type="date" value={promoAte} onChange={(e) => setPromoAte(e.target.value)} title="Vazio = sem prazo. Vencida, volta o preço cheio." style={{ width: 150, height: 34 }} />
         </label>
         <label style={campo}>Trial (dias)
           <input type="number" min={0} value={trial} onChange={(e) => setTrial(Number(e.target.value) || 0)} style={{ width: 100, height: 34, textAlign: "right" }} />
