@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 import "./globals.css";
 import { RegisterSW } from "@/components/pwa/RegisterSW";
+import { MetaPixel } from "@/components/analytics/MetaPixel";
 
 export const metadata: Metadata = {
   title: "XERP",
@@ -28,6 +29,7 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
       </head>
       <body>
         <RegisterSW />
+        <MetaPixel pixelId={process.env.META_PIXEL_ID} />
         {children}
       </body>
     </html>

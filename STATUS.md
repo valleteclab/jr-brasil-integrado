@@ -1015,3 +1015,20 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Verificação pós-deploy: atualização `completed`, ERP e PostgreSQL em `1/1`, container `healthy`; `/api/health` confirmou `status=ok` e `db=up`, landing v4 HTTP 200, painel comercial sem sessão redireciona ao login (307). Logs de inicialização sem erros e sem migrations pendentes.
 - Variáveis, referências de Docker secrets e mounts do serviço preservados, conferidos por hash antes/depois sem expor valores. Nenhuma mensagem de teste real enviada por esta sessão.
 - Pendente: reteste humano no WhatsApp (perguntas fora de escopo, SPED, conversa comercial, áudio curto e opt-out). A saúde do deploy não comprova a qualidade semântica da IA.
+
+## 2026-11-03 — Meta Pixel na aquisição (campanhas Instagram/Facebook)
+
+| Tarefa | Status | Observações |
+| --- | --- | --- |
+| Carregar o Meta Pixel no site | Concluído | `MetaPixel.tsx` + `meta-pixel.ts`; ID vem de `META_PIXEL_ID`, lido no servidor e passado por prop. |
+| Evento `Lead` na landing `/brasil` | Concluído | Disparado após o POST em `/api/public/leads` retornar o lead. |
+| Evento `CompleteRegistration` no cadastro | Concluído | Disparado em `CadastroEmissorForm` quando a conta é criada. |
+| Definir o Pixel ID em produção | Pendente | Criar o conjunto de dados no Gerenciador de Eventos e preencher `META_PIXEL_ID` na VPS. |
+| Campanha otimizada por conversão | Pendente | Só depois que o pixel acumular eventos; hoje as campanhas otimizam por clique/visita. |
+
+- Motivo: a 1ª campanha (03/11) mostrou que, sem evento de conversão, o leilão busca o clique mais barato — mais da metade da verba foi para a Audience Network e o Instagram não recebeu nenhuma impressão. Audience Network removida dos dois conjuntos no mesmo dia.
+- `META_PIXEL_ID` documentada em `deploy/erp.env.example` e repassada em `deploy/erp-stack.yml`. Vazia = nada é carregado no site, inclusive em desenvolvimento.
+- Lida no servidor (não `NEXT_PUBLIC_*`) de propósito: permite ligar/desligar trocando a variável do serviço, sem rebuild da imagem.
+- Validação: `npx tsc --noEmit` sem erros. Sem dependências novas, sem mudança de schema, sem migration.
+- Arquivos: `src/lib/analytics/meta-pixel.ts`, `src/components/analytics/MetaPixel.tsx`, `src/app/layout.tsx`, `src/components/landing/BrasilLanding.tsx`, `src/components/public/CadastroEmissorForm.tsx`, `deploy/erp.env.example`, `deploy/erp-stack.yml`, STATUS.
+- Commit/push: A gerar.

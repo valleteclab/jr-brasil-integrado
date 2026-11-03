@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { isValidCnpj, normalizeDocumento } from "@/lib/fiscal/documento";
+import { rastrearEvento } from "@/lib/analytics/meta-pixel";
 
 /**
  * Cadastro self-service do Emissor de Notas em 2 PASSOS:
@@ -146,6 +147,8 @@ export function CadastroEmissorForm({ plano = "EMISSOR", leadId }: { plano?: "EM
       });
       const d = (await res.json().catch(() => ({}))) as { error?: string; redirect?: string };
       if (!res.ok) throw new Error(d.error || "Não foi possível concluir o cadastro.");
+      // Conta criada: é o evento de maior valor do funil e o que a campanha deve perseguir.
+      rastrearEvento("CompleteRegistration", { content_name: plano });
       if (d.redirect) {
         router.replace(d.redirect);
         return;

@@ -4,6 +4,7 @@ import { FormEvent, useState } from "react";
 import Link from "next/link";
 import s from "./brasil.module.css";
 import { CERTIFICADO_DIGITAL } from "@/lib/parceiros";
+import { rastrearEvento } from "@/lib/analytics/meta-pixel";
 
 /**
  * Landing /brasil — página de captação para divulgação em perfil do Instagram.
@@ -120,6 +121,8 @@ export function BrasilLanding({ plano, whatsapp, campanha }: BrasilLandingProps)
         throw new Error(dados.error || "Não foi possível registrar seu contato agora.");
       }
       setLeadId(dados.leadId);
+      // Sinal de conversão para o leilão da Meta otimizar por quem se cadastra, não por quem clica.
+      rastrearEvento("Lead", { content_name: "Landing Brasil", content_category: form.segmento || undefined });
     } catch (causa) {
       setErro(causa instanceof Error ? causa.message : "Não foi possível registrar seu contato agora.");
     } finally {
