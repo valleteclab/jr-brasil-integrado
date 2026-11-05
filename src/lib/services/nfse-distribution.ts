@@ -246,11 +246,28 @@ export async function importarNfseComoDespesa(scope: TenantScope, docId: string,
     if (!classificacao) throw new Error("Classificação financeira informada não pertence a esta empresa.");
   }
 
-  // Fornecedor pelo CNPJ/CPF do prestador — vincula se já cadastrado (não cria automaticamente).
+  // Fornecedor pelo CNPJ/CPF do prestador. Se ainda não existe, CADASTRA com o que a nota traz:
+  // antes a despesa nascia órfã (sem fornecedor), e quem conferia o pagamento não sabia para quem
+  // pagou. O documento é a chave única por empresa, então o upsert não duplica nem em concorrência.
   const prestadorDoc = onlyDigits(doc.emitenteDocumento);
   const fornecedor = prestadorDoc
-    ? await prisma.fornecedor.findFirst({
-        where: { tenantId: scope.tenantId, empresaId: scope.empresaId, documento: prestadorDoc },
+    ? await prisma.fornecedor.upsert({
+        where: {
+          tenantId_empresaId_documento: {
+            tenantId: scope.tenantId,
+            empresaId: scope.empresaId,
+            documento: prestadorDoc
+          }
+        },
+        update: {},
+        create: {
+          tenantId: scope.tenantId,
+          empresaId: scope.empresaId,
+          documento: prestadorDoc,
+          // Sem nome na nota, o documento serve de identificação até alguém completar o cadastro.
+          razaoSocial: doc.emitenteNome?.trim() || `Prestador ${prestadorDoc}`,
+          observacoes: "Cadastrado automaticamente a partir de uma NFS-e recebida."
+        },
         select: { id: true }
       })
     : null;

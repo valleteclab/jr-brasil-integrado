@@ -33,6 +33,8 @@ export type PayableSummary = {
   entradaFiscalId?: string | null;
   /** Rótulo do atalho, ex.: "NF-e 12345/1". */
   notaLabel?: string | null;
+  /** Fornecedor vinculado. null = conta órfã: a baixa oferece vincular na hora. */
+  fornecedorId?: string | null;
 };
 
 export type ReceivableSummary = {
@@ -239,6 +241,7 @@ export async function listPayables(filtroStatus?: string): Promise<PayableSummar
       formaPagamento: c.formaPagamento ?? "—",
       classificacaoId: c.classificacao?.id ?? null,
       classificacaoNome: c.classificacao?.nome ?? null,
+      fornecedorId: c.fornecedorId ?? null,
       entradaFiscalId: c.entradaFiscal?.xmlImportacaoId ? c.entradaFiscal.id : null,
       notaLabel: c.entradaFiscal?.xmlImportacaoId
         ? `NF-e ${c.entradaFiscal.numero ?? ""}${c.entradaFiscal.serie ? `/${c.entradaFiscal.serie}` : ""}`.trim()

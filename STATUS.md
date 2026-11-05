@@ -1121,3 +1121,19 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Sem dependências novas, sem mudança de schema, sem migration.
 - Arquivos: `src/components/shared/RevalidarAutomatico.tsx`, `src/lib/hooks/use-revalidar.ts`, `src/app/erp/layout.tsx`, `src/components/erp/FinanceManager.tsx`, STATUS.
 - Commit/push: A gerar.
+
+## 2026-11-05 — Fornecedor na despesa de NFS-e e na baixa
+
+| Tarefa | Status | Observações |
+| --- | --- | --- |
+| NFS-e recebida cadastra o prestador | Concluído | `upsert` por CNPJ/CPF; antes só vinculava se já existisse e a despesa nascia órfã. |
+| Vincular fornecedor na hora da baixa | Concluído | Campo aparece só quando a conta está sem fornecedor, com atalho para o cadastro. |
+
+- Relato do cliente: ao importar NFS-e a despesa era lançada sem fornecedor. Em produção, **39 das 167 contas a pagar** estavam sem fornecedor — a conta 1295 (E R COSTA) é uma delas, origem `NFSE`.
+- O código tinha o comentário "vincula se já cadastrado (não cria automaticamente)": agora cria com razão social e documento do prestador, marcando em observações a origem do cadastro.
+- `documento` é único por empresa (`@@unique([tenantId, empresaId, documento])`), então o upsert não duplica nem em concorrência.
+- Na baixa, o vínculo é gravado ANTES do pagamento (PATCH em contas-pagar/[id], que já aceitava `fornecedorId`), para o histórico nascer correto.
+- Validação: `npx tsc --noEmit` sem erros; `npx next lint` sem avisos.
+- Sem dependências novas, sem mudança de schema, sem migration. As 39 contas antigas seguem sem fornecedor até alguém vincular (a baixa agora oferece).
+- Arquivos: `src/lib/services/nfse-distribution.ts`, `src/components/erp/FinanceManager.tsx`, `src/app/erp/financeiro/page.tsx`, `src/lib/services/finance.ts`, STATUS.
+- Commit/push: A gerar.

@@ -27,6 +27,7 @@ type Props = {
   /** Clientes ativos para o seletor de conta a receber avulsa. */
   clientes?: ClienteOption[];
   maquinas?: MaquinaCartaoOption[];
+  fornecedores?: Array<{ id: string; nome: string }>;
   /** Maquininhas/cartões para detalhar "como foi pago" no cartão (contas a pagar). */
   /** Plano de classificação financeira (para categorizar as contas → fechamento mensal). */
   classificacoes?: ClassificacaoOption[];
@@ -104,11 +105,14 @@ type SettleFormProps = {
   bankAccounts: BankAccountSummary[];
   formasPagamento: FormaPagamentoOption[];
   maquinas: MaquinaCartaoOption[];
+  /** Para vincular o fornecedor na hora da baixa, quando a conta nasceu sem ele. */
+  fornecedores: Array<{ id: string; nome: string }>;
+  temFornecedor: boolean;
   onSuccess: (id: string, novoStatus: string) => void;
   onClose: () => void;
 };
 
-function SettleForm({ tipo, id, descricao, saldoNumber, bankAccounts, formasPagamento, maquinas, onSuccess, onClose }: SettleFormProps) {
+function SettleForm({ tipo, id, descricao, saldoNumber, bankAccounts, formasPagamento, maquinas, fornecedores, temFornecedor, onSuccess, onClose }: SettleFormProps) {
   const [valor, setValor] = useState(saldoNumber.toFixed(2));
   const [juros, setJuros] = useState("0.00");
   const [multa, setMulta] = useState("0.00");
@@ -119,6 +123,7 @@ function SettleForm({ tipo, id, descricao, saldoNumber, bankAccounts, formasPaga
   const [maquinaCartaoId, setMaquinaCartaoId] = useState("");
   const [bandeira, setBandeira] = useState("");
   const [parcelas, setParcelas] = useState(1);
+  const [fornecedorId, setFornecedorId] = useState("");
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState("");
   const revalidar = useRevalidar();
@@ -167,6 +172,19 @@ function SettleForm({ tipo, id, descricao, saldoNumber, bankAccounts, formasPaga
     setErro("");
     setLoading(true);
     try {
+      // Conta órfã: vincula o fornecedor ANTES da baixa, para o histórico já nascer certo.
+      if (tipo === "pagar" && !temFornecedor && fornecedorId) {
+        const vinculo = await fetch(`/api/erp/financeiro/contas-pagar/${id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ fornecedorId })
+        });
+        if (!vinculo.ok) {
+          const d = (await vinculo.json().catch(() => ({}))) as { error?: string };
+          throw new Error(d.error ?? "Não foi possível vincular o fornecedor.");
+        }
+      }
+
       const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -275,6 +293,20 @@ function SettleForm({ tipo, id, descricao, saldoNumber, bankAccounts, formasPaga
                   onChange={(e) => setDesconto(e.target.value)}
                 />
               </label>
+              {tipo === "pagar" && !temFornecedor && (
+                <label className="full">
+                  Fornecedor <span className="sublabel">(esta conta está sem fornecedor)</span>
+                  <select value={fornecedorId} onChange={(e) => setFornecedorId(e.target.value)}>
+                    <option value="">Deixar sem fornecedor</option>
+                    {fornecedores.map((f) => <option key={f.id} value={f.id}>{f.nome}</option>)}
+                  </select>
+                  <span className="sublabel">
+                    Não encontrou?{" "}
+                    <a href="/erp/fornecedores" target="_blank" rel="noopener noreferrer">Cadastrar fornecedor →</a>{" "}
+                    — depois reabra esta baixa para ele aparecer na lista.
+                  </span>
+                </label>
+              )}
               <label>
                 Forma de Pagamento
                 <select value={formaPagamento} onChange={(e) => setFormaPagamento(e.target.value)}>
@@ -583,7 +615,7 @@ function NewAccountForm({ tipo, formasPagamento, clientes, classificacoes, onSuc
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-export function FinanceManager({ initialPayables, initialReceivables, bankAccounts, formasPagamento = [], clientes = [], maquinas = [], classificacoes = [], contasCobranca = [], isAdmin = false }: Props) {
+export function FinanceManager({ initialPayables, initialReceivables, bankAccounts, formasPagamento = [], clientes = [], maquinas = [], fornecedores = [], classificacoes = [], contasCobranca = [], isAdmin = false }: Props) {
   const router = useRouter();
   const [aba, setAba] = useState<Aba>("pagar");
   /** Seleção para baixa em lote (fechamento do mês): só contas a pagar em aberto. */
@@ -1395,6 +1427,8 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
           bankAccounts={bankAccounts}
           formasPagamento={formasPagamento}
           maquinas={maquinas}
+          fornecedores={fornecedores}
+          temFornecedor={aba !== "pagar" || Boolean((settlingItem as PayableSummary).fornecedorId)}
           onSuccess={handleSettleSuccess}
           onClose={() => setSettlingId(null)}
         />

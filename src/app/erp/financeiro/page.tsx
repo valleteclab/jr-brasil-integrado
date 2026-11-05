@@ -6,6 +6,7 @@ import type { PayableSummary, ReceivableSummary, BankAccountSummary, FinanceSumm
 import { listFormasPagamentoAtivas } from "@/domains/finance/application/payment-config-use-cases";
 import { listClassificacoes } from "@/domains/finance/application/classificacao-use-cases";
 import { listContasComCobranca } from "@/domains/finance/application/boleto-use-cases";
+import { prisma } from "@/lib/db/prisma";
 import { Button } from "@/components/shared/Button";
 import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
 import { getSession } from "@/lib/auth/session";
@@ -25,13 +26,14 @@ export default async function FinanceiroPage() {
   let formasPagamento: Array<{ id: string; nome: string; tipo?: string; contaBancariaId?: string | null }> = [];
   let clientes: ClienteOption[] = [];
   let maquinas: MaquinaCartaoOption[] = [];
+  let fornecedores: Array<{ id: string; nome: string }> = [];
   let classificacoes: Array<{ id: string; nome: string; grupo: string; tipo: "DESPESA" | "RECEITA" }> = [];
   let contasCobranca: Array<{ id: string; nome: string }> = [];
   let loadError = "";
 
   try {
     const scope = await getDevelopmentTenantScope();
-    const [pay, rec, banks, sum, formas, cli, maqs, classes, cobranca] = await Promise.all([
+    const [pay, rec, banks, sum, formas, cli, maqs, classes, cobranca, forns] = await Promise.all([
       listPayables(),
       listReceivables(),
       listBankAccounts(),
@@ -40,7 +42,13 @@ export default async function FinanceiroPage() {
       listActiveClienteOptions(),
       listMaquinasCartaoOptions(),
       listClassificacoes(scope),
-      listContasComCobranca(scope)
+      listContasComCobranca(scope),
+      prisma.fornecedor.findMany({
+        where: { tenantId: scope.tenantId, empresaId: scope.empresaId, ativo: true },
+        select: { id: true, razaoSocial: true, nomeFantasia: true },
+        orderBy: { razaoSocial: "asc" },
+        take: 500
+      })
     ]);
     payables = pay;
     receivables = rec;
@@ -51,6 +59,7 @@ export default async function FinanceiroPage() {
     maquinas = maqs;
     classificacoes = classes.map((c) => ({ id: c.id, nome: c.nome, grupo: c.grupo, tipo: c.tipo }));
     contasCobranca = cobranca;
+    fornecedores = forns.map((f) => ({ id: f.id, nome: f.nomeFantasia ?? f.razaoSocial }));
   } catch (error) {
     loadError = error instanceof Error ? error.message : "Não foi possível carregar o módulo financeiro.";
   }
@@ -122,6 +131,7 @@ export default async function FinanceiroPage() {
           formasPagamento={formasPagamento}
           clientes={clientes}
           maquinas={maquinas}
+          fornecedores={fornecedores}
           classificacoes={classificacoes}
           contasCobranca={contasCobranca}
           isAdmin={isAdmin}
