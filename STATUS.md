@@ -1049,3 +1049,23 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Sem dependências novas, sem mudança de schema, sem migration.
 - Arquivos: `src/lib/periodo.ts`, `src/components/shared/PeriodoRapido.tsx`, `src/components/erp/FinanceManager.tsx`, `scripts/test-periodo.ts`, STATUS.
 - Commit/push: A gerar.
+
+## 2026-11-05 — Baixa de contas a pagar: campos de recebimento removidos
+
+| Tarefa | Status | Observações |
+| --- | --- | --- |
+| Tirar maquininha/bandeira/parcelas da baixa de contas a pagar | Concluído | Era o cadastro de RECEBIMENTO aparecendo na tela de pagamento. |
+| Pagar no crédito escolhe o cartão da empresa | Concluído | Seletor filtra conta tipo CARTAO, igual ao assistente de entrada fiscal. |
+| Mensagem de entrada fiscal já processada | Concluído | Agora aponta o caminho: Financeiro → Contas a pagar → baixar. |
+| Fatura de cartão como conta a pagar | Pendente | Enquanto não existir, a baixa no crédito lança direto na conta do cartão. |
+
+- Relato de uso real (cliente, nota da LATOYS IMPORTS): ao baixar uma conta a pagar com cartão de crédito, a tela pedia maquininha e bandeira — dados de quem RECEBE. `MaquinaCartao` tem taxa de adquirente, prazo de recebível e "conta onde os recebíveis liquidam"; quem passa na maquininha é o fornecedor.
+- O campo aparecia **somente** em contas a pagar (`tipo === "pagar"`), ou seja, exatamente no lugar errado — em contas a receber, onde faria sentido, não existia.
+- O modelo correto já estava no `FiscalEntryWizard`: forma CARTAO_CREDITO paga por conta do tipo CARTAO. As duas telas estavam se contradizendo; agora seguem a mesma regra.
+- `BankAccountSummary` passou a expor `tipo`; as formas de pagamento passam a carregar `tipo`/`contaBancariaId` até a tela, então a detecção de crédito usa o cadastro e não o nome digitado.
+- Aviso de saldo negativo não aparece mais no cartão: ali saldo negativo é fatura em aberto, não falta de dinheiro.
+- Removido código morto: constante BANDEIRAS, prop `maquinas` e a consulta `listMaquinasCartaoOptions` na página do financeiro (o serviço segue disponível para quando a maquininha for para contas a receber).
+- Validação: `npx tsc --noEmit` sem erros; `npx next lint` sem avisos nos arquivos alterados.
+- Sem dependências novas, sem mudança de schema, sem migration.
+- Arquivos: `src/components/erp/FinanceManager.tsx`, `src/app/erp/financeiro/page.tsx`, `src/lib/services/finance.ts`, `src/domains/products/application/fiscal-entry-use-cases.ts`, STATUS.
+- Commit/push: A gerar.

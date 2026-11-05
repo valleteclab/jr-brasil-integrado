@@ -891,7 +891,13 @@ export async function processFiscalEntry(
     // o status vira ESTORNADA e NÃO pode ser reprocessado.
     if (entrada.status !== "AGUARDANDO_CONFERENCIA" && entrada.status !== "CONFERIDA") {
       if (entrada.status === "ESTOQUE_PROCESSADO") {
-        throw new Error("Entrada fiscal já processada.");
+        // A opção "já paga" só existe no lançamento, por parcela. Depois de processada, o
+        // pagamento se resolve no contas a pagar — a mensagem precisa dizer isso, senão o
+        // operador fica tentando reeditar a nota (foi o que aconteceu em uso real).
+        throw new Error(
+          "Esta entrada fiscal já foi processada e não pode ser lançada de novo (duplicaria estoque e contas a pagar). " +
+            "Para registrar que a nota já foi paga, vá em Financeiro → Contas a pagar e dê baixa na conta gerada por ela."
+        );
       }
       if (entrada.status === "ESTORNADA") {
         throw new Error("Entrada fiscal estornada não pode ser reprocessada.");

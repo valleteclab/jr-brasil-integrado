@@ -63,6 +63,8 @@ export type BankAccountSummary = {
   id: string;
   nome: string;
   banco: string;
+  /** CAIXA | CORRENTE | POUPANCA | CARTAO. Separa o cartão de crédito das contas de dinheiro. */
+  tipo: string;
   saldoAtual: string;
   saldoAtualNumber: number;
 };
@@ -338,6 +340,7 @@ export async function listBankAccounts(): Promise<BankAccountSummary[]> {
     id: c.id,
     nome: c.nome,
     banco: c.banco ?? "—",
+    tipo: c.tipo,
     saldoAtual: formatBrl(Number(c.saldoAtual)),
     saldoAtualNumber: Number(c.saldoAtual)
   }));

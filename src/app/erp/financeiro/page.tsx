@@ -1,8 +1,8 @@
 import { PageHeader } from "@/components/shared/PageHeader";
 import { KpiCard } from "@/components/shared/KpiCard";
 import { FinanceManager } from "@/components/erp/FinanceManager";
-import { listPayables, listReceivables, listBankAccounts, getFinanceSummary, listActiveClienteOptions, listMaquinasCartaoOptions } from "@/lib/services/finance";
-import type { PayableSummary, ReceivableSummary, BankAccountSummary, FinanceSummary, ClienteOption, MaquinaCartaoOption } from "@/lib/services/finance";
+import { listPayables, listReceivables, listBankAccounts, getFinanceSummary, listActiveClienteOptions } from "@/lib/services/finance";
+import type { PayableSummary, ReceivableSummary, BankAccountSummary, FinanceSummary, ClienteOption } from "@/lib/services/finance";
 import { listFormasPagamentoAtivas } from "@/domains/finance/application/payment-config-use-cases";
 import { listClassificacoes } from "@/domains/finance/application/classificacao-use-cases";
 import { listContasComCobranca } from "@/domains/finance/application/boleto-use-cases";
@@ -22,23 +22,21 @@ export default async function FinanceiroPage() {
   let receivables: ReceivableSummary[] = [];
   let bankAccounts: BankAccountSummary[] = [];
   let summary: FinanceSummary | null = null;
-  let formasPagamento: Array<{ id: string; nome: string }> = [];
+  let formasPagamento: Array<{ id: string; nome: string; tipo?: string; contaBancariaId?: string | null }> = [];
   let clientes: ClienteOption[] = [];
-  let maquinas: MaquinaCartaoOption[] = [];
   let classificacoes: Array<{ id: string; nome: string; grupo: string; tipo: "DESPESA" | "RECEITA" }> = [];
   let contasCobranca: Array<{ id: string; nome: string }> = [];
   let loadError = "";
 
   try {
     const scope = await getDevelopmentTenantScope();
-    const [pay, rec, banks, sum, formas, cli, maqs, classes, cobranca] = await Promise.all([
+    const [pay, rec, banks, sum, formas, cli, classes, cobranca] = await Promise.all([
       listPayables(),
       listReceivables(),
       listBankAccounts(),
       getFinanceSummary(),
       listFormasPagamentoAtivas(scope),
       listActiveClienteOptions(),
-      listMaquinasCartaoOptions(),
       listClassificacoes(scope),
       listContasComCobranca(scope)
     ]);
@@ -46,9 +44,8 @@ export default async function FinanceiroPage() {
     receivables = rec;
     bankAccounts = banks;
     summary = sum;
-    formasPagamento = formas.map((f) => ({ id: f.id, nome: f.nome }));
+    formasPagamento = formas.map((f) => ({ id: f.id, nome: f.nome, tipo: f.tipo, contaBancariaId: f.contaBancariaId }));
     clientes = cli;
-    maquinas = maqs;
     classificacoes = classes.map((c) => ({ id: c.id, nome: c.nome, grupo: c.grupo, tipo: c.tipo }));
     contasCobranca = cobranca;
   } catch (error) {
@@ -121,7 +118,6 @@ export default async function FinanceiroPage() {
           bankAccounts={bankAccounts}
           formasPagamento={formasPagamento}
           clientes={clientes}
-          maquinas={maquinas}
           classificacoes={classificacoes}
           contasCobranca={contasCobranca}
           isAdmin={isAdmin}
