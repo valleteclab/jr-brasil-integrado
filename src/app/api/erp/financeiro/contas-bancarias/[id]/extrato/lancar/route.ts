@@ -21,11 +21,18 @@ export async function POST(request: Request, { params }: { params: { id: string 
       valor: number;
       classificacaoId?: string | null;
       descricaoErp?: string | null;
+      confirmarSemNota?: boolean;
     };
     const r = await lancarLinhaExtrato(scope, params.id, body, session?.usuarioId);
     return NextResponse.json(r);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro ao lançar a transação.";
-    return NextResponse.json({ error: message }, { status: authErrorStatus(error, error instanceof BoletoError ? 400 : 500) });
+    // Aviso de ordem do fluxo (já existe despesa, ou há nota a lançar) não é falha: devolve 409
+    // para a tela oferecer conciliar com o que existe em vez de criar outra despesa.
+    const avisos = (error as { avisos?: string[] })?.avisos;
+    return NextResponse.json(
+      { error: message, ...(avisos ? { avisos } : {}) },
+      { status: avisos ? 409 : authErrorStatus(error, error instanceof BoletoError ? 400 : 500) }
+    );
   }
 }

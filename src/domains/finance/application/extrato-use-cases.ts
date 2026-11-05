@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import { scopedByTenantCompany, scopedByTenantCompanyAmbiente } from "@/lib/auth/dev-session";
+import { buscarSuspeitasDuplicidade } from "./buscar-duplicidade-use-cases";
 import { createAuditLog } from "@/lib/audit/audit-service";
 import { BoletoError } from "@/domains/finance/application/boleto-use-cases";
 import { getBankProvider, contaTemExtrato, bancoLabel } from "@/domains/finance/providers/bank-registry";
@@ -287,7 +288,16 @@ export async function extratoConciliado(
 export async function lancarLinhaExtrato(
   scope: TenantScope,
   contaBancariaId: string,
-  input: { data: string; descricao: string; documento?: string | null; valor: number; classificacaoId?: string | null; descricaoErp?: string | null },
+  input: {
+    data: string;
+    descricao: string;
+    documento?: string | null;
+    valor: number;
+    classificacaoId?: string | null;
+    descricaoErp?: string | null;
+    /** Usuário viu os avisos e confirmou que esta saída não tem nota lançada. */
+    confirmarSemNota?: boolean;
+  },
   usuarioId?: string
 ): Promise<{ contaPagarId: string | null; movimentoId: string }> {
   const valor = Math.round(Number(input.valor) * 100) / 100;
@@ -296,6 +306,53 @@ export async function lancarLinhaExtrato(
   if (Number.isNaN(dataMovimento.getTime())) throw new BoletoError("Data inválida.");
   const descricao = (input.descricaoErp ?? "").trim() || `Conciliação: ${input.descricao}`.slice(0, 180);
   const round2 = (v: number) => Math.round((v + Number.EPSILON) * 100) / 100;
+
+  // ORDEM CORRETA DO FLUXO: a NOTA cria a obrigação, o extrato só confirma que o dinheiro saiu.
+  // Lançar a despesa pelo extrato é atalho legítimo para o que não tem nota (tarifa, Pix avulso),
+  // mas quando já existe uma despesa — ou uma NFS-e esperando lançamento — o certo é VINCULAR.
+  // Sem esta checagem nasce a duplicidade (foi o que aconteceu com a E R COSTA).
+  if (valor < 0 && !input.confirmarSemNota) {
+    const avisos: string[] = [];
+
+    const suspeitas = await buscarSuspeitasDuplicidade(scope, {
+      valor: Math.abs(valor),
+      data: dataMovimento,
+      descricao
+    });
+    if (suspeitas.length) {
+      avisos.push(
+        `já existe a despesa "${suspeitas[0].descricao}" (${suspeitas[0].motivos.join(", ")}) — concilie esta linha com ela`
+      );
+    }
+
+    // NFS-e recebida com o mesmo valor e ainda não lançada: importar a nota primeiro deixa a
+    // despesa com documento fiscal e fornecedor, o que o lançamento pelo extrato não tem.
+    const de = new Date(dataMovimento);
+    de.setDate(de.getDate() - 15);
+    const ate = new Date(dataMovimento);
+    ate.setDate(ate.getDate() + 15);
+    const nfsePendente = await prisma.distribuicaoNfseDocumento.findFirst({
+      where: {
+        ...scopedByTenantCompany(scope),
+        papel: "TOMADOR",
+        contaPagarId: null,
+        valor: { gte: Math.abs(valor) - 0.02, lte: Math.abs(valor) + 0.02 },
+        dataEmissao: { gte: de, lte: ate }
+      },
+      select: { nNFSe: true, emitenteNome: true }
+    });
+    if (nfsePendente) {
+      avisos.push(
+        `há uma NFS-e deste valor ainda não lançada (nº ${nfsePendente.nNFSe ?? "—"} de ${nfsePendente.emitenteNome ?? "prestador"}) — lance a nota primeiro e depois concilie`
+      );
+    }
+
+    if (avisos.length) {
+      const erro = new Error(`Antes de criar outra despesa: ${avisos.join("; ")}.`) as Error & { avisos?: string[] };
+      erro.avisos = avisos;
+      throw erro;
+    }
+  }
 
   return prisma.$transaction(async (tx) => {
     const conta = await tx.contaBancaria.findFirst({ where: { id: contaBancariaId, ...scopedByTenantCompany(scope), ativo: true } });

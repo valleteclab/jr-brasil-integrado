@@ -420,12 +420,13 @@ type NewAccountFormProps = {
   tipo: Aba;
   formasPagamento: FormaPagamentoOption[];
   clientes: ClienteOption[];
+  fornecedores: Array<{ id: string; nome: string }>;
   classificacoes: ClassificacaoOption[];
   onSuccess: (item: PayableSummary | ReceivableSummary) => void;
   onClose: () => void;
 };
 
-function NewAccountForm({ tipo, formasPagamento, clientes, classificacoes, onSuccess, onClose }: NewAccountFormProps) {
+function NewAccountForm({ tipo, formasPagamento, clientes, fornecedores, classificacoes, onSuccess, onClose }: NewAccountFormProps) {
   const [descricao, setDescricao] = useState("");
   const [valor, setValor] = useState("");
   const [vencimento, setVencimento] = useState(new Date().toISOString().substring(0, 10));
@@ -433,6 +434,7 @@ function NewAccountForm({ tipo, formasPagamento, clientes, classificacoes, onSuc
   const [numeroDocumento, setNumeroDocumento] = useState("");
   const [observacoes, setObservacoes] = useState("");
   const [clienteId, setClienteId] = useState("");
+  const [fornecedorId, setFornecedorId] = useState("");
   const [classificacaoId, setClassificacaoId] = useState("");
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState("");
@@ -450,6 +452,10 @@ function NewAccountForm({ tipo, formasPagamento, clientes, classificacoes, onSuc
       setErro("Selecione o cliente.");
       return;
     }
+    if (tipo === "pagar" && !fornecedorId) {
+      setErro("Selecione o fornecedor — sem ele a conta não diz para quem se está pagando.");
+      return;
+    }
     setLoading(true);
     try {
       const res = await fetch(endpoint, {
@@ -463,7 +469,7 @@ function NewAccountForm({ tipo, formasPagamento, clientes, classificacoes, onSuc
           numeroDocumento: numeroDocumento || undefined,
           observacoes: observacoes || undefined,
           classificacaoId: classificacaoId || undefined,
-          ...(tipo === "receber" ? { clienteId } : {})
+          ...(tipo === "receber" ? { clienteId } : { fornecedorId })
         })
       });
       const data = (await res.json()) as { id?: string; error?: string };
@@ -475,7 +481,7 @@ function NewAccountForm({ tipo, formasPagamento, clientes, classificacoes, onSuc
         descricao,
         parte: tipo === "receber"
           ? (clientes.find((c) => c.id === clienteId)?.nome ?? "—")
-          : "—",
+          : (fornecedores.find((f) => f.id === fornecedorId)?.nome ?? "—"),
         numeroDocumento: numeroDocumento || "—",
         vencimento: new Date(vencimento + "T12:00:00").toLocaleDateString("pt-BR"),
         vencimentoRaw: vencimento,
@@ -520,7 +526,7 @@ function NewAccountForm({ tipo, formasPagamento, clientes, classificacoes, onSuc
               </div>
             )}
             <div className="erp-form">
-              {tipo === "receber" && (
+              {tipo === "receber" ? (
                 <label className="full">
                   Cliente <span className="required">*</span>
                   <select value={clienteId} onChange={(e) => setClienteId(e.target.value)} required>
@@ -529,6 +535,20 @@ function NewAccountForm({ tipo, formasPagamento, clientes, classificacoes, onSuc
                       <option key={c.id} value={c.id}>{c.nome}</option>
                     ))}
                   </select>
+                </label>
+              ) : (
+                <label className="full">
+                  Fornecedor <span className="required">*</span>
+                  <select value={fornecedorId} onChange={(e) => setFornecedorId(e.target.value)} required>
+                    <option value="">Selecione o fornecedor...</option>
+                    {fornecedores.map((f) => (
+                      <option key={f.id} value={f.id}>{f.nome}</option>
+                    ))}
+                  </select>
+                  <span className="sublabel">
+                    Não está na lista?{" "}
+                    <a href="/erp/fornecedores" target="_blank" rel="noopener noreferrer">Cadastrar fornecedor →</a>
+                  </span>
                 </label>
               )}
               <label className="full">
@@ -1522,6 +1542,7 @@ Opções cadastradas: ${opcoes.join(", ") || "(nenhuma)"}
           tipo={aba}
           formasPagamento={formasPagamento}
           clientes={clientes}
+          fornecedores={fornecedores}
           classificacoes={classificacoes}
           onSuccess={handleNewSuccess}
           onClose={() => setShowNewForm(false)}
