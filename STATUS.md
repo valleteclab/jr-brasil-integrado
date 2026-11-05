@@ -1226,3 +1226,21 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Sem dependências novas, sem mudança de schema, sem migration.
 - Arquivos: `src/app/api/erp/produtos/buscar/route.ts`, `src/components/erp/FiscalEntryWizard.tsx`, STATUS.
 - Commit/push: A gerar.
+
+## 2026-11-05 — Heurística de vínculo automático mais exigente
+
+| Tarefa | Status | Observações |
+| --- | --- | --- |
+| Ordem dos critérios invertida | Concluído | Memória do fornecedor (98) → GTIN (92) → SKU (100, condicionado). |
+| Código curto não casa sozinho | Concluído | Menos de 4 caracteres vai para conferência. |
+| Produto de outro fornecedor não casa | Concluído | Código igual entre fornecedores é coincidência, não vínculo. |
+
+- Caso real: item "mini pc" vinculado a "brita" com 100% de confiança e sem marcar revisão.
+- Causa: o SKU interno era comparado com o código do fornecedor. Código de fornecedor **não é único no mundo** ("7", "001", "123" se repetem), e produtos criados por entrada nascem com esse código virando SKU — daí a colisão entre itens sem nenhuma relação.
+- Princípio adotado: **na dúvida, não sugerir**. Item sem vínculo aparece na conferência e alguém resolve; vínculo errado com 100% passa batido e entra no estoque errado.
+- Regras isoladas em `match-produto-regras.ts` com teste (`scripts/test-match-produto.ts`, 8 casos), incluindo espaços tentando burlar o tamanho mínimo.
+- Efeito colateral esperado: mais itens chegando sem vínculo na conferência. É intencional — e a busca de produto, melhorada no commit anterior, é o que torna isso aceitável.
+- Validação: 8 casos aprovados; `npx tsc --noEmit` sem erros; `npx next lint` sem avisos.
+- Sem dependências novas, sem mudança de schema, sem migration.
+- Arquivos: `src/domains/products/application/match-produto-regras.ts`, `fiscal-entry-use-cases.ts`, `src/components/erp/FiscalEntryWizard.tsx`, `scripts/test-match-produto.ts`, STATUS.
+- Commit/push: A gerar.

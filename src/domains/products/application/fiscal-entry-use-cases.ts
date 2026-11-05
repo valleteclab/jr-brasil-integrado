@@ -11,6 +11,7 @@ import type { ParsedNfeItem } from "@/domains/products/xml/nfe-server-parser";
 import { callOpenRouter } from "@/domains/ai/openrouter-service";
 import { cfopIndicaSt, isSubstituicaoTributaria } from "@/domains/fiscal/cfop";
 import { grupoMonofasicoDoNcm } from "@/domains/fiscal/simples/monofasico-ncm";
+import { avaliarMatchPorSku } from "./match-produto-regras";
 import { cfopVendaPadrao, creditoPorFinalidade, finalidadeEhInsumo, finalidadeMovimentaEstoque, isFinalidadeEntrada, notaEhDevolucao, resolveCfopEntrada } from "@/domains/fiscal/finalidade-entrada";
 import { loadFinalidadeRules, resolveFinalidadeForItem } from "@/domains/fiscal/application/finalidade-regra-use-cases";
 import { sugerirClassificacaoEntrada } from "@/domains/finance/application/classificacao-use-cases";
@@ -379,51 +380,53 @@ async function resolveFornecedor(tx: Prisma.TransactionClient, scope: TenantScop
 }
 
 async function matchProduct(tx: Prisma.TransactionClient, scope: TenantScope, fornecedorId: string | undefined, item: ParsedNfeItem) {
-  const sku = item.supplierCode.toUpperCase();
+  const escopo = { tenantId: scope.tenantId, empresaId: scope.empresaId };
 
-  const bySku = await tx.produto.findFirst({
-    where: {
-      tenantId: scope.tenantId,
-      empresaId: scope.empresaId,
-      sku,
-      ativo: true
+  // 1) MEMÓRIA DO FORNECEDOR — o mais confiável: o código é específico daquele fornecedor e
+  // alguém já confirmou o vínculo antes.
+  if (fornecedorId) {
+    const bySupplierCode = await tx.produtoFornecedor.findFirst({
+      where: { ...escopo, fornecedorId, codigoFornecedor: item.supplierCode, ativo: true },
+      include: { produto: true }
+    });
+    if (bySupplierCode) {
+      return { product: bySupplierCode.produto, confidence: 98, review: false };
     }
-  });
-
-  if (bySku) {
-    return { product: bySku, confidence: 100, review: false };
   }
 
+  // 2) GTIN — código de barras é global e único por natureza.
   if (item.gtin) {
-    const byGtin = await tx.produto.findFirst({
-      where: {
-        tenantId: scope.tenantId,
-        empresaId: scope.empresaId,
-        gtin: item.gtin,
-        ativo: true
-      }
-    });
-
+    const byGtin = await tx.produto.findFirst({ where: { ...escopo, gtin: item.gtin, ativo: true } });
     if (byGtin) {
       return { product: byGtin, confidence: 92, review: false };
     }
   }
 
-  if (fornecedorId) {
-    const bySupplierCode = await tx.produtoFornecedor.findFirst({
+  // 3) SKU igual ao código do fornecedor — o critério MAIS FRÁGIL, e o que vinculou "mini pc" a
+  // "brita": código de fornecedor não é único no mundo, e produtos criados por entrada nascem
+  // com esse código virando SKU. Só aceita quando o código é específico o bastante e o produto
+  // não pertence a outro fornecedor.
+  const sku = item.supplierCode.toUpperCase();
+  const bySku = await tx.produto.findFirst({ where: { ...escopo, sku, ativo: true } });
+  if (bySku) {
+    const vinculoDeOutro = await tx.produtoFornecedor.findFirst({
       where: {
-        tenantId: scope.tenantId,
-        empresaId: scope.empresaId,
-        fornecedorId,
-        codigoFornecedor: item.supplierCode,
-        ativo: true
+        ...escopo,
+        produtoId: bySku.id,
+        ativo: true,
+        ...(fornecedorId ? { fornecedorId: { not: fornecedorId } } : {})
       },
-      include: { produto: true }
+      select: { id: true }
     });
-
-    if (bySupplierCode) {
-      return { product: bySupplierCode.produto, confidence: 95, review: false };
+    const avaliacao = avaliarMatchPorSku({
+      codigoFornecedor: item.supplierCode,
+      vinculadoAOutroFornecedor: Boolean(vinculoDeOutro)
+    });
+    if (avaliacao.aceitar) {
+      return { product: bySku, confidence: avaliacao.confianca, review: avaliacao.revisar };
     }
+    // Recusado de propósito: melhor o item chegar sem vínculo na conferência do que entrar
+    // no estoque do produto errado.
   }
 
   return { product: null, confidence: 0, review: true };
