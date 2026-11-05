@@ -438,6 +438,7 @@ model Empresa {
   spedXmlDocumentos         SpedXmlDocumento[]
   ciapBens                  CiapBem[]
   contasBancarias           ContaBancaria[]
+  faturasCartao             FaturaCartao[]
   maquinasCartao            MaquinaCartao[]
   formasPagamento           FormaPagamento[]
   movimentosFinanceiros     MovimentoFinanceiro[]
@@ -2473,6 +2474,8 @@ model ContaPagar {
   fornecedor             Fornecedor?              @relation(fields: [fornecedorId], references: [id])
   pedidoCompra           PedidoCompra?            @relation(fields: [pedidoCompraId], references: [id])
   entradaFiscal          EntradaFiscal?           @relation(fields: [entradaFiscalId], references: [id])
+  /// Preenchida quando esta conta a pagar É a fatura de um cartão (criada no fechamento).
+  faturaCartao           FaturaCartao?
   entradaFiscalParcela   EntradaFiscalParcela?    @relation(fields: [entradaFiscalParcelaId], references: [id])
   descricao              String
   numeroDocumento        String?
@@ -3127,6 +3130,11 @@ model ContaBancaria {
   saldoInicial         Decimal                @default(0) @db.Decimal(14, 2)
   saldoAtual           Decimal                @default(0) @db.Decimal(14, 2)
   ativo                Boolean                @default(true)
+  // Ciclo da fatura — usados apenas quando tipo = "CARTAO". Dia do mês (1..31); o gerador
+  // ajusta para o último dia quando o mês é mais curto (ex.: fechamento 31 em fevereiro).
+  cartaoDiaFechamento  Int?
+  cartaoDiaVencimento  Int?
+  faturasCartao        FaturaCartao[]
   movimentos           MovimentoFinanceiro[]
   contasPagar          ContaPagar[]
   contasReceber        ContaReceber[]
@@ -3890,4 +3898,55 @@ model VendaMigradaItem {
   total          Decimal      @db.Decimal(14, 2)
 
   @@index([vendaMigradaId])
+}
+
+/// Fatura do cartão de crédito da empresa: agrupa as compras de um ciclo e, ao fechar, vira uma
+/// conta a pagar com vencimento próprio. Sem isso, pagar um fornecedor no crédito debitava o
+/// banco na hora — mas o dinheiro só sai mesmo quando a fatura é paga.
+model FaturaCartao {
+  id              String                   @id @default(cuid())
+  tenantId        String
+  empresaId       String
+  empresa         Empresa                  @relation(fields: [empresaId], references: [id])
+  ambiente        AmbienteFiscal           @default(HOMOLOGACAO)
+  /// O cartão (ContaBancaria com tipo = "CARTAO").
+  contaBancariaId String
+  contaBancaria   ContaBancaria            @relation(fields: [contaBancariaId], references: [id])
+  /// Competência "AAAA-MM" do VENCIMENTO — é como as pessoas chamam a fatura ("a de novembro").
+  competencia     String
+  fechamento      DateTime
+  vencimento      DateTime
+  valorTotal      Decimal                  @default(0) @db.Decimal(14, 2)
+  /// ABERTA (recebendo compras) | FECHADA (virou conta a pagar) | PAGA.
+  status          String                   @default("ABERTA")
+  /// Conta a pagar gerada no fechamento; pagar ela é que tira o dinheiro do banco.
+  contaPagarId    String?                  @unique
+  contaPagar      ContaPagar?              @relation(fields: [contaPagarId], references: [id])
+  lancamentos     LancamentoFaturaCartao[]
+  criadoEm        DateTime                 @default(now())
+  atualizadoEm    DateTime                 @updatedAt
+
+  @@unique([tenantId, empresaId, contaBancariaId, competencia])
+  @@index([tenantId, empresaId, status])
+}
+
+/// Uma parcela de uma compra dentro da fatura. Compra em 3x gera três lançamentos, um em cada
+/// fatura seguinte — é assim que a fatura fecha com a do banco.
+model LancamentoFaturaCartao {
+  id             String       @id @default(cuid())
+  tenantId       String
+  empresaId      String
+  faturaCartaoId String
+  fatura         FaturaCartao @relation(fields: [faturaCartaoId], references: [id], onDelete: Cascade)
+  /// Conta a pagar que originou a compra (nulo em lançamento avulso).
+  contaPagarId   String?
+  descricao      String
+  valor          Decimal      @db.Decimal(14, 2)
+  parcela        Int          @default(1)
+  totalParcelas  Int          @default(1)
+  dataCompra     DateTime
+  criadoEm       DateTime     @default(now())
+
+  @@index([tenantId, empresaId, faturaCartaoId])
+  @@index([contaPagarId])
 }

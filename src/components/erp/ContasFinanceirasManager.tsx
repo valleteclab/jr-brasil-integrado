@@ -5,7 +5,7 @@ import { Button } from "@/components/shared/Button";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { MoneyInput, formatMoneyBR } from "@/components/shared/NumericInputs";
 
-type Conta = { id: string; nome: string; tipo: string; banco: string; agencia: string; conta: string; chavePix: string; tipoChavePix: string; saldoInicial: number; ativo: boolean };
+type Conta = { id: string; nome: string; tipo: string; banco: string; agencia: string; conta: string; chavePix: string; tipoChavePix: string; saldoInicial: number; ativo: boolean; cartaoDiaFechamento?: number | null; cartaoDiaVencimento?: number | null };
 
 const TIPOS = [
   { value: "CAIXA", label: "Caixa (dinheiro)" },
@@ -24,7 +24,7 @@ const TIPOS_CHAVE_PIX = [
 
 const TIPO_LABEL: Record<string, string> = Object.fromEntries(TIPOS.map((t) => [t.value, t.label]));
 
-const VAZIO = { nome: "", tipo: "CAIXA", banco: "", agencia: "", conta: "", chavePix: "", tipoChavePix: "", saldoInicial: "" };
+const VAZIO = { nome: "", tipo: "CAIXA", banco: "", agencia: "", conta: "", chavePix: "", tipoChavePix: "", saldoInicial: "", cartaoDiaFechamento: "", cartaoDiaVencimento: "" };
 
 export function ContasFinanceirasManager({ initial }: { initial: Conta[] }) {
   const [contas, setContas] = useState(initial);
@@ -35,6 +35,7 @@ export function ContasFinanceirasManager({ initial }: { initial: Conta[] }) {
   const [message, setMessage] = useState("");
 
   const ehConta = form.tipo === "CORRENTE" || form.tipo === "POUPANCA";
+  const ehCartao = form.tipo === "CARTAO";
 
   function reset() {
     setForm({ ...VAZIO });
@@ -51,7 +52,9 @@ export function ContasFinanceirasManager({ initial }: { initial: Conta[] }) {
       conta: conta.conta,
       chavePix: conta.chavePix,
       tipoChavePix: conta.tipoChavePix,
-      saldoInicial: conta.saldoInicial ? formatMoneyBR(Math.round(Number(conta.saldoInicial) * 100)) : ""
+      saldoInicial: conta.saldoInicial ? formatMoneyBR(Math.round(Number(conta.saldoInicial) * 100)) : "",
+      cartaoDiaFechamento: conta.cartaoDiaFechamento != null ? String(conta.cartaoDiaFechamento) : "",
+      cartaoDiaVencimento: conta.cartaoDiaVencimento != null ? String(conta.cartaoDiaVencimento) : ""
     });
     setMessage("");
     setError("");
@@ -68,7 +71,13 @@ export function ContasFinanceirasManager({ initial }: { initial: Conta[] }) {
     setMessage("");
     try {
       // Campo em pt-BR ("1.234,56") -> numero.
-      const payload = { ...form, saldoInicial: Number(form.saldoInicial.replace(/\./g, "").replace(",", ".")) || 0 };
+      const payload = {
+        ...form,
+        saldoInicial: Number(form.saldoInicial.replace(/\./g, "").replace(",", ".")) || 0,
+        // Dias só fazem sentido no cartão; nas demais contas vão nulos para limpar sobras.
+        cartaoDiaFechamento: form.tipo === "CARTAO" ? Number(form.cartaoDiaFechamento) || null : null,
+        cartaoDiaVencimento: form.tipo === "CARTAO" ? Number(form.cartaoDiaVencimento) || null : null
+      };
       const url = editingId ? `/api/erp/configuracoes/contas-financeiras/${editingId}` : "/api/erp/configuracoes/contas-financeiras";
       const response = await fetch(url, { method: editingId ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       const data = await response.json() as { error?: string };
@@ -116,6 +125,36 @@ export function ContasFinanceirasManager({ initial }: { initial: Conta[] }) {
             {TIPOS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
           </select>
         </label>
+        {ehCartao && (
+          <>
+            <label>
+              Fecha dia *
+              <input
+                type="number"
+                min={1}
+                max={31}
+                value={form.cartaoDiaFechamento}
+                onChange={(e) => setForm({ ...form, cartaoDiaFechamento: e.target.value })}
+                placeholder="Ex: 28"
+              />
+            </label>
+            <label>
+              Vence dia *
+              <input
+                type="number"
+                min={1}
+                max={31}
+                value={form.cartaoDiaVencimento}
+                onChange={(e) => setForm({ ...form, cartaoDiaVencimento: e.target.value })}
+                placeholder="Ex: 5"
+              />
+            </label>
+            <p className="field-hint full" style={{ margin: 0 }}>
+              Sem esses dias o sistema não sabe em qual fatura a compra entra — pagar no crédito fica bloqueado.
+              Compra feita no dia do fechamento já cai na fatura seguinte.
+            </p>
+          </>
+        )}
         {ehConta && (
           <>
             <label>Banco<input value={form.banco} onChange={(e) => setForm({ ...form, banco: e.target.value })} /></label>

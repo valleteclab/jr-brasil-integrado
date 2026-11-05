@@ -1137,3 +1137,24 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Sem dependências novas, sem mudança de schema, sem migration. As 39 contas antigas seguem sem fornecedor até alguém vincular (a baixa agora oferece).
 - Arquivos: `src/lib/services/nfse-distribution.ts`, `src/components/erp/FinanceManager.tsx`, `src/app/erp/financeiro/page.tsx`, `src/lib/services/finance.ts`, STATUS.
 - Commit/push: A gerar.
+
+## 2026-11-05 — Fatura do cartão de crédito
+
+| Tarefa | Status | Observações |
+| --- | --- | --- |
+| Modelos `FaturaCartao` e `LancamentoFaturaCartao` | Concluído | Migration `20261105180000_fatura_cartao` (aplicada e validada no banco de teste). |
+| Ciclo do cartão no cadastro da conta | Concluído | `cartaoDiaFechamento` / `cartaoDiaVencimento`, obrigatórios para pagar no crédito. |
+| Compra no crédito entra na fatura | Concluído | `settlePayable` lança na fatura do ciclo; parcelado divide entre as faturas seguintes. |
+| Fechar / reabrir fatura | Concluído | Fechar gera a conta a pagar do vencimento; reabrir só enquanto ela não tiver pagamento. |
+| Pagar a fatura quita o ciclo | Concluído | Marca PAGA e devolve o saldo do cartão. |
+| Tela de faturas | Concluído | `/erp/financeiro/faturas`, com as compras de cada fatura para conferir com o banco. |
+
+- Decisões do usuário: fechamento por dia fixo **com** botão manual, e compra parcelada **dividida** entre as faturas seguintes (igual ao cartão de verdade).
+- Ciclo em `fatura-cartao-ciclo.ts`, puro e testado (`scripts/test-fatura-cartao.ts`, 16 casos): compra no dia do fechamento já cai na fatura seguinte; fechamento 31 vira 28/30 em mês curto; vencimento menor que o fechamento é mês seguinte; parcelas somam o total exato.
+- A fatura de um cartão não pode ser paga com cartão — bloqueado no `settlePayable` para não criar ciclo infinito.
+- Fatura fechada não recebe compra nova (a conta a pagar já existe e divergiria); para corrigir, reabrir.
+- O saldo da conta tipo CARTAO representa a dívida: a compra reduz, o pagamento da fatura devolve.
+- Migration roda sozinha no deploy (o Dockerfile executa `prisma migrate deploy` no start do container).
+- Validação: 16 casos do ciclo aprovados; `npx prisma validate` ok; `npx prisma db execute` aplicou o SQL no banco de teste; `npx tsc --noEmit` sem erros; `npx next lint` sem avisos.
+- Arquivos: `prisma/schema.prisma`, `prisma/migrations/20261105180000_fatura_cartao/migration.sql`, `src/domains/finance/application/fatura-cartao-ciclo.ts`, `fatura-cartao-use-cases.ts`, `finance-use-cases.ts`, `payment-config-use-cases.ts`, `src/app/api/erp/financeiro/faturas-cartao/[id]/{fechar,reabrir}/route.ts`, `src/app/erp/financeiro/faturas/page.tsx`, `src/components/erp/FaturasCartaoManager.tsx`, `ContasFinanceirasManager.tsx`, `ErpShell.tsx`, `scripts/test-fatura-cartao.ts`, STATUS.
+- Commit/push: A gerar.

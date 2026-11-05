@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db/prisma";
 import type { TenantScope } from "@/lib/auth/dev-session";
 import { createAuditLog } from "@/lib/audit/audit-service";
 import { scopedByTenantCompany } from "@/lib/auth/dev-session";
+import { lancarCompraNoCartao, quitarFaturaDaContaPagar } from "./fatura-cartao-use-cases";
 
 const TX_OPTIONS = { maxWait: 10000, timeout: 20000 };
 
@@ -154,6 +155,33 @@ export async function settlePayable(
         where: { id: input.contaBancariaId },
         data: { saldoAtual: saldoPosterior }
       });
+
+      // Pagou no cartão de crédito: a compra entra na FATURA (dividida, se parcelada). O saldo do
+      // cartão acima representa a dívida; o banco só é debitado quando a fatura for paga.
+      if (contaBancaria.tipo === "CARTAO") {
+        const ehPagamentoDeFatura = await tx.faturaCartao.findFirst({
+          where: { contaPagarId, ...scopedByTenantCompany(scope) },
+          select: { id: true }
+        });
+        if (ehPagamentoDeFatura) {
+          throw new FinanceValidationError(
+            "A fatura de um cartão não pode ser paga com cartão. Escolha a conta de onde o dinheiro sai."
+          );
+        }
+        await lancarCompraNoCartao(tx, scope, {
+          cartaoId: contaBancaria.id,
+          contaPagarId,
+          descricao: conta.descricao,
+          valor: valorLiquido,
+          parcelas: input.parcelas && input.parcelas > 1 ? input.parcelas : 1,
+          dataCompra: dataPagamento
+        });
+      }
+    }
+
+    // Quitou a conta que É a fatura de um cartão: fecha o ciclo e devolve o limite.
+    if (isPago) {
+      await quitarFaturaDaContaPagar(tx, scope, contaPagarId, valorLiquido);
     }
 
     const movimento = await tx.movimentoFinanceiro.create({

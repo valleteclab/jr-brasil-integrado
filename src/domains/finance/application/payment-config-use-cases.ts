@@ -54,7 +54,20 @@ export type ContaFinanceiraInput = {
   tipoChavePix?: string | null;
   saldoInicial?: number | null;
   ativo?: boolean;
+  /** Ciclo da fatura — só para tipo CARTAO. Dia do mês (1..31). */
+  cartaoDiaFechamento?: number | null;
+  cartaoDiaVencimento?: number | null;
 };
+
+/** Dia do mês válido (1..31) ou null. Fora disso, a fatura cairia em data impossível. */
+function diaDoCiclo(valor: unknown, rotulo: string): number | null {
+  if (valor === undefined || valor === null || valor === "") return null;
+  const n = Number(valor);
+  if (!Number.isInteger(n) || n < 1 || n > 31) {
+    throw new PaymentConfigError(`${rotulo} deve ser um dia do mês entre 1 e 31.`);
+  }
+  return n;
+}
 
 function normalizeTipoConta(value: unknown): TipoContaFinanceira {
   const tipo = clean(value).toUpperCase() as TipoContaFinanceira;
@@ -121,6 +134,8 @@ export async function createContaFinanceira(scope: TenantScope, input: ContaFina
       tipoChavePix: clean(input.tipoChavePix).toUpperCase() || null,
       saldoInicial,
       saldoAtual: saldoInicial,
+      cartaoDiaFechamento: tipo === "CARTAO" ? diaDoCiclo(input.cartaoDiaFechamento, "Dia de fechamento") : null,
+      cartaoDiaVencimento: tipo === "CARTAO" ? diaDoCiclo(input.cartaoDiaVencimento, "Dia de vencimento") : null,
       ativo: input.ativo ?? true
     }
   });
@@ -163,6 +178,12 @@ export async function updateContaFinanceira(scope: TenantScope, id: string, inpu
       ...(input.conta !== undefined ? { conta: clean(input.conta) || null } : {}),
       ...(input.chavePix !== undefined ? { chavePix: clean(input.chavePix) || null } : {}),
       ...(input.tipoChavePix !== undefined ? { tipoChavePix: clean(input.tipoChavePix).toUpperCase() || null } : {}),
+      ...(input.cartaoDiaFechamento !== undefined
+        ? { cartaoDiaFechamento: diaDoCiclo(input.cartaoDiaFechamento, "Dia de fechamento") }
+        : {}),
+      ...(input.cartaoDiaVencimento !== undefined
+        ? { cartaoDiaVencimento: diaDoCiclo(input.cartaoDiaVencimento, "Dia de vencimento") }
+        : {}),
       ...(ajusteSaldo ? { saldoInicial: ajusteSaldo.saldoInicialNovo, saldoAtual: ajusteSaldo.saldoAtualNovo } : {}),
       ...(input.ativo !== undefined ? { ativo: input.ativo } : {})
     }
