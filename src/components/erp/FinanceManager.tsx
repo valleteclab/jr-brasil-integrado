@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { PayableSummary, ReceivableSummary, BankAccountSummary, ClienteOption, MaquinaCartaoOption } from "@/lib/services/finance";
 import { estimarRecebimentoCartao, type ModalidadeCartao } from "@/lib/cartao";
+import { useRevalidar } from "@/lib/hooks/use-revalidar";
 import { EnviarDocumentoModal } from "./EnviarDocumentoModal";
 
 /** Baixa (movimento) de um título — para o seletor de estorno parcial. */
@@ -120,6 +121,7 @@ function SettleForm({ tipo, id, descricao, saldoNumber, bankAccounts, formasPaga
   const [parcelas, setParcelas] = useState(1);
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState("");
+  const revalidar = useRevalidar();
 
   // PAGAR no cartão de crédito sai pelo CARTÃO DA EMPRESA (conta do tipo CARTAO), igual à entrada
   // fiscal. Maquininha, bandeira e parcelas NÃO entram aqui: aquilo é o cadastro de RECEBIMENTO
@@ -182,8 +184,19 @@ function SettleForm({ tipo, id, descricao, saldoNumber, bankAccounts, formasPaga
         })
       });
       const data = (await res.json()) as { id?: string; status?: string; error?: string };
-      if (!res.ok) throw new Error(data.error ?? "Erro ao registrar baixa.");
+      if (!res.ok) {
+        // "Já quitada/cancelada" quase sempre significa tela velha: a baixa já passou (por esta
+        // pessoa ou por outra) e a lista não tinha atualizado. Recarrega e explica, em vez de
+        // devolver um erro que faz o usuário tentar de novo.
+        if (/quitada|cancelada/i.test(data.error ?? "")) {
+          revalidar();
+          setErro("Esta conta já consta como paga. A tela foi atualizada — confira o status antes de tentar de novo.");
+          return;
+        }
+        throw new Error(data.error ?? "Erro ao registrar baixa.");
+      }
       onSuccess(id, data.status ?? "PAGO");
+      revalidar();
     } catch (err) {
       setErro(err instanceof Error ? err.message : "Erro inesperado.");
     } finally {
@@ -764,6 +777,7 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
       const data = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) throw new Error(data.error || "Não foi possível excluir a conta.");
       setPayables((prev) => prev.filter((r) => r.id !== id));
+      router.refresh();
     } catch (e) {
       setGlobalError(e instanceof Error ? e.message : "Falha ao excluir conta a pagar.");
     } finally {
@@ -807,6 +821,7 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
       const data = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) throw new Error(data.error || "Não foi possível excluir a conta.");
       setReceivables((prev) => prev.filter((r) => r.id !== id));
+      router.refresh();
     } catch (e) {
       setGlobalError(e instanceof Error ? e.message : "Falha ao excluir conta a receber.");
     } finally {
@@ -915,12 +930,16 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
     if (aba === "pagar") setPayables((prev) => updateRow(prev));
     else setReceivables((prev) => updateRow(prev));
     setSettlingId(null);
+    // A linha já foi corrigida na hora; o refresh acerta o resto da página (totais, saldo da
+    // conta, contador das abas) sem o usuário precisar de F5.
+    router.refresh();
   }
 
   function handleNewSuccess(item: PayableSummary | ReceivableSummary) {
     if (aba === "pagar") setPayables((prev) => [item as PayableSummary, ...prev]);
     else setReceivables((prev) => [item as ReceivableSummary, ...prev]);
     setShowNewForm(false);
+    router.refresh();
   }
 
   return (

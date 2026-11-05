@@ -1105,3 +1105,19 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Sem dependências novas, sem mudança de schema, sem migration.
 - Arquivos: `src/app/api/erp/entradas-fiscais/[id]/danfe/route.ts`, `src/lib/services/finance.ts`, `src/components/erp/FinanceManager.tsx`, STATUS.
 - Commit/push: A gerar.
+
+## 2026-11-05 — Fim do F5: telas do ERP revalidam sozinhas
+
+| Tarefa | Status | Observações |
+| --- | --- | --- |
+| Revalidar ao voltar para a aba | Concluído | `RevalidarAutomatico` montado no layout do ERP — vale para todas as telas. |
+| Revalidar após baixa, exclusão e nova conta | Concluído | `router.refresh()`, o mesmo padrão que o estorno já usava. |
+| "Conta já quitada" deixa de ser erro cru | Concluído | Recarrega a tela e explica, em vez de mandar o usuário tentar de novo. |
+
+- Caso real (conta nº 1295, E R COSTA, R$ 3.600): baixa em 29/10, estorno em 29/10 e nova baixa em 05/11 17:41. A baixa de 05/11 **funcionou**; a lista continuou mostrando "vencido", a cliente tentou outra vez e recebeu "esta conta já está quitada ou cancelada". Conferido no banco: três movimentos, sendo um deles estorno — **nenhuma duplicidade de valor**, saldo íntegro.
+- Causa: as telas do ERP são Server Components lidos uma vez na abertura; alterações feitas depois (por quem está na tela ou por outra pessoa) só apareciam com F5.
+- O revalidador não faz polling: dispara quando a aba volta a ficar visível, com intervalo mínimo de 10s.
+- Validação: `npx tsc --noEmit` sem erros; `npx next lint` sem avisos.
+- Sem dependências novas, sem mudança de schema, sem migration.
+- Arquivos: `src/components/shared/RevalidarAutomatico.tsx`, `src/lib/hooks/use-revalidar.ts`, `src/app/erp/layout.tsx`, `src/components/erp/FinanceManager.tsx`, STATUS.
+- Commit/push: A gerar.

@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
 import { ErpShell } from "@/components/erp/ErpShell";
+import { RevalidarAutomatico } from "@/components/shared/RevalidarAutomatico";
 import { AssinarButton } from "@/components/erp/AssinarButton";
 import { getErpShellContext } from "@/lib/services/erp-shell";
 import { getSession } from "@/lib/auth/session";
@@ -81,6 +82,8 @@ export default async function ErpLayout({ children }: Readonly<{ children: React
 
   return (
     <ErpShell context={context} modulos={session.modulos}>
+      {/* Volta da aba = dados do servidor de novo, em qualquer tela do ERP (acaba com o F5). */}
+      <RevalidarAutomatico />
       {children}
     </ErpShell>
   );
