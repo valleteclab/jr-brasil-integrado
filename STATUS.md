@@ -1244,3 +1244,28 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Sem dependências novas, sem mudança de schema, sem migration.
 - Arquivos: `src/domains/products/application/match-produto-regras.ts`, `fiscal-entry-use-cases.ts`, `src/components/erp/FiscalEntryWizard.tsx`, `scripts/test-match-produto.ts`, STATUS.
 - Commit/push: A gerar.
+
+## 2026-11-05 — Despesa lançada duas vezes: detecção e correção
+
+| Tarefa | Status | Observações |
+| --- | --- | --- |
+| Detector de duplicidade | Concluído | Pontua valor, data, fornecedor, descrição e origem (`duplicidade-despesa.ts`). |
+| Trava ao importar NFS-e | Concluído | Recusa com HTTP 409 e devolve as candidatas, em vez de criar a segunda conta. |
+| Vincular NFS-e a despesa existente | Concluído | `vincularContaPagarId`: a nota aponta para a conta do extrato e completa o fornecedor. |
+| Tela de revisão dos casos antigos | Concluído | `/erp/financeiro/duplicidades`, com ação de mesclar. |
+
+- Caso real: o pagamento da E R COSTA foi lançado pela conciliação do extrato (conta já paga, **sem fornecedor**) e depois a NFS-e da mesma prestação foi importada como despesa. Dois registros, um único gasto.
+- Causa de fundo: há quatro caminhos para registrar a mesma despesa (extrato OFX, entrada fiscal, NFS-e recebida, lançamento manual) e nenhum olhava o conjunto.
+- Pontuação conservadora por decisão: **valor igual é condição necessária**, e valor igual com datas distantes (mensalidade) é descartado. Falso positivo irrita; falso negativo dobra a despesa no resultado do mês.
+- Mesclar mantém a conta por onde o dinheiro saiu, move o vínculo da NFS-e e só apaga conta SEM pagamento — duas contas pagas significam pagamento em duplicidade, que se resolve por estorno, não por mesclagem.
+- Teste: `scripts/test-duplicidade.ts` (9 casos), incluindo o caso E R COSTA, mensalidade de mesmo valor em meses diferentes e diferença de 1 centavo.
+- Validação: 9 casos aprovados; `npx tsc --noEmit` sem erros; `npx next lint` sem avisos; `npx next build` compilado com sucesso.
+- Sem dependências novas, sem mudança de schema, sem migration.
+- Arquivos: `src/domains/finance/application/duplicidade-despesa.ts`, `buscar-duplicidade-use-cases.ts`, `src/lib/services/nfse-distribution.ts`, `src/app/api/erp/financeiro/duplicidades/route.ts`, `src/app/api/erp/nfse-recebidas/[id]/importar/route.ts`, `src/app/erp/financeiro/duplicidades/page.tsx`, `src/components/erp/DuplicidadesManager.tsx`, `ErpShell.tsx`, `scripts/test-duplicidade.ts`, STATUS.
+- Commit/push: A gerar.
+
+### Diagnóstico: notas 8048, 15209 e 1721 "não apareceram" no contas a pagar
+
+- As três **geraram conta a pagar corretamente** (R$ 200,00, R$ 936,34 e R$ 200,00), mesma empresa, ambiente PRODUCAO, status ABERTO, vencimento 04/11/2026.
+- Não é bug de dados: a listagem ordena por vencimento **crescente** com 25 por página, e **150 das 153 contas da empresa vencem antes de 04/11** — as três caem na última página.
+- Pendente (proposto, aguardando decisão): inverter a ordenação para vencidas/a vencer primeiro e abrir a tela já filtrada por "Este mês".

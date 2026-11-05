@@ -5,6 +5,7 @@ import type { TenantScope } from "@/lib/auth/dev-session";
 import type { AmbienteFiscal, Prisma } from "@prisma/client";
 import { carregarCertificado } from "@/domains/fiscal/application/certificado-use-cases";
 import { createAuditLog } from "@/lib/audit/audit-service";
+import { buscarSuspeitasDuplicidade } from "@/domains/finance/application/buscar-duplicidade-use-cases";
 import { getFiscalRuntimeConfig } from "@/domains/fiscal/application/fiscal-config-use-cases";
 import { buildDanfse } from "@/domains/fiscal/providers/nacional/danfse";
 import { pfxTlsOptions } from "@/domains/fiscal/providers/pfx-utils";
@@ -204,6 +205,10 @@ export type ImportarNfseDespesaInput = {
   contaBancariaId?: string | null;
   classificacaoId?: string | null;
   descricao?: string | null;
+  /** Usuário viu as suspeitas de duplicidade e confirmou que é outra despesa. */
+  confirmarMesmoComDuplicidade?: boolean;
+  /** Em vez de criar outra conta, amarra esta NFS-e a uma despesa que já existe. */
+  vincularContaPagarId?: string | null;
 };
 
 /**
@@ -275,6 +280,52 @@ export async function importarNfseComoDespesa(scope: TenantScope, docId: string,
   const descricao =
     input.descricao?.trim() ||
     `NFS-e ${doc.nNFSe || onlyDigits(doc.chaveAcesso) || doc.nsu} - ${doc.emitenteNome || "prestador não informado"}`;
+
+  // A mesma despesa costuma entrar por dois caminhos: o extrato (conciliação) e a nota. Antes de
+  // criar outra conta a pagar, procura uma que já represente este gasto.
+  if (!input.vincularContaPagarId && !input.confirmarMesmoComDuplicidade) {
+    const suspeitas = await buscarSuspeitasDuplicidade(scope, {
+      valor,
+      data: vencimento,
+      descricao,
+      fornecedorId: fornecedor?.id ?? null
+    });
+    if (suspeitas.length) {
+      const erro = new Error(
+        `Esta despesa provavelmente já está lançada: "${suspeitas[0].descricao}" ` +
+          `(${suspeitas[0].motivos.join(", ")}). Vincule a NFS-e a ela ou confirme que são gastos diferentes.`
+      ) as Error & { suspeitas?: typeof suspeitas };
+      erro.suspeitas = suspeitas;
+      throw erro;
+    }
+  }
+
+  // Vincular: a despesa já existe (veio do extrato, por exemplo) e só faltava o documento fiscal.
+  if (input.vincularContaPagarId) {
+    const existente = await prisma.contaPagar.findFirst({
+      where: { id: input.vincularContaPagarId, tenantId: scope.tenantId, empresaId: scope.empresaId },
+      select: { id: true, fornecedorId: true }
+    });
+    if (!existente) throw new Error("Conta a pagar informada para o vínculo não foi encontrada.");
+    return prisma.$transaction(async (tx) => {
+      // Aproveita para completar o fornecedor, que o lançamento do extrato não tem.
+      if (!existente.fornecedorId && fornecedor?.id) {
+        await tx.contaPagar.update({ where: { id: existente.id }, data: { fornecedorId: fornecedor.id } });
+      }
+      await tx.distribuicaoNfseDocumento.update({
+        where: { id: doc.id },
+        data: { contaPagarId: existente.id, status: "IMPORTADO" }
+      });
+      await createAuditLog(tx, {
+        scope,
+        entidade: "DistribuicaoNfseDocumento",
+        entidadeId: doc.id,
+        acao: "NFSE_VINCULADA_DESPESA_EXISTENTE",
+        payload: { contaPagarId: existente.id, valor, prestador: doc.emitenteNome }
+      });
+      return { contaPagarId: existente.id, vinculado: true };
+    });
+  }
 
   return prisma.$transaction(async (tx) => {
     const contaPagar = await tx.contaPagar.create({
