@@ -1188,3 +1188,23 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Validação: `npx tsc --noEmit` sem erros; `npx next lint` sem avisos.
 - Arquivos: `src/lib/services/finance.ts`, `src/components/erp/FinanceManager.tsx`, STATUS.
 - Commit/push: A gerar.
+
+## 2026-11-05 — Reclassificar finalidade sem estornar a entrada
+
+| Tarefa | Status | Observações |
+| --- | --- | --- |
+| Trocar finalidade com a entrada já processada | Concluído | Botão "Finalidade" na lista de entradas fiscais. |
+| Prévia do impacto antes de confirmar | Concluído | Diz se o item entra/sai do estoque e se o SPED do mês já foi gerado. |
+| Ajuste de estoque e custo médio | Concluído | Movimento próprio (AJUSTE / RECLASSIFICACAO_FINALIDADE), não estorno. |
+| CIAP ao sair de IMOBILIZADO | Concluído | O bem do ativo criado pela finalidade é removido junto. |
+
+- Fluxo antigo: estornar → excluir a nota → voltar na distribuição → dar ciência de novo → reimportar o XML. Para um clique errado na conferência.
+- A finalidade decide quatro coisas, e todas são refeitas aqui: entrada no estoque, CFOP de entrada (SPED), crédito por tributo e o bem do CIAP.
+- Reaproveita `applyFinalidadeManual`, a mesma regra da conferência — CFOP e crédito não podem divergir entre os dois caminhos.
+- **Trava deliberada**: se o saldo não cobrir a retirada (item já vendido/consumido), a operação é recusada com explicação, porque o custo daquela saída já foi calculado pela finalidade antiga. Esse caso continua exigindo estorno.
+- **Aviso de SPED**: se o mês já tem arquivo gerado, a tela avisa que a mudança exige declaração retificadora — avisa, não bloqueia: a decisão é do contador.
+- Custo médio extraído para `custo-medio.ts` com teste (`scripts/test-custo-medio.ts`, 8 casos): entrada, saída, saldo zerado preservando o custo e proteção contra custo negativo.
+- Validação: 8 casos do custo médio aprovados; `npx tsc --noEmit` sem erros; `npx next lint` sem avisos; `npx next build` compilou as rotas novas (o `kill EPERM` ao final é o encerramento do worker no Windows, já conhecido, posterior ao build).
+- Sem dependências novas, sem mudança de schema, sem migration.
+- Arquivos: `src/domains/products/application/reclassificar-finalidade-use-cases.ts`, `custo-medio.ts`, `fiscal-entry-use-cases.ts` (export de `applyFinalidadeManual`), `src/app/api/erp/entradas-fiscais/itens/[itemId]/reclassificar/route.ts`, `src/components/erp/ReclassificarFinalidade.tsx`, `FiscalEntriesList.tsx`, `scripts/test-custo-medio.ts`, STATUS.
+- Commit/push: A gerar.

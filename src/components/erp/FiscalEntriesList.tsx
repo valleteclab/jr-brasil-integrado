@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/shared/Button";
+import { ReclassificarFinalidade } from "@/components/erp/ReclassificarFinalidade";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import type { FiscalEntrySummary } from "@/lib/services/fiscal-entries";
 import type { NfeDistributionSummary } from "@/lib/services/nfe-distribution";
@@ -146,6 +147,7 @@ export function FiscalEntriesList({ entries, receivedDocuments, ultimaSync, nfse
   const [message, setMessage] = useState("");
   const [deleting, setDeleting] = useState(false);
   const [reversingId, setReversingId] = useState<string | null>(null);
+  const [reclassificando, setReclassificando] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [importingId, setImportingId] = useState<string | null>(null);
   const [importLabel, setImportLabel] = useState("");
@@ -927,6 +929,12 @@ export function FiscalEntriesList({ entries, receivedDocuments, ultimaSync, nfse
                 </td>
                 <td className="actions">
                   <Button href={`/erp/entradas-fiscais/nova?id=${entry.id}`} variant="light">Abrir</Button>
+                  {/* Entrada já processada: trocar finalidade aqui evita estornar + reimportar o XML. */}
+                  {entry.canReverse && (
+                    <button type="button" className="link-button" onClick={() => setReclassificando(entry.id)}>
+                      Finalidade
+                    </button>
+                  )}
                   {entry.canReverse && (
                     <button className="danger-link" type="button" disabled={reversingId === entry.id} onClick={() => reverseEntry(entry)}>
                       {reversingId === entry.id ? "Estornando..." : "Estornar"}
@@ -971,6 +979,9 @@ export function FiscalEntriesList({ entries, receivedDocuments, ultimaSync, nfse
           }}
         />
       )}
-    </section>
+      {reclassificando && (
+        <ReclassificarFinalidade entradaId={reclassificando} onClose={() => setReclassificando(null)} />
+      )}
+      </section>
   );
 }

@@ -1875,7 +1875,7 @@ type LinkBatchContext = {
  * manualmente (cfopOverride, 4 dígitos) tem prioridade sobre a derivação — cobre casos especiais
  * (devolução, remessa, importação) que não estão na matriz das 4 finalidades.
  */
-async function applyFinalidadeManual(
+export async function applyFinalidadeManual(
   tx: Prisma.TransactionClient,
   scope: TenantScope,
   item: { id: string; cfopEntradaDerivado: string | null; fornecedorId: string | null; impostos: Array<{ id: string; tributo: TipoTributo; cst: string | null; csosn: string | null }> },
