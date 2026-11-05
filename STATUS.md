@@ -1269,3 +1269,18 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - As três **geraram conta a pagar corretamente** (R$ 200,00, R$ 936,34 e R$ 200,00), mesma empresa, ambiente PRODUCAO, status ABERTO, vencimento 04/11/2026.
 - Não é bug de dados: a listagem ordena por vencimento **crescente** com 25 por página, e **150 das 153 contas da empresa vencem antes de 04/11** — as três caem na última página.
 - Pendente (proposto, aguardando decisão): inverter a ordenação para vencidas/a vencer primeiro e abrir a tela já filtrada por "Este mês".
+
+## 2026-11-05 — Tela do extrato mostra os avisos de ordem do fluxo
+
+| Tarefa | Status | Observações |
+| --- | --- | --- |
+| Avisos na tela de conciliação | Concluído | O 409 do servidor vira aviso com as saídas certas, não erro genérico. |
+| Atalho para lançar a nota antes | Concluído | Link para NFS-e recebidas, que é o caminho correto. |
+| Escape consciente | Concluído | "Não tem nota — lançar mesmo assim" envia `confirmarSemNota`. |
+
+- Fecha o ciclo da duplicidade: o servidor já recusava, mas a tela mostrava só a mensagem, sem o que fazer.
+- Enquanto há aviso, o botão de confirmar some — para seguir é preciso escolher conscientemente o escape.
+- Os avisos são limpos ao abrir outra linha, para não vazarem de uma transação para outra.
+- Validação: `npx tsc --noEmit` sem erros; `npx next lint` sem avisos; `npx next build` compilado (o `kill EPERM` final é o encerramento do worker no Windows, posterior ao build).
+- Arquivos: `src/components/erp/ExtratoBancarioWorkspace.tsx`, STATUS.
+- Commit/push: A gerar.

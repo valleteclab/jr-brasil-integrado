@@ -64,6 +64,9 @@ export function ExtratoBancarioWorkspace({ contas }: { contas: Array<{ id: strin
   // Conciliação manual de linha só-no-banco (lançar no ERP).
   const [classificacoes, setClassificacoes] = useState<Array<{ id: string; nome: string; tipo: string }>>([]);
   const [lancando, setLancando] = useState<{ linha: Linha; descricaoErp: string; classificacaoId: string } | null>(null);
+  // Avisos de ORDEM DO FLUXO vindos do servidor (409): já existe despesa igual, ou há NFS-e do
+  // mesmo valor esperando lançamento. Não é erro — é a dica de conciliar em vez de duplicar.
+  const [avisosFluxo, setAvisosFluxo] = useState<string[]>([]);
   const [lancBusy, setLancBusy] = useState(false);
 
   // A consulta PERSISTE ao sair da tela: cada conta/período guarda o último resultado no navegador
@@ -144,11 +147,12 @@ export function ExtratoBancarioWorkspace({ contas }: { contas: Array<{ id: strin
         setClassificacoes((d.classificacoes ?? []).filter((c) => c.ativo !== false).map((c) => ({ id: c.id, nome: c.nome, tipo: c.tipo })));
       } catch { /* sem classificações → lança sem */ }
     }
+    setAvisosFluxo([]);
     setLancando({ linha: l, descricaoErp: l.descricao, classificacaoId: "" });
   }
 
   /** Confirma o lançamento: cria conta paga quitada (débito) ou crédito no ERP e re-consulta. */
-  async function confirmarLancamento() {
+  async function confirmarLancamento(forcar = false) {
     if (!lancando || !resultado) return;
     setLancBusy(true);
     setErro("");
@@ -163,11 +167,18 @@ export function ExtratoBancarioWorkspace({ contas }: { contas: Array<{ id: strin
           documento: l.documento,
           valor: l.valor,
           classificacaoId: lancando.classificacaoId || null,
-          descricaoErp: lancando.descricaoErp.trim() || null
+          descricaoErp: lancando.descricaoErp.trim() || null,
+          // Só vai true depois que a pessoa leu os avisos e insistiu.
+          confirmarSemNota: forcar
         })
       });
-      const d = (await res.json().catch(() => ({}))) as { error?: string };
+      const d = (await res.json().catch(() => ({}))) as { error?: string; avisos?: string[] };
+      if (res.status === 409 && d.avisos?.length) {
+        setAvisosFluxo(d.avisos);
+        return;
+      }
       if (!res.ok) throw new Error(d.error || "Não foi possível lançar a transação.");
+      setAvisosFluxo([]);
       setLancando(null);
       await consultar(); // re-consulta: a linha concilia com o lançamento novo e o cache é atualizado
     } catch (e) {
@@ -351,13 +362,37 @@ export function ExtratoBancarioWorkspace({ contas }: { contas: Array<{ id: strin
                                   ))}
                                 </select>
                               </label>
+                              {avisosFluxo.length > 0 && (
+                                <div className="alert warning" style={{ flex: "1 1 100%", margin: 0 }}>
+                                  <span className="lead">Esta despesa provavelmente já existe:</span>
+                                  <span>
+                                    <ul style={{ margin: "4px 0 8px 18px" }}>
+                                      {avisosFluxo.map((a) => <li key={a}>{a}</li>)}
+                                    </ul>
+                                    O caminho normal é lançar a nota primeiro e depois conciliar esta linha com a
+                                    despesa — assim o gasto fica com documento fiscal e fornecedor, e não entra duas vezes.
+                                    <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+                                      <a className="btn-erp ghost sm" href="/erp/nfse-recebidas" target="_blank" rel="noopener noreferrer">
+                                        Abrir NFS-e recebidas
+                                      </a>
+                                      <button type="button" className="btn-erp sm" disabled={lancBusy} onClick={() => void confirmarLancamento(true)}>
+                                        {lancBusy ? "Lançando…" : "Não tem nota — lançar mesmo assim"}
+                                      </button>
+                                    </div>
+                                  </span>
+                                </div>
+                              )}
                               <span style={{ fontSize: 12, paddingBottom: 8 }}>
                                 {l.valor < 0
                                   ? <>Vai criar uma <strong>conta paga quitada</strong> de {brl(Math.abs(l.valor))} em {l.data ? new Date(l.data).toLocaleDateString("pt-BR") : "—"} nesta conta.</>
                                   : <>Vai registrar um <strong>crédito</strong> de {brl(l.valor)} em {l.data ? new Date(l.data).toLocaleDateString("pt-BR") : "—"} nesta conta.</>}
                               </span>
-                              <button type="button" className="btn-erp primary sm" disabled={lancBusy} onClick={confirmarLancamento}>{lancBusy ? "Lançando…" : "Confirmar lançamento"}</button>
-                              <button type="button" className="btn-erp ghost sm" disabled={lancBusy} onClick={() => setLancando(null)}>Cancelar</button>
+                              {!avisosFluxo.length && (
+                                <button type="button" className="btn-erp primary sm" disabled={lancBusy} onClick={() => void confirmarLancamento()}>
+                                  {lancBusy ? "Lançando…" : "Confirmar lançamento"}
+                                </button>
+                              )}
+                              <button type="button" className="btn-erp ghost sm" disabled={lancBusy} onClick={() => { setAvisosFluxo([]); setLancando(null); }}>Cancelar</button>
                             </div>
                           </td>
                         </tr>
