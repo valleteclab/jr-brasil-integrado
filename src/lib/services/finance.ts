@@ -29,6 +29,10 @@ export type PayableSummary = {
   canDelete: boolean;
   /** Tem baixa estornável: valorPago > 0 e status PAGO/PARCIAL. Opcional para não quebrar objetos otimistas. */
   canEstornar?: boolean;
+  /** Entrada fiscal que gerou a conta e TEM XML — habilita o atalho do DANFE. null se foi lançamento manual. */
+  entradaFiscalId?: string | null;
+  /** Rótulo do atalho, ex.: "NF-e 12345/1". */
+  notaLabel?: string | null;
 };
 
 export type ReceivableSummary = {
@@ -168,7 +172,9 @@ export async function listPayables(filtroStatus?: string): Promise<PayableSummar
     where: { ...scopedByTenantCompanyAmbiente(scope), ...whereStatus },
     include: {
       fornecedor: { select: { razaoSocial: true, nomeFantasia: true } },
-      classificacao: { select: { id: true, nome: true } }
+      classificacao: { select: { id: true, nome: true } },
+      // Só para o atalho do DANFE: sem xmlImportacaoId (entrada manual) não há PDF para abrir.
+      entradaFiscal: { select: { id: true, numero: true, serie: true, xmlImportacaoId: true } }
     },
     orderBy: [{ vencimento: "asc" }, { criadoEm: "desc" }]
   });
@@ -233,6 +239,10 @@ export async function listPayables(filtroStatus?: string): Promise<PayableSummar
       formaPagamento: c.formaPagamento ?? "—",
       classificacaoId: c.classificacao?.id ?? null,
       classificacaoNome: c.classificacao?.nome ?? null,
+      entradaFiscalId: c.entradaFiscal?.xmlImportacaoId ? c.entradaFiscal.id : null,
+      notaLabel: c.entradaFiscal?.xmlImportacaoId
+        ? `NF-e ${c.entradaFiscal.numero ?? ""}${c.entradaFiscal.serie ? `/${c.entradaFiscal.serie}` : ""}`.trim()
+        : null,
       comoPago: (() => {
         const m = movPorConta.get(c.id);
         if (!m) return null;

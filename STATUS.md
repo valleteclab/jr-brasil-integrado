@@ -1088,3 +1088,20 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Sem dependências novas, sem mudança de schema, sem migration.
 - Arquivos: `src/lib/cartao.ts`, `scripts/test-cartao.ts`, `src/components/erp/FinanceManager.tsx`, `src/app/erp/financeiro/page.tsx`, `src/lib/services/finance.ts`, `src/domains/finance/application/finance-use-cases.ts`, `src/app/api/erp/financeiro/contas-receber/[id]/baixar/route.ts`, STATUS.
 - Commit/push: A gerar.
+
+## 2026-11-05 — Atalho do DANFE no contas a pagar
+
+| Tarefa | Status | Observações |
+| --- | --- | --- |
+| Link do DANFE na linha da conta | Concluído | Botão "📄 NF-e 123/1" ao lado do nº do documento, abre em outra aba. |
+| Rota do PDF da nota de entrada | Concluído | `GET /api/erp/entradas-fiscais/[id]/danfe`, gera na hora do XML guardado. |
+
+- Pedido de cliente: para ver a nota era preciso sair do financeiro e procurar em entradas fiscais.
+- O PDF é gerado por `gerarDanfePdf` a partir do `xmlImportacao.xmlOriginal` — a mesma função já usada na distribuição DF-e, então vale para XML de terceiro.
+- O atalho só aparece quando a entrada tem XML; lançamento manual não tem DANFE e a rota responde 404 com a explicação.
+- A rota filtra por tenant/empresa, então o id de uma nota de outra empresa não abre.
+- Em produção: 103 contas a pagar passam a exibir o atalho; nenhuma entrada manual sem XML.
+- Validação: `npx tsc --noEmit` sem erros; `npx next lint` sem avisos.
+- Sem dependências novas, sem mudança de schema, sem migration.
+- Arquivos: `src/app/api/erp/entradas-fiscais/[id]/danfe/route.ts`, `src/lib/services/finance.ts`, `src/components/erp/FinanceManager.tsx`, STATUS.
+- Commit/push: A gerar.
