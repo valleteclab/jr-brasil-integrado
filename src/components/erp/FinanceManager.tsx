@@ -800,6 +800,37 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
     }
   }
 
+  async function corrigirForma(conta: PayableSummary) {
+    const atual = conta.formaPagamento === "—" ? "" : conta.formaPagamento;
+    const opcoes = formasPagamento.map((f) => f.nome);
+    const nova = window.prompt(
+      `Forma de pagamento de "${conta.descricao}".
+
+Opções cadastradas: ${opcoes.join(", ") || "(nenhuma)"}
+
+` +
+        "Isso corrige apenas o rótulo — valor, data e saldo não mudam. Para trocar a conta de onde o dinheiro saiu, estorne a baixa.",
+      atual
+    );
+    if (nova === null) return;
+    setBusyId(conta.id);
+    setGlobalError("");
+    try {
+      const res = await fetch(`/api/erp/financeiro/contas-pagar/${conta.id}/forma-pagamento`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ formaPagamento: nova.trim() || null })
+      });
+      const d = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(d.error || "Não foi possível corrigir a forma de pagamento.");
+      router.refresh();
+    } catch (e) {
+      setGlobalError(e instanceof Error ? e.message : "Falha ao corrigir a forma de pagamento.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function excluirPagar(id: string, descricao: string) {
     if (!window.confirm(`Excluir a conta a pagar "${descricao}"? Esta ação não pode ser desfeita.`)) return;
     setBusyId(id);
@@ -1310,7 +1341,7 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
                   {aba === "receber" && (r as ReceivableSummary).pixStatus === "DEVOLVIDA" && (
                     <span className="status-badge mute" style={{ fontSize: 11 }}>Pix devolvido</span>
                   )}
-                  {aba === "pagar" && r.canSettle && (
+                  {aba === "pagar" && r.canSettle && !(r as PayableSummary).canEstornar && (
                     <button
                       type="button"
                       className="btn-erp ghost sm"
@@ -1318,6 +1349,19 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
                       onClick={() => setEditando(r as PayableSummary)}
                     >
                       Editar
+                    </button>
+                  )}
+                  {/* Já tem pagamento: o Editar inteiro é recusado pelo backend (mudaria valor/saldo),
+                      mas trocar só o RÓTULO da forma é correção cadastral e continua permitido. */}
+                  {aba === "pagar" && (r as PayableSummary).canEstornar && (
+                    <button
+                      type="button"
+                      className="btn-erp ghost sm"
+                      disabled={busyId === r.id}
+                      title="Corrigir a forma de pagamento registrada (não altera valor, data nem saldo)"
+                      onClick={() => corrigirForma(r as PayableSummary)}
+                    >
+                      {busyId === r.id ? "..." : "Forma"}
                     </button>
                   )}
                   {aba === "pagar" && (

@@ -28,6 +28,57 @@ function garantirEditavel(conta: { status: string; valorPago: unknown }) {
   }
 }
 
+/**
+ * Corrige APENAS o rótulo da forma de pagamento, inclusive em conta já paga.
+ *
+ * Trocar "Pix" por "Cartão" num pagamento já feito é correção cadastral: não muda valor, data,
+ * saldo nem a conta de onde o dinheiro saiu. Antes, o único caminho era estornar a baixa e
+ * refazer — e quem não sabia disso simplesmente não achava a opção.
+ *
+ * Mudar a CONTA de onde saiu o dinheiro continua exigindo estorno: aí o saldo precisa ser
+ * refeito, e isso não é correção de rótulo.
+ */
+export async function corrigirFormaPagamento(
+  scope: TenantScope,
+  id: string,
+  formaPagamento: string | null,
+  usuarioId?: string
+) {
+  const conta = await prisma.contaPagar.findFirst({ where: { id, ...scopedByTenantCompany(scope) } });
+  if (!conta) throw new FinanceValidationError("Conta a pagar não encontrada.");
+  if (conta.status === "CANCELADO") throw new FinanceValidationError("Conta cancelada não pode ser alterada.");
+
+  const nova = formaPagamento?.trim() || null;
+  const anterior = conta.formaPagamento ?? null;
+  if (nova === anterior) return conta;
+
+  return prisma.$transaction(async (tx) => {
+    const atualizada = await tx.contaPagar.update({ where: { id }, data: { formaPagamento: nova } });
+
+    // A baixa já registrada também carrega a forma: sem atualizar aqui, o "como foi pago" da
+    // listagem continuaria mostrando a forma antiga.
+    const ultimoMovimento = await tx.movimentoFinanceiro.findFirst({
+      where: { contaPagarId: id, origem: "CONTA_PAGAR", ...scopedByTenantCompany(scope) },
+      orderBy: { dataMovimento: "desc" },
+      select: { id: true }
+    });
+    if (ultimoMovimento) {
+      await tx.movimentoFinanceiro.update({ where: { id: ultimoMovimento.id }, data: { formaPagamento: nova } });
+    }
+
+    await createAuditLog(tx, {
+      scope,
+      entidade: "ContaPagar",
+      entidadeId: id,
+      acao: "CORRIGIR_FORMA_PAGAMENTO",
+      payload: { antes: anterior, depois: nova, movimentoId: ultimoMovimento?.id ?? null },
+      usuarioId
+    });
+
+    return atualizada;
+  });
+}
+
 export type EditPayableInput = {
   descricao?: string;
   valor?: number;

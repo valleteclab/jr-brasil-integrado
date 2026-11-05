@@ -1158,3 +1158,19 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Validação: 16 casos do ciclo aprovados; `npx prisma validate` ok; `npx prisma db execute` aplicou o SQL no banco de teste; `npx tsc --noEmit` sem erros; `npx next lint` sem avisos.
 - Arquivos: `prisma/schema.prisma`, `prisma/migrations/20261105180000_fatura_cartao/migration.sql`, `src/domains/finance/application/fatura-cartao-ciclo.ts`, `fatura-cartao-use-cases.ts`, `finance-use-cases.ts`, `payment-config-use-cases.ts`, `src/app/api/erp/financeiro/faturas-cartao/[id]/{fechar,reabrir}/route.ts`, `src/app/erp/financeiro/faturas/page.tsx`, `src/components/erp/FaturasCartaoManager.tsx`, `ContasFinanceirasManager.tsx`, `ErpShell.tsx`, `scripts/test-fatura-cartao.ts`, STATUS.
 - Commit/push: A gerar.
+
+## 2026-11-05 — Corrigir a forma de pagamento de conta já paga
+
+| Tarefa | Status | Observações |
+| --- | --- | --- |
+| Botão "Forma" em conta com baixa | Concluído | Corrige o rótulo sem mexer em valor, data ou saldo. |
+| Atualizar também o movimento da baixa | Concluído | Senão o "como foi pago" da listagem continuaria com a forma antiga. |
+| Esconder "Editar" quando há pagamento | Concluído | O backend já recusava; a tela mostrava o botão à toa em conta PARCIAL. |
+
+- Relato do cliente: cadastrou a conta, confirmou a forma de pagamento e não achou como alterar depois.
+- Causa: `Editar` só aparece com `canSettle`, e o backend (`garantirEditavel`) recusa conta PAGA ou com baixa parcial. Em conta PARCIAL havia descompasso — o botão aparecia e o salvamento dava erro.
+- Trocar a CONTA de onde o dinheiro saiu continua exigindo estorno: isso refaz saldo e não é correção de rótulo. O aviso no prompt diz isso.
+- Validação: `npx tsc --noEmit` sem erros; `npx next lint` sem avisos.
+- Sem dependências novas, sem mudança de schema, sem migration.
+- Arquivos: `src/domains/finance/application/payable-edit-use-cases.ts`, `src/app/api/erp/financeiro/contas-pagar/[id]/forma-pagamento/route.ts`, `src/components/erp/FinanceManager.tsx`, STATUS.
+- Commit/push: A gerar.
