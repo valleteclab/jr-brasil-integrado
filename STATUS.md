@@ -1032,3 +1032,20 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Validação: `npx tsc --noEmit` sem erros. Sem dependências novas, sem mudança de schema, sem migration.
 - Arquivos: `src/lib/analytics/meta-pixel.ts`, `src/components/analytics/MetaPixel.tsx`, `src/app/layout.tsx`, `src/components/landing/BrasilLanding.tsx`, `src/components/public/CadastroEmissorForm.tsx`, `deploy/erp.env.example`, `deploy/erp-stack.yml`, STATUS.
 - Commit/push: A gerar.
+
+## 2026-11-05 — Atalhos de período no contas a pagar/receber
+
+| Tarefa | Status | Observações |
+| --- | --- | --- |
+| Atalhos de período no financeiro | Concluído | Este mês, Mês anterior, Próximo mês, Hoje, Últimos 30 dias e Este ano. |
+| Componente reutilizável | Concluído | `PeriodoRapido.tsx` só escreve o par (de, ate) que a tela já usava. |
+| Cálculo das faixas fora da UI | Concluído | `src/lib/periodo.ts`, com `scripts/test-periodo.ts` (12 casos). |
+
+- Pedido de cliente em uso real: ninguém quer digitar duas datas para ver "o mês passado".
+- Os filtros manuais de data continuam valendo; clicar no atalho já ativo limpa o período.
+- Faixas calculadas no fuso local — `toISOString()` devolveria o dia anterior à noite no Brasil e deslocaria o mês inteiro.
+- Os totais da tela (vencido, a vencer, quitado) já usavam a lista filtrada, então respeitam o período sem alteração.
+- Validação: `npx tsx scripts/test-periodo.ts` com 12 casos aprovados (virada de ano, fevereiro bissexto e não bissexto, dia 31 voltando para fevereiro); `npx tsc --noEmit` sem erros.
+- Sem dependências novas, sem mudança de schema, sem migration.
+- Arquivos: `src/lib/periodo.ts`, `src/components/shared/PeriodoRapido.tsx`, `src/components/erp/FinanceManager.tsx`, `scripts/test-periodo.ts`, STATUS.
+- Commit/push: A gerar.

@@ -8,6 +8,7 @@ import { EnviarDocumentoModal } from "./EnviarDocumentoModal";
 /** Baixa (movimento) de um título — para o seletor de estorno parcial. */
 type BaixaMov = { id: string; valor: number; data: string; dataLabel: string; formaPagamento: string | null; contaBancaria: string | null };
 import { usePaginado, Paginacao, noPeriodo } from "@/components/shared/Paginacao";
+import { PeriodoRapido } from "@/components/shared/PeriodoRapido";
 import { baixarCsv } from "@/lib/export/csv";
 
 type FormaPagamentoOption = { id: string; nome: string };
@@ -905,6 +906,7 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
             onChange={(e) => setQuery(e.target.value)}
           />
         </div>
+        <PeriodoRapido de={de} ate={ate} onChange={(novoDe, novoAte) => { setDe(novoDe); setAte(novoAte); }} />
         <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: "var(--erp-slate)" }} title="Vencimento a partir de">
           Venc. de <input type="date" value={de} onChange={(e) => setDe(e.target.value)} style={{ height: 32 }} />
         </label>
