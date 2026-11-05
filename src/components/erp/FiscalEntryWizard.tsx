@@ -1,9 +1,12 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { Button } from "@/components/shared/Button";
 import type { ProductPickerOption } from "@/lib/services/products";
+
+/** Produto devolvido pela busca do servidor (até 30 por consulta). */
+type ProdutoBusca = { id: string; sku: string; name: string; unidade: string; marca: string | null; gtin: string | null; saldo: number };
 
 type WizardStep = 1 | 2 | 3 | 4;
 
@@ -362,40 +365,77 @@ function normalizarBusca(texto: string) {
 function ProductSearchSelect({
   products,
   value,
-  onChange
+  onChange,
+  termoSugerido
 }: {
   products: ProductPickerOption[];
   value: string;
   onChange: (productId: string) => void;
+  /** Descrição do item da nota: serve de busca inicial, para a lista abrir já relevante. */
+  termoSugerido?: string;
 }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
-  const selecionado = useMemo(() => products.find((p) => p.id === value) ?? null, [products, value]);
+  const [resultados, setResultados] = useState<ProdutoBusca[]>([]);
+  const [buscando, setBuscando] = useState(false);
+  // O produto vinculado pode não estar entre os 30 da busca atual; guarda o rótulo à parte.
+  const [rotuloSelecionado, setRotuloSelecionado] = useState("");
 
-  const resultados = useMemo(() => {
-    const q = normalizarBusca(query.trim());
-    if (!q) return products.slice(0, 30);
-    const termos = q.split(/\s+/);
-    return products
-      .filter((p) => {
-        const alvo = normalizarBusca(`${p.sku} ${p.name}`);
-        return termos.every((t) => alvo.includes(t));
-      })
-      .slice(0, 30);
-  }, [products, query]);
+  const doListaLocal = useMemo(() => products.find((p) => p.id === value) ?? null, [products, value]);
+  const rotulo = rotuloSelecionado || (doListaLocal ? `${doListaLocal.sku} · ${doListaLocal.name}` : "");
+
+  // Busca no servidor (no máximo 30 linhas), com uma pausa para não disparar a cada tecla.
+  useEffect(() => {
+    if (!open) return;
+    const termo = query.trim() || termoSugerido?.trim() || "";
+    let cancelado = false;
+    setBuscando(true);
+    const timer = setTimeout(async () => {
+      try {
+        const r = await fetch(`/api/erp/produtos/buscar?q=${encodeURIComponent(termo)}`);
+        const d = (await r.json()) as { produtos?: ProdutoBusca[] };
+        if (!cancelado) setResultados(d.produtos ?? []);
+      } catch {
+        if (!cancelado) setResultados([]);
+      } finally {
+        if (!cancelado) setBuscando(false);
+      }
+    }, 250);
+    return () => {
+      cancelado = true;
+      clearTimeout(timer);
+    };
+  }, [open, query, termoSugerido]);
 
   return (
     <div style={{ position: "relative" }}>
-      <input
-        placeholder={selecionado ? `${selecionado.sku} · ${selecionado.name}` : "Buscar por código ou nome..."}
-        value={open ? query : selecionado ? `${selecionado.sku} · ${selecionado.name}` : ""}
-        onFocus={() => {
-          setQuery("");
-          setOpen(true);
-        }}
-        onBlur={() => setTimeout(() => setOpen(false), 150)}
-        onChange={(event) => setQuery(event.target.value)}
-      />
+      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+        <input
+          style={{ flex: 1 }}
+          placeholder={rotulo || "Buscar por código, nome, marca ou código de barras..."}
+          value={open ? query : rotulo}
+          onFocus={() => {
+            setQuery("");
+            setOpen(true);
+          }}
+          onBlur={() => setTimeout(() => setOpen(false), 150)}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+        {value && (
+          <button
+            type="button"
+            className="btn-erp ghost xs"
+            title="Desfazer este vínculo"
+            onMouseDown={(event) => {
+              event.preventDefault();
+              onChange("");
+              setRotuloSelecionado("");
+            }}
+          >
+            Limpar
+          </button>
+        )}
+      </div>
       {open && (
         <div
           style={{
@@ -404,7 +444,7 @@ function ProductSearchSelect({
             top: "100%",
             left: 0,
             right: 0,
-            maxHeight: 240,
+            maxHeight: 280,
             overflowY: "auto",
             background: "#fff",
             border: "1px solid #d0d5dd",
@@ -412,31 +452,49 @@ function ProductSearchSelect({
             boxShadow: "0 8px 24px rgba(16,24,40,.12)"
           }}
         >
-          {resultados.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              onMouseDown={(event) => {
-                event.preventDefault();
-                onChange(p.id);
-                setOpen(false);
-              }}
-              style={{
-                display: "block",
-                width: "100%",
-                textAlign: "left",
-                padding: "8px 10px",
-                background: p.id === value ? "#f2f6ff" : "transparent",
-                border: "none",
-                borderBottom: "1px solid #f1f3f5",
-                cursor: "pointer",
-                fontSize: 13
-              }}
-            >
-              <strong style={{ fontFamily: "monospace" }}>{p.sku}</strong> · {p.name}
-            </button>
-          ))}
-          {!resultados.length && <div style={{ padding: "10px 12px", fontSize: 13, color: "#667085" }}>Nenhum produto encontrado.</div>}
+          {!query.trim() && termoSugerido && (
+            <div style={{ padding: "6px 10px", fontSize: 12, color: "#667085", background: "#f9fafb" }}>
+              Sugestões para <strong>{termoSugerido}</strong> — digite para procurar outro
+            </div>
+          )}
+          {buscando && <div style={{ padding: "10px 12px", fontSize: 13, color: "#667085" }}>Buscando…</div>}
+          {!buscando &&
+            resultados.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  onChange(p.id);
+                  setRotuloSelecionado(`${p.sku} · ${p.name}`);
+                  setOpen(false);
+                }}
+                style={{
+                  display: "block",
+                  width: "100%",
+                  textAlign: "left",
+                  padding: "8px 10px",
+                  background: p.id === value ? "#f2f6ff" : "transparent",
+                  border: "none",
+                  borderBottom: "1px solid #f1f3f5",
+                  cursor: "pointer",
+                  fontSize: 13
+                }}
+              >
+                <strong style={{ fontFamily: "monospace" }}>{p.sku}</strong> · {p.name}
+                <small style={{ display: "block", color: "#667085" }}>
+                  {p.unidade}
+                  {p.marca ? ` · ${p.marca}` : ""}
+                  {` · estoque ${p.saldo}`}
+                  {p.gtin ? ` · ${p.gtin}` : ""}
+                </small>
+              </button>
+            ))}
+          {!buscando && !resultados.length && (
+            <div style={{ padding: "10px 12px", fontSize: 13, color: "#667085" }}>
+              Nenhum produto encontrado — tente outra palavra, ou use &quot;Criar novo SKU&quot;.
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -1117,6 +1175,7 @@ export function FiscalEntryWizard({ initialDraft = null, products, formasPagamen
                         <ProductSearchSelect
                           products={products}
                           value={item.matchedProductId ?? ""}
+                          termoSugerido={item.importedProduct.name}
                           onChange={(productId) => updateItem(item.id, { matchedProductId: productId, review: false })}
                         />
                       ) : item.movimentaEstoque === false ? (

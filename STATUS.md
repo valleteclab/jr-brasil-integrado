@@ -1208,3 +1208,21 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Sem dependências novas, sem mudança de schema, sem migration.
 - Arquivos: `src/domains/products/application/reclassificar-finalidade-use-cases.ts`, `custo-medio.ts`, `fiscal-entry-use-cases.ts` (export de `applyFinalidadeManual`), `src/app/api/erp/entradas-fiscais/itens/[itemId]/reclassificar/route.ts`, `src/components/erp/ReclassificarFinalidade.tsx`, `FiscalEntriesList.tsx`, `scripts/test-custo-medio.ts`, STATUS.
 - Commit/push: A gerar.
+
+## 2026-11-05 — Busca de produto no vínculo da entrada fiscal
+
+| Tarefa | Status | Observações |
+| --- | --- | --- |
+| Busca no servidor (até 30 resultados) | Concluído | `GET /api/erp/produtos/buscar` por nome, SKU, marca ou GTIN. |
+| Lista abre com sugestões do próprio item | Concluído | Usa a descrição da nota como busca inicial, em vez dos 30 primeiros por data. |
+| Mais contexto em cada linha | Concluído | Unidade, marca, saldo em estoque e código de barras. |
+| Botão para limpar o vínculo | Concluído | Vínculo automático errado se desfaz sem recarregar a tela. |
+
+- Relato do cliente: item "mini pc" foi vinculado automaticamente a "brita", e a lista para corrigir "não deixa pesquisar".
+- Causa: `listProductPickerOptions` carrega **todos** os produtos ativos (são milhares nesta base) e o filtro rodava no navegador a cada tecla; ao abrir, mostrava os 30 primeiros por data de criação, sem relação com o item.
+- Agora o banco faz o filtro, com pausa de 250 ms entre as teclas, e cada palavra é casada em qualquer um dos campos — "mini pc" encontra "PC MINI GAMER".
+- Saldo vem em uma única consulta agregada (sem N+1).
+- Validação: `npx tsc --noEmit` sem erros; `npx next lint` sem avisos.
+- Sem dependências novas, sem mudança de schema, sem migration.
+- Arquivos: `src/app/api/erp/produtos/buscar/route.ts`, `src/components/erp/FiscalEntryWizard.tsx`, STATUS.
+- Commit/push: A gerar.
