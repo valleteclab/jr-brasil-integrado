@@ -1186,19 +1186,19 @@ Opções cadastradas: ${opcoes.join(", ") || "(nenhuma)"}
                 <td>
                   <span className="mono">{r.numeroDocumento}</span>
                   {(() => {
-                    // Atalho para o DANFE da nota que originou a conta: conferir o pagamento sem
-                    // sair do financeiro. Só aparece quando a entrada veio de XML (tem PDF a gerar).
-                    const entradaId = aba === "pagar" ? (r as PayableSummary).entradaFiscalId : null;
-                    if (!entradaId) return null;
-                    const rotulo = (r as PayableSummary).notaLabel || "NF-e";
+                    // Atalho para o PDF da nota que originou a conta — DANFE (entrada por XML) ou
+                    // DANFSE (NFS-e recebida). Conferir o pagamento sem sair do financeiro.
+                    const href = aba === "pagar" ? (r as PayableSummary).notaHref : null;
+                    if (!href) return null;
+                    const rotulo = (r as PayableSummary).notaLabel || "Nota";
                     return (
                       <a
-                        href={`/api/erp/entradas-fiscais/${entradaId}/danfe`}
+                        href={href}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="btn-erp ghost xs"
                         style={{ marginLeft: 6 }}
-                        title={`Abrir o DANFE da ${rotulo} em outra aba`}
+                        title={`Abrir o PDF da ${rotulo} em outra aba`}
                       >
                         📄 {rotulo}
                       </a>

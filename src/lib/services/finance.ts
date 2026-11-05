@@ -29,9 +29,9 @@ export type PayableSummary = {
   canDelete: boolean;
   /** Tem baixa estornável: valorPago > 0 e status PAGO/PARCIAL. Opcional para não quebrar objetos otimistas. */
   canEstornar?: boolean;
-  /** Entrada fiscal que gerou a conta e TEM XML — habilita o atalho do DANFE. null se foi lançamento manual. */
-  entradaFiscalId?: string | null;
-  /** Rótulo do atalho, ex.: "NF-e 12345/1". */
+  /** Link do PDF da nota que gerou a conta (DANFE da entrada ou DANFSE da NFS-e). null = sem nota. */
+  notaHref?: string | null;
+  /** Rótulo do atalho, ex.: "NF-e 12345/1" ou "NFS-e 1295". */
   notaLabel?: string | null;
   /** Fornecedor vinculado. null = conta órfã: a baixa oferece vincular na hora. */
   fornecedorId?: string | null;
@@ -181,6 +181,18 @@ export async function listPayables(filtroStatus?: string): Promise<PayableSummar
     orderBy: [{ vencimento: "asc" }, { criadoEm: "desc" }]
   });
 
+  // Contas que vieram de NFS-e recebida: o PDF mora na distribuição, não em entrada fiscal.
+  const nfsePorConta = new Map<string, { id: string; numero: string | null }>();
+  if (contas.length) {
+    const docsNfse = await prisma.distribuicaoNfseDocumento.findMany({
+      where: { contaPagarId: { in: contas.map((c) => c.id) }, ...scopedByTenantCompany(scope) },
+      select: { id: true, nNFSe: true, contaPagarId: true }
+    });
+    for (const d of docsNfse) {
+      if (d.contaPagarId) nfsePorConta.set(d.contaPagarId, { id: d.id, numero: d.nNFSe });
+    }
+  }
+
   // "Como foi pago": pega o movimento financeiro (DEBITO) mais recente de cada conta quitada e
   // monta um resumo (forma + parcelas + cartão/bandeira + conta). Tudo em 2 queries (sem N+1).
   const idsComPagamento = contas.filter((c) => Number(c.valorPago) > 0).map((c) => c.id);
@@ -242,10 +254,16 @@ export async function listPayables(filtroStatus?: string): Promise<PayableSummar
       classificacaoId: c.classificacao?.id ?? null,
       classificacaoNome: c.classificacao?.nome ?? null,
       fornecedorId: c.fornecedorId ?? null,
-      entradaFiscalId: c.entradaFiscal?.xmlImportacaoId ? c.entradaFiscal.id : null,
+      notaHref: c.entradaFiscal?.xmlImportacaoId
+        ? `/api/erp/entradas-fiscais/${c.entradaFiscal.id}/danfe`
+        : nfsePorConta.get(c.id)
+          ? `/api/erp/nfse-recebidas/${nfsePorConta.get(c.id)!.id}/pdf`
+          : null,
       notaLabel: c.entradaFiscal?.xmlImportacaoId
         ? `NF-e ${c.entradaFiscal.numero ?? ""}${c.entradaFiscal.serie ? `/${c.entradaFiscal.serie}` : ""}`.trim()
-        : null,
+        : nfsePorConta.get(c.id)
+          ? `NFS-e ${nfsePorConta.get(c.id)!.numero ?? ""}`.trim()
+          : null,
       comoPago: (() => {
         const m = movPorConta.get(c.id);
         if (!m) return null;

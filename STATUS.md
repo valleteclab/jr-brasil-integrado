@@ -1174,3 +1174,17 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Sem dependências novas, sem mudança de schema, sem migration.
 - Arquivos: `src/domains/finance/application/payable-edit-use-cases.ts`, `src/app/api/erp/financeiro/contas-pagar/[id]/forma-pagamento/route.ts`, `src/components/erp/FinanceManager.tsx`, STATUS.
 - Commit/push: A gerar.
+
+## 2026-11-05 — Atalho da nota também para NFS-e recebida
+
+| Tarefa | Status | Observações |
+| --- | --- | --- |
+| Atalho cobre NFS-e, não só NF-e | Concluído | `notaHref` genérico: DANFE da entrada OU DANFSE da distribuição. |
+
+- O atalho entregue antes só olhava `EntradaFiscal`. Conta vinda de **NFS-e recebida** (origem `NFSE`, caso da conta 1295) não tem entrada fiscal — o vínculo é `DistribuicaoNfseDocumento.contaPagarId` —, então ficava sem botão. Era o caso mais comum de despesa de serviço.
+- `PayableSummary.entradaFiscalId` virou `notaHref` (link pronto), para a tela não precisar saber de onde a nota veio.
+- Uma query a mais na listagem (`distribuicaoNfseDocumento` por lote de contas), sem N+1.
+- Atenção: a rota do DANFSE exige o módulo `fiscal` e a do DANFE exige `entradas-fiscais`. Usuário só com financeiro recebe erro de permissão ao clicar.
+- Validação: `npx tsc --noEmit` sem erros; `npx next lint` sem avisos.
+- Arquivos: `src/lib/services/finance.ts`, `src/components/erp/FinanceManager.tsx`, STATUS.
+- Commit/push: A gerar.
