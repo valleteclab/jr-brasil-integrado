@@ -1069,3 +1069,22 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Sem dependências novas, sem mudança de schema, sem migration.
 - Arquivos: `src/components/erp/FinanceManager.tsx`, `src/app/erp/financeiro/page.tsx`, `src/lib/services/finance.ts`, `src/domains/products/application/fiscal-entry-use-cases.ts`, STATUS.
 - Commit/push: A gerar.
+
+## 2026-11-05 — Maquininha no contas a receber (com taxa e prazo)
+
+| Tarefa | Status | Observações |
+| --- | --- | --- |
+| Maquininha/bandeira/parcelas no recebimento | Concluído | Aparece quando a forma é cartão de crédito ou débito. |
+| Taxa e prazo do cadastro na tela | Concluído | Mostra percentual, valor retido, líquido e data prevista do crédito. |
+| Registro no movimento financeiro | Concluído | `settleReceivable` grava maquinaCartaoId, bandeira e parcelas. |
+| Lançar o líquido e a taxa automaticamente | Pendente | Hoje a baixa credita o valor cheio; a taxa precisa ser lançada à parte. |
+
+- Complemento da correção anterior: a maquininha saiu de contas a pagar (lugar errado) e passou a existir em contas a receber, que é onde a empresa de fato recebe por maquininha.
+- As taxas e prazos já existiam no cadastro (Configurações → Máquinas de cartão) mas **nunca eram usados em lugar nenhum** — é a origem da diferença entre o sistema e o extrato, já conhecida no backlog de antecipação de recebíveis.
+- `src/lib/cartao.ts` concentra o cálculo (taxa por modalidade/parcelamento e previsão de crédito), com `scripts/test-cartao.ts` (14 casos).
+- A tela informa o líquido mas NÃO altera o valor da baixa: mudar isso mexe em saldo e em despesa, e fica para a etapa de lançar a taxa automaticamente.
+- `MaquinaCartaoOption` passou a expor taxas e prazos (Decimal convertido para number, senão não serializa para o client component).
+- Validação: `npx tsx scripts/test-cartao.ts` com 14 casos aprovados; `npx tsc --noEmit` sem erros; `npx next lint` sem avisos.
+- Sem dependências novas, sem mudança de schema, sem migration.
+- Arquivos: `src/lib/cartao.ts`, `scripts/test-cartao.ts`, `src/components/erp/FinanceManager.tsx`, `src/app/erp/financeiro/page.tsx`, `src/lib/services/finance.ts`, `src/domains/finance/application/finance-use-cases.ts`, `src/app/api/erp/financeiro/contas-receber/[id]/baixar/route.ts`, STATUS.
+- Commit/push: A gerar.

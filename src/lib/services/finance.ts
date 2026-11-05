@@ -348,7 +348,17 @@ export async function listBankAccounts(): Promise<BankAccountSummary[]> {
 
 // ─── Maquininhas/cartões (seletor de "como foi pago" no cartão) ───────────────
 
-export type MaquinaCartaoOption = { id: string; nome: string; adquirente: string | null };
+export type MaquinaCartaoOption = {
+  id: string;
+  nome: string;
+  adquirente: string | null;
+  /** Taxas e prazos do cadastro — a tela usa para mostrar o líquido e a previsão de crédito. */
+  taxaDebito: number;
+  taxaCredito: number;
+  taxaCreditoParcelado: number;
+  prazoDebitoDias: number;
+  prazoCreditoDias: number;
+};
 
 export async function listMaquinasCartaoOptions(): Promise<MaquinaCartaoOption[]> {
   if (!process.env.DATABASE_URL) {
@@ -358,10 +368,29 @@ export async function listMaquinasCartaoOptions(): Promise<MaquinaCartaoOption[]
   const scope = await getDevelopmentTenantScope();
   const maquinas = await prisma.maquinaCartao.findMany({
     where: { ...scopedByTenantCompany(scope), ativo: true },
-    select: { id: true, nome: true, adquirente: true },
+    select: {
+      id: true,
+      nome: true,
+      adquirente: true,
+      taxaDebito: true,
+      taxaCredito: true,
+      taxaCreditoParcelado: true,
+      prazoDebitoDias: true,
+      prazoCreditoDias: true
+    },
     orderBy: { nome: "asc" }
   });
-  return maquinas.map((m) => ({ id: m.id, nome: m.nome, adquirente: m.adquirente }));
+  // Decimal do Prisma não serializa para o client component — converte aqui.
+  return maquinas.map((m) => ({
+    id: m.id,
+    nome: m.nome,
+    adquirente: m.adquirente,
+    taxaDebito: Number(m.taxaDebito),
+    taxaCredito: Number(m.taxaCredito),
+    taxaCreditoParcelado: Number(m.taxaCreditoParcelado),
+    prazoDebitoDias: m.prazoDebitoDias,
+    prazoCreditoDias: m.prazoCreditoDias
+  }));
 }
 
 // ─── Clientes ativos (seletor de conta a receber avulsa) ──────────────────────

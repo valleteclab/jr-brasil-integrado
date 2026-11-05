@@ -303,6 +303,11 @@ export async function settleReceivable(
         descricao: `Baixa de conta a receber: ${conta.descricao}`,
         valor: valorLiquido,
         formaPagamento: input.formaPagamento ?? conta.formaPagamento ?? null,
+        // Como o cliente pagou no cartão: maquininha, bandeira e parcelas. É o que permite
+        // conferir o depósito da adquirente contra o extrato (taxa e prazo saem do cadastro).
+        maquinaCartaoId: input.maquinaCartaoId ?? null,
+        bandeira: input.bandeira ?? null,
+        parcelas: input.parcelas ?? null,
         saldoAnterior: saldoAnterior ?? null,
         saldoPosterior: saldoPosterior ?? null,
         dataMovimento: dataPagamento

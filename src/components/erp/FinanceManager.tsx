@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { PayableSummary, ReceivableSummary, BankAccountSummary, ClienteOption } from "@/lib/services/finance";
+import type { PayableSummary, ReceivableSummary, BankAccountSummary, ClienteOption, MaquinaCartaoOption } from "@/lib/services/finance";
+import { estimarRecebimentoCartao, type ModalidadeCartao } from "@/lib/cartao";
 import { EnviarDocumentoModal } from "./EnviarDocumentoModal";
 
 /** Baixa (movimento) de um título — para o seletor de estorno parcial. */
@@ -24,6 +25,7 @@ type Props = {
   formasPagamento?: FormaPagamentoOption[];
   /** Clientes ativos para o seletor de conta a receber avulsa. */
   clientes?: ClienteOption[];
+  maquinas?: MaquinaCartaoOption[];
   /** Maquininhas/cartões para detalhar "como foi pago" no cartão (contas a pagar). */
   /** Plano de classificação financeira (para categorizar as contas → fechamento mensal). */
   classificacoes?: ClassificacaoOption[];
@@ -39,6 +41,12 @@ type Aba = "pagar" | "receber";
 // pagamento); o nome só entra como reserva para cadastros antigos, criados antes do campo tipo.
 const formaEhCreditoPagar = (forma: FormaPagamentoOption | null, nome: string) =>
   forma?.tipo ? forma.tipo === "CARTAO_CREDITO" : /cr[eé]d/i.test(nome);
+
+// Em contas a RECEBER a lista de formas é fixa (FORMAS_FIXAS), então o próprio valor diz a modalidade.
+const modalidadeCartaoRecebida = (forma: string): ModalidadeCartao | null =>
+  forma === "CARTAO_CREDITO" ? "CREDITO" : forma === "CARTAO_DEBITO" ? "DEBITO" : null;
+
+const BANDEIRAS = ["VISA", "MASTERCARD", "ELO", "AMEX", "HIPERCARD", "OUTRA"];
 // Boleto ainda cobrável no banco? O status pode ser o nosso ("REGISTRADO") ou o texto devolvido
 // pela consulta ao Sicoob ("EM ABERTO", "Em Aberto"...) — só deixa de estar em aberto quando
 // liquidado/baixado/cancelado.
@@ -94,11 +102,12 @@ type SettleFormProps = {
   saldoNumber: number;
   bankAccounts: BankAccountSummary[];
   formasPagamento: FormaPagamentoOption[];
+  maquinas: MaquinaCartaoOption[];
   onSuccess: (id: string, novoStatus: string) => void;
   onClose: () => void;
 };
 
-function SettleForm({ tipo, id, descricao, saldoNumber, bankAccounts, formasPagamento, onSuccess, onClose }: SettleFormProps) {
+function SettleForm({ tipo, id, descricao, saldoNumber, bankAccounts, formasPagamento, maquinas, onSuccess, onClose }: SettleFormProps) {
   const [valor, setValor] = useState(saldoNumber.toFixed(2));
   const [juros, setJuros] = useState("0.00");
   const [multa, setMulta] = useState("0.00");
@@ -106,6 +115,9 @@ function SettleForm({ tipo, id, descricao, saldoNumber, bankAccounts, formasPaga
   const [formaPagamento, setFormaPagamento] = useState("");
   const [contaBancariaId, setContaBancariaId] = useState(bankAccounts[0]?.id ?? "");
   const [dataPagamento, setDataPagamento] = useState(new Date().toISOString().substring(0, 10));
+  const [maquinaCartaoId, setMaquinaCartaoId] = useState("");
+  const [bandeira, setBandeira] = useState("");
+  const [parcelas, setParcelas] = useState(1);
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState("");
 
@@ -135,6 +147,14 @@ function SettleForm({ tipo, id, descricao, saldoNumber, bankAccounts, formasPaga
   const saldoFicaraNegativo =
     tipo === "pagar" && !pagandoNoCredito && contaSelecionada != null && valorNum > 0 && contaSelecionada.saldoAtualNumber < valorNum;
 
+  // RECEBER no cartão: a maquininha é da empresa, e o cadastro dela diz a taxa e o prazo de crédito.
+  const modalidadeRecebida = tipo === "receber" ? modalidadeCartaoRecebida(formaPagamento) : null;
+  const maquinaSelecionada = maquinas.find((m) => m.id === maquinaCartaoId) ?? null;
+  const estimativa =
+    modalidadeRecebida && maquinaSelecionada
+      ? estimarRecebimentoCartao(valorNum, maquinaSelecionada, modalidadeRecebida, parcelas)
+      : null;
+
   const endpoint =
     tipo === "pagar"
       ? `/api/erp/financeiro/contas-pagar/${id}/baixar`
@@ -155,7 +175,10 @@ function SettleForm({ tipo, id, descricao, saldoNumber, bankAccounts, formasPaga
           descontoBaixa: parseFloat(desconto) || 0,
           formaPagamento: formaPagamento || undefined,
           contaBancariaId: contaBancariaId || undefined,
-          dataPagamento
+          dataPagamento,
+          maquinaCartaoId: modalidadeRecebida ? maquinaCartaoId || null : null,
+          bandeira: modalidadeRecebida ? bandeira || null : null,
+          parcelas: modalidadeRecebida === "CREDITO" ? parcelas : modalidadeRecebida ? 1 : null
         })
       });
       const data = (await res.json()) as { id?: string; status?: string; error?: string };
@@ -246,6 +269,49 @@ function SettleForm({ tipo, id, descricao, saldoNumber, bankAccounts, formasPaga
                   <PaymentMethodOptions tipo={tipo} formas={formasPagamento} />
                 </select>
               </label>
+              {modalidadeRecebida && (
+                <>
+                  <label>
+                    Maquininha
+                    <select value={maquinaCartaoId} onChange={(e) => setMaquinaCartaoId(e.target.value)}>
+                      <option value="">{maquinas.length ? "Selecione..." : "(cadastre em Máquinas de cartão)"}</option>
+                      {maquinas.map((m) => (
+                        <option key={m.id} value={m.id}>{m.nome}{m.adquirente ? ` · ${m.adquirente}` : ""}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Bandeira
+                    <select value={bandeira} onChange={(e) => setBandeira(e.target.value)}>
+                      <option value="">Selecione...</option>
+                      {BANDEIRAS.map((b) => <option key={b} value={b}>{b}</option>)}
+                    </select>
+                  </label>
+                  {modalidadeRecebida === "CREDITO" && (
+                    <label>
+                      Parcelas
+                      <input type="number" min={1} max={24} value={parcelas} onChange={(e) => setParcelas(Math.max(1, Number(e.target.value) || 1))} />
+                      <span className="sublabel">
+                        {parcelas > 1 ? `${parcelas}x de ${fmtBrl(valorNum / parcelas)} para o cliente` : "À vista"}
+                      </span>
+                    </label>
+                  )}
+                  {estimativa && valorNum > 0 && (
+                    <div className="alert info full" style={{ margin: 0 }}>
+                      <span className="lead">Taxa da maquininha:</span>
+                      <span>
+                        {estimativa.taxaPercent.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}% ={" "}
+                        {fmtBrl(estimativa.taxaValor)} — a adquirente deve depositar{" "}
+                        <strong>{fmtBrl(estimativa.liquido)}</strong> em{" "}
+                        {estimativa.previsao.toLocaleDateString("pt-BR")} ({estimativa.prazoDias}{" "}
+                        {estimativa.prazoDias === 1 ? "dia" : "dias"}).
+                        <br />
+                        A baixa registra o valor cheio na conta escolhida; a taxa ainda precisa ser lançada à parte.
+                      </span>
+                    </div>
+                  )}
+                </>
+              )}
               {contasDisponiveis.length > 0 ? (
                 <label>
                   {pagandoNoCredito ? "Cartão de crédito" : "Conta Bancária"} <span className="required">*</span>
@@ -504,7 +570,7 @@ function NewAccountForm({ tipo, formasPagamento, clientes, classificacoes, onSuc
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-export function FinanceManager({ initialPayables, initialReceivables, bankAccounts, formasPagamento = [], clientes = [], classificacoes = [], contasCobranca = [], isAdmin = false }: Props) {
+export function FinanceManager({ initialPayables, initialReceivables, bankAccounts, formasPagamento = [], clientes = [], maquinas = [], classificacoes = [], contasCobranca = [], isAdmin = false }: Props) {
   const router = useRouter();
   const [aba, setAba] = useState<Aba>("pagar");
   /** Seleção para baixa em lote (fechamento do mês): só contas a pagar em aberto. */
@@ -1288,6 +1354,7 @@ export function FinanceManager({ initialPayables, initialReceivables, bankAccoun
           saldoNumber={settlingItem.saldoNumber}
           bankAccounts={bankAccounts}
           formasPagamento={formasPagamento}
+          maquinas={maquinas}
           onSuccess={handleSettleSuccess}
           onClose={() => setSettlingId(null)}
         />
