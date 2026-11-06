@@ -28,6 +28,18 @@ export function mesRelativo(offset: number, hoje = new Date()): Faixa {
   return { de: iso(inicio), ate: iso(fim) };
 }
 
+/**
+ * Competência (mês/ano) relativa a hoje, para quem precisa dos números e não do intervalo —
+ * pacote de XML, geração de SPED, guias. Offset -1 é o mês anterior.
+ *
+ * O mês vem 1 a 12, como aparece na tela e nas rotas, não 0 a 11 como no Date.
+ */
+export function competenciaRelativa(offset: number, hoje = new Date()): { mes: number; ano: number } {
+  // Deixa o próprio Date resolver a virada de ano, nos dois sentidos.
+  const d = new Date(hoje.getFullYear(), hoje.getMonth() + offset, 1);
+  return { mes: d.getMonth() + 1, ano: d.getFullYear() };
+}
+
 /** Intervalo dos últimos `dias` terminando hoje (hoje incluso). */
 export function ultimosDias(dias: number, hoje = new Date()): Faixa {
   const inicio = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate() - (dias - 1));

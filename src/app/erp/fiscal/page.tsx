@@ -2,6 +2,7 @@ import { PageHeader } from "@/components/shared/PageHeader";
 import { KpiCard } from "@/components/shared/KpiCard";
 import { Button } from "@/components/shared/Button";
 import { NotasFiscaisList } from "@/components/erp/NotasFiscaisList";
+import { PacoteXmlSaidas } from "@/components/erp/PacoteXmlSaidas";
 import { listNotasFiscais } from "@/lib/services/fiscal";
 import type { NotaFiscalSummary } from "@/lib/services/fiscal";
 import { formatBrl } from "@/lib/formatters/currency";
@@ -64,6 +65,8 @@ export default async function FiscalPage() {
           <span>{loadError}</span>
         </div>
       )}
+
+      <PacoteXmlSaidas />
 
       <NotasFiscaisList notas={notas} isAdmin={isAdmin} />
     </>

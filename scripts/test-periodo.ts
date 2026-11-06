@@ -3,7 +3,7 @@
  * Cobre justamente onde esse cálculo costuma quebrar: virada de ano, fevereiro bissexto
  * e não bissexto, e meses de 31 dias indo para meses de 30.
  */
-import { anoCorrente, iso, mesRelativo, ultimosDias } from "../src/lib/periodo";
+import { anoCorrente, competenciaRelativa, iso, mesRelativo, ultimosDias } from "../src/lib/periodo";
 
 let falhas = 0;
 
@@ -47,6 +47,24 @@ conferir("este ano", anoCorrente(marco), { de: "2026-01-01", ate: "2026-12-31" }
 // O formato precisa ser o do <input type="date"> e seguir o fuso local, não UTC.
 conferir("iso usa data local (23h não vira o dia)", iso(new Date(2026, 10, 5, 23, 30)), "2026-11-05");
 conferir("iso zera à esquerda", iso(new Date(2026, 0, 2)), "2026-01-02");
+
+// Competência em números (pacote de XML, SPED, guias): o mês vem 1-12 e a virada de ano
+// precisa funcionar nos dois sentidos.
+conferir("mês anterior dentro do ano", competenciaRelativa(-1, marco), { mes: 2, ano: 2026 });
+conferir("mês anterior em janeiro volta para dezembro", competenciaRelativa(-1, new Date(2026, 0, 10)), {
+  mes: 12,
+  ano: 2025
+});
+conferir("mês corrente", competenciaRelativa(0, marco), { mes: 3, ano: 2026 });
+conferir("mês seguinte em dezembro avança o ano", competenciaRelativa(1, new Date(2026, 11, 20)), {
+  mes: 1,
+  ano: 2027
+});
+// Dia 31 como base não pode transbordar ao voltar um mês.
+conferir("dia 31 não transborda na competência", competenciaRelativa(-1, new Date(2026, 2, 31)), {
+  mes: 2,
+  ano: 2026
+});
 
 console.log(falhas === 0 ? "\nTodos os casos passaram." : `\n${falhas} caso(s) falharam.`);
 process.exit(falhas === 0 ? 0 : 1);
