@@ -146,11 +146,17 @@ export async function resumoFinalidadesDoMes(
     .sort((a, b) => b.valor - a.valor);
 }
 
-/** IDs dos itens do mês com uma dada finalidade — para aplicar a troca em lote. */
+/**
+ * Itens do mês com uma dada finalidade — para aplicar a troca em lote.
+ *
+ * Devolve o produto vinculado junto com o item porque trocar a finalidade exige reafirmar o
+ * vínculo: o gravador entende "sem produto" como pedido de desvincular, e o item perderia o
+ * código no SPED.
+ */
 export async function itensComFinalidade(
   scope: TenantScope,
   params: { ano: number; mes: number; finalidade: string }
-): Promise<string[]> {
+): Promise<Array<{ itemId: string; produtoId: string | null }>> {
   const { inicio, fim } = faixaDoMes(params.ano, params.mes);
   const itens = await prisma.entradaFiscalItem.findMany({
     where: {
@@ -158,9 +164,9 @@ export async function itensComFinalidade(
       finalidade: params.finalidade as never,
       entradaFiscal: { ...scopedByTenantCompanyAmbiente(scope), emitidaEm: { gte: inicio, lte: fim } }
     },
-    select: { id: true }
+    select: { id: true, produtoId: true }
   });
-  return itens.map((i) => i.id);
+  return itens.map((i) => ({ itemId: i.id, produtoId: i.produtoId }));
 }
 
 /**

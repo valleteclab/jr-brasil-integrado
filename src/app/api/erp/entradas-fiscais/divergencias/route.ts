@@ -20,9 +20,9 @@ export async function GET(request: Request) {
     const mes = Math.min(12, Math.max(1, Number(url.searchParams.get("mes")) || hoje.getMonth() + 1));
     const finalidade = url.searchParams.get("finalidade");
 
-    // Com ?finalidade=, devolve só os IDs — é o que a tela usa para montar a troca em lote.
+    // Com ?finalidade=, devolve os itens (com o produto vinculado) para montar a troca em lote.
     if (finalidade) {
-      return NextResponse.json({ itemIds: await itensComFinalidade(scope, { ano, mes, finalidade }) });
+      return NextResponse.json({ itens: await itensComFinalidade(scope, { ano, mes, finalidade }) });
     }
 
     const [divergencias, finalidades] = await Promise.all([

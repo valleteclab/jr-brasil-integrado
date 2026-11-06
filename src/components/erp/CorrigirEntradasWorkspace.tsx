@@ -96,7 +96,7 @@ export function CorrigirEntradasWorkspace() {
     const alvo = divergencias.filter((d) => marcados.has(d.itemId));
     if (!alvo.length) return;
     const ok = window.confirm(
-      `Criar ${alvo.length} produto(s) novo(s), um para cada item marcado, com a descrição e o NCM que vieram na nota?\n\n` +
+      `Corrigir ${alvo.length} item(ns) marcado(s), tirando cada um do produto errado?\n\n` +
         "Isto corrige o lado FISCAL: código do item no SPED, NCM, CFOP e crédito de imposto.\n" +
         "O saldo de estoque continua lançado no produto antigo e precisa ser acertado por inventário."
     );
@@ -112,6 +112,10 @@ export function CorrigirEntradasWorkspace() {
             itemId: d.itemId,
             criarNovoSku: true,
             nome: d.nomeSugerido,
+            // A finalidade atual vai junto: é ela que diz se o SKU novo é insumo (material de
+            // serviço, industrialização) e portanto dispensa preço de venda. Sem mandá-la, o
+            // gravador trata como item de revenda e exige preço que esta mercadoria não tem.
+            finalidade: d.finalidade,
             correcaoFiscal: true
           })),
           // Os produtos que estavam recebendo tudo ficam com o NCM dos itens que sobraram neles.
@@ -155,21 +159,28 @@ export function CorrigirEntradasWorkspace() {
     setErro("");
     try {
       const rIds = await fetch(`/api/erp/entradas-fiscais/divergencias?ano=${ano}&mes=${mes}&finalidade=${de}`);
-      const dIds = (await rIds.json()) as { error?: string; itemIds?: string[] };
+      const dIds = (await rIds.json()) as { error?: string; itens?: Array<{ itemId: string; produtoId: string | null }> };
       if (!rIds.ok) throw new Error(dIds.error || "Não foi possível listar os itens.");
-      const ids = dIds.itemIds ?? [];
-      if (!ids.length) throw new Error("Nenhum item com essa finalidade no período.");
+      const itens = dIds.itens ?? [];
+      if (!itens.length) throw new Error("Nenhum item com essa finalidade no período.");
 
       const r = await fetch("/api/erp/entradas-fiscais/itens/vinculos", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          links: ids.map((itemId) => ({ itemId, finalidade: para, correcaoFiscal: true }))
+          // O produto atual vai junto: trocar a finalidade não é desvincular, e omitir o
+          // produto faria o item perder o código que vai para o SPED.
+          links: itens.map((i) => ({
+            itemId: i.itemId,
+            produtoId: i.produtoId,
+            finalidade: para,
+            correcaoFiscal: true
+          }))
         })
       });
       const d = (await r.json()) as { error?: string; updated?: number };
       if (!r.ok) throw new Error(d.error || "Não foi possível trocar a finalidade.");
-      setAviso(`${d.updated ?? ids.length} item(ns) passaram para "${rotuloFinalidade(para)}". Gere o SPED do mês de novo.`);
+      setAviso(`${d.updated ?? itens.length} item(ns) passaram para "${rotuloFinalidade(para)}". Gere o SPED do mês de novo.`);
       await varrer();
       router.refresh();
     } catch (e) {
@@ -325,9 +336,11 @@ export function CorrigirEntradasWorkspace() {
         )}
         <p className="field-hint" style={{ margin: "10px 0 0" }}>
           Vêm marcados os itens em que o NCM da nota é de outro tipo de mercadoria que o do produto
-          vinculado. Corrigir cria um produto próprio para cada item, com a descrição e o NCM da nota, e
-          repõe no produto antigo o NCM dos itens que de fato são dele. O saldo de estoque continua
-          onde está: acerte por inventário depois.
+          vinculado. Corrigir tira o item do produto errado: quem entrou para revenda, insumo ou material
+          de serviço ganha um produto próprio com a descrição e o NCM da nota; quem entrou como uso e
+          consumo ou imobilizado fica sem produto, que é como o sistema trata esses casos. O produto
+          antigo recupera o NCM dos itens que de fato são dele. O saldo de estoque continua onde está:
+          acerte por inventário depois.
         </p>
       </section>
     </>
