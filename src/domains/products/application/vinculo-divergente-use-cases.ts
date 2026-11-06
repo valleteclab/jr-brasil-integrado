@@ -160,3 +160,59 @@ export async function itensComFinalidade(
   });
   return itens.map((i) => i.id);
 }
+
+/**
+ * Recoloca no produto o NCM que os itens dele realmente têm.
+ *
+ * Quando um item é vinculado, o sistema grava no produto o NCM daquele item — é assim que o
+ * cadastro aprende a classificação correta. O efeito colateral é que um vínculo errado
+ * sobrescreve o NCM do produto: o "CIMENTO 50 KG" ficou com NCM de conector elétrico porque
+ * foi o último item lançado nele.
+ *
+ * Depois de desfazer os vínculos errados, o NCM certo é o que aparece na MAIORIA dos itens que
+ * continuam vinculados ao produto — a classificação que os fornecedores repetem. Produto sem
+ * nenhum item vinculado fica como está: sem dado, melhor não chutar.
+ */
+export async function recalcularNcmDosProdutos(
+  scope: TenantScope,
+  produtoIds: string[]
+): Promise<Array<{ produtoId: string; sku: string | null; de: string | null; para: string }>> {
+  if (!produtoIds.length) return [];
+
+  const itens = await prisma.entradaFiscalItem.findMany({
+    where: { ...scopedByTenantCompanyAmbiente(scope), produtoId: { in: produtoIds }, ncm: { not: null } },
+    select: { produtoId: true, ncm: true }
+  });
+
+  const frequencia = new Map<string, Map<string, number>>();
+  for (const item of itens) {
+    if (!item.produtoId || !item.ncm) continue;
+    const ncm = item.ncm.replace(/\D/g, "");
+    if (ncm.length < 8) continue;
+    const doProduto = frequencia.get(item.produtoId) ?? new Map<string, number>();
+    doProduto.set(ncm, (doProduto.get(ncm) ?? 0) + 1);
+    frequencia.set(item.produtoId, doProduto);
+  }
+
+  const produtos = await prisma.produto.findMany({
+    where: { ...scopedByTenantCompanyAmbiente(scope), id: { in: produtoIds } },
+    select: { id: true, sku: true, ncm: true }
+  });
+
+  const mudancas: Array<{ produtoId: string; sku: string | null; de: string | null; para: string }> = [];
+  for (const produto of produtos) {
+    const contagem = frequencia.get(produto.id);
+    if (!contagem?.size) continue;
+    // Empate resolve pelo NCM menor, só para o resultado ser estável entre execuções.
+    const [ncmVencedor] = Array.from(contagem.entries()).sort(
+      (a, b) => b[1] - a[1] || a[0].localeCompare(b[0])
+    )[0];
+    if ((produto.ncm ?? "").replace(/\D/g, "") === ncmVencedor) continue;
+    mudancas.push({ produtoId: produto.id, sku: produto.sku, de: produto.ncm, para: ncmVencedor });
+  }
+
+  for (const m of mudancas) {
+    await prisma.produto.update({ where: { id: m.produtoId }, data: { ncm: m.para } });
+  }
+  return mudancas;
+}

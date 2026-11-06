@@ -25,6 +25,7 @@ type Divergencia = {
   descricaoFornecedor: string;
   ncmNota: string | null;
   valorTotal: number;
+  produtoId: string | null;
   produtoNome: string | null;
   produtoSku: string | null;
   ncmProduto: string | null;
@@ -96,7 +97,8 @@ export function CorrigirEntradasWorkspace() {
     if (!alvo.length) return;
     const ok = window.confirm(
       `Criar ${alvo.length} produto(s) novo(s), um para cada item marcado, com a descrição e o NCM que vieram na nota?\n\n` +
-        "O estoque e o custo médio do produto que estava vinculado errado são refeitos."
+        "Isto corrige o lado FISCAL: código do item no SPED, NCM, CFOP e crédito de imposto.\n" +
+        "O saldo de estoque continua lançado no produto antigo e precisa ser acertado por inventário."
     );
     if (!ok) return;
     setAplicando(true);
@@ -106,12 +108,30 @@ export function CorrigirEntradasWorkspace() {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          links: alvo.map((d) => ({ itemId: d.itemId, criarNovoSku: true, nome: d.nomeSugerido }))
+          links: alvo.map((d) => ({
+            itemId: d.itemId,
+            criarNovoSku: true,
+            nome: d.nomeSugerido,
+            correcaoFiscal: true
+          })),
+          // Os produtos que estavam recebendo tudo ficam com o NCM dos itens que sobraram neles.
+          recalcularNcmDe: Array.from(new Set(alvo.map((d) => d.produtoId).filter(Boolean)))
         })
       });
-      const d = (await r.json()) as { error?: string; updated?: number };
+      const d = (await r.json()) as {
+        error?: string;
+        updated?: number;
+        ncmCorrigidos?: Array<{ sku: string | null; de: string | null; para: string }>;
+      };
       if (!r.ok) throw new Error(d.error || "Não foi possível corrigir os vínculos.");
-      setAviso(`${d.updated ?? alvo.length} item(ns) corrigido(s). Gere o SPED do mês de novo para o arquivo sair com os códigos certos.`);
+      const ncm = d.ncmCorrigidos ?? [];
+      setAviso(
+        `${d.updated ?? alvo.length} item(ns) corrigido(s).` +
+          (ncm.length
+            ? ` NCM reposto em ${ncm.length} produto(s): ${ncm.map((n) => `${n.sku ?? "?"} ${n.de ?? "—"}→${n.para}`).join(", ")}.`
+            : "") +
+          " Gere o SPED do mês de novo. O saldo de estoque NÃO foi mexido — acerte por inventário."
+      );
       await varrer();
       router.refresh();
     } catch (e) {
@@ -127,7 +147,8 @@ export function CorrigirEntradasWorkspace() {
     const linha = finalidades.find((f) => f.finalidade === de);
     const ok = window.confirm(
       `Trocar a finalidade de ${linha?.itens ?? "todos os"} item(ns) de "${rotuloFinalidade(de)}" para "${rotuloFinalidade(para)}" em ${MESES[mes - 1]}/${ano}?\n\n` +
-        "O CFOP de entrada, o estoque e o crédito de cada imposto são recalculados. Isso muda a apuração do mês."
+        "O CFOP de entrada e o crédito de cada imposto são recalculados. Isso muda a apuração do mês.\n" +
+        "O saldo de estoque não é alterado."
     );
     if (!ok) return;
     setAplicando(true);
@@ -142,7 +163,9 @@ export function CorrigirEntradasWorkspace() {
       const r = await fetch("/api/erp/entradas-fiscais/itens/vinculos", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ links: ids.map((itemId) => ({ itemId, finalidade: para })) })
+        body: JSON.stringify({
+          links: ids.map((itemId) => ({ itemId, finalidade: para, correcaoFiscal: true }))
+        })
       });
       const d = (await r.json()) as { error?: string; updated?: number };
       if (!r.ok) throw new Error(d.error || "Não foi possível trocar a finalidade.");
@@ -244,9 +267,10 @@ export function CorrigirEntradasWorkspace() {
           </button>
         </div>
         <p className="field-hint" style={{ margin: "8px 0 0" }}>
-          A troca recalcula o CFOP de entrada, o estoque e o crédito de cada imposto. Material para
-          serviço com ISS (1.128) <strong>não credita ICMS</strong>; com ICMS (1.126), credita. Se o
-          SPED do mês já foi entregue, a correção exige arquivo retificador — confirme com a contabilidade.
+          A troca recalcula o CFOP de entrada e o crédito de cada imposto. Material para serviço com
+          ISS (1.128) <strong>não credita ICMS</strong>; com ICMS (1.126), credita. O saldo de estoque
+          não é alterado — esta correção é do lado fiscal. Se o SPED do mês já foi entregue, a
+          correção exige arquivo retificador — confirme com a contabilidade.
         </p>
       </section>
 
@@ -301,8 +325,9 @@ export function CorrigirEntradasWorkspace() {
         )}
         <p className="field-hint" style={{ margin: "10px 0 0" }}>
           Vêm marcados os itens em que o NCM da nota é de outro tipo de mercadoria que o do produto
-          vinculado. Corrigir cria um produto próprio para cada item, com a descrição e o NCM da nota —
-          e refaz o estoque e o custo médio do produto que estava recebendo tudo.
+          vinculado. Corrigir cria um produto próprio para cada item, com a descrição e o NCM da nota, e
+          repõe no produto antigo o NCM dos itens que de fato são dele. O saldo de estoque continua
+          onde está: acerte por inventário depois.
         </p>
       </section>
     </>

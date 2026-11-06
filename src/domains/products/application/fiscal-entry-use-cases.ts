@@ -1851,6 +1851,19 @@ type FiscalEntryItemLinkInput = {
   fatorConversao?: number | null;
   /** Unidade de venda alvo (ex.: UN) quando há conversão de embalagem. */
   unidadeVenda?: string | null;
+  /**
+   * CORREÇÃO FISCAL de nota já processada: libera a troca de vínculo/finalidade depois que o
+   * estoque foi lançado, SEM mexer no saldo.
+   *
+   * Existe para o erro que só a contabilidade pega, meses depois — itens lançados no produto
+   * errado, ou o mês inteiro com a finalidade errada. O caminho normal (estornar a entrada e
+   * reimportar) cancela as contas a pagar da nota, que a essa altura já foram pagas e
+   * conciliadas; destruir isso para consertar um código de item é um remédio pior que a doença.
+   *
+   * O preço é explícito: o saldo continua lançado no produto antigo e precisa ser acertado por
+   * inventário. Quem chama assume isso e avisa o usuário.
+   */
+  correcaoFiscal?: boolean;
 };
 
 type LoadedEntryItem = Prisma.EntradaFiscalItemGetPayload<{ include: { entradaFiscal: true; impostos: true } }>;
@@ -1958,11 +1971,14 @@ async function updateFiscalEntryItemLinkInTransaction(
       throw new Error("Item da entrada fiscal não encontrado.");
     }
 
-    if (item.entradaFiscal.status !== "AGUARDANDO_CONFERENCIA" && item.entradaFiscal.status !== "CONFERIDA") {
+    const entradaEmConferencia =
+      item.entradaFiscal.status === "AGUARDANDO_CONFERENCIA" || item.entradaFiscal.status === "CONFERIDA";
+    if (!entradaEmConferencia && !input.correcaoFiscal) {
       throw new Error(
         "Esta entrada já processou estoque/financeiro e não permite alterar vínculo ou finalidade. " +
           "Para corrigir: ESTORNE a entrada (desfaz estoque e contas a pagar), exclua-a e importe o XML " +
-          "novamente — aí ajuste a finalidade na conferência antes de processar."
+          "novamente — aí ajuste a finalidade na conferência antes de processar. Para acertar apenas o " +
+          "lado fiscal (código do item, NCM, CFOP e crédito), use Entradas fiscais → Corrigir lançamentos do mês."
       );
     }
 

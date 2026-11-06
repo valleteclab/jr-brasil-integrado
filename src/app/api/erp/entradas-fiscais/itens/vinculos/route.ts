@@ -4,6 +4,7 @@ import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
 import { requireModulo } from "@/lib/auth/session";
 import { authErrorStatus } from "@/lib/auth/http";
 import { isFinalidadeEntrada } from "@/domains/fiscal/finalidade-entrada";
+import { recalcularNcmDosProdutos } from "@/domains/products/application/vinculo-divergente-use-cases";
 
 export async function PUT(request: Request) {
   try {
@@ -22,7 +23,10 @@ export async function PUT(request: Request) {
         cfopEntrada?: string | null;
         fatorConversao?: number | null;
         unidadeVenda?: string | null;
+        correcaoFiscal?: boolean;
       }>;
+      /** Produtos cujo NCM deve ser recalculado depois da correção (ver use-case). */
+      recalcularNcmDe?: string[];
     };
 
     const links = body.links?.filter((link) => link.itemId).map((link) => ({
@@ -37,7 +41,8 @@ export async function PUT(request: Request) {
       finalidade: isFinalidadeEntrada(link.finalidade) ? link.finalidade : null,
       cfopEntrada: link.cfopEntrada ?? null,
       fatorConversao: typeof link.fatorConversao === "number" && link.fatorConversao > 0 ? link.fatorConversao : null,
-      unidadeVenda: link.unidadeVenda?.trim() || null
+      unidadeVenda: link.unidadeVenda?.trim() || null,
+      correcaoFiscal: Boolean(link.correcaoFiscal)
     })) ?? [];
 
     if (!links.length) {
@@ -47,7 +52,13 @@ export async function PUT(request: Request) {
     const scope = await getDevelopmentTenantScope();
     const result = await updateFiscalEntryItemLinks(scope, links);
 
-    return NextResponse.json(result);
+    // Os itens saíram do produto errado; agora o produto volta a ter o NCM dos itens que
+    // realmente são dele. Só roda quando o chamador pede, para não mexer em cadastro sem querer.
+    const ncmCorrigidos = body.recalcularNcmDe?.length
+      ? await recalcularNcmDosProdutos(scope, body.recalcularNcmDe)
+      : [];
+
+    return NextResponse.json({ ...result, ncmCorrigidos });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Não foi possível salvar os vínculos dos itens.";
     return NextResponse.json({ error: message }, { status: authErrorStatus(error, 400) });
