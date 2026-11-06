@@ -1,5 +1,6 @@
 import { FiscalEntriesList } from "@/components/erp/FiscalEntriesList";
 import { PageHeader } from "@/components/shared/PageHeader";
+import { Button } from "@/components/shared/Button";
 import { listFiscalEntrySummaries } from "@/lib/services/fiscal-entries";
 import type { FiscalEntrySummary } from "@/lib/services/fiscal-entries";
 import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
@@ -49,7 +50,11 @@ export default async function FiscalEntriesPage({ searchParams }: { searchParams
 
   return (
     <>
-      <PageHeader eyebrow="Suprimentos" title="Notas Fiscais de Entrada">
+      <PageHeader
+        eyebrow="Suprimentos"
+        title="Notas Fiscais de Entrada"
+        action={<Button href="/erp/entradas-fiscais/corrigir" variant="light">Corrigir lançamentos do mês</Button>}
+      >
         <p>Acompanhe XMLs importados, notas registradas e vínculo dos itens ao estoque.</p>
       </PageHeader>
       {loadError && (
