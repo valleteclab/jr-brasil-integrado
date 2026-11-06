@@ -41,6 +41,8 @@ export type CreatePayableInput = {
   numeroDocumento?: string;
   observacoes?: string;
   classificacaoId?: string;
+  /** Conta ou CARTÃO previsto para o pagamento. É previsão: quem confirma é a baixa. */
+  contaBancariaId?: string | null;
 };
 
 export type CreateReceivableInput = {
@@ -389,6 +391,8 @@ export async function createPayable(scope: TenantScope, input: CreatePayableInpu
         numeroDocumento: input.numeroDocumento ?? null,
         observacoes: input.observacoes ?? null,
         classificacaoId: input.classificacaoId ?? null,
+        // Previsão de por onde sai o dinheiro (conta ou cartão). A baixa pode mudar.
+        contaBancariaId: input.contaBancariaId ?? null,
         origem: "MANUAL",
         status: "ABERTO"
       }

@@ -1284,3 +1284,19 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 - Validação: `npx tsc --noEmit` sem erros; `npx next lint` sem avisos; `npx next build` compilado (o `kill EPERM` final é o encerramento do worker no Windows, posterior ao build).
 - Arquivos: `src/components/erp/ExtratoBancarioWorkspace.tsx`, STATUS.
 - Commit/push: A gerar.
+
+## 2026-11-06 — Cartão previsto no cadastro da conta a pagar
+
+| Tarefa | Status | Observações |
+| --- | --- | --- |
+| Campo de conta/cartão no cadastro | Concluído | Aparece depois de escolher a forma; mesma regra de filtro da baixa. |
+| Backend aceita a previsão | Concluído | `CreatePayableInput.contaBancariaId` grava em `ContaPagar.contaBancariaId`. |
+
+- Origem: o cliente procurou o cartão no CADASTRO da conta a pagar. Confirmado no git que ali o campo nunca existiu — ele existe na BAIXA, onde a troca de maquininha por cartão da empresa (commit d74438d) mudou o que a lista mostra.
+- É **previsão**: quem confirma por onde o dinheiro saiu continua sendo a baixa, que pode escolher outra conta.
+- Cartão de crédito lista contas tipo CARTAO; as demais formas listam contas de dinheiro — a mesma regra dos dois lados, para não divergirem de novo.
+- Produção já tem os cartões prontos: CARTAO NUBANK (fecha 18, vence 25) e CARTÃO CAIXA (fecha 16, vence 28) — a fatura do cartão está operacional.
+- Validação: `npx tsc --noEmit` sem erros; `npx next lint` sem avisos; `npx next build` compilado (o `kill EPERM` final é o encerramento do worker no Windows, posterior ao build).
+- Sem dependências novas, sem mudança de schema, sem migration.
+- Arquivos: `src/domains/finance/application/finance-use-cases.ts`, `src/app/api/erp/financeiro/contas-pagar/route.ts`, `src/components/erp/FinanceManager.tsx`, STATUS.
+- Commit/push: A gerar.

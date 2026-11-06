@@ -421,12 +421,13 @@ type NewAccountFormProps = {
   formasPagamento: FormaPagamentoOption[];
   clientes: ClienteOption[];
   fornecedores: Array<{ id: string; nome: string }>;
+  bankAccounts: BankAccountSummary[];
   classificacoes: ClassificacaoOption[];
   onSuccess: (item: PayableSummary | ReceivableSummary) => void;
   onClose: () => void;
 };
 
-function NewAccountForm({ tipo, formasPagamento, clientes, fornecedores, classificacoes, onSuccess, onClose }: NewAccountFormProps) {
+function NewAccountForm({ tipo, formasPagamento, clientes, fornecedores, bankAccounts, classificacoes, onSuccess, onClose }: NewAccountFormProps) {
   const [descricao, setDescricao] = useState("");
   const [valor, setValor] = useState("");
   const [vencimento, setVencimento] = useState(new Date().toISOString().substring(0, 10));
@@ -436,8 +437,22 @@ function NewAccountForm({ tipo, formasPagamento, clientes, fornecedores, classif
   const [clienteId, setClienteId] = useState("");
   const [fornecedorId, setFornecedorId] = useState("");
   const [classificacaoId, setClassificacaoId] = useState("");
+  const [contaBancariaId, setContaBancariaId] = useState("");
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState("");
+
+  // Mesma regra da baixa: cartão de crédito usa conta do tipo CARTAO; o resto usa dinheiro.
+  const formaSelecionada = formasPagamento.find((f) => f.nome === formaPagamento) ?? null;
+  const previstoNoCredito = tipo === "pagar" && formaEhCreditoPagar(formaSelecionada, formaPagamento);
+  const contasPrevisao = useMemo(
+    () => (tipo === "pagar" ? bankAccounts.filter((b) => (previstoNoCredito ? b.tipo === "CARTAO" : b.tipo !== "CARTAO")) : bankAccounts),
+    [bankAccounts, tipo, previstoNoCredito]
+  );
+
+  // Trocar a forma pode invalidar a conta escolhida (era banco, virou cartão).
+  useEffect(() => {
+    if (contaBancariaId && !contasPrevisao.some((b) => b.id === contaBancariaId)) setContaBancariaId("");
+  }, [contasPrevisao, contaBancariaId]);
 
   const endpoint =
     tipo === "pagar"
@@ -469,6 +484,7 @@ function NewAccountForm({ tipo, formasPagamento, clientes, fornecedores, classif
           numeroDocumento: numeroDocumento || undefined,
           observacoes: observacoes || undefined,
           classificacaoId: classificacaoId || undefined,
+          contaBancariaId: contaBancariaId || null,
           ...(tipo === "receber" ? { clienteId } : { fornecedorId })
         })
       });
@@ -597,6 +613,28 @@ function NewAccountForm({ tipo, formasPagamento, clientes, fornecedores, classif
                   <PaymentMethodOptions tipo={tipo} formas={formasPagamento} />
                 </select>
               </label>
+              {tipo === "pagar" && formaPagamento && contasPrevisao.length > 0 && (
+                <label>
+                  {previstoNoCredito ? "Cartão de crédito" : "Conta prevista"}
+                  <select value={contaBancariaId} onChange={(e) => setContaBancariaId(e.target.value)}>
+                    <option value="">{previstoNoCredito ? "Definir na baixa..." : "Definir na baixa..."}</option>
+                    {contasPrevisao.map((b) => (
+                      <option key={b.id} value={b.id}>{b.nome}</option>
+                    ))}
+                  </select>
+                  <span className="sublabel">
+                    {previstoNoCredito
+                      ? "Previsão: a compra entra na fatura deste cartão quando a conta for baixada."
+                      : "Previsão de onde o dinheiro sai. Dá para mudar na hora da baixa."}
+                  </span>
+                </label>
+              )}
+              {tipo === "pagar" && previstoNoCredito && !contasPrevisao.length && (
+                <div className="alert warning full" style={{ margin: 0 }}>
+                  <span className="lead">Sem cartão cadastrado:</span>
+                  <span>Cadastre o cartão da empresa em Contas financeiras (tipo Cartão) para usar esta forma.</span>
+                </div>
+              )}
               {classificacoes.length > 0 && (
                 <label className="full">
                   Classificação financeira
@@ -1543,6 +1581,7 @@ Opções cadastradas: ${opcoes.join(", ") || "(nenhuma)"}
           formasPagamento={formasPagamento}
           clientes={clientes}
           fornecedores={fornecedores}
+          bankAccounts={bankAccounts}
           classificacoes={classificacoes}
           onSuccess={handleNewSuccess}
           onClose={() => setShowNewForm(false)}
