@@ -7,7 +7,7 @@
  */
 
 import { prisma } from "@/lib/db/prisma";
-import { scopedByTenantCompanyAmbiente, type TenantScope } from "@/lib/auth/dev-session";
+import { scopedByTenantCompany, scopedByTenantCompanyAmbiente, type TenantScope } from "@/lib/auth/dev-session";
 import {
   detectarVinculosDivergentes,
   nomeSugerido,
@@ -55,9 +55,11 @@ export async function listarVinculosDivergentes(
 
   const itens = await prisma.entradaFiscalItem.findMany({
     where: {
-      ...scopedByTenantCompanyAmbiente(scope),
+      // O item não guarda ambiente — quem guarda é a nota. O isolamento entre homologação e
+      // produção tem de vir pela relação, senão um ambiente enxerga o outro.
+      ...scopedByTenantCompany(scope),
       produtoId: { not: null },
-      entradaFiscal: { emitidaEm: { gte: inicio, lte: fim } }
+      entradaFiscal: { ...scopedByTenantCompanyAmbiente(scope), emitidaEm: { gte: inicio, lte: fim } }
     },
     select: {
       id: true,
@@ -128,8 +130,8 @@ export async function resumoFinalidadesDoMes(
   const linhas = await prisma.entradaFiscalItem.groupBy({
     by: ["finalidade", "cfopEntradaDerivado"],
     where: {
-      ...scopedByTenantCompanyAmbiente(scope),
-      entradaFiscal: { emitidaEm: { gte: inicio, lte: fim } }
+      ...scopedByTenantCompany(scope),
+      entradaFiscal: { ...scopedByTenantCompanyAmbiente(scope), emitidaEm: { gte: inicio, lte: fim } }
     },
     _count: { _all: true },
     _sum: { valorTotal: true }
@@ -152,9 +154,9 @@ export async function itensComFinalidade(
   const { inicio, fim } = faixaDoMes(params.ano, params.mes);
   const itens = await prisma.entradaFiscalItem.findMany({
     where: {
-      ...scopedByTenantCompanyAmbiente(scope),
+      ...scopedByTenantCompany(scope),
       finalidade: params.finalidade as never,
-      entradaFiscal: { emitidaEm: { gte: inicio, lte: fim } }
+      entradaFiscal: { ...scopedByTenantCompanyAmbiente(scope), emitidaEm: { gte: inicio, lte: fim } }
     },
     select: { id: true }
   });
@@ -180,7 +182,12 @@ export async function recalcularNcmDosProdutos(
   if (!produtoIds.length) return [];
 
   const itens = await prisma.entradaFiscalItem.findMany({
-    where: { ...scopedByTenantCompanyAmbiente(scope), produtoId: { in: produtoIds }, ncm: { not: null } },
+    where: {
+      ...scopedByTenantCompany(scope),
+      produtoId: { in: produtoIds },
+      ncm: { not: null },
+      entradaFiscal: scopedByTenantCompanyAmbiente(scope)
+    },
     select: { produtoId: true, ncm: true }
   });
 
@@ -195,7 +202,7 @@ export async function recalcularNcmDosProdutos(
   }
 
   const produtos = await prisma.produto.findMany({
-    where: { ...scopedByTenantCompanyAmbiente(scope), id: { in: produtoIds } },
+    where: { ...scopedByTenantCompany(scope), id: { in: produtoIds } },
     select: { id: true, sku: true, ncm: true }
   });
 
