@@ -145,7 +145,7 @@ export function SpedConfigForm({ configuracao }: Props) {
               <input
                 type="number"
                 min={1}
-                max={28}
+                max={31}
                 value={form.diaVencimentoAntecipacao}
                 onChange={(e) => set("diaVencimentoAntecipacao", Number(e.target.value))}
                 disabled={busy}
@@ -205,7 +205,7 @@ export function SpedConfigForm({ configuracao }: Props) {
             <input
               type="number"
               min={1}
-              max={28}
+              max={31}
               value={form.diaVencimentoIcms}
               onChange={(e) => set("diaVencimentoIcms", Number(e.target.value))}
               disabled={busy}
@@ -213,7 +213,9 @@ export function SpedConfigForm({ configuracao }: Props) {
           </label>
         </div>
         <p style={{ margin: 0, fontSize: 12, color: "var(--jr-mute)" }}>
-          Usados quando a apuração fecha com ICMS a recolher. O código da guia e o vencimento variam por estado.
+          Usados quando a apuração fecha com ICMS a recolher. O código da guia e o dia do vencimento variam por
+          estado e por regime de apuração — na Bahia, por exemplo, o contribuinte de conta corrente fiscal recolhe
+          até o dia 9. Confira com a contabilidade: é esta data que vai no registro E116 do arquivo.
         </p>
       </section>
 

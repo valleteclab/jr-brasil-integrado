@@ -356,13 +356,15 @@ export async function saveSpedConfiguracao(
   const perfil = (input.perfilArquivo ?? "B").toUpperCase();
   if (!["A", "B", "C"].includes(perfil)) throw new SpedError("Perfil do arquivo inválido (use A, B ou C).");
   const indAtividade = input.indAtividade === "0" ? "0" : "1";
+  // Aceita 1 a 31: há UF com prazo no dia 30. O gerador desce para o último dia do mês
+  // quando o mês é mais curto, então o dia 31 não produz data inválida em fevereiro.
   const dia = Number(input.diaVencimentoIcms ?? 10);
-  if (!Number.isInteger(dia) || dia < 1 || dia > 28) {
-    throw new SpedError("Dia de vencimento do ICMS inválido (1 a 28).");
+  if (!Number.isInteger(dia) || dia < 1 || dia > 31) {
+    throw new SpedError("Dia de vencimento do ICMS inválido (1 a 31).");
   }
   const diaAntecip = Number(input.diaVencimentoAntecipacao ?? 25);
-  if (!Number.isInteger(diaAntecip) || diaAntecip < 1 || diaAntecip > 28) {
-    throw new SpedError("Dia de vencimento da antecipação parcial inválido (1 a 28).");
+  if (!Number.isInteger(diaAntecip) || diaAntecip < 1 || diaAntecip > 31) {
+    throw new SpedError("Dia de vencimento da antecipação parcial inválido (1 a 31).");
   }
   const limpo = (v: string | undefined) => (v ?? "").trim() || null;
 

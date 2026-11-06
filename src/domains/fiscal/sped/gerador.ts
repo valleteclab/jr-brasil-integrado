@@ -43,6 +43,27 @@ export function resolveVersaoLeiaute(ano: number): string {
   return LEIAUTE_POR_ANO[anos[0]];
 }
 
+/**
+ * Data de vencimento do ICMS próprio (registro E116): o dia configurado, no mês seguinte
+ * ao da competência.
+ *
+ * O dia é limitado ao último dia real daquele mês, não a 28: quem vence no dia 30 vence no
+ * dia 30, e só em fevereiro desce para 28/29. O prazo legal varia por UF e por regime — na
+ * Bahia, o contribuinte de conta corrente fiscal recolhe até o dia 9 —, por isso o dia vem
+ * do cadastro em Configurações do SPED e nunca é fixado aqui.
+ *
+ * Não há antecipação/prorrogação para dia útil: a regra difere entre as UFs e exige
+ * calendário de feriados estaduais. Quando a data cair em fim de semana, o contribuinte
+ * acerta o dia no cadastro.
+ *
+ * @param mes Mês da competência, 1 a 12. O vencimento recai no mês seguinte.
+ */
+export function vencimentoIcms(ano: number, mes: number, diaConfigurado: number): Date {
+  const ultimoDiaDoMesSeguinte = new Date(ano, mes + 1, 0).getDate();
+  const dia = Math.min(Math.max(Math.trunc(diaConfigurado) || 1, 1), ultimoDiaDoMesSeguinte);
+  return new Date(ano, mes, dia);
+}
+
 const COD_PAIS_BRASIL = "01058";
 
 function round2(v: number): number {
@@ -514,11 +535,23 @@ export function gerarSpedFiscal(input: SpedInput): SpedArquivoGerado {
 
   if (icmsARecolher > 0) {
     // E116 — obrigação do ICMS a recolher. Vencimento: dia configurado do mês seguinte.
-    const vencimento = new Date(periodo.ano, periodo.mes, Math.min(Math.max(config.diaVencimentoIcms, 1), 28));
+    // O dia é limitado ao último dia daquele mês (não a 28): quem vence no dia 30 vence no
+    // dia 30, e só em fevereiro cai para o 28/29. O prazo legal varia por UF e por regime —
+    // na Bahia, por exemplo, o contribuinte de conta corrente fiscal recolhe até o dia 9 —,
+    // por isso o dia vem do cadastro em Configurações do SPED, nunca fixo no código.
+    const vencimento = vencimentoIcms(periodo.ano, periodo.mes, config.diaVencimentoIcms);
     const mesRef = `${String(periodo.mes).padStart(2, "0")}${periodo.ano}`;
     if (!config.codigoReceitaIcms) {
       avisos.push(
         "ICMS a recolher sem código de receita configurado (registro E116). Informe o código da guia estadual em Configurações do SPED."
+      );
+    }
+    const diaDaSemana = vencimento.getDay();
+    if (diaDaSemana === 0 || diaDaSemana === 6) {
+      // Não mexemos na data: antecipar ou prorrogar é regra de cada UF e depende de
+      // calendário de feriados estaduais. Quem decide é o contribuinte, no cadastro.
+      avisos.push(
+        `O vencimento do ICMS calculado (${campoData(vencimento)}) cai em ${diaDaSemana === 0 ? "domingo" : "sábado"}. Confira o prazo da sua UF e ajuste o dia em Configurações do SPED se precisar.`
       );
     }
     b.add([

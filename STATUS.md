@@ -226,6 +226,7 @@ Este documento acompanha a execução do plano ERP + ecommerce B2B integrado e d
 
 | Data | Commit | Status | Resumo |
 | --- | --- | --- | --- |
+| 2026-11-06 | A gerar | Em andamento | SPED: o dia do vencimento do ICMS (E116) passa a aceitar 1 a 31 e desce para o ultimo dia do mes em vez de ser cortado em 28; aviso quando a data cai em fim de semana. Validacao do arquivo de outubro da Valleteclab: estrutura e somatorios conferem; vencimento estava no padrao 10 e na Bahia (conta corrente fiscal) o prazo e dia 9 - ajuste e no cadastro, em Configuracoes do SPED. |
 | 2026-11-03 | A gerar | Em andamento | Preco promocional por plano (de/por, com rotulo e prazo) valendo na landing, no cadastro E na cobranca; link do certificado digital (parceiro) nas paginas publicas; registro de contato manual e botao de WhatsApp na fila de leads. |
 | 2026-11-03 | A gerar | Em andamento | Agente comercial integrado ao Chatwoot como agent bot: recebe pelo webhook, responde dentro da conversa e devolve para o time quando sai do escopo. O numero oficial continua sendo do SISGOV no Chatwoot. |
 | 2026-11-02 | A gerar | Em andamento | Canal oficial da Meta (WhatsApp Cloud API) no agente comercial: envio de texto/template, webhook com assinatura HMAC e captura do referral do Click-to-WhatsApp (ctwa_clid) gravado como origem/UTM do lead. |
