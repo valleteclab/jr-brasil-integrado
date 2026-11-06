@@ -4,7 +4,10 @@ import { getDevelopmentTenantScope } from "@/lib/auth/dev-session";
 import { requireModulo } from "@/lib/auth/session";
 import { authErrorStatus } from "@/lib/auth/http";
 import { isFinalidadeEntrada } from "@/domains/fiscal/finalidade-entrada";
-import { recalcularNcmDosProdutos } from "@/domains/products/application/vinculo-divergente-use-cases";
+import {
+  produtosAfetadosPelaCorrecao,
+  recalcularNcmDosProdutos
+} from "@/domains/products/application/vinculo-divergente-use-cases";
 
 export async function PUT(request: Request) {
   try {
@@ -50,13 +53,19 @@ export async function PUT(request: Request) {
     }
 
     const scope = await getDevelopmentTenantScope();
+
+    // Na correção que cria produto novo, os produtos que perdem itens são descobertos ANTES de
+    // aplicar — depois a memória fornecedor+código já aponta para o produto novo e não dá mais
+    // para saber de onde o item saiu.
+    const idsCriandoProduto = links.filter((l) => l.correcaoFiscal && l.criarNovoSku).map((l) => l.itemId);
+    const afetados = await produtosAfetadosPelaCorrecao(scope, idsCriandoProduto);
+
     const result = await updateFiscalEntryItemLinks(scope, links);
 
     // Os itens saíram do produto errado; agora o produto volta a ter o NCM dos itens que
-    // realmente são dele. Só roda quando o chamador pede, para não mexer em cadastro sem querer.
-    const ncmCorrigidos = body.recalcularNcmDe?.length
-      ? await recalcularNcmDosProdutos(scope, body.recalcularNcmDe)
-      : [];
+    // realmente são dele. Só roda numa correção, para não mexer em cadastro sem querer.
+    const paraRecalcular = Array.from(new Set([...(body.recalcularNcmDe ?? []), ...afetados]));
+    const ncmCorrigidos = paraRecalcular.length ? await recalcularNcmDosProdutos(scope, paraRecalcular) : [];
 
     return NextResponse.json({ ...result, ncmCorrigidos });
   } catch (error) {

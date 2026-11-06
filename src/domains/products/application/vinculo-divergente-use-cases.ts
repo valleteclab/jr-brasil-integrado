@@ -88,8 +88,56 @@ export async function listarVinculosDivergentes(
     ncmProduto: i.produto?.ncm ?? null
   }));
 
+  // Órfãos: item de nota já processada que movimenta estoque mas não aponta para produto
+  // nenhum. É um estado inválido — o SPED sai sem o código do item (registro 0200) — e é o que
+  // sobra quando um "criar SKU" é pedido depois do processamento, que nunca mais roda. Em
+  // conferência é normal o item estar sem produto, por isso só conta nota já processada.
+  const orfaos = await prisma.entradaFiscalItem.findMany({
+    where: {
+      ...scopedByTenantCompany(scope),
+      produtoId: null,
+      movimentaEstoque: true,
+      entradaFiscal: {
+        ...scopedByTenantCompanyAmbiente(scope),
+        emitidaEm: { gte: inicio, lte: fim },
+        status: { notIn: ["AGUARDANDO_CONFERENCIA", "CONFERIDA"] }
+      }
+    },
+    select: {
+      id: true,
+      itemNumero: true,
+      descricaoFornecedor: true,
+      codigoFornecedor: true,
+      ncm: true,
+      valorTotal: true,
+      finalidade: true,
+      cfopEntradaDerivado: true,
+      entradaFiscal: { select: { numero: true } }
+    },
+    orderBy: [{ entradaFiscalId: "asc" }, { itemNumero: "asc" }]
+  });
+  const viewOrfaos: ItemDivergenteView[] = orfaos.map((o) => ({
+    itemId: o.id,
+    notaNumero: o.entradaFiscal?.numero ?? null,
+    itemNumero: o.itemNumero,
+    descricaoFornecedor: o.descricaoFornecedor ?? "",
+    codigoFornecedor: o.codigoFornecedor,
+    ncmNota: o.ncm,
+    valorTotal: Number(o.valorTotal),
+    produtoId: null,
+    produtoNome: null,
+    produtoSku: null,
+    ncmProduto: null,
+    finalidade: o.finalidade,
+    cfopDerivado: o.cfopEntradaDerivado,
+    pontuacao: 100,
+    motivos: ["sem produto: o item movimenta estoque mas não aponta para nenhum produto, e o SPED sai sem o código dele"],
+    nomeSugerido: nomeSugerido(o.descricaoFornecedor ?? ""),
+    precisaRevisar: true
+  }));
+
   const porId = new Map(itens.map((i) => [i.id, i]));
-  return detectarVinculosDivergentes(paraAnalise).flatMap((d) => {
+  const divergentes = detectarVinculosDivergentes(paraAnalise).flatMap((d) => {
     const item = porId.get(d.itemId);
     if (!item) return [];
     return [
@@ -114,6 +162,7 @@ export async function listarVinculosDivergentes(
       }
     ];
   });
+  return [...viewOrfaos, ...divergentes];
 }
 
 /**
@@ -228,4 +277,37 @@ export async function recalcularNcmDosProdutos(
     await prisma.produto.update({ where: { id: m.produtoId }, data: { ncm: m.para } });
   }
   return mudancas;
+}
+
+/**
+ * Produtos que perdem itens numa correção — os que precisam ter o NCM reposto depois.
+ *
+ * Vem de dois lugares: o produto ao qual o item aponta agora, e o produto da memória
+ * fornecedor+código. O segundo cobre o item que já está sem produto (vínculo desfeito antes):
+ * a memória ainda guarda para onde ele apontava. Tem de ser lido ANTES da correção, que
+ * reaponta essa memória para o produto novo.
+ */
+export async function produtosAfetadosPelaCorrecao(scope: TenantScope, itemIds: string[]): Promise<string[]> {
+  if (!itemIds.length) return [];
+  const itens = await prisma.entradaFiscalItem.findMany({
+    where: { ...scopedByTenantCompany(scope), id: { in: itemIds } },
+    select: { produtoId: true, codigoFornecedor: true, entradaFiscal: { select: { fornecedorId: true } } }
+  });
+
+  const afetados = new Set<string>();
+  const pares: Array<{ fornecedorId: string; codigoFornecedor: string }> = [];
+  for (const item of itens) {
+    if (item.produtoId) afetados.add(item.produtoId);
+    if (item.entradaFiscal.fornecedorId) {
+      pares.push({ fornecedorId: item.entradaFiscal.fornecedorId, codigoFornecedor: item.codigoFornecedor });
+    }
+  }
+  if (pares.length) {
+    const memorias = await prisma.produtoFornecedor.findMany({
+      where: { ...scopedByTenantCompany(scope), OR: pares },
+      select: { produtoId: true }
+    });
+    for (const m of memorias) afetados.add(m.produtoId);
+  }
+  return Array.from(afetados);
 }

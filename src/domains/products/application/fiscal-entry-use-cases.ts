@@ -1948,6 +1948,120 @@ export async function applyFinalidadeManual(
   }
 }
 
+/**
+ * Cria o produto de um item de nota JÁ PROCESSADA, sem mexer no estoque — correção fiscal.
+ *
+ * O saldo já foi lançado no produto errado e lá fica (acerto por inventário); aqui se resolve o
+ * cadastro: produto próprio com a descrição e o NCM da nota, item apontando para ele e a memória
+ * fornecedor+código reapontada. Essa memória é o que faz a próxima nota do mesmo fornecedor se
+ * vincular sozinha — se ela continuar no produto errado, o erro volta na próxima importação.
+ */
+async function criarProdutoNaCorrecaoFiscal(
+  tx: Prisma.TransactionClient,
+  scope: TenantScope,
+  item: LoadedEntryItem,
+  input: FiscalEntryItemLinkInput,
+  ehInsumo: boolean
+) {
+  // Preserva a embalagem já gravada no item: a correção não informa fator, e assumir 1 mudaria
+  // a unidade do produto novo em relação ao que entrou de fato.
+  const fator = Number(item.fatorConversao) > 0 ? Number(item.fatorConversao) : 1;
+  const unidadeVenda = fator > 1 ? item.unidadeVenda?.trim() || "UN" : item.unidade;
+  const custoUnit = Number(item.valorUnitario) / fator;
+  const nome = input.nome?.trim() || item.descricaoFornecedor;
+  const finalidade = input.finalidade ?? item.finalidade;
+  const itemSt = Number(item.valorIcmsSt ?? 0) > 0;
+
+  // Mesma categoria de fallback que o processamento usa quando não há sugestão.
+  const categoria = await tx.produtoCategoria.upsert({
+    where: { tenantId_empresaId_slug: { tenantId: scope.tenantId, empresaId: scope.empresaId, slug: "sem-categoria" } },
+    update: {},
+    create: { tenantId: scope.tenantId, empresaId: scope.empresaId, nome: "Sem categoria", slug: "sem-categoria" }
+  });
+
+  const gerarSku = await criarGeradorSkuAutomatico(tx, scope);
+  const produto = await tx.produto.create({
+    data: {
+      tenantId: scope.tenantId,
+      empresaId: scope.empresaId,
+      sku: await gerarSku(),
+      categoriaId: categoria.id,
+      nome,
+      descricao: `Criado na correção fiscal da entrada ${item.entradaFiscal.numero || item.entradaFiscalId}.`,
+      tipo: ehInsumo ? "INSUMO" : "PRODUTO",
+      codigoOriginal: item.codigoFornecedor,
+      gtin: item.gtin,
+      unidade: unidadeVenda,
+      unidadeCompra: item.unidade,
+      fatorConversaoCompra: fator,
+      ncm: item.ncm,
+      cest: item.cest,
+      cfop: cfopVendaPadrao(finalidade, { st: itemSt }),
+      precoCusto: custoUnit,
+      ultimoCusto: custoUnit,
+      custoMedio: custoUnit,
+      precoVenda: input.precoVenda ?? 0,
+      precoVendaPrazo: input.precoVendaPrazo ?? input.precoVenda ?? 0,
+      precoMinimo: input.precoMinimo ?? input.precoVenda ?? 0,
+      visivelEcommerce: false
+    }
+  });
+
+  const updated = await tx.entradaFiscalItem.update({
+    where: { id: item.id },
+    data: {
+      produtoId: produto.id,
+      ...(input.nome?.trim() ? { descricaoFornecedor: input.nome.trim() } : {}),
+      produtoVinculadoAutomaticamente: false,
+      confiancaVinculo: 100,
+      revisarVinculo: false
+    }
+  });
+
+  if (item.entradaFiscal.fornecedorId) {
+    await tx.produtoFornecedor.upsert({
+      where: {
+        tenantId_empresaId_fornecedorId_codigoFornecedor: {
+          tenantId: scope.tenantId,
+          empresaId: scope.empresaId,
+          fornecedorId: item.entradaFiscal.fornecedorId,
+          codigoFornecedor: item.codigoFornecedor
+        }
+      },
+      update: { produtoId: produto.id, descricaoFornecedor: item.descricaoFornecedor, ativo: true },
+      create: {
+        tenantId: scope.tenantId,
+        empresaId: scope.empresaId,
+        produtoId: produto.id,
+        fornecedorId: item.entradaFiscal.fornecedorId,
+        codigoFornecedor: item.codigoFornecedor,
+        descricaoFornecedor: item.descricaoFornecedor,
+        gtinFornecedor: item.gtin,
+        unidadeCompra: item.unidade,
+        custoUltimaCompra: item.valorUnitario,
+        principal: true
+      }
+    });
+  }
+
+  await createAuditLog(tx, {
+    scope,
+    entidade: "EntradaFiscalItem",
+    entidadeId: item.id,
+    acao: "CORRECAO_FISCAL_NOVO_PRODUTO",
+    payload: {
+      entradaFiscalId: item.entradaFiscalId,
+      codigoFornecedor: item.codigoFornecedor,
+      produtoAnteriorId: item.produtoId,
+      produtoNovoId: produto.id,
+      produtoNovoSku: produto.sku,
+      estoque: "não alterado — saldo permanece no produto anterior"
+    }
+  });
+
+  return updated;
+}
+
 async function updateFiscalEntryItemLinkInTransaction(
   tx: Prisma.TransactionClient,
   scope: TenantScope,
@@ -2027,6 +2141,13 @@ async function updateFiscalEntryItemLinkInTransaction(
       const ehInsumoSku = finalidadeEhInsumo(input.finalidade ?? item.finalidade);
       if (!ehInsumoSku && (!input.precoVenda || input.precoVenda <= 0)) {
         throw new Error("Informe o preço de venda para criar um novo SKU.");
+      }
+
+      // Em nota já processada o "criar SKU" de sempre não serve: ele só marca a intenção e
+      // deixa o produto nascer no processamento — que já aconteceu e não vai se repetir. O item
+      // ficaria órfão (sem produto, movimentando estoque). Na correção fiscal o produto nasce aqui.
+      if (input.correcaoFiscal && !entradaEmConferencia) {
+        return criarProdutoNaCorrecaoFiscal(tx, scope, item, input, ehInsumoSku);
       }
 
       const updated = await tx.entradaFiscalItem.update({
