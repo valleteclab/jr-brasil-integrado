@@ -132,6 +132,14 @@ export default async function SpedDetalhePage({ params }: { params: { id: string
               <tbody>
                 <tr><td>Débitos pelas saídas</td><td style={{ textAlign: "right" }}>{formatBrl(icms.debitos)}</td></tr>
                 <tr><td>Créditos pelas entradas</td><td style={{ textAlign: "right" }}>{formatBrl(icms.creditos)}</td></tr>
+                {/* Ajustes e estornos do E111 só aparecem quando existem — sem eles a soma na
+                    tela não fecharia com o ICMS a recolher, e o usuário não saberia por quê. */}
+                {icms.ajustesCredito > 0 && (
+                  <tr><td>Ajustes a crédito (E111 — crédito presumido, CIAP, antecipação)</td><td style={{ textAlign: "right" }}>{formatBrl(icms.ajustesCredito)}</td></tr>
+                )}
+                {icms.estornosCredito > 0 && (
+                  <tr><td>Estornos de crédito (E111)</td><td style={{ textAlign: "right" }}>−{formatBrl(icms.estornosCredito)}</td></tr>
+                )}
                 <tr><td>Saldo credor do período anterior</td><td style={{ textAlign: "right" }}>{formatBrl(icms.saldoCredorAnterior)}</td></tr>
                 <tr><td><strong>Saldo apurado (devedor)</strong></td><td style={{ textAlign: "right" }}><strong>{formatBrl(icms.saldoApurado)}</strong></td></tr>
                 <tr><td><strong>ICMS a recolher</strong></td><td style={{ textAlign: "right" }}><strong>{formatBrl(icms.icmsARecolher)}</strong></td></tr>

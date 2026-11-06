@@ -189,6 +189,99 @@ export function SpedConfigForm({ configuracao }: Props) {
       </section>
 
       <section className="card" style={{ padding: 16, display: "grid", gap: 12 }}>
+        <h3 style={{ margin: 0 }}>Crédito presumido de ICMS por NCM</h3>
+        <label className="field" style={{ maxWidth: 360 }}>
+          <span>Apurar crédito presumido</span>
+          <select
+            value={form.creditoPresumidoAtivo ? "1" : "0"}
+            onChange={(e) => set("creditoPresumidoAtivo", e.target.value === "1")}
+            disabled={busy}
+          >
+            <option value="0">Desativado</option>
+            <option value="1">Ativado</option>
+          </select>
+        </label>
+        {form.creditoPresumidoAtivo && (
+          <>
+            <div style={grid}>
+              <label className="field">
+                <span>Percentual do crédito (%)</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  min={0}
+                  max={100}
+                  value={form.creditoPresumidoPercentual}
+                  onChange={(e) => set("creditoPresumidoPercentual", Number(e.target.value))}
+                  placeholder="ex.: 61,11"
+                  disabled={busy}
+                />
+              </label>
+              <label className="field">
+                <span>Cód. ajuste do crédito (E111)</span>
+                <input
+                  value={form.creditoPresumidoCodAjuste}
+                  onChange={(e) => set("creditoPresumidoCodAjuste", e.target.value)}
+                  placeholder="tabela 5.1.1 da UF"
+                  disabled={busy}
+                />
+              </label>
+              <label className="field">
+                <span>Cód. ajuste do estorno (E111)</span>
+                <input
+                  value={form.creditoPresumidoCodEstorno}
+                  onChange={(e) => set("creditoPresumidoCodEstorno", e.target.value)}
+                  placeholder="tabela 5.1.1 da UF"
+                  disabled={busy}
+                />
+              </label>
+              <label className="field">
+                <span>Cód. do incentivo (E115, opcional)</span>
+                <input
+                  value={form.creditoPresumidoCodIncentivo}
+                  onChange={(e) => set("creditoPresumidoCodIncentivo", e.target.value)}
+                  placeholder="tabela 5.2 da UF"
+                  disabled={busy}
+                />
+              </label>
+            </div>
+            <label className="field">
+              <span>NCM contemplados</span>
+              <textarea
+                rows={3}
+                value={form.creditoPresumidoNcms}
+                onChange={(e) => set("creditoPresumidoNcms", e.target.value)}
+                placeholder="8471.50.10, 8471.30.19, 8517.62.62 — ou só a posição: 8471"
+                disabled={busy}
+              />
+              <span className="field-hint">
+                Cole os códigos do anexo da lei, separados por vírgula. Com ou sem ponto, tanto faz.
+                Informar só a posição (8471) alcança todos os itens dela.
+              </span>
+            </label>
+            <label className="field" style={{ maxWidth: 360 }}>
+              <span>CFOP alcançados (opcional)</span>
+              <input
+                value={form.creditoPresumidoCfops}
+                onChange={(e) => set("creditoPresumidoCfops", e.target.value)}
+                placeholder="ex.: 5102 — vazio = todas as saídas internas"
+                disabled={busy}
+              />
+            </label>
+          </>
+        )}
+        <p style={{ margin: 0, fontSize: 12, color: "var(--jr-mute)" }}>
+          Para benefícios do tipo &ldquo;crédito presumido de X% do ICMS nas saídas internas destes
+          produtos&rdquo; — por exemplo, o Decreto BA 23.481/2025 para produtos de informática. O
+          crédito entra na apuração por ajuste E111 e o estorno dos créditos das entradas dos mesmos
+          produtos, exigido no mesmo percentual, sai em outro E111. <strong>A nota de saída não
+          muda:</strong> o ICMS continua destacado integralmente. Em geral o benefício não é
+          cumulativo com outros incentivos de ICMS — confirme com o contador antes de ativar, e peça
+          a ele os códigos de ajuste da sua UF.
+        </p>
+      </section>
+
+      <section className="card" style={{ padding: 16, display: "grid", gap: 12 }}>
         <h3 style={{ margin: 0 }}>Guia do ICMS (registro E116)</h3>
         <div style={grid}>
           <label className="field">

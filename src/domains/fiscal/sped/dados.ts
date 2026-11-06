@@ -1028,7 +1028,17 @@ export async function carregarSpedInput(scope: TenantScope, params: CarregarSped
     codigoReceitaAntecipacao: spedConfig?.codigoReceitaAntecipacao ?? null,
     diaVencimentoAntecipacao: spedConfig?.diaVencimentoAntecipacao ?? 25,
     codAjusteCreditoCiap: spedConfig?.codAjusteCreditoCiap ?? null,
-    gerarBlocoK: Boolean(spedConfig?.gerarBlocoK)
+    gerarBlocoK: Boolean(spedConfig?.gerarBlocoK),
+    creditoPresumido: spedConfig?.creditoPresumidoAtivo
+      ? {
+          percentual: Number(spedConfig.creditoPresumidoPercentual),
+          ncms: spedConfig.creditoPresumidoNcms,
+          cfops: spedConfig.creditoPresumidoCfops,
+          codAjusteCredito: spedConfig.creditoPresumidoCodAjuste ?? null,
+          codAjusteEstorno: spedConfig.creditoPresumidoCodEstorno ?? null,
+          codIncentivo: spedConfig.creditoPresumidoCodIncentivo ?? null
+        }
+      : null
   };
 
   return {

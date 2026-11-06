@@ -2987,6 +2987,22 @@ model SpedConfiguracao {
   codAjusteCreditoAntecipacao String? // BA: BA020002
   codigoReceitaAntecipacao    String? // BA: 2175 (DAE)
   diaVencimentoAntecipacao    Int      @default(25)
+  // Crédito presumido de ICMS por NCM (ex.: BA, Decreto 23.481/2025 — produtos de informática
+  // do Anexo Unico, 61,11% nas saidas internas). Quando ativo, o gerador escritura E111 do
+  // credito presumido e E111 do estorno dos creditos das entradas dos mesmos produtos, no
+  // mesmo percentual. O percentual, os NCM e os codigos de ajuste sao sempre do cadastro:
+  // nada de UF ou decreto fixado em codigo.
+  creditoPresumidoAtivo       Boolean  @default(false)
+  creditoPresumidoPercentual  Decimal  @default(0) @db.Decimal(8, 4)
+  // Codigos da tabela 5.1.1 da UF: credito presumido (E110 campo 08) e estorno (campo 05).
+  creditoPresumidoCodAjuste   String?
+  creditoPresumidoCodEstorno  String?
+  // Codigo da tabela 5.2 da UF para declarar a operacao incentivada no E115 (opcional).
+  creditoPresumidoCodIncentivo String?
+  // NCM contemplados. Aceita o codigo completo ou o prefixo da posicao.
+  creditoPresumidoNcms        String[] @default([])
+  // CFOP de saida alcancados. Vazio = todas as saidas internas (5xxx) com ICMS debitado.
+  creditoPresumidoCfops       String[] @default([])
   criadoEm                    DateTime @default(now())
   atualizadoEm                DateTime @updatedAt
 

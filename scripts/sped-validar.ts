@@ -121,6 +121,7 @@ function inputSintetico(): SpedInput {
       },
       codigoReceitaIcms: "046-2",
       diaVencimentoIcms: 10,
+      creditoPresumido: null,
       saldoCredorAnterior: 0,
       saldoCredorAnteriorIpi: 0,
       antecipacaoParcialAtiva: true,

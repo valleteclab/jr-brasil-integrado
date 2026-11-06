@@ -64,6 +64,27 @@ export type SpedConfig = {
   codAjusteCreditoCiap: string | null;
   /** Bloco K restrito ao saldo de estoque (K010 modo 2 + K200). */
   gerarBlocoK: boolean;
+  /**
+   * Crédito presumido de ICMS por NCM (E111 de crédito + E111 de estorno + E115).
+   * null → benefício desligado para a empresa.
+   */
+  creditoPresumido: SpedCreditoPresumidoConfig | null;
+};
+
+/** Benefício de crédito presumido como está no cadastro (ex.: BA Decreto 23.481/2025). */
+export type SpedCreditoPresumidoConfig = {
+  /** Percentual do ICMS da saída apropriado como crédito (ex.: 61.11). */
+  percentual: number;
+  /** NCM contemplados — código completo ou prefixo da posição. */
+  ncms: string[];
+  /** CFOP de saída alcançados. Vazio → todas as saídas internas com ICMS debitado. */
+  cfops: string[];
+  /** Código da tabela 5.1.1 da UF para o crédito presumido (E110 campo 08). */
+  codAjusteCredito: string | null;
+  /** Código da tabela 5.1.1 da UF para o estorno exigido (E110 campo 05). */
+  codAjusteEstorno: string | null;
+  /** Código da tabela 5.2 da UF para declarar a operação incentivada no E115. */
+  codIncentivo: string | null;
 };
 
 /** Bem do CIAP com a parcela do período já resolvida (bloco G). */

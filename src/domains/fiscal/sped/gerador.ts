@@ -10,6 +10,7 @@
  * registro presente + 9999 totalizador.
  */
 
+import { apurarCreditoPresumido } from "./credito-presumido";
 import {
   SpedBuilder,
   campoData,
@@ -470,9 +471,45 @@ export function gerarSpedFiscal(input: SpedInput): SpedArquivoGerado {
     avisos.push("CIAP: sem saídas no período — fator de apropriação 0 (parcela do mês não creditada, conforme regra do CIAP).");
   }
 
-  const ajustesCredito = round2((antecipacaoEscriturada ? antecipacaoTotal : 0) + (ciapEscriturado ? ciapApropriado : 0));
+  // Crédito presumido por NCM (ex.: BA Decreto 23.481/2025 — informática). O percentual, os
+  // NCM e os códigos de ajuste são do cadastro: o gerador só apura e escritura.
+  const regraCredPres = config.creditoPresumido;
+  const credPres =
+    regraCredPres && regraCredPres.percentual > 0 && regraCredPres.ncms.length > 0
+      ? apurarCreditoPresumido(input.documentos, input.itensCatalogo, regraCredPres)
+      : null;
+  const credPresEscriturado = Boolean(
+    credPres && credPres.creditoPresumido > 0 && regraCredPres?.codAjusteCredito
+  );
+  if (credPres && credPres.creditoPresumido > 0 && !credPresEscriturado) {
+    avisos.push(
+      `Crédito presumido apurado (R$ ${credPres.creditoPresumido.toFixed(2).replace(".", ",")}) mas NÃO levado à apuração: informe o código de ajuste da tabela 5.1.1 da sua UF em Configurações do SPED.`
+    );
+  }
+  // O estorno é a contrapartida do benefício: se o crédito entra, o estorno TEM de entrar.
+  // Sem código de estorno configurado o arquivo ficaria com o benefício e sem o ônus, o que
+  // é exatamente o erro que a fiscalização cobra — então o aviso é explícito.
+  const estornoCredPres = credPresEscriturado ? (credPres?.estornoCredito ?? 0) : 0;
+  if (credPresEscriturado && estornoCredPres > 0 && !regraCredPres?.codAjusteEstorno) {
+    avisos.push(
+      `Crédito presumido escriturado, mas o estorno exigido (R$ ${estornoCredPres.toFixed(2).replace(".", ",")}) ficou de fora: informe o código de estorno da tabela 5.1.1 em Configurações do SPED antes de entregar o arquivo.`
+    );
+  }
+  const estornoEscriturado = estornoCredPres > 0 && Boolean(regraCredPres?.codAjusteEstorno);
+  if (credPres && credPres.ncmsSemMovimento.length > 0 && credPres.creditoPresumido > 0) {
+    avisos.push(
+      `Crédito presumido: ${credPres.ncmsSemMovimento.length} NCM da lista não tiveram saída no período (${credPres.ncmsSemMovimento.slice(0, 6).join(", ")}${credPres.ncmsSemMovimento.length > 6 ? "…" : ""}).`
+    );
+  }
+
+  const ajustesCredito = round2(
+    (antecipacaoEscriturada ? antecipacaoTotal : 0) +
+      (ciapEscriturado ? ciapApropriado : 0) +
+      (credPresEscriturado ? (credPres?.creditoPresumido ?? 0) : 0)
+  );
+  const estornosCredito = round2(estornoEscriturado ? estornoCredPres : 0);
   const debitosEspeciais = antecipacaoEscriturada ? antecipacaoTotal : 0;
-  const saldoBruto = round2(debitosIcms - creditosIcms - ajustesCredito - saldoCredorAnterior);
+  const saldoBruto = round2(debitosIcms - creditosIcms - ajustesCredito + estornosCredito - saldoCredorAnterior);
   const saldoApurado = Math.max(saldoBruto, 0);
   const icmsARecolher = saldoApurado;
   const saldoCredorTransportar = saldoBruto < 0 ? round2(-saldoBruto) : 0;
@@ -480,7 +517,7 @@ export function gerarSpedFiscal(input: SpedInput): SpedArquivoGerado {
   const apuracaoIcms: SpedApuracaoIcms = {
     debitos: debitosIcms,
     ajustesDebito: 0,
-    estornosCredito: 0,
+    estornosCredito,
     creditos: creditosIcms,
     ajustesCredito,
     estornosDebito: 0,
@@ -496,10 +533,10 @@ export function gerarSpedFiscal(input: SpedInput): SpedArquivoGerado {
     campoNumero(debitosIcms),
     campoNumero(0), // VL_AJ_DEBITOS
     campoNumero(0), // VL_TOT_AJ_DEBITOS
-    campoNumero(0), // VL_ESTORNOS_CRED
+    campoNumero(estornosCredito), // VL_ESTORNOS_CRED (E111 de estorno do crédito presumido)
     campoNumero(creditosIcms),
-    campoNumero(ajustesCredito), // VL_AJ_CREDITOS (E111 da antecipação parcial)
-    campoNumero(0), // VL_TOT_AJ_CREDITOS
+    campoNumero(0), // VL_AJ_CREDITOS (ajustes vindos de documento — C197/D197)
+    campoNumero(ajustesCredito), // VL_TOT_AJ_CREDITOS (soma dos ajustes a crédito do E111)
     campoNumero(0), // VL_ESTORNOS_DEB
     campoNumero(saldoCredorAnterior),
     campoNumero(saldoApurado),
@@ -531,6 +568,34 @@ export function gerarSpedFiscal(input: SpedInput): SpedArquivoGerado {
       "Apropriacao mensal do credito de ICMS do ativo imobilizado (CIAP - bloco G)",
       campoNumero(ciapApropriado)
     ]);
+  }
+
+  if (credPresEscriturado && credPres && regraCredPres) {
+    const pct = regraCredPres.percentual.toFixed(2).replace(".", ",");
+    b.add([
+      "E111",
+      campoTexto(regraCredPres.codAjusteCredito),
+      `Credito presumido de ICMS - ${pct}% do imposto das saidas internas dos produtos beneficiados`,
+      campoNumero(credPres.creditoPresumido)
+    ]);
+    if (estornoEscriturado) {
+      b.add([
+        "E111",
+        campoTexto(regraCredPres.codAjusteEstorno),
+        `Estorno de credito de ICMS das entradas dos produtos beneficiados - ${pct}%`,
+        campoNumero(estornoCredPres)
+      ]);
+    }
+    // E115: declaração do valor da operação incentivada (tabela 5.2 da UF). Só sai quando a
+    // UF exige e o código está cadastrado — não há código genérico que sirva para todas.
+    if (regraCredPres.codIncentivo) {
+      b.add([
+        "E115",
+        campoTexto(regraCredPres.codIncentivo),
+        campoNumero(credPres.valorSaidasContempladas),
+        "Valor das saidas internas com credito presumido no periodo"
+      ]);
+    }
   }
 
   if (icmsARecolher > 0) {

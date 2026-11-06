@@ -312,7 +312,27 @@ export type SpedConfiguracaoView = {
   diaVencimentoAntecipacao: number;
   codAjusteCreditoCiap: string;
   gerarBlocoK: boolean;
+  creditoPresumidoAtivo: boolean;
+  creditoPresumidoPercentual: number;
+  creditoPresumidoCodAjuste: string;
+  creditoPresumidoCodEstorno: string;
+  creditoPresumidoCodIncentivo: string;
+  /** NCM e CFOP como texto separado por vírgula — é assim que o usuário cola do anexo. */
+  creditoPresumidoNcms: string;
+  creditoPresumidoCfops: string;
 };
+
+/** "8471.50.10, 8443" → ["84715010", "8443"]; descarta o que não tem dígito. */
+function listaDeCodigos(texto: string | undefined): string[] {
+  return Array.from(
+    new Set(
+      (texto ?? "")
+        .split(/[,;\s]+/)
+        .map((p) => p.replace(/\D/g, ""))
+        .filter(Boolean)
+    )
+  );
+}
 
 export async function getSpedConfiguracao(scope: TenantScope): Promise<SpedConfiguracaoView> {
   await assertSpedHabilitado(scope);
@@ -342,7 +362,14 @@ export async function getSpedConfiguracao(scope: TenantScope): Promise<SpedConfi
     codigoReceitaAntecipacao: c?.codigoReceitaAntecipacao ?? "",
     diaVencimentoAntecipacao: c?.diaVencimentoAntecipacao ?? 25,
     codAjusteCreditoCiap: c?.codAjusteCreditoCiap ?? "",
-    gerarBlocoK: c?.gerarBlocoK ?? false
+    gerarBlocoK: c?.gerarBlocoK ?? false,
+    creditoPresumidoAtivo: c?.creditoPresumidoAtivo ?? false,
+    creditoPresumidoPercentual: c ? Number(c.creditoPresumidoPercentual) : 0,
+    creditoPresumidoCodAjuste: c?.creditoPresumidoCodAjuste ?? "",
+    creditoPresumidoCodEstorno: c?.creditoPresumidoCodEstorno ?? "",
+    creditoPresumidoCodIncentivo: c?.creditoPresumidoCodIncentivo ?? "",
+    creditoPresumidoNcms: (c?.creditoPresumidoNcms ?? []).join(", "),
+    creditoPresumidoCfops: (c?.creditoPresumidoCfops ?? []).join(", ")
   };
 }
 
@@ -368,6 +395,27 @@ export async function saveSpedConfiguracao(
   }
   const limpo = (v: string | undefined) => (v ?? "").trim() || null;
 
+  // Crédito presumido: só valida de verdade quando o benefício está ligado. Desligado, os
+  // campos ficam guardados como estão para a empresa não perder o que já cadastrou.
+  const credPresAtivo = Boolean(input.creditoPresumidoAtivo);
+  const credPresPercentual = Number(input.creditoPresumidoPercentual ?? 0);
+  const credPresNcms = listaDeCodigos(input.creditoPresumidoNcms);
+  const credPresCfops = listaDeCodigos(input.creditoPresumidoCfops);
+  if (credPresAtivo) {
+    if (!Number.isFinite(credPresPercentual) || credPresPercentual <= 0 || credPresPercentual > 100) {
+      throw new SpedError("Percentual do crédito presumido inválido (maior que 0 e até 100).");
+    }
+    if (credPresNcms.length === 0) {
+      throw new SpedError("Informe ao menos um NCM contemplado pelo crédito presumido.");
+    }
+    if (!limpo(input.creditoPresumidoCodAjuste)) {
+      throw new SpedError("Informe o código de ajuste do crédito presumido (tabela 5.1.1 da sua UF).");
+    }
+    if (credPresCfops.some((c) => c.length !== 4)) {
+      throw new SpedError("CFOP do crédito presumido inválido (use 4 dígitos, ex.: 5102).");
+    }
+  }
+
   const data = {
     perfilArquivo: perfil,
     indAtividade,
@@ -391,7 +439,14 @@ export async function saveSpedConfiguracao(
     codigoReceitaAntecipacao: limpo(input.codigoReceitaAntecipacao),
     diaVencimentoAntecipacao: diaAntecip,
     codAjusteCreditoCiap: limpo(input.codAjusteCreditoCiap),
-    gerarBlocoK: Boolean(input.gerarBlocoK)
+    gerarBlocoK: Boolean(input.gerarBlocoK),
+    creditoPresumidoAtivo: credPresAtivo,
+    creditoPresumidoPercentual: Number.isFinite(credPresPercentual) ? credPresPercentual : 0,
+    creditoPresumidoCodAjuste: limpo(input.creditoPresumidoCodAjuste),
+    creditoPresumidoCodEstorno: limpo(input.creditoPresumidoCodEstorno),
+    creditoPresumidoCodIncentivo: limpo(input.creditoPresumidoCodIncentivo),
+    creditoPresumidoNcms: credPresNcms,
+    creditoPresumidoCfops: credPresCfops
   };
 
   await prisma.$transaction(async (tx) => {
